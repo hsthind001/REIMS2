@@ -1,0 +1,27 @@
+FROM python:3.13-slim
+
+# Install system dependencies (CACHED LAYER)
+# These rarely change, so Docker will cache this layer
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    ghostscript \
+    poppler-utils \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies (CACHED LAYER)
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt .
+
+# Install Python packages
+# This layer is cached unless requirements.txt changes
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# This base image will be reused by backend, celery-worker, and flower
+# Total size: ~800MB (vs 1.09GB per service before)
+

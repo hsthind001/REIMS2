@@ -1,0 +1,41 @@
+# Development-specific Docker Compose overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  backend:
+    # Use optimized Dockerfile that extends reims-base
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Mount code as read-only volume for hot reload
+    volumes:
+      - ./backend/app:/app/app:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=debug
+    # Auto-reload on code changes (already in CMD)
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend/app:/app/app:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=debug
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend/app:/app/app:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+
+# With this setup:
+# - Code changes are instantly reflected (no rebuild needed)
+# - Only reims-base needs to be rebuilt when requirements.txt changes
+# - Service restarts take seconds instead of minutes
+
