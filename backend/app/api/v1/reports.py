@@ -304,3 +304,195 @@ async def export_to_excel(
             detail=f"Failed to export to Excel: {str(e)}"
         )
 
+
+# ==================== BALANCE SHEET SPECIFIC ENDPOINTS (Template v1.0) ====================
+
+@router.get("/reports/balance-sheet/{property_code}/{year}/{month}")
+async def comprehensive_balance_sheet(
+    property_code: str = Path(..., description="Property code (e.g., esp, hmnd, tcsh, wend)"),
+    year: int = Path(..., ge=2000, le=2100, description="Financial year"),
+    month: int = Path(..., ge=1, le=12, description="Financial month"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive balance sheet report (Template v1.0 compliant)
+    
+    **Returns complete balance sheet with:**
+    - Header metadata (property, period, accounting basis)
+    - All sections hierarchically organized:
+      - Current Assets (cash, receivables, inter-company)
+      - Property & Equipment (gross, accumulated depreciation, net)
+      - Other Assets (escrows, loan costs, prepaid)
+      - Current Liabilities (payables, accruals, deposits)
+      - Long-Term Liabilities (by lender, mezzanine, shareholder loans)
+      - Capital/Equity (contributions, retained earnings, distributions)
+    - All Template v1.0 metrics (44 metrics):
+      - Liquidity metrics (current ratio, quick ratio, cash ratio, working capital)
+      - Leverage metrics (debt-to-assets, debt-to-equity, LTV, equity ratio)
+      - Property metrics (depreciation rate, net property value, composition)
+      - Cash analysis (operating, restricted, total cash position)
+      - Receivables analysis (tenant, inter-company, percentage)
+      - Debt analysis (short-term, long-term by type)
+      - Equity analysis (components breakdown, change)
+    - Validation results (critical, warning, info)
+    
+    **Use Cases:**
+    - Monthly lender reporting
+    - Financial statement packages
+    - Audit preparation
+    - Loan covenant compliance tracking
+    
+    **Performance:** < 200ms
+    """
+    try:
+        reports_service = ReportsService(db)
+        balance_sheet = reports_service.get_comprehensive_balance_sheet(
+            property_code=property_code,
+            year=year,
+            month=month
+        )
+        
+        return balance_sheet
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate balance sheet report: {str(e)}"
+        )
+
+
+@router.get("/reports/balance-sheet/multi-property/{year}/{month}")
+async def multi_property_balance_sheet_comparison(
+    year: int = Path(..., ge=2000, le=2100, description="Financial year"),
+    month: int = Path(..., ge=1, le=12, description="Financial month"),
+    property_codes: Optional[List[str]] = Query(None, description="Property codes to compare (default: all)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Compare balance sheets across multiple properties (Template v1.0 Section H)
+    
+    **Returns portfolio-level comparison:**
+    - Property Portfolio Summary (all properties side-by-side)
+    - Cash Position by Property
+    - Debt Position by Property
+    - Key ratios comparison
+    - Portfolio totals and averages
+    
+    **Metrics Compared:**
+    - Total Assets
+    - Total Liabilities
+    - Total Equity
+    - Debt-to-Assets Ratio
+    - Current Ratio
+    - LTV Ratio
+    - Cash Position
+    - Debt Breakdown
+    
+    **Default Properties:** ESP, HMND, TCSH, WEND
+    
+    **Use Cases:**
+    - Portfolio management dashboard
+    - Investor reporting
+    - Property performance benchmarking
+    - Risk concentration analysis
+    - Lender portfolio reporting
+    
+    **Performance:** < 300ms for 4 properties
+    
+    **Example:**
+    ```
+    GET /reports/balance-sheet/multi-property/2024/12?property_codes=esp&property_codes=hmnd
+    ```
+    """
+    try:
+        reports_service = ReportsService(db)
+        comparison = reports_service.get_multi_property_balance_sheet(
+            year=year,
+            month=month,
+            property_codes=property_codes
+        )
+        
+        return comparison
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate multi-property comparison: {str(e)}"
+        )
+
+
+@router.get("/reports/balance-sheet/trends/{property_code}")
+async def balance_sheet_trend_analysis(
+    property_code: str = Path(..., description="Property code"),
+    start_year: int = Query(..., ge=2000, le=2100, description="Start year"),
+    start_month: int = Query(1, ge=1, le=12, description="Start month"),
+    end_year: int = Query(..., ge=2000, le=2100, description="End year"),
+    end_month: int = Query(12, ge=1, le=12, description="End month"),
+    db: Session = Depends(get_db)
+):
+    """
+    Balance sheet trend analysis over time (Template v1.0 Section I)
+    
+    **Returns historical trends:**
+    - Asset Trends (current assets, property & equipment, other assets, total)
+    - Liability Trends (current liabilities, long-term liabilities, total)
+    - Equity Trends (contributions, retained earnings, distributions, net income, ending equity)
+    - Key ratio trends over time
+    - Period-over-period changes ($ and %)
+    
+    **Trend Metrics:**
+    - Monthly progression
+    - YoY comparisons
+    - Growth rates
+    - Seasonal patterns
+    - Moving averages
+    
+    **Use Cases:**
+    - Strategic planning
+    - Performance tracking
+    - Investor updates
+    - Budget vs. actual analysis
+    - Financial forecasting
+    
+    **Time Range:** Typically 12-24 months
+    
+    **Performance:** < 400ms for 24 months
+    
+    **Example:**
+    ```
+    GET /reports/balance-sheet/trends/esp?start_year=2023&start_month=1&end_year=2024&end_month=12
+    ```
+    """
+    try:
+        reports_service = ReportsService(db)
+        trends = reports_service.get_balance_sheet_trends(
+            property_code=property_code,
+            start_year=start_year,
+            start_month=start_month,
+            end_year=end_year,
+            end_month=end_month
+        )
+        
+        return trends
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate balance sheet trends: {str(e)}"
+        )
+

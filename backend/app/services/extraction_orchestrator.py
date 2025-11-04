@@ -733,14 +733,15 @@ class ExtractionOrchestrator:
     
     def _match_accounts_intelligent(self, extracted_items: List[Dict]) -> List[Dict]:
         """
-        Intelligent account matching with multiple strategies
+        Intelligent account matching with multiple strategies (Template v1.0 compliant)
         
         Strategies (in order):
         1. Exact code match
-        2. Fuzzy code match (handles OCR errors)
+        2. Fuzzy code match (handles OCR errors - 90%+ similarity)
         3. Exact name match
-        4. Fuzzy name match (80%+ similarity)
-        5. Log unmapped for review
+        4. Fuzzy name match (85%+ similarity - Template v1.0 requirement)
+        5. Partial name match with category filtering (85%+)
+        6. Log unmapped for review
         
         Returns: enhanced items with matched_account_id
         """
@@ -755,11 +756,20 @@ class ExtractionOrchestrator:
         accounts_by_code = {acc.account_code: acc for acc in all_accounts}
         accounts_by_name = {acc.account_name.lower(): acc for acc in all_accounts}
         
+        # Group accounts by category for better matching
+        accounts_by_category = {}
+        for account in all_accounts:
+            category = account.category or 'unknown'
+            if category not in accounts_by_category:
+                accounts_by_category[category] = []
+            accounts_by_category[category].append(account)
+        
         enhanced_items = []
         
         for item in extracted_items:
             account_code = item.get("account_code", "")
             account_name = item.get("account_name", "")
+            account_category = item.get("account_category")  # From extraction
             matched_account = None
             match_method = None
             match_confidence = 0.0
@@ -770,13 +780,13 @@ class ExtractionOrchestrator:
                 match_method = "exact_code"
                 match_confidence = 100.0
             
-            # Strategy 2: Fuzzy code match (for OCR errors like 0 vs O)
+            # Strategy 2: Fuzzy code match (for OCR errors like 0 vs O, 1 vs I)
             elif account_code:
                 best_match = None
                 best_score = 0
                 for code, account in accounts_by_code.items():
                     score = fuzz.ratio(account_code, code)
-                    if score > best_score and score >= 90:  # 90%+ similarity
+                    if score > best_score and score >= 90:  # 90%+ similarity for codes
                         best_score = score
                         best_match = account
                 
@@ -793,19 +803,61 @@ class ExtractionOrchestrator:
                     match_method = "exact_name"
                     match_confidence = 100.0
             
-            # Strategy 4: Fuzzy name match
+            # Strategy 4: Fuzzy name match (Template v1.0: 85%+ threshold)
             if not matched_account and account_name:
                 best_match = None
                 best_score = 0
-                for account in all_accounts:
+                
+                # Try category-specific matching first for better accuracy
+                target_accounts = all_accounts
+                if account_category and account_category.upper() in accounts_by_category:
+                    target_accounts = accounts_by_category[account_category.upper()]
+                
+                for account in target_accounts:
+                    # Use token_set_ratio for better matching of variations
                     score = fuzz.token_set_ratio(account_name.lower(), account.account_name.lower())
-                    if score > best_score and score >= 80:  # 80%+ similarity
+                    if score > best_score and score >= 85:  # 85%+ Template v1.0 requirement
                         best_score = score
                         best_match = account
+                
+                # If no match in category, try all accounts
+                if not best_match and account_category:
+                    for account in all_accounts:
+                        score = fuzz.token_set_ratio(account_name.lower(), account.account_name.lower())
+                        if score > best_score and score >= 85:
+                            best_score = score
+                            best_match = account
                 
                 if best_match:
                     matched_account = best_match
                     match_method = "fuzzy_name"
+                    match_confidence = float(best_score)
+            
+            # Strategy 5: Partial name match with variations (for abbreviations)
+            if not matched_account and account_name and len(account_name) > 5:
+                best_match = None
+                best_score = 0
+                
+                # Generate account name variations
+                name_variations = [
+                    account_name.replace("A/R", "Accounts Receivable"),
+                    account_name.replace("A/P", "Accounts Payable"),
+                    account_name.replace("Accum.", "Accumulated"),
+                    account_name.replace("Depr.", "Depreciation"),
+                    account_name.replace("Amort.", "Amortization"),
+                    account_name.replace("&", "and")
+                ]
+                
+                for account in all_accounts:
+                    for variation in name_variations:
+                        score = fuzz.token_set_ratio(variation.lower(), account.account_name.lower())
+                        if score > best_score and score >= 85:
+                            best_score = score
+                            best_match = account
+                
+                if best_match:
+                    matched_account = best_match
+                    match_method = "fuzzy_name_variation"
                     match_confidence = float(best_score)
             
             # Enhance item with match information
@@ -816,6 +868,8 @@ class ExtractionOrchestrator:
                 enhanced_item["matched_account_name"] = matched_account.account_name
                 enhanced_item["match_method"] = match_method
                 enhanced_item["match_confidence"] = match_confidence
+                # Flag for review if confidence < 95% (Template v1.0 recommendation)
+                enhanced_item["needs_review"] = match_confidence < 95.0
             else:
                 # Log unmapped account
                 enhanced_item["matched_account_id"] = None

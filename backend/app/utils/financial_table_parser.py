@@ -32,28 +32,39 @@ class FinancialTableParser:
         
     def extract_balance_sheet_table(self, pdf_data: bytes) -> Dict:
         """
-        Extract balance sheet with table structure
+        Extract balance sheet with table structure and header metadata
+        
+        Template v1.0 compliant - extracts:
+        - Header metadata: property_name, report_title, period_ending, accounting_basis, report_date
+        - Line items with hierarchy and categorization
         
         Returns:
             dict: {
-                "line_items": [
-                    {
-                        "account_code": "0122-0000",
-                        "account_name": "Cash - Operating", 
-                        "amount": 211729.81,
-                        "confidence": 98.0
-                    },
-                    ...
-                ],
+                "header": {
+                    "property_name": "Eastern Shore Plaza (esp)",
+                    "property_code": "esp",
+                    "report_title": "Balance Sheet",
+                    "period_ending": "Dec 2023",
+                    "accounting_basis": "Accrual",
+                    "report_date": "2025-02-06 11:30:00"
+                },
+                "line_items": [...],
                 "success": True,
                 "total_items": 50,
-                "extraction_method": "table"
+                "extraction_method": "table",
+                "total_pages": 2
             }
         """
         try:
             pdf = pdfplumber.open(io.BytesIO(pdf_data))
             all_line_items = []
             
+            # Extract header metadata from first page
+            first_page = pdf.pages[0]
+            first_page_text = first_page.extract_text()
+            header_metadata = self._extract_balance_sheet_header(first_page_text)
+            
+            # Process all pages
             for page_num, page in enumerate(pdf.pages, 1):
                 # Extract tables from page
                 tables = page.extract_tables()
@@ -73,26 +84,43 @@ class FinancialTableParser:
             
             return {
                 "success": True,
+                "header": header_metadata,
                 "line_items": all_line_items,
                 "total_items": len(all_line_items),
                 "extraction_method": "table" if tables else "text",
-                "document_type": "balance_sheet"
+                "document_type": "balance_sheet",
+                "total_pages": len(pdf.pages)
             }
         
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
+                "header": {},
                 "line_items": [],
                 "total_items": 0
             }
     
     def extract_income_statement_table(self, pdf_data: bytes) -> Dict:
         """
-        Extract income statement with Period, YTD, and % columns
+        Extract income statement with header metadata and multi-column structure
+        
+        Template v1.0 compliant - extracts:
+        - Header metadata: property, period type, dates, accounting basis
+        - Line items with 4 columns: Period Amount/%, YTD Amount/%
+        - Hierarchy: subtotals, totals, categories, subcategories
         
         Returns:
             dict: {
+                "header": {
+                    "property_name": "Eastern Shore Plaza (esp)",
+                    "property_code": "esp",
+                    "period_type": "Monthly",
+                    "period_start_date": "Dec 2023",
+                    "period_end_date": "Dec 2023",
+                    "accounting_basis": "Accrual",
+                    "report_generation_date": "2025-02-06"
+                },
                 "line_items": [
                     {
                         "account_code": "4010-0000",
@@ -101,42 +129,66 @@ class FinancialTableParser:
                         "ytd_amount": 2588055.53,
                         "period_percentage": 98.35,
                         "ytd_percentage": 81.40,
+                        "is_subtotal": False,
+                        "is_total": False,
+                        "line_category": "INCOME",
+                        "line_subcategory": "Primary Income",
+                        "line_number": 1,
                         "confidence": 96.0
-                    },
-                    ...
-                ]
+                    }
+                ],
+                "success": True,
+                "total_pages": 3
             }
         """
         try:
             pdf = pdfplumber.open(io.BytesIO(pdf_data))
             all_line_items = []
             
+            # Extract header metadata from first page
+            first_page = pdf.pages[0]
+            first_page_text = first_page.extract_text()
+            header_metadata = self._extract_income_statement_header(first_page_text)
+            
+            # Process all pages
+            line_number = 1
             for page_num, page in enumerate(pdf.pages, 1):
                 tables = page.extract_tables()
                 
                 if tables:
                     for table in tables:
                         items = self._parse_income_statement_table(table, page_num)
+                        # Assign line numbers
+                        for item in items:
+                            item['line_number'] = line_number
+                            line_number += 1
                         all_line_items.extend(items)
                 else:
                     text = page.extract_text()
                     items = self._parse_income_statement_text(text, page_num)
+                    # Assign line numbers
+                    for item in items:
+                        item['line_number'] = line_number
+                        line_number += 1
                     all_line_items.extend(items)
             
             pdf.close()
             
             return {
                 "success": True,
+                "header": header_metadata,
                 "line_items": all_line_items,
                 "total_items": len(all_line_items),
                 "extraction_method": "table" if tables else "text",
-                "document_type": "income_statement"
+                "document_type": "income_statement",
+                "total_pages": len(pdf.pages)
             }
         
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
+                "header": {},
                 "line_items": [],
                 "total_items": 0
             }
@@ -330,14 +382,88 @@ class FinancialTableParser:
                 if amount is None:
                     amount = 0.0
                 
-                # Skip generic totals without codes
-                if account_name and 'TOTAL' in account_name.upper() and not account_code:
-                    continue
+                # Detect hierarchy and categorization (Template v1.0)
+                is_subtotal = False
+                is_total = False
+                account_level = 1
+                account_category = None
+                account_subcategory = None
+                
+                # Detect subtotals (accounts ending in 9000)
+                if account_code and account_code.endswith('-9000'):
+                    is_subtotal = True
+                    account_level = 2
+                
+                # Detect totals
+                if account_name:
+                    name_upper = account_name.upper()
+                    if 'TOTAL ASSETS' in name_upper:
+                        is_total = True
+                        account_level = 1
+                        account_category = 'ASSETS'
+                    elif 'TOTAL LIABILITIES' in name_upper:
+                        is_total = True
+                        account_level = 1
+                        account_category = 'LIABILITIES'
+                    elif 'TOTAL CAPITAL' in name_upper or 'TOTAL EQUITY' in name_upper:
+                        is_total = True
+                        account_level = 1
+                        account_category = 'CAPITAL'
+                    elif 'TOTAL LIABILITIES & CAPITAL' in name_upper:
+                        is_total = True
+                        account_level = 1
+                        account_category = 'LIABILITIES_AND_CAPITAL'
+                    elif 'TOTAL CURRENT ASSETS' in name_upper:
+                        is_subtotal = True
+                        account_category = 'ASSETS'
+                        account_subcategory = 'Current Assets'
+                    elif 'TOTAL PROPERTY & EQUIPMENT' in name_upper or 'TOTAL PROPERTY AND EQUIPMENT' in name_upper:
+                        is_subtotal = True
+                        account_category = 'ASSETS'
+                        account_subcategory = 'Property & Equipment'
+                    elif 'TOTAL OTHER ASSETS' in name_upper:
+                        is_subtotal = True
+                        account_category = 'ASSETS'
+                        account_subcategory = 'Other Assets'
+                    elif 'TOTAL CURRENT LIABILITIES' in name_upper:
+                        is_subtotal = True
+                        account_category = 'LIABILITIES'
+                        account_subcategory = 'Current Liabilities'
+                    elif 'TOTAL LONG TERM LIABILITIES' in name_upper:
+                        is_subtotal = True
+                        account_category = 'LIABILITIES'
+                        account_subcategory = 'Long Term Liabilities'
+                
+                # Detect category from account code ranges
+                if account_code and not account_category:
+                    code_num = int(account_code.split('-')[0]) if '-' in account_code else 0
+                    if 0 <= code_num < 2000:
+                        account_category = 'ASSETS'
+                        if code_num < 500:
+                            account_subcategory = 'Current Assets'
+                        elif code_num < 1200:
+                            account_subcategory = 'Property & Equipment'
+                        else:
+                            account_subcategory = 'Other Assets'
+                    elif 2000 <= code_num < 3000:
+                        account_category = 'LIABILITIES'
+                        if code_num < 2600:
+                            account_subcategory = 'Current Liabilities'
+                        else:
+                            account_subcategory = 'Long Term Liabilities'
+                    elif code_num >= 3000:
+                        account_category = 'CAPITAL'
+                        account_subcategory = 'Equity'
                 
                 line_items.append({
                     "account_code": account_code or "",
                     "account_name": account_name or "Unnamed Account",
                     "amount": float(amount),
+                    "is_subtotal": is_subtotal,
+                    "is_total": is_total,
+                    "account_level": account_level,
+                    "account_category": account_category,
+                    "account_subcategory": account_subcategory,
                     "confidence": 95.0 if account_code else 80.0,
                     "page": page_num
                 })
@@ -403,6 +529,93 @@ class FinancialTableParser:
             
             # Create line item if we have minimum data
             if account_name and period_amount is not None:
+                # Detect hierarchy and categorization (Template v1.0)
+                is_subtotal = False
+                is_total = False
+                is_below_the_line = False
+                account_level = 3  # Default: detail line
+                line_category = None
+                line_subcategory = None
+                
+                # Detect subtotals (accounts ending in 99-0000 like 5199, 5299, 5399, etc.)
+                if account_code and re.match(r'^\d{2}99-0000$', account_code):
+                    is_subtotal = True
+                    account_level = 2
+                
+                # Detect totals by name
+                if account_name:
+                    name_upper = account_name.upper()
+                    if 'TOTAL INCOME' in name_upper or name_upper == 'INCOME':
+                        is_total = True
+                        account_level = 1
+                        line_category = 'INCOME'
+                    elif 'TOTAL OPERATING EXPENSES' in name_upper:
+                        is_subtotal = True
+                        line_category = 'OPERATING_EXPENSE'
+                    elif 'TOTAL ADDITIONAL' in name_upper:
+                        is_subtotal = True
+                        line_category = 'ADDITIONAL_EXPENSE'
+                    elif 'TOTAL EXPENSES' in name_upper:
+                        is_total = True
+                        account_level = 1
+                        line_category = 'SUMMARY'
+                    elif 'NET OPERATING INCOME' in name_upper or name_upper == 'NOI':
+                        is_total = True
+                        account_level = 1
+                        line_category = 'SUMMARY'
+                    elif 'NET INCOME' in name_upper and 'OPERATING' not in name_upper:
+                        is_total = True
+                        account_level = 1
+                        line_category = 'SUMMARY'
+                    elif 'TOTAL UTILITY' in name_upper or 'TOTAL CONTRACTED' in name_upper or 'TOTAL R&M' in name_upper or 'TOTAL ADMINISTRATION' in name_upper or 'TOTAL LL' in name_upper:
+                        is_subtotal = True
+                        account_level = 2
+                
+                # Detect category from account code ranges
+                if account_code:
+                    try:
+                        code_num = int(account_code.split('-')[0]) if '-' in account_code else 0
+                        if 4000 <= code_num < 5000:
+                            line_category = 'INCOME'
+                            if 'rent' in account_name.lower():
+                                line_subcategory = 'Primary Income'
+                            elif any(word in account_name.lower() for word in ['tax', 'insurance', 'cam', 'utilities']):
+                                line_subcategory = 'Reimbursements'
+                            else:
+                                line_subcategory = 'Other Income'
+                        elif 5000 <= code_num < 6000:
+                            line_category = 'OPERATING_EXPENSE'
+                            if 5100 <= code_num < 5200:
+                                line_subcategory = 'Utilities'
+                            elif 5200 <= code_num < 5300:
+                                line_subcategory = 'Contracted'
+                            elif 5300 <= code_num < 5400:
+                                line_subcategory = 'Repair & Maintenance'
+                            elif 5400 <= code_num < 5500:
+                                line_subcategory = 'Administration'
+                            else:
+                                line_subcategory = 'Property Costs'
+                        elif 6000 <= code_num < 7000:
+                            line_category = 'ADDITIONAL_EXPENSE'
+                            if 6050 <= code_num < 6070:
+                                line_subcategory = 'Landlord Expenses'
+                            elif 'management' in account_name.lower():
+                                line_subcategory = 'Management'
+                            elif 'fee' in account_name.lower() or 'professional' in account_name.lower():
+                                line_subcategory = 'Professional Fees'
+                            else:
+                                line_subcategory = 'Other'
+                        elif 7000 <= code_num < 8000:
+                            line_category = 'OTHER_EXPENSE'
+                            line_subcategory = 'Below the Line'
+                            is_below_the_line = True
+                        elif code_num >= 9000:
+                            line_category = 'SUMMARY'
+                            is_total = True
+                            account_level = 1
+                    except:
+                        pass
+                
                 line_items.append({
                     "account_code": account_code or "",
                     "account_name": account_name,
@@ -410,6 +623,12 @@ class FinancialTableParser:
                     "ytd_amount": float(ytd_amount) if ytd_amount is not None else None,
                     "period_percentage": float(period_percentage) if period_percentage is not None else None,
                     "ytd_percentage": float(ytd_percentage) if ytd_percentage is not None else None,
+                    "is_subtotal": is_subtotal,
+                    "is_total": is_total,
+                    "is_below_the_line": is_below_the_line,
+                    "line_category": line_category,
+                    "line_subcategory": line_subcategory,
+                    "account_level": account_level,
                     "confidence": 96.0 if account_code else 88.0,
                     "page": page_num
                 })
@@ -601,20 +820,93 @@ class FinancialTableParser:
                     if not amount_match:
                         continue
                 
-                # Skip "Total" lines without codes (but keep if they have codes)
-                if account_name and 'TOTAL' in account_name.upper() and not account_code:
-                    continue
-                
                 # Skip if account code looks like a year (2020-2030) or page number
                 if account_code and account_code.isdigit():
                     code_num = int(account_code)
                     if 2000 <= code_num <= 2100 or code_num < 100:  # Years or page numbers
                         continue
                 
+                # Detect hierarchy and categorization (Template v1.0)
+                is_subtotal = False
+                is_total = False
+                account_level = 1
+                account_category = None
+                account_subcategory = None
+                
+                # Detect subtotals (accounts ending in 9000)
+                if account_code and account_code.endswith('-9000'):
+                    is_subtotal = True
+                    account_level = 2
+                
+                # Detect totals
+                if account_name:
+                    name_upper = account_name.upper()
+                    if 'TOTAL ASSETS' in name_upper:
+                        is_total = True
+                        account_category = 'ASSETS'
+                    elif 'TOTAL LIABILITIES' in name_upper:
+                        is_total = True
+                        account_category = 'LIABILITIES'
+                    elif 'TOTAL CAPITAL' in name_upper or 'TOTAL EQUITY' in name_upper:
+                        is_total = True
+                        account_category = 'CAPITAL'
+                    elif 'TOTAL LIABILITIES & CAPITAL' in name_upper:
+                        is_total = True
+                        account_category = 'LIABILITIES_AND_CAPITAL'
+                    elif 'TOTAL CURRENT ASSETS' in name_upper:
+                        is_subtotal = True
+                        account_category = 'ASSETS'
+                        account_subcategory = 'Current Assets'
+                    elif 'TOTAL PROPERTY & EQUIPMENT' in name_upper:
+                        is_subtotal = True
+                        account_category = 'ASSETS'
+                        account_subcategory = 'Property & Equipment'
+                    elif 'TOTAL OTHER ASSETS' in name_upper:
+                        is_subtotal = True
+                        account_category = 'ASSETS'
+                        account_subcategory = 'Other Assets'
+                    elif 'TOTAL CURRENT LIABILITIES' in name_upper:
+                        is_subtotal = True
+                        account_category = 'LIABILITIES'
+                        account_subcategory = 'Current Liabilities'
+                    elif 'TOTAL LONG TERM LIABILITIES' in name_upper:
+                        is_subtotal = True
+                        account_category = 'LIABILITIES'
+                        account_subcategory = 'Long Term Liabilities'
+                
+                # Detect category from account code ranges
+                if account_code and not account_category:
+                    try:
+                        code_num = int(account_code.split('-')[0]) if '-' in account_code else int(account_code)
+                        if 0 <= code_num < 2000:
+                            account_category = 'ASSETS'
+                            if code_num < 500:
+                                account_subcategory = 'Current Assets'
+                            elif code_num < 1200:
+                                account_subcategory = 'Property & Equipment'
+                            else:
+                                account_subcategory = 'Other Assets'
+                        elif 2000 <= code_num < 3000:
+                            account_category = 'LIABILITIES'
+                            if code_num < 2600:
+                                account_subcategory = 'Current Liabilities'
+                            else:
+                                account_subcategory = 'Long Term Liabilities'
+                        elif code_num >= 3000:
+                            account_category = 'CAPITAL'
+                            account_subcategory = 'Equity'
+                    except:
+                        pass
+                
                 line_items.append({
                     "account_code": account_code or "",
                     "account_name": account_name or "Unnamed Account",
                     "amount": float(amount) if amount is not None else 0.0,
+                    "is_subtotal": is_subtotal,
+                    "is_total": is_total,
+                    "account_level": account_level,
+                    "account_category": account_category,
+                    "account_subcategory": account_subcategory,
                     "confidence": 90.0 if account_code else 75.0,
                     "page": page_num
                 })
@@ -1147,4 +1439,123 @@ class FinancialTableParser:
         
         except Exception:
             return None
+    
+    def _extract_balance_sheet_header(self, text: str) -> Dict:
+        """
+        Extract header metadata from balance sheet
+        
+        Template v1.0 fields:
+        - property_name: "Eastern Shore Plaza (esp)"
+        - property_code: "esp"
+        - report_title: "Balance Sheet"
+        - period_ending: "Dec 2023"
+        - accounting_basis: "Accrual"
+        - report_date: "Thursday, February 06, 2025 11:30 AM"
+        """
+        header = {
+            "report_title": "Balance Sheet",  # Default
+            "property_name": None,
+            "property_code": None,
+            "period_ending": None,
+            "accounting_basis": None,
+            "report_date": None
+        }
+        
+        lines = text.split('\n')
+        
+        for line in lines[:20]:  # Check first 20 lines for header info
+            line_upper = line.upper()
+            
+            # Property name with code - e.g., "Eastern Shore Plaza (esp)"
+            if not header["property_name"]:
+                prop_match = re.search(r'([A-Z][^(]+?)\s*\(([A-Z]{2,5})\)', line, re.IGNORECASE)
+                if prop_match:
+                    header["property_name"] = line.strip()
+                    header["property_code"] = prop_match.group(2).upper()
+            
+            # Report title
+            if 'BALANCE SHEET' in line_upper:
+                header["report_title"] = "Balance Sheet"
+            elif 'STATEMENT OF FINANCIAL POSITION' in line_upper:
+                header["report_title"] = "Statement of Financial Position"
+            
+            # Period ending - e.g., "Period = Dec 2023"
+            period_match = re.search(r'Period\s*=\s*([A-Za-z]+\s+\d{4})', line, re.IGNORECASE)
+            if period_match:
+                header["period_ending"] = period_match.group(1).strip()
+            
+            # Accounting basis - e.g., "Book = Accrual"
+            basis_match = re.search(r'Book\s*=\s*(Accrual|Cash)', line, re.IGNORECASE)
+            if basis_match:
+                header["accounting_basis"] = basis_match.group(1).capitalize()
+            
+            # Report date - e.g., "Thursday, February 06, 2025 11:30 AM"
+            date_match = re.search(r'([A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M)', line, re.IGNORECASE)
+            if date_match:
+                header["report_date"] = date_match.group(1).strip()
+        
+        return header
+    
+    def _extract_income_statement_header(self, text: str) -> Dict:
+        """
+        Extract header metadata from income statement
+        
+        Template v1.0 fields:
+        - property_name: "Eastern Shore Plaza (esp)"
+        - property_code: "esp"
+        - period_type: "Monthly", "Annual", "Quarterly"
+        - period_start_date: "Dec 2023"
+        - period_end_date: "Dec 2023"
+        - accounting_basis: "Accrual"
+        - report_generation_date: "Thursday, February 06, 2025"
+        """
+        header = {
+            "property_name": None,
+            "property_code": None,
+            "period_type": "Monthly",  # Default
+            "period_start_date": None,
+            "period_end_date": None,
+            "accounting_basis": None,
+            "report_generation_date": None
+        }
+        
+        lines = text.split('\n')
+        
+        for line in lines[:25]:  # Check first 25 lines for header info
+            line_upper = line.upper()
+            
+            # Property name with code - e.g., "Eastern Shore Plaza (esp)"
+            if not header["property_name"]:
+                prop_match = re.search(r'([A-Z][^(]+?)\s*\(([A-Z]{2,5})\)', line, re.IGNORECASE)
+                if prop_match:
+                    header["property_name"] = line.strip()
+                    header["property_code"] = prop_match.group(2).upper()
+            
+            # Period type and dates - e.g., "Period = Dec 2023" (Monthly) or "Period = Jan 2024-Dec 2024" (Annual)
+            period_match = re.search(r'Period\s*=\s*([A-Za-z]+\s+\d{4})\s*-\s*([A-Za-z]+\s+\d{4})', line, re.IGNORECASE)
+            if period_match:
+                # Annual statement: "Jan 2024-Dec 2024"
+                header["period_start_date"] = period_match.group(1).strip()
+                header["period_end_date"] = period_match.group(2).strip()
+                header["period_type"] = "Annual"
+            elif not header["period_start_date"]:
+                # Monthly statement: "Period = Dec 2023"
+                period_match = re.search(r'Period\s*=\s*([A-Za-z]+\s+\d{4})', line, re.IGNORECASE)
+                if period_match:
+                    period_str = period_match.group(1).strip()
+                    header["period_start_date"] = period_str
+                    header["period_end_date"] = period_str
+                    header["period_type"] = "Monthly"
+            
+            # Accounting basis - e.g., "Book = Accrual"
+            basis_match = re.search(r'Book\s*=\s*(Accrual|Cash)', line, re.IGNORECASE)
+            if basis_match:
+                header["accounting_basis"] = basis_match.group(1).capitalize()
+            
+            # Report date - e.g., "Thursday, February 06, 2025"
+            date_match = re.search(r'([A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4})', line, re.IGNORECASE)
+            if date_match:
+                header["report_generation_date"] = date_match.group(1).strip()
+        
+        return header
 

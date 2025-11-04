@@ -5,6 +5,7 @@ from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.document_upload import DocumentUpload
 from app.models.chart_of_accounts import ChartOfAccounts
+from app.models.lender import Lender
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
@@ -22,6 +23,7 @@ __all__ = [
     "FinancialPeriod",
     "DocumentUpload",
     "ChartOfAccounts",
+    "Lender",
     "BalanceSheetData",
     "IncomeStatementData",
     "CashFlowData",
