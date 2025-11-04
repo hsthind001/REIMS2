@@ -1,7 +1,7 @@
 """add balance sheet template v1.0 fields
 
 Revision ID: 20251104_1203
-Revises: 20251104_1400_seed_chart_of_accounts
+Revises: c8f9e7a6b5d4
 Create Date: 2025-11-04 12:03:00
 
 Adds comprehensive fields for Balance Sheet Extraction Requirements v1.0:
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251104_1203'
-down_revision = '20251104_1400_seed_chart_of_accounts'
+down_revision = 'c8f9e7a6b5d4'
 branch_labels = None
 depends_on = None
 

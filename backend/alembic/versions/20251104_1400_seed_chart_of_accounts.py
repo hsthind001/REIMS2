@@ -1,7 +1,7 @@
 """Seed comprehensive Chart of Accounts
 
-Revision ID: seed_chart_of_accounts
-Revises: 20251104_0800_seed_sample_properties
+Revision ID: c8f9e7a6b5d4
+Revises: b1f3e8d4c7a2
 Create Date: 2025-11-04 14:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20251104_1400_seed_chart_of_accounts'
-down_revision = 'b1f3e8d4c7a2'  # 20251104_0800_seed_sample_properties
+revision = 'c8f9e7a6b5d4'
+down_revision = '20251104_1008'  # Rent Roll enhancement
 branch_labels = None
 depends_on = None
 
@@ -263,11 +263,11 @@ def upgrade():
         
         # Determine document types
         if code.startswith(('0', '1', '2', '3')):
-            doc_types = "{'balance_sheet'}"
+            doc_types = "ARRAY['balance_sheet']"
         elif code.startswith(('4', '5', '6', '7', '9')):
-            doc_types = "{'income_statement'}"
+            doc_types = "ARRAY['income_statement']"
         else:
-            doc_types = "{'balance_sheet', 'income_statement'}"
+            doc_types = "ARRAY['balance_sheet', 'income_statement']"
         
         # Determine parent account code
         parent_code = 'NULL'
@@ -310,7 +310,7 @@ def upgrade():
                 {'NULL' if not category else f"'{category}'"}, 
                 {'NULL' if not subcategory else f"'{subcategory}'"}, 
                 {parent_code}, 
-                ARRAY{doc_types}, 
+                {doc_types}, 
                 {is_calc}, {display_order}, TRUE
             )
             ON CONFLICT (account_code) DO UPDATE SET

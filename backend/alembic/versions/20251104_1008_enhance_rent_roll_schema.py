@@ -1,7 +1,7 @@
 """enhance_rent_roll_schema
 
 Revision ID: 20251104_1008
-Revises: a9a5178a1b3f
+Revises: b1f3e8d4c7a2
 Create Date: 2025-11-04 10:08:00.000000
 
 Add 6 new fields to rent_roll_data table for Template v2.0 compliance:
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251104_1008'
-down_revision = 'a9a5178a1b3f'
+down_revision = 'b1f3e8d4c7a2'
 branch_labels = None
 depends_on = None
 
