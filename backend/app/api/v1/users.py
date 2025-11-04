@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.db.database import get_db
 from app.models.user import User as UserModel
-from app.schemas.user import User, UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserUpdate, UserResponse
 
 router = APIRouter()
 
 
-@router.get("/users", response_model=List[User])
+@router.get("/users", response_model=List[UserResponse])
 def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """
     Retrieve all users
@@ -17,7 +17,7 @@ def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return users
 
 
-@router.get("/users/{user_id}", response_model=User)
+@router.get("/users/{user_id}", response_model=UserResponse)
 def get_user(user_id: int, db: Session = Depends(get_db)):
     """
     Get a specific user by ID
@@ -31,7 +31,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     return user
 
 
-@router.post("/users", response_model=User, status_code=status.HTTP_201_CREATED)
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
     """
     Create a new user
@@ -47,13 +47,14 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
             detail="User with this email or username already exists"
         )
     
-    # Create new user (Note: In production, hash the password!)
+    # Create new user with hashed password
+    from app.core.security import get_password_hash
     db_user = UserModel(
         email=user.email,
         username=user.username,
-        hashed_password=user.password,  # TODO: Hash password before storing!
-        is_active=user.is_active,
-        is_superuser=user.is_superuser
+        hashed_password=get_password_hash(user.password),
+        is_active=True,
+        is_superuser=False
     )
     db.add(db_user)
     db.commit()
@@ -61,7 +62,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 
-@router.put("/users/{user_id}", response_model=User)
+@router.put("/users/{user_id}", response_model=UserResponse)
 def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
     """
     Update a user

@@ -19,8 +19,15 @@ class FinancialTableParser:
     """
     
     def __init__(self):
-        self.account_code_pattern = re.compile(r'\b\d{4}-\d{4}\b')  # ####-#### format
-        self.amount_pattern = re.compile(r'[\(\-]?\$?\s*[\d,]+\.?\d*\)?')
+        # Multiple account code patterns for flexibility
+        self.account_code_patterns = [
+            re.compile(r'\b\d{4}-\d{4}\b'),      # ####-#### format (primary)
+            re.compile(r'\b\d{4}\b'),             # #### format
+            re.compile(r'\b\d{3,5}-\d{3,5}\b'),   # Flexible digits
+        ]
+        self.account_code_pattern = self.account_code_patterns[0]  # Keep for backward compat
+        # More specific amount pattern - requires comma OR decimal point to avoid matching account codes
+        self.amount_pattern = re.compile(r'[\(\-]?\$?\s*(?:\d{1,3},(?:\d{3},)*\d{3}(?:\.\d{2})?|\d+\.\d{2})\)?')
         
     def extract_balance_sheet_table(self, pdf_data: bytes) -> Dict:
         """
@@ -257,10 +264,10 @@ class FinancialTableParser:
             if not row or len(row) < 2:
                 continue
             
-            # Skip header rows
-            if any(header in str(row[0]).upper() for header in ['ACCOUNT', 'ASSETS', 'LIABILITIES', 'EQUITY']):
-                if 'CODE' in str(row[0]).upper():
-                    continue
+            # Skip header rows - only if entire row is just the header
+            row_text = ' '.join([str(c) for c in row if c]).strip().upper()
+            if row_text in ['ACCOUNT CODE', 'ACCOUNT NAME', 'AMOUNT', 'DESCRIPTION', 'BALANCE']:
+                continue
             
             # Extract account code (if present)
             account_code = None
@@ -302,17 +309,23 @@ class FinancialTableParser:
                     account_code = code_match.group()
                     account_name = account_name.replace(account_code, '').strip()
             
-            # Validate we have minimum data
-            if account_name and amount is not None:
-                # Skip if it's likely a header or total line without meaningful data
-                if len(account_name) > 2 and account_name.upper() not in ['TOTAL', 'SUBTOTAL']:
-                    line_items.append({
-                        "account_code": account_code or "",
-                        "account_name": account_name,
-                        "amount": float(amount),
-                        "confidence": 95.0 if account_code else 85.0,
-                        "page": page_num
-                    })
+            # Validate we have minimum data - accept if has name OR code
+            if (account_name and len(account_name) > 2) or account_code:
+                # Default amount to 0 if missing
+                if amount is None:
+                    amount = 0.0
+                
+                # Skip generic totals without codes
+                if account_name and 'TOTAL' in account_name.upper() and not account_code:
+                    continue
+                
+                line_items.append({
+                    "account_code": account_code or "",
+                    "account_name": account_name or "Unnamed Account",
+                    "amount": float(amount),
+                    "confidence": 95.0 if account_code else 80.0,
+                    "page": page_num
+                })
         
         return line_items
     
@@ -503,48 +516,233 @@ class FinancialTableParser:
         return line_items
     
     def _parse_balance_sheet_text(self, text: str, page_num: int) -> List[Dict]:
-        """Fallback: Parse balance sheet from plain text"""
+        """Fallback: Parse balance sheet from plain text - AGGRESSIVE EXTRACTION"""
         line_items = []
         lines = text.split('\n')
         
+        # Skip lines that are clearly headers or page markers
+        skip_patterns = [
+            r'^Page \d+',
+            r'^Balance Sheet',
+            r'^Period =',
+            r'^Book =',
+            r'^Current Balance',
+            r'^\s*$'
+        ]
+        
         for line in lines:
-            # Look for pattern: account_code account_name amount
-            code_match = self.account_code_pattern.search(line)
-            amount_match = self.amount_pattern.search(line)
+            # Skip empty or header lines
+            if any(re.match(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
+                continue
             
-            if code_match and amount_match:
-                account_code = code_match.group()
+            # Try to find account code (try all patterns)
+            account_code = None
+            code_match = None
+            for pattern in self.account_code_patterns:
+                code_match = pattern.search(line)
+                if code_match:
+                    account_code = code_match.group()
+                    break
+            
+            # Try to find amount
+            amount_match = self.amount_pattern.search(line)
+            amount = None
+            if amount_match:
                 amount = self._parse_amount(amount_match.group())
-                
-                # Extract account name (between code and amount)
+            
+            # Extract account name
+            account_name = None
+            if code_match and amount_match:
+                # Account name is between code and amount
                 start = code_match.end()
                 end = amount_match.start()
                 account_name = line[start:end].strip()
+            elif code_match:
+                # Has code but no amount - take rest of line as name
+                account_name = line[code_match.end():].strip()
+                amount = 0.0  # Default to 0 if no amount found
+            elif amount_match:
+                # Has amount but no code - take beginning as name
+                account_name = line[:amount_match.start()].strip()
+                account_code = ""  # Empty code
+            
+            # Add item if we have at least a name or code
+            if (account_name and len(account_name) > 2) or account_code:
+                # Skip generic section headers that don't have amounts
+                if account_name and account_name.upper() in ['ASSETS', 'LIABILITIES', 'EQUITY', 'CURRENT ASSETS', 'CURRENT LIABILITIES']:
+                    if not amount_match:
+                        continue
                 
-                if account_name and amount is not None:
-                    line_items.append({
-                        "account_code": account_code,
-                        "account_name": account_name,
-                        "amount": float(amount),
-                        "confidence": 80.0,  # Lower confidence for text extraction
-                        "page": page_num
-                    })
+                # Skip "Total" lines without codes (but keep if they have codes)
+                if account_name and 'TOTAL' in account_name.upper() and not account_code:
+                    continue
+                
+                # Skip if account code looks like a year (2020-2030) or page number
+                if account_code and account_code.isdigit():
+                    code_num = int(account_code)
+                    if 2000 <= code_num <= 2100 or code_num < 100:  # Years or page numbers
+                        continue
+                
+                line_items.append({
+                    "account_code": account_code or "",
+                    "account_name": account_name or "Unnamed Account",
+                    "amount": float(amount) if amount is not None else 0.0,
+                    "confidence": 90.0 if account_code else 75.0,
+                    "page": page_num
+                })
         
         return line_items
     
     def _parse_income_statement_text(self, text: str, page_num: int) -> List[Dict]:
-        """Fallback: Parse income statement from plain text"""
-        # Similar to balance sheet but look for multiple amount columns
-        return self._parse_balance_sheet_text(text, page_num)
+        """Fallback: Parse income statement from plain text - AGGRESSIVE EXTRACTION"""
+        line_items = []
+        lines = text.split('\n')
+        
+        skip_patterns = [
+            r'^Page \d+',
+            r'^Income Statement',
+            r'^Period =',
+            r'^Book =',
+            r'^\s*$'
+        ]
+        
+        for line in lines:
+            if any(re.match(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
+                continue
+            
+            # Find account code
+            account_code = None
+            code_match = None
+            for pattern in self.account_code_patterns:
+                code_match = pattern.search(line)
+                if code_match:
+                    account_code = code_match.group()
+                    break
+            
+            # Find all amounts (income statements typically have multiple columns)
+            amount_matches = self.amount_pattern.findall(line)
+            amounts = [self._parse_amount(amt) for amt in amount_matches if self._parse_amount(amt) is not None]
+            
+            # Extract account name
+            account_name = None
+            if code_match and amount_matches:
+                # Between code and first amount
+                first_amt_idx = line.find(amount_matches[0])
+                account_name = line[code_match.end():first_amt_idx].strip()
+            elif code_match:
+                account_name = line[code_match.end():].strip()
+            elif amount_matches:
+                # Take beginning up to first amount
+                first_amt_idx = line.find(amount_matches[0])
+                account_name = line[:first_amt_idx].strip()
+            
+            if (account_name and len(account_name) > 2) or account_code:
+                # Skip section headers without amounts
+                if account_name and account_name.upper() in ['REVENUE', 'INCOME', 'EXPENSES', 'NET INCOME']:
+                    if not amounts:
+                        continue
+                
+                # Skip totals without codes
+                if account_name and 'TOTAL' in account_name.upper() and not account_code:
+                    continue
+                
+                # Skip if account code looks like a year or page number
+                if account_code and account_code.isdigit():
+                    code_num = int(account_code)
+                    if 2000 <= code_num <= 2100 or code_num < 100:
+                        continue
+                
+                line_items.append({
+                    "account_code": account_code or "",
+                    "account_name": account_name or "Unnamed Account",
+                    "period_amount": float(amounts[0]) if len(amounts) > 0 else 0.0,
+                    "ytd_amount": float(amounts[1]) if len(amounts) > 1 else None,
+                    "period_percentage": None,
+                    "ytd_percentage": None,
+                    "confidence": 90.0 if account_code else 75.0,
+                    "page": page_num
+                })
+        
+        return line_items
     
     def _parse_cash_flow_text(self, text: str, page_num: int, category: str) -> List[Dict]:
-        """Fallback: Parse cash flow from plain text"""
-        items = self._parse_balance_sheet_text(text, page_num)
-        # Add cash flow category
-        for item in items:
-            item['cash_flow_category'] = category
-            item['is_inflow'] = item['amount'] > 0
-        return items
+        """Fallback: Parse cash flow from plain text - AGGRESSIVE EXTRACTION"""
+        line_items = []
+        lines = text.split('\n')
+        
+        skip_patterns = [
+            r'^Page \d+',
+            r'^Cash Flow',
+            r'^Period =',
+            r'^Book =',
+            r'^\s*$'
+        ]
+        
+        for line in lines:
+            if any(re.match(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
+                continue
+            
+            # Update category based on section headers
+            if "INVESTING ACTIVITIES" in line.upper():
+                category = "investing"
+                continue
+            elif "FINANCING ACTIVITIES" in line.upper():
+                category = "financing"
+                continue
+            elif "OPERATING ACTIVITIES" in line.upper():
+                category = "operating"
+                continue
+            
+            # Find account code
+            account_code = None
+            code_match = None
+            for pattern in self.account_code_patterns:
+                code_match = pattern.search(line)
+                if code_match:
+                    account_code = code_match.group()
+                    break
+            
+            # Find amount
+            amount_match = self.amount_pattern.search(line)
+            amount = None
+            if amount_match:
+                amount = self._parse_amount(amount_match.group())
+            
+            # Extract account name
+            account_name = None
+            if code_match and amount_match:
+                start = code_match.end()
+                end = amount_match.start()
+                account_name = line[start:end].strip()
+            elif code_match:
+                account_name = line[code_match.end():].strip()
+                amount = 0.0
+            elif amount_match:
+                account_name = line[:amount_match.start()].strip()
+                account_code = ""
+            
+            if (account_name and len(account_name) > 2) or account_code:
+                # Skip totals without codes
+                if account_name and 'TOTAL' in account_name.upper() and not account_code:
+                    continue
+                
+                # Skip if account code looks like a year or page number
+                if account_code and account_code.isdigit():
+                    code_num = int(account_code)
+                    if 2000 <= code_num <= 2100 or code_num < 100:
+                        continue
+                
+                line_items.append({
+                    "account_code": account_code or "",
+                    "account_name": account_name or "Unnamed Account",
+                    "amount": float(amount) if amount is not None else 0.0,
+                    "cash_flow_category": category,
+                    "is_inflow": (amount or 0) > 0,
+                    "confidence": 90.0 if account_code else 75.0,
+                    "page": page_num
+                })
+        
+        return line_items
     
     def _parse_rent_roll_text(self, text: str, page_num: int) -> List[Dict]:
         """Fallback: Parse rent roll from plain text"""

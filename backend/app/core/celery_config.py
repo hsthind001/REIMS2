@@ -25,11 +25,13 @@ celery_app.conf.update(
 )
 
 # Task routing (optional - for multiple queues)
-celery_app.conf.task_routes = {
-    "app.tasks.example_tasks.send_email": {"queue": "email"},
-    "app.tasks.example_tasks.process_data": {"queue": "default"},
-    "app.tasks.extraction_tasks.extract_document": {"queue": "extraction"},
-    "app.tasks.extraction_tasks.retry_failed_extraction": {"queue": "extraction"},
-    "app.tasks.extraction_tasks.batch_extract_documents": {"queue": "extraction"},
-}
+# DISABLED: Worker only listens to default "celery" queue
+# All tasks now use default queue for immediate processing
+# celery_app.conf.task_routes = {
+#     "app.tasks.example_tasks.send_email": {"queue": "email"},
+#     "app.tasks.example_tasks.process_data": {"queue": "default"},
+#     "app.tasks.extraction_tasks.extract_document": {"queue": "extraction"},
+#     "app.tasks.extraction_tasks.retry_failed_extraction": {"queue": "extraction"},
+#     "app.tasks.extraction_tasks.batch_extract_documents": {"queue": "extraction"},
+# }
 

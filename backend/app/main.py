@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -24,6 +25,16 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
+# Configure Session Middleware (for session-based authentication)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    session_cookie="reims_session",
+    max_age=86400 * 7,  # 7 days
+    same_site="lax",
+    https_only=False  # Set to True in production with HTTPS
+)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +46,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix=settings.API_V1_STR, tags=["health"])
+app.include_router(auth.router, prefix=settings.API_V1_STR, tags=["authentication"])
 app.include_router(users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(tasks.router, prefix=settings.API_V1_STR, tags=["tasks"])
 app.include_router(storage.router, prefix=settings.API_V1_STR, tags=["storage"])
@@ -48,6 +60,7 @@ app.include_router(validations.router, prefix=settings.API_V1_STR, tags=["valida
 app.include_router(metrics.router, prefix=settings.API_V1_STR, tags=["metrics"])
 app.include_router(review.router, prefix=settings.API_V1_STR, tags=["review"])
 app.include_router(reports.router, prefix=settings.API_V1_STR, tags=["reports"])
+app.include_router(exports.router, prefix=settings.API_V1_STR, tags=["exports"])
 
 
 @app.get("/")

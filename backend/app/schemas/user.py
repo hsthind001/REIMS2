@@ -1,35 +1,84 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+"""
+User schemas for request/response validation
+"""
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
+from typing import Optional
+import re
 
 
-# Base User Schema
 class UserBase(BaseModel):
+    """Base user schema with common fields"""
     email: EmailStr
-    username: str
-    is_active: Optional[bool] = True
-    is_superuser: Optional[bool] = False
+    username: str = Field(..., min_length=3, max_length=50)
+    
+    @field_validator('username')
+    @classmethod
+    def username_alphanumeric(cls, v: str) -> str:
+        """Username must be alphanumeric with optional underscores/hyphens"""
+        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
+            raise ValueError('Username must be alphanumeric (underscores and hyphens allowed)')
+        return v
 
 
-# Schema for creating a user
 class UserCreate(UserBase):
-    password: str
+    """Schema for user registration"""
+    password: str = Field(..., min_length=8, max_length=100)
+    
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        """Basic password strength validation"""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one digit')
+        return v
 
 
-# Schema for updating a user
 class UserUpdate(BaseModel):
+    """Schema for updating user information"""
     email: Optional[EmailStr] = None
     username: Optional[str] = None
-    password: Optional[str] = None
     is_active: Optional[bool] = None
 
 
-# Schema for user response
-class User(UserBase):
+class UserResponse(UserBase):
+    """Schema for user data in responses"""
     id: int
+    is_active: bool
+    is_superuser: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
-
+    
     class Config:
         from_attributes = True
 
+
+class UserLogin(BaseModel):
+    """Schema for login request"""
+    username: str
+    password: str
+
+
+class PasswordChange(BaseModel):
+    """Schema for password change"""
+    current_password: str
+    new_password: str = Field(..., min_length=8, max_length=100)
+    
+    @field_validator('new_password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        """Basic password strength validation"""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one digit')
+        return v

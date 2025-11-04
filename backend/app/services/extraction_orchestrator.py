@@ -299,7 +299,20 @@ class ExtractionOrchestrator:
         items = parsed_data.get("line_items", [])
         records_inserted = 0
         
+        # Deduplicate items by account_code + amount + page to allow same account in different contexts
+        seen_keys = set()
+        deduplicated_items = []
         for item in items:
+            account_code = item.get("matched_account_code") or item.get("account_code", "")
+            amount = item.get("amount", 0.0)
+            page = item.get("page", 1)
+            # Create unique key combining code, amount, and page
+            unique_key = f"{account_code}_{amount}_{page}"
+            if unique_key not in seen_keys:
+                deduplicated_items.append(item)
+                seen_keys.add(unique_key)
+        
+        for item in deduplicated_items:
             account_code = item.get("matched_account_code") or item.get("account_code", "")
             account_name = item.get("matched_account_name") or item.get("account_name", "")
             amount = item.get("amount", 0.0)
@@ -356,7 +369,19 @@ class ExtractionOrchestrator:
         items = parsed_data.get("line_items", [])
         records_inserted = 0
         
+        # Deduplicate items by account_code + amount + page
+        seen_keys = set()
+        deduplicated_items = []
         for item in items:
+            account_code = item.get("account_code", "")
+            period_amount = item.get("period_amount", 0.0)
+            page = item.get("page", 1)
+            unique_key = f"{account_code}_{period_amount}_{page}"
+            if unique_key not in seen_keys:
+                deduplicated_items.append(item)
+                seen_keys.add(unique_key)
+        
+        for item in deduplicated_items:
             account_code = item.get("account_code", "")
             account_name = item.get("account_name", "")
             period_amount = item.get("period_amount", 0.0)
@@ -430,7 +455,19 @@ class ExtractionOrchestrator:
         items = parsed_data.get("line_items", [])
         records_inserted = 0
         
+        # Deduplicate items by account_code + amount + page
+        seen_keys = set()
+        deduplicated_items = []
         for item in items:
+            account_code = item.get("account_code", "")
+            amount = item.get("amount", 0.0)
+            page = item.get("page", 1)
+            unique_key = f"{account_code}_{amount}_{page}"
+            if unique_key not in seen_keys:
+                deduplicated_items.append(item)
+                seen_keys.add(unique_key)
+        
+        for item in deduplicated_items:
             account_code = item.get("account_code", "")
             account_name = item.get("account_name", "")
             amount = item.get("amount", 0.0)

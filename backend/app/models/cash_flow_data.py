@@ -13,7 +13,7 @@ class CashFlowData(Base):
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
     period_id = Column(Integer, ForeignKey('financial_periods.id', ondelete='CASCADE'), nullable=False, index=True)
     upload_id = Column(Integer, ForeignKey('document_uploads.id', ondelete='SET NULL'))
-    account_id = Column(Integer, ForeignKey('chart_of_accounts.id'), nullable=False)
+    account_id = Column(Integer, ForeignKey('chart_of_accounts.id'), nullable=True)  # Nullable for unmatched accounts
     
     # Account information
     account_code = Column(String(50), nullable=False)
