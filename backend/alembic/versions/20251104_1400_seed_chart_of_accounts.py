@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'seed_chart_of_accounts'
-down_revision = '20251104_0800_seed_sample_properties'
+revision = '20251104_1400_seed_chart_of_accounts'
+down_revision = 'b1f3e8d4c7a2'  # 20251104_0800_seed_sample_properties
 branch_labels = None
 depends_on = None
 
