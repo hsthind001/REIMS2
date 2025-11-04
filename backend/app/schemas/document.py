@@ -222,11 +222,28 @@ class RentRollDataItem(BaseModel):
     """Rent roll line item"""
     unit_number: str
     tenant_name: str
+    tenant_code: Optional[str] = None
+    lease_type: Optional[str] = None
     lease_start_date: Optional[datetime] = None
     lease_end_date: Optional[datetime] = None
+    lease_term_months: Optional[int] = None
     unit_area_sqft: Optional[float] = None
     monthly_rent: Optional[float] = None
+    monthly_rent_per_sqft: Optional[float] = None
     annual_rent: Optional[float] = None
+    annual_rent_per_sqft: Optional[float] = None
+    gross_rent: Optional[float] = None
+    security_deposit: Optional[float] = None
+    loc_amount: Optional[float] = None
+    
+    # Template v2.0 fields
+    tenancy_years: Optional[float] = None
+    annual_recoveries_per_sf: Optional[float] = None
+    annual_misc_per_sf: Optional[float] = None
+    is_gross_rent_row: bool = False
+    parent_row_id: Optional[int] = None
+    notes: Optional[str] = None
+    
     occupancy_status: str
     extraction_confidence: Optional[float] = None
     needs_review: bool = False

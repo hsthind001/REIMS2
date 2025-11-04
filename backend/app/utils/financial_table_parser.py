@@ -9,6 +9,7 @@ import io
 import re
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
+from datetime import datetime
 
 
 class FinancialTableParser:
@@ -204,44 +205,58 @@ class FinancialTableParser:
         """
         Extract rent roll with unit-by-unit tenant data
         
+        Template v2.0 Implementation - Extracts all 24 fields including:
+        - Basic: property, unit, tenant, lease type
+        - Dates: lease_from, lease_to, term_months, tenancy_years  
+        - Financials: monthly/annual rent, rent per SF, recoveries, misc, deposits
+        - Special: gross rent rows, vacant units, multi-unit leases
+        
         Returns:
             dict: {
-                "line_items": [
-                    {
-                        "unit_number": "A-101",
-                        "tenant_name": "Kroger Grocery Store",
-                        "lease_start_date": "2020-01-01",
-                        "lease_end_date": "2030-12-31",
-                        "unit_area_sqft": 45000.0,
-                        "monthly_rent": 50000.0,
-                        "annual_rent": 600000.0,
-                        "occupancy_status": "occupied",
-                        "confidence": 92.0
-                    },
-                    ...
-                ]
+                "report_date": "2025-04-30",
+                "property_name": "Hammond Aire Plaza",
+                "property_code": "HMND",
+                "line_items": [...],  # All 24 fields per record
+                "success": True
             }
         """
         try:
             pdf = pdfplumber.open(io.BytesIO(pdf_data))
             all_line_items = []
+            report_date = None
+            property_name = None
+            property_code = None
+            
+            # Extract report date from first page
+            first_page = pdf.pages[0]
+            first_page_text = first_page.extract_text()
+            report_date = self._extract_report_date(first_page_text)
             
             for page_num, page in enumerate(pdf.pages, 1):
+                text = page.extract_text()
                 tables = page.extract_tables()
+                
+                # Extract property name from page
+                page_property_name, page_property_code = self._extract_property_info(text)
+                if page_property_name and not property_name:
+                    property_name = page_property_name
+                    property_code = page_property_code
                 
                 if tables:
                     for table in tables:
-                        items = self._parse_rent_roll_table(table, page_num)
+                        items = self._parse_rent_roll_table(table, page_num, report_date, property_name, property_code)
                         all_line_items.extend(items)
                 else:
-                    text = page.extract_text()
-                    items = self._parse_rent_roll_text(text, page_num)
+                    items = self._parse_rent_roll_text(text, page_num, report_date, property_name, property_code)
                     all_line_items.extend(items)
             
             pdf.close()
             
             return {
                 "success": True,
+                "report_date": report_date,
+                "property_name": property_name,
+                "property_code": property_code,
                 "line_items": all_line_items,
                 "total_items": len(all_line_items),
                 "extraction_method": "table" if tables else "text",
@@ -446,72 +461,85 @@ class FinancialTableParser:
         
         return line_items
     
-    def _parse_rent_roll_table(self, table: List[List], page_num: int) -> List[Dict]:
-        """Parse rent roll table"""
-        line_items = []
+    def _parse_rent_roll_table(self, table: List[List], page_num: int, report_date: str = None, 
+                               property_name: str = None, property_code: str = None) -> List[Dict]:
+        """
+        Parse rent roll table - Template v2.0 implementation
         
-        # Skip header row
-        header_found = False
-        for row in table:
+        Extracts all 24 fields including gross rent rows, tenant IDs, recoveries
+        """
+        line_items = []
+        header_row = None
+        header_map = {}
+        
+        # Identify header row and map columns
+        for row_idx, row in enumerate(table):
             if not row:
                 continue
+            row_str = ' '.join([str(cell) or '' for cell in row]).upper()
             
-            # Detect header
-            row_str = ' '.join([str(cell) for cell in row if cell]).upper()
-            if 'UNIT' in row_str and ('TENANT' in row_str or 'RENT' in row_str):
-                header_found = True
+            # Look for header row with key columns
+            if 'UNIT' in row_str and ('TENANT' in row_str or 'LEASE' in row_str):
+                header_row = row_idx
+                # Map column positions
+                for col_idx, cell in enumerate(row):
+                    if cell:
+                        col_name = str(cell).strip().lower()
+                        # Be more specific with matching to avoid conflicts
+                        if col_name in ['unit', 'unit(s)', 'units']:
+                            header_map['unit'] = col_idx
+                        elif col_name in ['lease', 'tenant', 'lessee', 'tenant name']:
+                            header_map['tenant'] = col_idx
+                        elif 'lease type' in col_name:
+                            header_map['lease_type'] = col_idx
+                        elif col_name in ['area', 'sq ft', 'sqft', 'square feet']:
+                            header_map['area'] = col_idx
+                        elif 'lease from' in col_name or col_name in ['from', 'start date', 'lease start']:
+                            header_map['lease_from'] = col_idx
+                        elif 'lease to' in col_name or col_name in ['to', 'end date', 'lease end', 'expiration']:
+                            header_map['lease_to'] = col_idx
+                        elif col_name in ['term', 'term (months)', 'lease term']:
+                            header_map['term'] = col_idx
+                        elif 'tenancy' in col_name or 'years' in col_name:
+                            if 'remaining' not in col_name:
+                                header_map['tenancy'] = col_idx
+                        elif 'monthly rent/area' in col_name:
+                            header_map['monthly_per_sf'] = col_idx
+                        elif 'monthly rent' in col_name:
+                            header_map['monthly_rent'] = col_idx
+                        elif 'annual rent/area' in col_name:
+                            header_map['annual_per_sf'] = col_idx
+                        elif 'annual rent' in col_name:
+                            header_map['annual_rent'] = col_idx
+                        elif 'annual rec' in col_name or 'recoveries' in col_name:
+                            header_map['recoveries'] = col_idx
+                        elif 'annual misc' in col_name:
+                            header_map['misc'] = col_idx
+                        elif 'security' in col_name or (col_name.startswith('deposit') and 'security' not in col_name):
+                            header_map['security'] = col_idx
+                        elif 'loc' in col_name or 'bank guarantee' in col_name or 'letter of credit' in col_name:
+                            header_map['loc'] = col_idx
+                break
+        
+        if header_row is None:
+            # No header found, use default positions
+            return []
+        
+        # Process data rows
+        for row_idx in range(header_row + 1, len(table)):
+            row = table[row_idx]
+            if not row or len(row) < 3:
                 continue
             
-            if not header_found:
-                continue
+            # Check if this is a summary row
+            row_text = ' '.join([str(cell) or '' for cell in row]).upper()
+            if 'OCCUPANCY' in row_text or 'TOTAL' in row_text or 'SUMMARY' in row_text:
+                break  # Reached summary section
             
-            # Parse tenant row
-            unit_number = None
-            tenant_name = None
-            monthly_rent = None
-            annual_rent = None
-            area = None
-            
-            for cell in row:
-                if not cell:
-                    continue
-                
-                cell_str = str(cell).strip()
-                
-                # Unit number (usually first column, alphanumeric)
-                if not unit_number and re.match(r'^[A-Z0-9-]+$', cell_str):
-                    unit_number = cell_str
-                    continue
-                
-                # Tenant name (text, not a number)
-                if not tenant_name and not self.amount_pattern.search(cell_str):
-                    tenant_name = cell_str
-                    continue
-                
-                # Amounts
-                if self.amount_pattern.search(cell_str):
-                    amt = self._parse_amount(cell_str)
-                    if amt:
-                        if not monthly_rent:
-                            monthly_rent = amt
-                        elif not annual_rent:
-                            annual_rent = amt
-                        elif not area:
-                            area = amt
-            
-            if unit_number and tenant_name:
-                occupancy_status = "vacant" if tenant_name.upper() in ["VACANT", "AVAILABLE", ""] else "occupied"
-                
-                line_items.append({
-                    "unit_number": unit_number,
-                    "tenant_name": tenant_name,
-                    "unit_area_sqft": float(area) if area else None,
-                    "monthly_rent": float(monthly_rent) if monthly_rent else None,
-                    "annual_rent": float(annual_rent) if annual_rent else None,
-                    "occupancy_status": occupancy_status,
-                    "confidence": 92.0,
-                    "page": page_num
-                })
+            record = self._parse_rent_roll_row(row, header_map, report_date, property_name, property_code)
+            if record:
+                record['page'] = page_num
+                line_items.append(record)
         
         return line_items
     
@@ -744,8 +772,13 @@ class FinancialTableParser:
         
         return line_items
     
-    def _parse_rent_roll_text(self, text: str, page_num: int) -> List[Dict]:
-        """Fallback: Parse rent roll from plain text"""
+    def _parse_rent_roll_text(self, text: str, page_num: int, report_date: str = None,
+                              property_name: str = None, property_code: str = None) -> List[Dict]:
+        """
+        Fallback: Parse rent roll from plain text
+        
+        Less accurate than table-based extraction, but handles non-tabular layouts
+        """
         line_items = []
         lines = text.split('\n')
         
@@ -771,17 +804,305 @@ class FinancialTableParser:
                     tenant_name = ' '.join(tenant_parts)
                     
                     if tenant_name:
-                        line_items.append({
+                        is_vacant = tenant_name.upper() in ["VACANT", "AVAILABLE"]
+                        
+                        record = {
+                            "property_name": property_name,
+                            "property_code": property_code,
+                            "report_date": report_date,
                             "unit_number": unit_number,
                             "tenant_name": tenant_name,
                             "monthly_rent": float(amounts[0]) if len(amounts) > 0 else None,
                             "annual_rent": float(amounts[1]) if len(amounts) > 1 else None,
-                            "occupancy_status": "vacant" if tenant_name.upper() == "VACANT" else "occupied",
+                            "occupancy_status": "vacant" if is_vacant else "occupied",
+                            "is_vacant": is_vacant,
+                            "is_gross_rent_row": False,
                             "confidence": 75.0,
                             "page": page_num
-                        })
+                        }
+                        line_items.append(record)
         
         return line_items
+    
+    def _extract_report_date(self, text: str) -> Optional[str]:
+        """
+        Extract report date from text
+        
+        Looks for "As of Date: MM/DD/YYYY" and converts to ISO format
+        """
+        match = re.search(r'As of Date:\s*(\d{1,2}/\d{1,2}/\d{4})', text, re.IGNORECASE)
+        if match:
+            date_str = match.group(1)
+            try:
+                dt = datetime.strptime(date_str, '%m/%d/%Y')
+                return dt.strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+        return None
+    
+    def _extract_property_info(self, text: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Extract property name and code from text
+        
+        Looks for format: "Property Name (code)" or "Property Name(code)"
+        Returns: (property_name, property_code)
+        """
+        # Pattern: Text followed by (code) where code is 2-5 letters
+        match = re.search(r'([A-Z][^(]+?)\s*\(([A-Z]{2,5})\)', text, re.IGNORECASE)
+        if match:
+            prop_name = match.group(1).strip()
+            prop_code = match.group(2).upper()
+            # Verify it looks like a property name (not just any parenthesized text)
+            if len(prop_name) > 5 and any(word in prop_name.lower() for word in ['plaza', 'commons', 'crossing', 'center', 'mall', 'shore']):
+                return prop_name, prop_code
+        return None, None
+    
+    def _parse_rent_roll_row(self, row: List, header_map: Dict, report_date: str = None, 
+                             property_name: str = None, property_code: str = None) -> Optional[Dict]:
+        """
+        Parse a single rent roll row extracting all 24 fields
+        
+        Template v2.0 fields:
+        - property_name, property_code, report_date  
+        - unit_number, tenant_name, tenant_id
+        - lease_type, area_sqft
+        - lease_from_date, lease_to_date, term_months, tenancy_years
+        - monthly_rent, monthly_rent_per_sf, annual_rent, annual_rent_per_sf
+        - annual_recoveries_per_sf, annual_misc_per_sf
+        - security_deposit, loc_amount
+        - is_vacant, is_gross_rent_row, notes
+        """
+        record = {
+            'property_name': property_name,
+            'property_code': property_code,
+            'report_date': report_date,
+            'is_vacant': False,
+            'is_gross_rent_row': False,
+            'tenant_id': None,
+            'notes': None
+        }
+        
+        # Helper to safely get cell value
+        def get_cell(col_name):
+            if col_name in header_map:
+                idx = header_map[col_name]
+                if idx < len(row) and row[idx]:
+                    return str(row[idx]).strip()
+            return None
+        
+        # Extract unit number (required)
+        unit = get_cell('unit')
+        if not unit:
+            return None
+        record['unit_number'] = unit
+        
+        # Extract tenant/lease name
+        tenant = get_cell('tenant')
+        if not tenant:
+            return None
+        
+        # Validate tenant name - should not be a date or number
+        # If it looks like a date (MM/DD/YYYY), column mapping is likely wrong
+        if re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', tenant.strip()):
+            # This is a date, not a tenant name - column misalignment
+            return None
+        
+        # Check for "Gross Rent" row (special row type)
+        if 'gross rent' in tenant.lower():
+            record['is_gross_rent_row'] = True
+            record['tenant_name'] = 'Gross Rent'
+            # For gross rent rows, only extract financial amounts
+            monthly_val = get_cell('monthly_rent')
+            if monthly_val:
+                record['monthly_rent'] = float(self._parse_amount(monthly_val) or 0)
+            annual_val = get_cell('annual_rent')
+            if annual_val:
+                record['annual_rent'] = float(self._parse_amount(annual_val) or 0)
+            monthly_per_sf_val = get_cell('monthly_per_sf')
+            if monthly_per_sf_val:
+                record['monthly_rent_per_sqft'] = float(self._parse_amount(monthly_per_sf_val) or 0)
+            annual_per_sf_val = get_cell('annual_per_sf')
+            if annual_per_sf_val:
+                record['annual_rent_per_sqft'] = float(self._parse_amount(annual_per_sf_val) or 0)
+            return record
+        
+        # Check for VACANT unit
+        if tenant.upper() in ['VACANT', 'AVAILABLE']:
+            record['is_vacant'] = True
+            record['occupancy_status'] = 'vacant'
+            record['tenant_name'] = 'VACANT'
+            # Extract area for vacant units
+            area_val = get_cell('area')
+            if area_val:
+                record['unit_area_sqft'] = float(self._parse_amount(area_val) or 0)
+            return record
+        
+        # Extract tenant name and ID
+        tenant_match = re.match(r'(.+?)\s*\(t(\d+)\)', tenant)
+        if tenant_match:
+            record['tenant_name'] = tenant_match.group(1).strip()
+            record['tenant_id'] = f"t{tenant_match.group(2)}"
+        else:
+            record['tenant_name'] = tenant
+        
+        # Extract lease type
+        lease_type = get_cell('lease_type')
+        if lease_type:
+            record['lease_type'] = lease_type
+        
+        # Extract area
+        area_val = get_cell('area')
+        if area_val:
+            parsed_area = self._parse_amount(area_val)
+            if parsed_area is not None:
+                record['unit_area_sqft'] = float(parsed_area)
+        
+        # Extract dates
+        lease_from = get_cell('lease_from')
+        if lease_from:
+            record['lease_start_date'] = self._parse_rent_roll_date(lease_from)
+        
+        lease_to = get_cell('lease_to')
+        if lease_to:
+            record['lease_end_date'] = self._parse_rent_roll_date(lease_to)
+        
+        # Extract term months
+        term_val = get_cell('term')
+        if term_val:
+            try:
+                record['lease_term_months'] = int(float(self._parse_amount(term_val) or 0))
+            except:
+                pass
+        
+        # Extract tenancy years
+        tenancy_val = get_cell('tenancy')
+        if tenancy_val:
+            parsed_tenancy = self._parse_amount(tenancy_val)
+            if parsed_tenancy:
+                record['tenancy_years'] = float(parsed_tenancy)
+        
+        # Calculate tenancy years if not provided
+        if not record.get('tenancy_years') and record.get('lease_start_date') and report_date:
+            try:
+                start_dt = datetime.strptime(record['lease_start_date'], '%Y-%m-%d')
+                report_dt = datetime.strptime(report_date, '%Y-%m-%d')
+                days_diff = (report_dt - start_dt).days
+                record['tenancy_years'] = round(days_diff / 365.25, 2)
+            except:
+                pass
+        
+        # Extract monthly rent
+        monthly_val = get_cell('monthly_rent')
+        if monthly_val:
+            parsed_monthly = self._parse_amount(monthly_val)
+            if parsed_monthly is not None:
+                record['monthly_rent'] = float(parsed_monthly)
+        
+        # Extract monthly rent per SF
+        monthly_per_sf_val = get_cell('monthly_per_sf')
+        if monthly_per_sf_val:
+            parsed_per_sf = self._parse_amount(monthly_per_sf_val)
+            if parsed_per_sf is not None:
+                # Sanity check: rent per SF should be < $50/month for retail
+                if float(parsed_per_sf) < 50.0:
+                    record['monthly_rent_per_sqft'] = float(parsed_per_sf)
+        
+        # Calculate monthly per SF if missing
+        if not record.get('monthly_rent_per_sqft') and record.get('monthly_rent') and record.get('unit_area_sqft'):
+            if record['unit_area_sqft'] > 0:
+                calculated = record['monthly_rent'] / record['unit_area_sqft']
+                # Sanity check
+                if calculated < 50.0:
+                    record['monthly_rent_per_sqft'] = round(calculated, 4)
+        
+        # Extract annual rent
+        annual_val = get_cell('annual_rent')
+        if annual_val:
+            parsed_annual = self._parse_amount(annual_val)
+            if parsed_annual is not None:
+                record['annual_rent'] = float(parsed_annual)
+        
+        # Calculate annual rent if missing
+        if not record.get('annual_rent') and record.get('monthly_rent'):
+            record['annual_rent'] = round(record['monthly_rent'] * 12, 2)
+        
+        # Extract annual rent per SF
+        annual_per_sf_val = get_cell('annual_per_sf')
+        if annual_per_sf_val:
+            parsed_annual_sf = self._parse_amount(annual_per_sf_val)
+            if parsed_annual_sf is not None:
+                # Sanity check: annual rent per SF should be < $600/year for retail
+                if float(parsed_annual_sf) < 600.0:
+                    record['annual_rent_per_sqft'] = float(parsed_annual_sf)
+        
+        # Calculate annual per SF if missing
+        if not record.get('annual_rent_per_sqft') and record.get('monthly_rent_per_sqft'):
+            calculated = record['monthly_rent_per_sqft'] * 12
+            # Sanity check
+            if calculated < 600.0:
+                record['annual_rent_per_sqft'] = round(calculated, 2)
+        
+        # Extract recoveries per SF
+        recoveries_val = get_cell('recoveries')
+        if recoveries_val:
+            parsed_recoveries = self._parse_amount(recoveries_val)
+            if parsed_recoveries is not None:
+                record['annual_recoveries_per_sf'] = float(parsed_recoveries)
+        
+        # Extract misc per SF
+        misc_val = get_cell('misc')
+        if misc_val:
+            parsed_misc = self._parse_amount(misc_val)
+            if parsed_misc is not None:
+                record['annual_misc_per_sf'] = float(parsed_misc)
+        
+        # Extract security deposit
+        security_val = get_cell('security')
+        if security_val:
+            parsed_security = self._parse_amount(security_val)
+            if parsed_security is not None:
+                record['security_deposit'] = float(parsed_security)
+        
+        # Extract LOC
+        loc_val = get_cell('loc')
+        if loc_val:
+            parsed_loc = self._parse_amount(loc_val)
+            if parsed_loc is not None:
+                record['loc_amount'] = float(parsed_loc)
+        
+        # Set occupancy status
+        if not record.get('occupancy_status'):
+            record['occupancy_status'] = 'occupied' if not record['is_vacant'] else 'vacant'
+        
+        # Set confidence
+        record['confidence'] = 95.0
+        
+        return record
+    
+    def _parse_rent_roll_date(self, date_str: str) -> Optional[str]:
+        """
+        Parse rent roll date and return in ISO format (YYYY-MM-DD)
+        
+        Handles formats: MM/DD/YYYY, MM/DD/YY
+        """
+        if not date_str or not isinstance(date_str, str):
+            return None
+        
+        date_str = date_str.strip()
+        if not date_str or date_str == '-':
+            return None
+        
+        # Try different formats
+        formats = ['%m/%d/%Y', '%m/%d/%y', '%Y-%m-%d']
+        
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                return dt.strftime('%Y-%m-%d')
+            except ValueError:
+                continue
+        
+        return None
     
     def _parse_amount(self, amount_str: str) -> Optional[Decimal]:
         """

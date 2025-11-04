@@ -527,50 +527,154 @@ class ExtractionOrchestrator:
         parsed_data: Dict,
         confidence_score: float
     ) -> int:
-        """Insert rent roll tenant data"""
-        items = parsed_data.get("line_items", [])
-        records_inserted = 0
+        """
+        Insert rent roll tenant data - Template v2.0 implementation
         
-        for item in items:
+        Extracts all 24 fields, links gross rent rows, runs validation,
+        and calculates quality scores.
+        """
+        from app.utils.rent_roll_validator import RentRollValidator
+        from datetime import datetime
+        
+        items = parsed_data.get("line_items", [])
+        report_date = parsed_data.get("report_date")
+        records_inserted = 0
+        parent_row_map = {}  # Maps unit_number -> parent_row_id for gross rent linking
+        
+        # Run validation on all records
+        validator = RentRollValidator()
+        validation_flags = validator.validate_records(items, report_date)
+        quality_result = validator.calculate_quality_score()
+        
+        print(f"Rent Roll Validation: Quality Score = {quality_result['quality_score']:.1f}%")
+        print(f"  Critical: {quality_result['critical_count']}, Warnings: {quality_result['warning_count']}, Info: {quality_result['info_count']}")
+        print(f"  Recommendation: {quality_result['recommendation']}")
+        
+        # Process each item
+        for idx, item in enumerate(items, 1):
             unit_number = item.get("unit_number", "")
-            tenant_name = item.get("tenant_name", "")
-            monthly_rent = item.get("monthly_rent", 0.0)
-            
             if not unit_number:
                 continue
+            
+            # Get validation flags for this record
+            record_flags = validator.get_flags_for_record(idx)
+            notes_list = [f"[{flag.severity}] {flag.message}" for flag in record_flags]
+            notes = "\n".join(notes_list) if notes_list else None
             
             # Check for existing entry
             existing = self.db.query(RentRollData).filter(
                 RentRollData.property_id == upload.property_id,
                 RentRollData.period_id == upload.period_id,
-                RentRollData.unit_number == unit_number
+                RentRollData.unit_number == unit_number,
+                RentRollData.is_gross_rent_row == item.get("is_gross_rent_row", False)
             ).first()
             
-            occupancy_status = "vacant" if tenant_name.upper() in ["VACANT", "AVAILABLE", ""] else "occupied"
+            # Prepare all fields
+            tenant_name = item.get("tenant_name") or "VACANT"
+            is_vacant = item.get("is_vacant", False)
+            is_gross_rent_row = item.get("is_gross_rent_row", False)
+            occupancy_status = "vacant" if is_vacant else "occupied"
+            
+            # Get parent_row_id for gross rent rows
+            parent_row_id = None
+            if is_gross_rent_row and unit_number in parent_row_map:
+                parent_row_id = parent_row_map[unit_number]
+            
+            # Helper to safely convert to Decimal
+            def to_decimal(val):
+                if val is None:
+                    return None
+                try:
+                    return Decimal(str(val))
+                except:
+                    return None
+            
+            # Helper to safely convert date strings
+            def to_date(date_str):
+                if not date_str:
+                    return None
+                try:
+                    return datetime.strptime(date_str, '%Y-%m-%d').date()
+                except:
+                    return None
             
             if existing:
-                existing.tenant_name = tenant_name or "VACANT"
-                existing.monthly_rent = Decimal(str(monthly_rent)) if monthly_rent else None
+                # Update existing record with all fields
+                existing.tenant_name = tenant_name
+                existing.tenant_code = item.get("tenant_id")
+                existing.lease_type = item.get("lease_type")
+                existing.lease_start_date = to_date(item.get("lease_start_date"))
+                existing.lease_end_date = to_date(item.get("lease_end_date"))
+                existing.lease_term_months = item.get("lease_term_months")
+                existing.unit_area_sqft = to_decimal(item.get("unit_area_sqft"))
+                existing.monthly_rent = to_decimal(item.get("monthly_rent"))
+                existing.monthly_rent_per_sqft = to_decimal(item.get("monthly_rent_per_sqft"))
+                existing.annual_rent = to_decimal(item.get("annual_rent"))
+                existing.annual_rent_per_sqft = to_decimal(item.get("annual_rent_per_sqft"))
+                existing.security_deposit = to_decimal(item.get("security_deposit"))
+                existing.loc_amount = to_decimal(item.get("loc_amount"))
+                # Template v2.0 fields
+                existing.tenancy_years = to_decimal(item.get("tenancy_years"))
+                existing.annual_recoveries_per_sf = to_decimal(item.get("annual_recoveries_per_sf"))
+                existing.annual_misc_per_sf = to_decimal(item.get("annual_misc_per_sf"))
+                existing.is_gross_rent_row = is_gross_rent_row
+                existing.parent_row_id = parent_row_id
+                existing.notes = notes
                 existing.occupancy_status = occupancy_status
-                existing.extraction_confidence = Decimal(str(confidence_score))
+                existing.extraction_confidence = Decimal(str(quality_result['quality_score']))
                 existing.upload_id = upload.id
-                existing.needs_review = confidence_score < 85.0
+                existing.needs_review = quality_result['quality_score'] < 99.0
             else:
+                # Create new record
                 rr_data = RentRollData(
                     property_id=upload.property_id,
                     period_id=upload.period_id,
                     upload_id=upload.id,
+                    # Basic fields
                     unit_number=unit_number,
-                    tenant_name=tenant_name or "VACANT",
-                    monthly_rent=Decimal(str(monthly_rent)) if monthly_rent else None,
+                    tenant_name=tenant_name,
+                    tenant_code=item.get("tenant_id"),
+                    lease_type=item.get("lease_type"),
+                    # Dates
+                    lease_start_date=to_date(item.get("lease_start_date")),
+                    lease_end_date=to_date(item.get("lease_end_date")),
+                    lease_term_months=item.get("lease_term_months"),
+                    # Area
+                    unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
+                    # Financials
+                    monthly_rent=to_decimal(item.get("monthly_rent")),
+                    monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
+                    annual_rent=to_decimal(item.get("annual_rent")),
+                    annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
+                    security_deposit=to_decimal(item.get("security_deposit")),
+                    loc_amount=to_decimal(item.get("loc_amount")),
+                    # Template v2.0 fields
+                    tenancy_years=to_decimal(item.get("tenancy_years")),
+                    annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
+                    annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
+                    is_gross_rent_row=is_gross_rent_row,
+                    parent_row_id=parent_row_id,
+                    notes=notes,
+                    # Status
                     occupancy_status=occupancy_status,
-                    extraction_confidence=Decimal(str(confidence_score)),
-                    needs_review=confidence_score < 85.0
+                    extraction_confidence=Decimal(str(quality_result['quality_score'])),
+                    needs_review=quality_result['quality_score'] < 99.0
                 )
                 self.db.add(rr_data)
+                self.db.flush()  # Get the ID for parent_row_map
+                
+                # Store ID for gross rent row linking
+                if not is_gross_rent_row:
+                    parent_row_map[unit_number] = rr_data.id
+                
                 records_inserted += 1
         
         self.db.commit()
+        
+        # Log extraction summary
+        print(f"Inserted {records_inserted} rent roll records")
+        print(f"Quality: {quality_result['quality_score']:.1f}% - {quality_result['recommendation']}")
+        
         return records_inserted
     
     def _calculate_financial_metrics(self, upload: DocumentUpload):

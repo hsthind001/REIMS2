@@ -45,6 +45,14 @@ class RentRollData(Base):
     annual_tax_reimbursement = Column(DECIMAL(12, 2))
     annual_insurance_reimbursement = Column(DECIMAL(12, 2))
     
+    # Template v2.0 fields
+    tenancy_years = Column(DECIMAL(5, 2))  # Years from lease start to report date
+    annual_recoveries_per_sf = Column(DECIMAL(10, 4))  # CAM + tax + insurance per SF
+    annual_misc_per_sf = Column(DECIMAL(10, 4))  # Misc charges per SF
+    is_gross_rent_row = Column(Boolean, default=False, index=True)  # Flag for gross rent calculation rows
+    parent_row_id = Column(Integer, ForeignKey('rent_roll_data.id', ondelete='CASCADE'))  # Link gross rent to parent
+    notes = Column(Text)  # Extraction notes, validation flags, special conditions
+    
     # Status
     occupancy_status = Column(String(50), default='occupied', index=True)  # occupied, vacant, notice
     lease_status = Column(String(50), default='active')  # active, expired, terminated
@@ -72,4 +80,7 @@ class RentRollData(Base):
     property = relationship("Property", back_populates="rent_roll_data")
     period = relationship("FinancialPeriod", back_populates="rent_roll_data")
     upload = relationship("DocumentUpload", back_populates="rent_roll_data")
+    
+    # Self-referencing relationship for gross rent rows
+    parent = relationship("RentRollData", remote_side=[id], backref="gross_rent_rows")
 
