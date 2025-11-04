@@ -113,6 +113,10 @@ services:
       
       # CORS
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
+      
+      # Database Initialization (Template v1.0)
+      RUN_MIGRATIONS: "true"  # Set to false to skip automatic migrations
+      SEED_DATABASE: "true"   # Set to false to skip automatic seeding
     volumes:
       - ./backend/app:/app/app  # Mount app for development
     ports:

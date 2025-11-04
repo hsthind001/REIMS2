@@ -17,6 +17,33 @@ The `docker-compose.yml` orchestrates all services:
 
 ## 🚀 Quick Start
 
+### First-Time Setup (Automatic Database Initialization)
+
+```bash
+cd /home/gurpyar/Documents/R/REIMS2
+
+# Start all services - database will be automatically initialized!
+docker compose up -d
+
+# Watch initialization logs
+docker compose logs -f backend
+
+# You should see:
+# ✅ PostgreSQL is ready!
+# ✅ Migrations complete!
+# ✅ Database seeded successfully!
+# ✅ Starting FastAPI application...
+```
+
+**What happens automatically:**
+1. ⏳ **Waits for PostgreSQL** to be ready
+2. 🔄 **Runs 7 Alembic migrations** (Balance Sheet & Income Statement Template v1.0)
+3. 🌱 **Seeds 300+ accounts** (200 Balance Sheet + 100 Income Statement)
+4. 👥 **Seeds 30+ lenders** (CIBC, KeyBank, Wells Fargo, etc.)
+5. 🎯 **Starts FastAPI application**
+
+**Total time:** ~15-20 seconds for fresh deployment
+
 ### Start All Services
 
 ```bash
@@ -323,6 +350,52 @@ Flower → Celery Worker
 ```
 
 ## 🛠️ Troubleshooting
+
+### Database Initialization Issues
+
+#### Migrations Not Running
+
+```bash
+# Check backend logs for errors
+docker compose logs backend | grep -i "migration\|error"
+
+# Manually run migrations
+docker compose exec backend alembic upgrade head
+
+# Check migration status
+docker compose exec backend alembic current
+```
+
+#### Database Not Seeding
+
+```bash
+# Check if accounts table exists
+docker compose exec postgres psql -U reims -d reims -c "\dt chart_of_accounts"
+
+# Check account count
+docker compose exec postgres psql -U reims -d reims -c "SELECT COUNT(*) FROM chart_of_accounts;"
+
+# Manually run seed scripts
+docker compose exec backend bash
+cd scripts
+PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U reims -d reims -f seed_balance_sheet_template_accounts.sql
+```
+
+#### Skip Automatic Initialization
+
+If you want to skip automatic initialization temporarily:
+
+```yaml
+# In docker-compose.yml, set:
+environment:
+  RUN_MIGRATIONS: "false"
+  SEED_DATABASE: "false"
+```
+
+Then rebuild and restart:
+```bash
+docker compose up -d --force-recreate backend
+```
 
 ### Service Won't Start
 
