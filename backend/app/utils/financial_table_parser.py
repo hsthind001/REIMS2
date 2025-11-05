@@ -195,61 +195,92 @@ class FinancialTableParser:
     
     def extract_cash_flow_table(self, pdf_data: bytes) -> Dict:
         """
-        Extract cash flow statement with Operating/Investing/Financing sections
+        Extract cash flow statement with comprehensive Template v1.0 compliance
+        
+        Extracts:
+        - Header metadata (property, period, accounting basis, report date)
+        - Income section (Base Rentals, Recoveries, Other Income)
+        - Operating Expenses (Property, Utility, Contracted, R&M, Admin)
+        - Additional Expenses (Management, Taxes, Leasing, LL)
+        - Performance Metrics (NOI, Net Income)
+        - Adjustments section (A/R, Property changes, Depreciation, Escrows, etc.)
+        - Cash reconciliation (beginning/ending balances)
         
         Returns:
             dict: {
-                "line_items": [
-                    {
-                        "account_code": "7105-0000",
-                        "account_name": "Interest Income",
-                        "amount": 1860030.71,
-                        "cash_flow_category": "operating",
-                        "is_inflow": True,
-                        "confidence": 95.0
-                    },
-                    ...
-                ]
+                "header": {...},
+                "line_items": [...],
+                "adjustments": [...],
+                "cash_accounts": [...],
+                "success": True
             }
         """
         try:
             pdf = pdfplumber.open(io.BytesIO(pdf_data))
             all_line_items = []
-            current_category = "operating"
+            adjustments = []
+            cash_accounts = []
+            
+            # Extract header metadata from first page
+            first_page = pdf.pages[0]
+            first_page_text = first_page.extract_text()
+            header_metadata = self._extract_cash_flow_header(first_page_text)
+            
+            # Track current section for context-aware parsing
+            current_section = "INCOME"  # Start with income
+            line_number = 1
             
             for page_num, page in enumerate(pdf.pages, 1):
                 tables = page.extract_tables()
                 text = page.extract_text()
                 
-                # Determine current section
-                if "INVESTING ACTIVITIES" in text.upper():
-                    current_category = "investing"
-                elif "FINANCING ACTIVITIES" in text.upper():
-                    current_category = "financing"
+                # Update section context based on page content
+                current_section = self._detect_cash_flow_section(text, current_section)
                 
                 if tables:
                     for table in tables:
-                        items = self._parse_cash_flow_table(table, page_num, current_category)
+                        items = self._parse_cash_flow_table_v2(table, page_num, current_section, line_number)
                         all_line_items.extend(items)
+                        line_number += len(items)
+                        
+                        # Check for adjustments or cash reconciliation in this table
+                        if current_section == "ADJUSTMENTS":
+                            adj_items = self._parse_adjustments_table(table, page_num, line_number)
+                            adjustments.extend(adj_items)
+                            line_number += len(adj_items)
+                        elif current_section == "CASH_RECONCILIATION":
+                            cash_items = self._parse_cash_reconciliation_table(table, page_num, line_number)
+                            cash_accounts.extend(cash_items)
+                            line_number += len(cash_items)
                 else:
-                    items = self._parse_cash_flow_text(text, page_num, current_category)
+                    items = self._parse_cash_flow_text_v2(text, page_num, current_section, line_number)
                     all_line_items.extend(items)
+                    line_number += len(items)
             
             pdf.close()
             
             return {
                 "success": True,
+                "header": header_metadata,
                 "line_items": all_line_items,
+                "adjustments": adjustments,
+                "cash_accounts": cash_accounts,
                 "total_items": len(all_line_items),
+                "total_adjustments": len(adjustments),
+                "total_cash_accounts": len(cash_accounts),
                 "extraction_method": "table" if tables else "text",
-                "document_type": "cash_flow"
+                "document_type": "cash_flow",
+                "total_pages": len(pdf.pages)
             }
         
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
+                "header": {},
                 "line_items": [],
+                "adjustments": [],
+                "cash_accounts": [],
                 "total_items": 0
             }
     
@@ -635,8 +666,94 @@ class FinancialTableParser:
         
         return line_items
     
+    def _parse_cash_flow_table_v2(self, table: List[List], page_num: int, section: str, line_number: int) -> List[Dict]:
+        """
+        Parse cash flow table with Template v1.0 compliance
+        
+        Extracts multi-column data with section/category/subcategory classification
+        """
+        line_items = []
+        
+        for row in table:
+            if not row or len(row) < 2:
+                continue
+            
+            # Skip headers
+            row_text = ' '.join([str(c) for c in row if c]).upper()
+            if any(h in row_text for h in ['ACCOUNT', 'PERIOD', 'YEAR TO DATE', 'PERCENTAGE']):
+                continue
+            
+            account_code = None
+            account_name = None
+            period_amount = None
+            ytd_amount = None
+            period_percentage = None
+            ytd_percentage = None
+            
+            # Try to find account code in first cell
+            if row[0]:
+                cell_str = str(row[0]).strip()
+                code_match = self.account_code_pattern.search(cell_str)
+                if code_match:
+                    account_code = code_match.group()
+                    account_name = cell_str.replace(account_code, '').strip()
+            
+            # If no code, use first cell as name
+            if not account_name and row[0]:
+                account_name = str(row[0]).strip()
+            
+            # Parse numeric columns (Period Amount, Period %, YTD Amount, YTD %)
+            for i, cell in enumerate(row[1:], 1):
+                if not cell:
+                    continue
+                
+                cell_str = str(cell).strip()
+                
+                # Check if it's a percentage
+                if '%' in cell_str:
+                    pct_value = self._parse_percentage(cell_str)
+                    if pct_value is not None:
+                        if period_percentage is None:
+                            period_percentage = pct_value
+                        elif ytd_percentage is None:
+                            ytd_percentage = pct_value
+                else:
+                    # It's an amount
+                    amt_value = self._parse_amount(cell_str)
+                    if amt_value is not None:
+                        if period_amount is None:
+                            period_amount = amt_value
+                        elif ytd_amount is None:
+                            ytd_amount = amt_value
+            
+            if account_name and period_amount is not None:
+                # Classify line item
+                line_category, line_subcategory, is_subtotal, is_total = self._classify_cash_flow_line(
+                    account_name, section, account_code
+                )
+                
+                line_items.append({
+                    "account_code": account_code or "",
+                    "account_name": account_name,
+                    "period_amount": float(period_amount),
+                    "ytd_amount": float(ytd_amount) if ytd_amount is not None else None,
+                    "period_percentage": float(period_percentage) if period_percentage is not None else None,
+                    "ytd_percentage": float(ytd_percentage) if ytd_percentage is not None else None,
+                    "line_section": section,
+                    "line_category": line_category,
+                    "line_subcategory": line_subcategory,
+                    "is_subtotal": is_subtotal,
+                    "is_total": is_total,
+                    "line_number": line_number,
+                    "confidence": 96.0 if account_code else 88.0,
+                    "page": page_num
+                })
+                line_number += 1
+        
+        return line_items
+    
     def _parse_cash_flow_table(self, table: List[List], page_num: int, category: str) -> List[Dict]:
-        """Parse cash flow table"""
+        """Legacy parser - kept for backwards compatibility"""
         line_items = []
         
         for row in table:
@@ -1558,4 +1675,814 @@ class FinancialTableParser:
                 header["report_generation_date"] = date_match.group(1).strip()
         
         return header
+    
+    def _extract_cash_flow_header(self, text: str) -> Dict:
+        """
+        Extract header metadata from cash flow statement
+        
+        Template v1.0 fields:
+        - property_name: "Eastern Shore Plaza (esp)"
+        - property_code: "esp"
+        - report_period_start: "Jan 2024"
+        - report_period_end: "Dec 2024"
+        - accounting_basis: "Accrual"
+        - report_generation_date: "Thursday, February 19, 2025"
+        """
+        header = {
+            "property_name": None,
+            "property_code": None,
+            "report_period_start": None,
+            "report_period_end": None,
+            "accounting_basis": None,
+            "report_generation_date": None
+        }
+        
+        lines = text.split('\n')
+        
+        for line in lines[:30]:  # Check first 30 lines for header info
+            line_upper = line.upper()
+            
+            # Property name with code - e.g., "Eastern Shore Plaza (esp)"
+            if not header["property_name"]:
+                prop_match = re.search(r'([A-Z][^(]+?)\s*\(([A-Z]{2,5})\)', line, re.IGNORECASE)
+                if prop_match:
+                    header["property_name"] = line.strip()
+                    header["property_code"] = prop_match.group(2).lower()
+            
+            # Period range - e.g., "Period = Jan 2024-Dec 2024"
+            if not header["report_period_start"]:
+                # Annual or range period: "Period = Jan 2024-Dec 2024"
+                period_match = re.search(r'Period\s*=\s*([A-Za-z]+\s+\d{4})\s*-\s*([A-Za-z]+\s+\d{4})', line, re.IGNORECASE)
+                if period_match:
+                    header["report_period_start"] = period_match.group(1).strip()
+                    header["report_period_end"] = period_match.group(2).strip()
+                else:
+                    # Monthly statement: "Period = Dec 2023"
+                    period_match = re.search(r'Period\s*=\s*([A-Za-z]+\s+\d{4})', line, re.IGNORECASE)
+                    if period_match:
+                        period_str = period_match.group(1).strip()
+                        header["report_period_start"] = period_str
+                        header["report_period_end"] = period_str
+            
+            # Accounting basis - e.g., "Book = Accrual"
+            basis_match = re.search(r'Book\s*=\s*(Accrual|Cash)', line, re.IGNORECASE)
+            if basis_match:
+                header["accounting_basis"] = basis_match.group(1).capitalize()
+            
+            # Report date - e.g., "Thursday, February 19, 2025" or "02/19/2025"
+            date_match = re.search(r'([A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4})', line, re.IGNORECASE)
+            if date_match:
+                header["report_generation_date"] = date_match.group(1).strip()
+            elif not header["report_generation_date"]:
+                # Alternate format: MM/DD/YYYY
+                date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', line)
+                if date_match:
+                    header["report_generation_date"] = date_match.group(1).strip()
+        
+        return header
+    
+    def _detect_cash_flow_section(self, text: str, current_section: str) -> str:
+        """
+        Detect which section of cash flow statement we're in
+        
+        Sections:
+        - INCOME: Revenue items
+        - OPERATING_EXPENSE: Property, Utility, Contracted, R&M, Admin expenses
+        - ADDITIONAL_EXPENSE: Management fees, taxes, leasing costs, LL expenses
+        - PERFORMANCE_METRICS: NOI, Mortgage Interest, Depreciation, Net Income
+        - ADJUSTMENTS: Non-cash adjustments (A/R, depreciation, escrows, etc.)
+        - CASH_RECONCILIATION: Cash account beginning/ending balances
+        """
+        text_upper = text.upper()
+        
+        # Check for major section headers
+        if "INCOME" in text_upper and "NET OPERATING INCOME" not in text_upper and current_section in ["INCOME", None]:
+            return "INCOME"
+        elif "EXPENSES" in text_upper or "OPERATING EXPENSES" in text_upper:
+            if "ADDITIONAL" in text_upper:
+                return "ADDITIONAL_EXPENSE"
+            else:
+                return "OPERATING_EXPENSE"
+        elif "NET OPERATING INCOME" in text_upper or "NOI" in text_upper:
+            return "PERFORMANCE_METRICS"
+        elif "ADJUSTMENTS" in text_upper or "ADJUSTING ENTRIES" in text_upper:
+            return "ADJUSTMENTS"
+        elif "CASH FLOW" in text_upper or "CASH ACCOUNT" in text_upper or "BEGINNING BALANCE" in text_upper:
+            if "CASH - OPERATING" in text_upper or "CASH ACCOUNT" in text_upper:
+                return "CASH_RECONCILIATION"
+        
+        # Return current section if no new section detected
+        return current_section
+    
+    def _classify_cash_flow_line(self, account_name: str, section: str, account_code: str = None) -> Tuple[str, str, bool, bool]:
+        """
+        Classify cash flow line item into category/subcategory
+        
+        Returns:
+            Tuple[line_category, line_subcategory, is_subtotal, is_total]
+        """
+        name_upper = account_name.upper()
+        is_subtotal = False
+        is_total = False
+        line_category = None
+        line_subcategory = None
+        
+        # Detect totals and subtotals first
+        if 'TOTAL' in name_upper:
+            if 'TOTAL INCOME' in name_upper:
+                is_total = True
+                line_category = "Total Income"
+            elif 'TOTAL OPERATING EXPENSES' in name_upper:
+                is_subtotal = True
+                line_category = "Total Operating Expenses"
+            elif 'TOTAL ADDITIONAL' in name_upper:
+                is_subtotal = True
+                line_category = "Total Additional Expenses"
+            elif 'TOTAL EXPENSES' in name_upper:
+                is_total = True
+                line_category = "Total Expenses"
+            elif 'TOTAL UTILITY' in name_upper:
+                is_subtotal = True
+                line_category = "Utility Expenses"
+                line_subcategory = "Total Utility Expense"
+            elif 'TOTAL CONTRACTED' in name_upper:
+                is_subtotal = True
+                line_category = "Contracted Services"
+                line_subcategory = "Total Contracted Expenses"
+            elif 'TOTAL R&M' in name_upper or 'TOTAL REPAIR' in name_upper:
+                is_subtotal = True
+                line_category = "Repair & Maintenance"
+                line_subcategory = "Total R&M Operating Expenses"
+            elif 'TOTAL ADMIN' in name_upper:
+                is_subtotal = True
+                line_category = "Administrative Expenses"
+                line_subcategory = "Total Administration Expense"
+            elif 'TOTAL LL' in name_upper or 'TOTAL LANDLORD' in name_upper:
+                is_subtotal = True
+                line_category = "Landlord Expenses"
+                line_subcategory = "Total LL Expense"
+        
+        # Detect NOI and Net Income
+        if 'NET OPERATING INCOME' in name_upper or name_upper == 'NOI':
+            is_total = True
+            line_category = "Performance Metrics"
+            line_subcategory = "Net Operating Income"
+        elif 'NET INCOME' in name_upper and 'OPERATING' not in name_upper:
+            is_total = True
+            line_category = "Performance Metrics"
+            line_subcategory = "Net Income"
+        
+        # If already classified, return
+        if line_category:
+            return (line_category, line_subcategory, is_subtotal, is_total)
+        
+        # Classify based on section and keywords
+        if section == "INCOME":
+            # Base Rental Income
+            if 'BASE RENT' in name_upper or name_upper == 'BASE RENTALS':
+                line_category = "Base Rental Income"
+                line_subcategory = "Base Rentals"
+            elif 'HOLDOVER' in name_upper:
+                line_category = "Base Rental Income"
+                line_subcategory = "Holdover Rent"
+            elif 'FREE RENT' in name_upper:
+                line_category = "Base Rental Income"
+                line_subcategory = "Free Rent"
+            elif 'CO-TENANCY' in name_upper or 'COTENANCY' in name_upper:
+                line_category = "Base Rental Income"
+                line_subcategory = "Co-Tenancy Rent Reduction"
+            
+            # Recovery Income
+            elif 'TAX RECOVERY' in name_upper or 'TAXES RECOVERY' in name_upper:
+                line_category = "Recovery Income"
+                line_subcategory = "Tax Recovery"
+            elif 'INSURANCE RECOVERY' in name_upper:
+                line_category = "Recovery Income"
+                line_subcategory = "Insurance Recovery"
+            elif 'CAM RECOVERY' in name_upper:
+                line_category = "Recovery Income"
+                line_subcategory = "CAM Recovery"
+            elif 'FIXED CAM' in name_upper:
+                line_category = "Recovery Income"
+                line_subcategory = "Fixed CAM"
+            elif 'ANNUAL CAM' in name_upper:
+                line_category = "Recovery Income"
+                line_subcategory = "Annual CAMs"
+            
+            # Other Income
+            elif 'PERCENTAGE RENT' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Percentage Rent"
+            elif 'UTILITIES REIMBURSEMENT' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Utilities Reimbursement"
+            elif 'INTEREST INCOME' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Interest Income"
+            elif 'MANAGEMENT FEE INCOME' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Management Fee Income"
+            elif 'LATE FEE' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Late Fee Income"
+            elif 'TERMINATION FEE' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Termination Fee Income"
+            elif 'BAD DEBT' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Bad Debt Write Offs"
+            elif 'OTHER INCOME' in name_upper:
+                line_category = "Other Income"
+                line_subcategory = "Other Income"
+            else:
+                # Default for income
+                line_category = "Other Income"
+                line_subcategory = "Other Income"
+        
+        elif section == "OPERATING_EXPENSE":
+            # Property Expenses
+            if 'PROPERTY TAX' in name_upper and 'CONSULTANT' not in name_upper:
+                line_category = "Property Expenses"
+                line_subcategory = "Property Tax"
+            elif 'PROPERTY INSURANCE' in name_upper:
+                line_category = "Property Expenses"
+                line_subcategory = "Property Insurance"
+            elif 'TAX SAVINGS CONSULTANT' in name_upper or 'TAX CONSULTANT' in name_upper:
+                line_category = "Property Expenses"
+                line_subcategory = "Property Tax Savings Consultant"
+            
+            # Utility Expenses
+            elif 'ELECTRICITY' in name_upper or 'ELECTRIC' in name_upper:
+                line_category = "Utility Expenses"
+                line_subcategory = "Electricity Service"
+            elif 'GAS SERVICE' in name_upper or 'NATURAL GAS' in name_upper:
+                line_category = "Utility Expenses"
+                line_subcategory = "Gas Service"
+            elif 'WATER' in name_upper or 'SEWER' in name_upper:
+                if 'IRRIGATION' in name_upper:
+                    line_category = "Utility Expenses"
+                    line_subcategory = "Water & Sewer - Irrigation"
+                else:
+                    line_category = "Utility Expenses"
+                    line_subcategory = "Water & Sewer Service"
+            elif 'TRASH' in name_upper or 'WASTE' in name_upper:
+                line_category = "Utility Expenses"
+                line_subcategory = "Trash Service"
+            elif 'INTERNET' in name_upper:
+                line_category = "Utility Expenses"
+                line_subcategory = "Internet Service"
+            
+            # Contracted Services
+            elif 'PARKING LOT SWEEPING' in name_upper or 'LOT SWEEPING' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Parking Lot Sweeping"
+            elif 'SIDEWALK' in name_upper and 'PRESSURE' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Sidewalk Pressure Washing"
+            elif 'SNOW REMOVAL' in name_upper or 'ICE CONTROL' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Snow Removal & Ice Control"
+            elif 'LANDSCAPING' in name_upper and 'CONTRACT' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Landscaping"
+            elif 'JANITORIAL' in name_upper or 'PORTERING' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Janitorial/Portering"
+            elif 'FIRE SAFETY MONITORING' in name_upper or 'FIRE ALARM' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Fire Safety Monitoring"
+            elif 'PEST CONTROL' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Pest Control"
+            elif 'SECURITY' in name_upper and 'CONTRACT' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Security"
+            elif 'ELEVATOR' in name_upper:
+                line_category = "Contracted Services"
+                line_subcategory = "Contract - Elevator"
+            
+            # Repair & Maintenance
+            elif 'R&M' in name_upper or 'REPAIR' in name_upper or 'MAINTENANCE' in name_upper:
+                if 'LANDSCAPE' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Landscape Repairs"
+                elif 'IRRIGATION' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Irrigation Repairs"
+                elif 'FIRE SAFETY' in name_upper or 'FIRE SPRINKLER' in name_upper:
+                    if 'INSPECTION' in name_upper:
+                        line_category = "Repair & Maintenance"
+                        line_subcategory = "R&M - Fire Sprinkler Inspection"
+                    else:
+                        line_category = "Repair & Maintenance"
+                        line_subcategory = "R&M - Fire Safety Repairs"
+                elif 'PLUMBING' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Plumbing"
+                elif 'ELECTRICAL' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Electrical Inspections & Repairs"
+                elif 'BUILDING' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Building Maintenance"
+                elif 'PARKING LOT' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Parking Lot Repairs"
+                elif 'SIDEWALK' in name_upper or 'CONCRETE' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Sidewalk & Concrete Repairs"
+                elif 'EXTERIOR' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Exterior"
+                elif 'INTERIOR' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Interior"
+                elif 'HVAC' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - HVAC"
+                elif 'LIGHTING' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Lighting"
+                elif 'ROOFING' in name_upper or 'ROOF' in name_upper:
+                    if 'MAJOR' in name_upper:
+                        line_category = "Repair & Maintenance"
+                        line_subcategory = "R&M - Roofing Repairs - Major"
+                    else:
+                        line_category = "Repair & Maintenance"
+                        line_subcategory = "R&M - Roofing Repairs - Minor"
+                elif 'DOOR' in name_upper or 'LOCK' in name_upper or 'KEY' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Doors/Locks & Keys"
+                elif 'SIGNAGE' in name_upper or 'SIGN' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Signage"
+                elif 'MISC' in name_upper:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Misc"
+                else:
+                    line_category = "Repair & Maintenance"
+                    line_subcategory = "R&M - Misc"
+            
+            # Administrative Expenses
+            elif 'SALARIES' in name_upper or 'SALARY' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Salaries Expense"
+            elif 'BENEFITS' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Benefits Expense"
+            elif 'COMPUTER' in name_upper or 'SOFTWARE' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Computer & Software Expense"
+            elif 'TRAVEL' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Travel"
+            elif 'LEASE ABSTRACTING' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Lease Abstracting"
+            elif 'OFFICE SUPPLIES' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Office Supplies Expense"
+            elif 'POSTAGE' in name_upper or 'CARRIER' in name_upper:
+                line_category = "Administrative Expenses"
+                line_subcategory = "Postage & Carrier"
+            else:
+                line_category = "Operating Expenses"
+                line_subcategory = "Other Operating Expense"
+        
+        elif section == "ADDITIONAL_EXPENSE":
+            # Management & Professional Fees
+            if 'OFF SITE MANAGEMENT' in name_upper or 'OFFSITE MANAGEMENT' in name_upper:
+                line_category = "Management Fees"
+                line_subcategory = "Off Site Management"
+            elif 'PROFESSIONAL FEES' in name_upper:
+                line_category = "Management Fees"
+                line_subcategory = "Professional Fees"
+            elif 'ACCOUNTING FEE' in name_upper:
+                line_category = "Management Fees"
+                line_subcategory = "Accounting Fee"
+            elif 'ASSET MANAGEMENT' in name_upper:
+                line_category = "Management Fees"
+                line_subcategory = "Asset Management Fee"
+            elif 'LEGAL FEES' in name_upper or 'SOS FEE' in name_upper:
+                line_category = "Management Fees"
+                line_subcategory = "Legal Fees / SOS Fee"
+            
+            # Taxes & Fees
+            elif 'FRANCHISE TAX' in name_upper:
+                line_category = "Taxes & Fees"
+                line_subcategory = "Franchise Tax"
+            elif 'PASS THRU ENTITY TAX' in name_upper or 'PASS-THRU' in name_upper:
+                line_category = "Taxes & Fees"
+                line_subcategory = "Pass Thru Entity Tax"
+            elif 'BANK CONTROL' in name_upper:
+                line_category = "Taxes & Fees"
+                line_subcategory = "Bank Control A/c Fee"
+            
+            # Leasing Costs
+            elif 'LEASING COMMISSION' in name_upper:
+                line_category = "Leasing Costs"
+                line_subcategory = "Leasing Commissions"
+            elif 'TENANT IMPROVEMENT' in name_upper or 'TI ' in name_upper:
+                line_category = "Leasing Costs"
+                line_subcategory = "Tenant Improvements"
+            
+            # Landlord Expenses
+            elif 'LL' in name_upper or 'LANDLORD' in name_upper:
+                if 'HVAC' in name_upper:
+                    line_category = "Landlord Expenses"
+                    line_subcategory = "LL - HVAC Repairs"
+                elif 'VACANT' in name_upper:
+                    line_category = "Landlord Expenses"
+                    line_subcategory = "LL - Vacant Space Expenses"
+                elif 'SITE MAP' in name_upper:
+                    line_category = "Landlord Expenses"
+                    line_subcategory = "LL-Site Map"
+                elif 'MISC' in name_upper:
+                    line_category = "Landlord Expenses"
+                    line_subcategory = "LL-Misc"
+                else:
+                    line_category = "Landlord Expenses"
+                    line_subcategory = "LL Repairs & Maintenance"
+            else:
+                line_category = "Additional Expenses"
+                line_subcategory = "Other Additional Expense"
+        
+        elif section == "PERFORMANCE_METRICS":
+            if 'MORTGAGE INTEREST' in name_upper or 'INTEREST EXPENSE' in name_upper:
+                line_category = "Performance Metrics"
+                line_subcategory = "Mortgage Interest"
+            elif 'DEPRECIATION' in name_upper:
+                line_category = "Performance Metrics"
+                line_subcategory = "Depreciation"
+            elif 'AMORTIZATION' in name_upper:
+                line_category = "Performance Metrics"
+                line_subcategory = "Amortization"
+            else:
+                line_category = "Performance Metrics"
+                line_subcategory = "Other Income/Expense"
+        
+        # Default if not classified
+        if not line_category:
+            line_category = section
+            line_subcategory = "Unclassified"
+        
+        return (line_category, line_subcategory, is_subtotal, is_total)
+    
+    def _parse_adjustments_table(self, table: List[List], page_num: int, line_number: int) -> List[Dict]:
+        """
+        Parse adjustments section table
+        
+        Extracts 30+ adjustment line items including:
+        - A/R changes
+        - Property & Equipment changes
+        - Accumulated Depreciation
+        - Escrow accounts
+        - Loan & commission costs
+        - Prepaid & accrued items
+        - Accounts payable
+        - Inter-property transfers
+        - Distributions
+        """
+        adjustments = []
+        
+        for row in table:
+            if not row or len(row) < 2:
+                continue
+            
+            # Skip headers
+            row_text = ' '.join([str(c) for c in row if c]).upper()
+            if any(h in row_text for h in ['ADJUSTMENT', 'DESCRIPTION', 'AMOUNT']):
+                continue
+            
+            adjustment_name = None
+            amount = None
+            
+            # First column: adjustment name
+            if row[0]:
+                adjustment_name = str(row[0]).strip()
+            
+            # Find amount in remaining columns
+            for cell in row[1:]:
+                if not cell:
+                    continue
+                cell_str = str(cell).strip()
+                amt_value = self._parse_amount(cell_str)
+                if amt_value is not None:
+                    amount = amt_value
+                    break
+            
+            if adjustment_name and amount is not None:
+                # Classify adjustment
+                adj_category, related_property, related_entity = self._classify_adjustment(adjustment_name)
+                
+                adjustments.append({
+                    "adjustment_name": adjustment_name,
+                    "adjustment_category": adj_category,
+                    "amount": float(amount),
+                    "is_increase": amount > 0,
+                    "related_property": related_property,
+                    "related_entity": related_entity,
+                    "line_number": line_number,
+                    "confidence": 92.0,
+                    "page": page_num
+                })
+                line_number += 1
+        
+        return adjustments
+    
+    def _classify_adjustment(self, adjustment_name: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """
+        Classify adjustment into category and extract related entities
+        
+        Returns:
+            Tuple[adjustment_category, related_property, related_entity]
+        """
+        name_upper = adjustment_name.upper()
+        related_property = None
+        related_entity = None
+        
+        # A/R Changes
+        if 'A/R TENANTS' in name_upper or 'AR TENANTS' in name_upper:
+            return ("AR_CHANGES", None, None)
+        elif 'A/R OTHER' in name_upper or 'AR OTHER' in name_upper:
+            return ("AR_CHANGES", None, None)
+        elif 'A/R' in name_upper or 'AR' in name_upper:
+            # Check for property names
+            prop_match = re.search(r'A/R\s+([A-Za-z\s]+(?:LP|LLC|Plaza|Commons))', adjustment_name, re.IGNORECASE)
+            if prop_match:
+                related_property = prop_match.group(1).strip()
+                return ("INTER_PROPERTY", related_property, None)
+            return ("AR_CHANGES", None, None)
+        
+        # Property & Equipment
+        elif '5 YEAR IMPROVEMENTS' in name_upper or '5-YEAR' in name_upper or '5YR' in name_upper:
+            return ("PROPERTY_EQUIPMENT", None, None)
+        elif '15 YEAR IMPROVEMENTS' in name_upper or '15-YEAR' in name_upper or '15YR' in name_upper:
+            return ("PROPERTY_EQUIPMENT", None, None)
+        elif 'TI/CURRENT IMPROVEMENTS' in name_upper or 'TENANT IMPROVEMENTS' in name_upper:
+            return ("PROPERTY_EQUIPMENT", None, None)
+        
+        # Accumulated Depreciation
+        elif 'ACCUM. DEPR. - BUILDINGS' in name_upper or 'ACCUMULATED DEPRECIATION - BUILDINGS' in name_upper:
+            return ("ACCUMULATED_DEPRECIATION", None, None)
+        elif 'ACCUM. DEPR. 5 YEAR' in name_upper or 'ACCUM DEPR 5YR' in name_upper:
+            return ("ACCUMULATED_DEPRECIATION", None, None)
+        elif 'ACCUM. DEPR. 15' in name_upper or 'ACCUM DEPR 15' in name_upper:
+            return ("ACCUMULATED_DEPRECIATION", None, None)
+        elif 'ACCUM. DEPR.-OTHER' in name_upper or 'ACCUM DEPR OTHER' in name_upper:
+            return ("ACCUMULATED_DEPRECIATION", None, None)
+        elif 'ACCUMULATED DEPRECIATION' in name_upper or 'ACCUM DEPR' in name_upper or 'ACCUM. DEPR' in name_upper:
+            return ("ACCUMULATED_DEPRECIATION", None, None)
+        
+        # Escrow Accounts
+        elif 'ESCROW - PROPERTY TAX' in name_upper or 'ESCROW PROPERTY TAX' in name_upper:
+            return ("ESCROW_ACCOUNTS", None, None)
+        elif 'ESCROW - INSURANCE' in name_upper or 'ESCROW INSURANCE' in name_upper:
+            return ("ESCROW_ACCOUNTS", None, None)
+        elif 'ESCROW - TI/LC' in name_upper or 'ESCROW TI' in name_upper or 'ESCROW LC' in name_upper:
+            return ("ESCROW_ACCOUNTS", None, None)
+        elif 'ESCROW - REPLACEMENT' in name_upper or 'REPLACEMENT RESERVES' in name_upper:
+            return ("ESCROW_ACCOUNTS", None, None)
+        elif 'ESCROW' in name_upper:
+            return ("ESCROW_ACCOUNTS", None, None)
+        
+        # Loan & Commission Costs
+        elif 'ACCUM. AMORTIZATION LOAN COSTS' in name_upper or 'LOAN COSTS' in name_upper:
+            return ("LOAN_COSTS", None, None)
+        elif 'EXTERNAL - LEASE COMMISSION' in name_upper or 'EXTERNAL LEASE COMMISSION' in name_upper:
+            return ("LOAN_COSTS", None, None)
+        elif 'INTERNAL - LEASE COMMISSION' in name_upper or 'INTERNAL LEASE COMMISSION' in name_upper:
+            return ("LOAN_COSTS", None, None)
+        elif 'ACCUM. AMORT - TI/LC' in name_upper:
+            return ("LOAN_COSTS", None, None)
+        
+        # Prepaid & Accrued
+        elif 'PREPAID INSURANCE' in name_upper:
+            return ("PREPAID_ACCRUED", None, None)
+        elif 'PREPAID EXPENSES' in name_upper:
+            return ("PREPAID_ACCRUED", None, None)
+        elif 'ACCRUED EXPENSES' in name_upper:
+            return ("PREPAID_ACCRUED", None, None)
+        
+        # Accounts Payable
+        elif 'ACCOUNTS PAYABLE TRADE' in name_upper or 'A/P TRADE' in name_upper:
+            return ("ACCOUNTS_PAYABLE", None, None)
+        elif 'A/P 5RIVERS' in name_upper:
+            related_entity = "5Rivers CRE, LLC"
+            return ("ACCOUNTS_PAYABLE", None, related_entity)
+        elif 'A/P SERIES RDF' in name_upper:
+            related_entity = "Series RDF Investor's LLC"
+            return ("ACCOUNTS_PAYABLE", None, related_entity)
+        elif 'A/P OTHER' in name_upper:
+            return ("ACCOUNTS_PAYABLE", None, None)
+        elif 'A/P' in name_upper or 'AP' in name_upper:
+            # Check for property or entity names
+            prop_match = re.search(r'A/P\s+([A-Za-z\s]+(?:LP|LLC|Plaza|Commons))', adjustment_name, re.IGNORECASE)
+            if prop_match:
+                related_property = prop_match.group(1).strip()
+                return ("INTER_PROPERTY", related_property, None)
+            return ("ACCOUNTS_PAYABLE", None, None)
+        
+        # Loans & Financing
+        elif 'LOANS PAYABLE' in name_upper:
+            return ("LOANS", None, None)
+        elif 'WELLS FARGO' in name_upper or 'NORTHMARQ' in name_upper or 'BANK' in name_upper:
+            # Extract lender name
+            lender_match = re.search(r'(Wells Fargo|NorthMarq Capital|[A-Z][a-z]+ Bank)', adjustment_name, re.IGNORECASE)
+            if lender_match:
+                related_entity = lender_match.group(1).strip()
+            return ("LOANS", None, related_entity)
+        
+        # Other Items
+        elif 'PROPERTY TAX PAYABLE' in name_upper:
+            return ("OTHER", None, None)
+        elif 'RENT RECEIVED IN ADVANCE' in name_upper:
+            return ("OTHER", None, None)
+        elif 'DEPOSIT REFUNDABLE' in name_upper or 'SECURITY DEPOSIT' in name_upper:
+            return ("OTHER", None, None)
+        elif 'DISTRIBUTION' in name_upper:
+            return ("DISTRIBUTIONS", None, None)
+        
+        # Default
+        return ("OTHER", None, None)
+    
+    def _parse_cash_reconciliation_table(self, table: List[List], page_num: int, line_number: int) -> List[Dict]:
+        """
+        Parse cash account reconciliation table
+        
+        Extracts:
+        - Account name
+        - Beginning balance
+        - Ending balance
+        - Difference (calculated)
+        """
+        cash_accounts = []
+        
+        for row in table:
+            if not row or len(row) < 3:
+                continue
+            
+            # Skip headers
+            row_text = ' '.join([str(c) for c in row if c]).upper()
+            if any(h in row_text for h in ['ACCOUNT', 'BEGINNING', 'ENDING', 'DIFFERENCE', 'BALANCE']):
+                continue
+            
+            account_name = None
+            beginning_balance = None
+            ending_balance = None
+            difference = None
+            
+            # First column: account name
+            if row[0]:
+                account_name = str(row[0]).strip()
+            
+            # Parse numeric columns (typically: Beginning, Ending, Difference)
+            amounts = []
+            for cell in row[1:]:
+                if not cell:
+                    continue
+                cell_str = str(cell).strip()
+                amt_value = self._parse_amount(cell_str)
+                if amt_value is not None:
+                    amounts.append(amt_value)
+            
+            # Assign amounts
+            if len(amounts) >= 2:
+                beginning_balance = amounts[0]
+                ending_balance = amounts[1]
+                if len(amounts) >= 3:
+                    difference = amounts[2]
+                else:
+                    # Calculate difference if not provided
+                    difference = ending_balance - beginning_balance
+            
+            if account_name and beginning_balance is not None and ending_balance is not None:
+                # Classify account type
+                account_type, is_escrow = self._classify_cash_account(account_name)
+                
+                cash_accounts.append({
+                    "account_name": account_name,
+                    "account_type": account_type,
+                    "beginning_balance": float(beginning_balance),
+                    "ending_balance": float(ending_balance),
+                    "difference": float(difference),
+                    "is_escrow_account": is_escrow,
+                    "is_negative_balance": ending_balance < 0,
+                    "is_total_row": 'TOTAL' in account_name.upper(),
+                    "line_number": line_number,
+                    "confidence": 95.0,
+                    "page": page_num
+                })
+                line_number += 1
+        
+        return cash_accounts
+    
+    def _classify_cash_account(self, account_name: str) -> Tuple[str, bool]:
+        """
+        Classify cash account type
+        
+        Returns:
+            Tuple[account_type, is_escrow]
+        """
+        name_upper = account_name.upper()
+        
+        if 'ESCROW' in name_upper:
+            return ("escrow", True)
+        elif 'OPERATING' in name_upper:
+            return ("operating", False)
+        elif 'RESERVE' in name_upper:
+            return ("escrow", True)
+        else:
+            return ("other", False)
+    
+    def _parse_cash_flow_text_v2(self, text: str, page_num: int, section: str, line_number: int) -> List[Dict]:
+        """
+        Fallback: Parse cash flow from plain text with Template v1.0 compliance
+        """
+        line_items = []
+        lines = text.split('\n')
+        
+        skip_patterns = [
+            r'^Page \d+',
+            r'^Cash Flow',
+            r'^Period =',
+            r'^Book =',
+            r'^\s*$'
+        ]
+        
+        for line in lines:
+            if any(re.match(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
+                continue
+            
+            # Find account code
+            account_code = None
+            for pattern in self.account_code_patterns:
+                code_match = pattern.search(line)
+                if code_match:
+                    account_code = code_match.group()
+                    break
+            
+            # Find amounts (up to 4: Period Amount, Period %, YTD Amount, YTD %)
+            amount_matches = list(self.amount_pattern.finditer(line))
+            period_amount = None
+            ytd_amount = None
+            period_percentage = None
+            ytd_percentage = None
+            
+            if amount_matches:
+                # First amount
+                period_amount = self._parse_amount(amount_matches[0].group())
+                # Check if second is percentage or amount
+                if len(amount_matches) > 1:
+                    second_text = amount_matches[1].group()
+                    if '%' in line[amount_matches[1].start():amount_matches[1].end()+5]:
+                        period_percentage = self._parse_percentage(second_text)
+                        if len(amount_matches) > 2:
+                            ytd_amount = self._parse_amount(amount_matches[2].group())
+                        if len(amount_matches) > 3:
+                            ytd_percentage = self._parse_percentage(amount_matches[3].group())
+                    else:
+                        ytd_amount = self._parse_amount(second_text)
+            
+            # Extract account name
+            account_name = None
+            if account_code and amount_matches:
+                # Name is between code and first amount
+                start = line.find(account_code) + len(account_code)
+                end = amount_matches[0].start()
+                account_name = line[start:end].strip()
+            elif amount_matches:
+                # Name is before first amount
+                account_name = line[:amount_matches[0].start()].strip()
+                account_code = ""
+            
+            if account_name and len(account_name) > 2 and period_amount is not None:
+                # Skip totals without codes (they'll be captured differently)
+                if 'TOTAL' in account_name.upper() and not account_code:
+                    continue
+                
+                # Classify line item
+                line_category, line_subcategory, is_subtotal, is_total = self._classify_cash_flow_line(
+                    account_name, section, account_code
+                )
+                
+                line_items.append({
+                    "account_code": account_code or "",
+                    "account_name": account_name,
+                    "period_amount": float(period_amount),
+                    "ytd_amount": float(ytd_amount) if ytd_amount is not None else None,
+                    "period_percentage": float(period_percentage) if period_percentage is not None else None,
+                    "ytd_percentage": float(ytd_percentage) if ytd_percentage is not None else None,
+                    "line_section": section,
+                    "line_category": line_category,
+                    "line_subcategory": line_subcategory,
+                    "is_subtotal": is_subtotal,
+                    "is_total": is_total,
+                    "line_number": line_number,
+                    "confidence": 85.0 if account_code else 75.0,
+                    "page": page_num
+                })
+                line_number += 1
+        
+        return line_items
 

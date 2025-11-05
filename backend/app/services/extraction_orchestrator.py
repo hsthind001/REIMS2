@@ -451,75 +451,328 @@ class ExtractionOrchestrator:
         parsed_data: Dict,
         confidence_score: float
     ) -> int:
-        """Insert cash flow line items"""
+        """
+        Insert cash flow data with Template v1.0 compliance
+        
+        Inserts:
+        - Header record with summary totals
+        - Line items with full categorization
+        - Adjustments
+        - Cash account reconciliations
+        """
+        from app.models.cash_flow_header import CashFlowHeader
+        from app.models.cash_flow_adjustments import CashFlowAdjustment
+        from app.models.cash_account_reconciliation import CashAccountReconciliation
+        from datetime import datetime
+        
         items = parsed_data.get("line_items", [])
+        adjustments = parsed_data.get("adjustments", [])
+        cash_accounts = parsed_data.get("cash_accounts", [])
+        header_data = parsed_data.get("header", {})
+        
         records_inserted = 0
         
-        # Deduplicate items by account_code + amount + page
-        seen_keys = set()
-        deduplicated_items = []
+        # Step 1: Calculate header totals from line items
+        totals = self._calculate_cash_flow_totals(items)
+        
+        # Step 2: Parse period dates from header
+        period_start, period_end = self._parse_period_dates(
+            header_data.get("report_period_start"),
+            header_data.get("report_period_end"),
+            upload.period_id
+        )
+        
+        # Step 3: Insert or update CashFlowHeader
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == upload.property_id,
+            CashFlowHeader.period_id == upload.period_id
+        ).first()
+        
+        if not header:
+            header = CashFlowHeader(
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                property_name=header_data.get("property_name", ""),
+                property_code=header_data.get("property_code", ""),
+                report_period_start=period_start,
+                report_period_end=period_end,
+                accounting_basis=header_data.get("accounting_basis", "Accrual"),
+                report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+                # Totals from calculations
+                total_income=Decimal(str(totals.get("total_income", 0))),
+                base_rentals=Decimal(str(totals.get("base_rentals", 0))),
+                total_operating_expenses=Decimal(str(totals.get("total_operating_expenses", 0))),
+                total_additional_operating_expenses=Decimal(str(totals.get("total_additional_expenses", 0))),
+                total_expenses=Decimal(str(totals.get("total_expenses", 0))),
+                net_operating_income=Decimal(str(totals.get("noi", 0))),
+                noi_percentage=Decimal(str(totals.get("noi_percentage", 0))),
+                mortgage_interest=Decimal(str(totals.get("mortgage_interest", 0))),
+                depreciation=Decimal(str(totals.get("depreciation", 0))),
+                amortization=Decimal(str(totals.get("amortization", 0))),
+                total_other_income_expense=Decimal(str(totals.get("total_other", 0))),
+                net_income=Decimal(str(totals.get("net_income", 0))),
+                net_income_percentage=Decimal(str(totals.get("net_income_percentage", 0))),
+                total_adjustments=Decimal(str(sum(adj.get("amount", 0) for adj in adjustments))),
+                cash_flow=Decimal(str(totals.get("cash_flow", 0))),
+                cash_flow_percentage=Decimal(str(totals.get("cash_flow_percentage", 0))),
+                beginning_cash_balance=Decimal(str(totals.get("beginning_cash", 0))),
+                ending_cash_balance=Decimal(str(totals.get("ending_cash", 0))),
+                extraction_confidence=Decimal(str(confidence_score)),
+                needs_review=confidence_score < 85.0
+            )
+            self.db.add(header)
+        else:
+            # Update existing header
+            header.upload_id = upload.id
+            header.property_name = header_data.get("property_name", header.property_name)
+            header.property_code = header_data.get("property_code", header.property_code)
+            header.total_income = Decimal(str(totals.get("total_income", 0)))
+            header.total_expenses = Decimal(str(totals.get("total_expenses", 0)))
+            header.net_operating_income = Decimal(str(totals.get("noi", 0)))
+            header.net_income = Decimal(str(totals.get("net_income", 0)))
+            header.cash_flow = Decimal(str(totals.get("cash_flow", 0)))
+            header.extraction_confidence = Decimal(str(confidence_score))
+            header.needs_review = confidence_score < 85.0
+        
+        self.db.flush()  # Get header.id
+        
+        # Step 4: Insert line items with full categorization
         for item in items:
             account_code = item.get("account_code", "")
-            amount = item.get("amount", 0.0)
-            page = item.get("page", 1)
-            unique_key = f"{account_code}_{amount}_{page}"
-            if unique_key not in seen_keys:
-                deduplicated_items.append(item)
-                seen_keys.add(unique_key)
-        
-        for item in deduplicated_items:
-            account_code = item.get("account_code", "")
             account_name = item.get("account_name", "")
-            amount = item.get("amount", 0.0)
-            cash_flow_category = item.get("cash_flow_category", "operating")
             
-            if not account_code or not account_name:
+            if not account_name:
                 continue
             
             # Try to find matching account
-            account = self.db.query(ChartOfAccounts).filter(
-                ChartOfAccounts.account_code == account_code
-            ).first()
-            
-            if not account:
+            account_id = None
+            if account_code:
                 account = self.db.query(ChartOfAccounts).filter(
-                    ChartOfAccounts.account_name.ilike(f"%{account_name}%")
+                    ChartOfAccounts.account_code == account_code
                 ).first()
-            
-            account_id = account.id if account else None
+                account_id = account.id if account else None
             
             # Check for existing entry
             existing = self.db.query(CashFlowData).filter(
                 CashFlowData.property_id == upload.property_id,
                 CashFlowData.period_id == upload.period_id,
-                CashFlowData.account_code == account_code
+                CashFlowData.account_code == account_code,
+                CashFlowData.line_number == item.get("line_number")
             ).first()
             
             if existing:
-                existing.period_amount = Decimal(str(amount))
-                existing.cash_flow_category = cash_flow_category
-                existing.extraction_confidence = Decimal(str(confidence_score))
+                # Update existing
+                existing.header_id = header.id
+                existing.account_name = account_name
+                existing.period_amount = Decimal(str(item.get("period_amount", 0)))
+                existing.ytd_amount = Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None
+                existing.period_percentage = Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None
+                existing.ytd_percentage = Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None
+                existing.line_section = item.get("line_section")
+                existing.line_category = item.get("line_category")
+                existing.line_subcategory = item.get("line_subcategory")
+                existing.is_subtotal = item.get("is_subtotal", False)
+                existing.is_total = item.get("is_total", False)
+                existing.page_number = item.get("page")
+                existing.extraction_confidence = Decimal(str(item.get("confidence", confidence_score)))
                 existing.upload_id = upload.id
-                existing.needs_review = confidence_score < 85.0
+                existing.needs_review = item.get("confidence", confidence_score) < 85.0
             else:
+                # Insert new
                 cf_data = CashFlowData(
+                    header_id=header.id,
                     property_id=upload.property_id,
                     period_id=upload.period_id,
                     upload_id=upload.id,
                     account_id=account_id,
-                    account_code=account_code,
+                    account_code=account_code or "",
                     account_name=account_name,
-                    period_amount=Decimal(str(amount)),
-                    cash_flow_category=cash_flow_category,
-                    is_inflow=amount > 0,
-                    extraction_confidence=Decimal(str(confidence_score)),
-                    needs_review=confidence_score < 85.0
+                    period_amount=Decimal(str(item.get("period_amount", 0))),
+                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                    line_section=item.get("line_section"),
+                    line_category=item.get("line_category"),
+                    line_subcategory=item.get("line_subcategory"),
+                    line_number=item.get("line_number"),
+                    is_subtotal=item.get("is_subtotal", False),
+                    is_total=item.get("is_total", False),
+                    page_number=item.get("page"),
+                    extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
+                    needs_review=item.get("confidence", confidence_score) < 85.0
                 )
                 self.db.add(cf_data)
                 records_inserted += 1
         
+        # Step 5: Insert adjustments
+        for adj in adjustments:
+            adj_record = CashFlowAdjustment(
+                header_id=header.id,
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                adjustment_category=adj.get("adjustment_category"),
+                adjustment_name=adj.get("adjustment_name"),
+                amount=Decimal(str(adj.get("amount", 0))),
+                is_increase=adj.get("is_increase", True),
+                related_property=adj.get("related_property"),
+                related_entity=adj.get("related_entity"),
+                line_number=adj.get("line_number"),
+                page_number=adj.get("page"),
+                extraction_confidence=Decimal(str(adj.get("confidence", confidence_score))),
+                needs_review=adj.get("confidence", confidence_score) < 85.0
+            )
+            self.db.add(adj_record)
+            records_inserted += 1
+        
+        # Step 6: Insert cash account reconciliations
+        for cash_acct in cash_accounts:
+            cash_record = CashAccountReconciliation(
+                header_id=header.id,
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                account_name=cash_acct.get("account_name"),
+                account_type=cash_acct.get("account_type"),
+                beginning_balance=Decimal(str(cash_acct.get("beginning_balance", 0))),
+                ending_balance=Decimal(str(cash_acct.get("ending_balance", 0))),
+                difference=Decimal(str(cash_acct.get("difference", 0))),
+                is_escrow_account=cash_acct.get("is_escrow_account", False),
+                is_negative_balance=cash_acct.get("is_negative_balance", False),
+                is_total_row=cash_acct.get("is_total_row", False),
+                line_number=cash_acct.get("line_number"),
+                page_number=cash_acct.get("page"),
+                extraction_confidence=Decimal(str(cash_acct.get("confidence", confidence_score))),
+                needs_review=cash_acct.get("confidence", confidence_score) < 85.0
+            )
+            self.db.add(cash_record)
+            records_inserted += 1
+        
         self.db.commit()
         return records_inserted
+    
+    def _calculate_cash_flow_totals(self, items: List[Dict]) -> Dict:
+        """Calculate summary totals from line items"""
+        totals = {
+            "total_income": 0,
+            "base_rentals": 0,
+            "total_operating_expenses": 0,
+            "total_additional_expenses": 0,
+            "total_expenses": 0,
+            "noi": 0,
+            "noi_percentage": 0,
+            "mortgage_interest": 0,
+            "depreciation": 0,
+            "amortization": 0,
+            "total_other": 0,
+            "net_income": 0,
+            "net_income_percentage": 0,
+            "cash_flow": 0,
+            "cash_flow_percentage": 0,
+            "beginning_cash": 0,
+            "ending_cash": 0
+        }
+        
+        for item in items:
+            amount = item.get("period_amount", 0)
+            section = item.get("line_section", "")
+            category = item.get("line_category", "")
+            subcategory = item.get("line_subcategory", "")
+            
+            # Total Income
+            if section == "INCOME" and item.get("is_total"):
+                totals["total_income"] = amount
+            elif section == "INCOME" and subcategory == "Base Rentals":
+                totals["base_rentals"] += amount
+            
+            # Operating Expenses
+            elif section == "OPERATING_EXPENSE" and "Total Operating" in category:
+                totals["total_operating_expenses"] = amount
+            
+            # Additional Expenses
+            elif section == "ADDITIONAL_EXPENSE" and "Total Additional" in category:
+                totals["total_additional_expenses"] = amount
+            
+            # Total Expenses
+            elif "Total Expenses" in category or (section == "OPERATING_EXPENSE" and item.get("is_total")):
+                totals["total_expenses"] = amount
+            
+            # NOI
+            elif "Net Operating Income" in subcategory or subcategory == "NOI":
+                totals["noi"] = amount
+            
+            # Performance Metrics
+            elif section == "PERFORMANCE_METRICS":
+                if "Mortgage Interest" in subcategory:
+                    totals["mortgage_interest"] = amount
+                elif "Depreciation" in subcategory:
+                    totals["depreciation"] = amount
+                elif "Amortization" in subcategory:
+                    totals["amortization"] = amount
+            
+            # Net Income
+            elif "Net Income" in subcategory and "Operating" not in subcategory:
+                totals["net_income"] = amount
+        
+        # Calculate derived values
+        if totals["total_income"] > 0:
+            totals["noi_percentage"] = round((totals["noi"] / totals["total_income"]) * 100, 2)
+            totals["net_income_percentage"] = round((totals["net_income"] / totals["total_income"]) * 100, 2)
+        
+        # Cash flow will be calculated with adjustments in the calling method
+        
+        return totals
+    
+    def _parse_period_dates(self, start_str: str, end_str: str, period_id: int):
+        """Parse period dates from header strings"""
+        from datetime import datetime
+        from app.models.financial_period import FinancialPeriod
+        
+        # Try to parse from strings
+        if start_str and end_str:
+            try:
+                # Format: "Jan 2024"
+                start_date = datetime.strptime(start_str, "%b %Y").date()
+                end_date = datetime.strptime(end_str, "%b %Y").date()
+                # Set to last day of month for end date
+                if end_date.month == 12:
+                    end_date = end_date.replace(day=31)
+                else:
+                    end_date = end_date.replace(month=end_date.month + 1, day=1)
+                    end_date = end_date.replace(day=end_date.day - 1)
+                return start_date, end_date
+            except:
+                pass
+        
+        # Fallback: Get from period record
+        period = self.db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id).first()
+        if period:
+            return period.period_start_date, period.period_end_date
+        
+        return None, None
+    
+    def _parse_report_date(self, date_str: str):
+        """Parse report generation date"""
+        from datetime import datetime
+        
+        if not date_str:
+            return None
+        
+        # Try various formats
+        formats = [
+            "%A, %B %d, %Y",  # "Thursday, February 19, 2025"
+            "%m/%d/%Y",        # "02/19/2025"
+            "%Y-%m-%d"         # "2025-02-19"
+        ]
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except:
+                continue
+        
+        return None
     
     def _insert_rent_roll_data(
         self,

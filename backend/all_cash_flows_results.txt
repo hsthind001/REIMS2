@@ -1,0 +1,129 @@
+🚀 EXTRACTING ALL 7 CASH FLOW STATEMENTS (DIRECT)
+====================================================================================================
+
+📄 [1/7] ESP 2023 Cash Flow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  🔄 Parsing PDF...
+  ✅ Parsed: 363 line items
+  ❌ Error: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+
+📄 [2/7] Hammond Aire 2023 Cash Flow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  ❌ Error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+
+📄 [3/7] Hammond Aire 2024 Cash Flow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  ❌ Error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+
+📄 [4/7] TCSH 2023 Cash FLow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  ❌ Error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+
+📄 [5/7] TCSH 2024 Cash Flow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  ❌ Error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+
+📄 [6/7] Wendover Commons 2023 Cash Flow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  ❌ Error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+
+📄 [7/7] Wendover Commons 2024 Cash Flow Statement.pdf
+----------------------------------------------------------------------------------------------------
+  ❌ Error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+
+====================================================================================================
+📊 EXTRACTION SUMMARY
+====================================================================================================
+
+✅ Successful: 0/7
+❌ Failed: 7/7
+
+Traceback (most recent call last):
+  File "/home/gurpyar/Documents/R/REIMS2/backend/extract_all_cash_flows_direct.py", line 233, in <module>
+    extract_all_directly()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/gurpyar/Documents/R/REIMS2/backend/extract_all_cash_flows_direct.py", line 217, in extract_all_directly
+    header_count = db.query(CashFlowHeader).count()
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/query.py", line 3146, in count
+    self._legacy_from_self(col).enable_eagerloads(False).scalar()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/query.py", line 2835, in scalar
+    ret = self.one()
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/query.py", line 2808, in one
+    return self._iter().one()  # type: ignore
+           ~~~~~~~~~~^^
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+        params,
+        ^^^^^^^
+        execution_options={"_sa_orm_load_options": self.load_options},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2239, in _execute_internal
+    conn = self._connection_for_bind(bind)
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2108, in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in _connection_for_bind
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/state_changes.py", line 101, in _go
+    self._raise_for_prerequisite_state(fn.__name__, current_state)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gurpyar/Documents/R/REIMS2/backend/venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 971, in _raise_for_prerequisite_state
+    raise sa_exc.PendingRollbackError(
+    ...<6 lines>...
+    )
+sqlalchemy.exc.PendingRollbackError: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uq_property_period_doctype_version"
+DETAIL:  Key (property_id, period_id, document_type, version)=(1, 2, cash_flow, 1) already exists.
+
+[SQL: INSERT INTO document_uploads (property_id, period_id, document_type, file_name, file_path, file_hash, file_size_bytes, uploaded_by, extraction_status, extraction_started_at, extraction_completed_at, extraction_id, version, is_active, notes) VALUES (%(property_id)s, %(period_id)s, %(document_type)s, %(file_name)s, %(file_path)s, %(file_hash)s, %(file_size_bytes)s, %(uploaded_by)s, %(extraction_status)s, %(extraction_started_at)s, %(extraction_completed_at)s, %(extraction_id)s, %(version)s, %(is_active)s, %(notes)s) RETURNING document_uploads.id, document_uploads.upload_date]
+[parameters: {'property_id': 1, 'period_id': 2, 'document_type': 'cash_flow', 'file_name': 'ESP 2023 Cash Flow Statement.pdf', 'file_path': 'ESP001/2023/12/ESP 2023 Cash Flow Statement.pdf', 'file_hash': None, 'file_size_bytes': None, 'uploaded_by': None, 'extraction_status': 'processing', 'extraction_started_at': None, 'extraction_completed_at': None, 'extraction_id': None, 'version': 1, 'is_active': True, 'notes': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) (Background on this error at: https://sqlalche.me/e/20/7s2a)

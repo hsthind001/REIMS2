@@ -40,7 +40,10 @@ class FinancialPeriod(Base):
     document_uploads = relationship("DocumentUpload", back_populates="period", cascade="all, delete-orphan")
     balance_sheet_data = relationship("BalanceSheetData", back_populates="period", cascade="all, delete-orphan")
     income_statement_data = relationship("IncomeStatementData", back_populates="period", cascade="all, delete-orphan")
+    cash_flow_headers = relationship("CashFlowHeader", back_populates="period", cascade="all, delete-orphan")
     cash_flow_data = relationship("CashFlowData", back_populates="period", cascade="all, delete-orphan")
+    cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="period", cascade="all, delete-orphan")
+    cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="period", cascade="all, delete-orphan")
     rent_roll_data = relationship("RentRollData", back_populates="period", cascade="all, delete-orphan")
     financial_metrics = relationship("FinancialMetrics", back_populates="period", cascade="all, delete-orphan")
     

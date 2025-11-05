@@ -13,7 +13,7 @@ echo "✅ PostgreSQL is ready!"
 # Run Alembic migrations
 echo "🔄 Running database migrations..."
 cd /app
-alembic upgrade heads
+alembic upgrade heads || alembic upgrade head
 echo "✅ Migrations complete!"
 
 # Seed database (only if not already seeded)

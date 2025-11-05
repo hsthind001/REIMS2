@@ -1599,19 +1599,62 @@ class ValidationService:
     # ==================== CASH FLOW VALIDATIONS ====================
     
     def _validate_cash_flow(self, upload: DocumentUpload) -> List[Dict]:
-        """Run all cash flow validations"""
+        """
+        Run all cash flow validations - Template v1.0 compliant
+        
+        Validates:
+        - Income section totals and percentages
+        - Expense section totals and subtotals
+        - NOI calculation and percentage
+        - Net Income calculation
+        - Cash Flow calculation
+        - Adjustments total
+        - Cash account reconciliation
+        """
         results = []
         
-        # 1. Categories sum to net change
-        results.append(self.validate_cash_flow_categories(
+        # Income validations
+        results.append(self.validate_cf_total_income(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        results.append(self.validate_cf_base_rental_percentage(
             upload.id, upload.property_id, upload.period_id
         ))
         
-        # 2. Cross-document consistency (if balance sheet exists)
-        if self._has_balance_sheet_data(property_id, period_id):
-            results.append(self.validate_cross_document_consistency(
-                upload.id, upload.property_id, upload.period_id
-            ))
+        # Expense validations
+        results.append(self.validate_cf_total_expenses(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        results.append(self.validate_cf_expense_subtotals(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        # NOI validations
+        results.append(self.validate_cf_noi_calculation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        results.append(self.validate_cf_noi_percentage(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        results.append(self.validate_cf_noi_positive(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        # Net Income validation
+        results.append(self.validate_cf_net_income_calculation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        # Cash Flow validations
+        results.append(self.validate_cf_cash_flow_calculation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        results.append(self.validate_cf_cash_account_differences(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        results.append(self.validate_cf_total_cash_balance(
+            upload.id, upload.property_id, upload.period_id
+        ))
         
         return results
     
@@ -1697,6 +1740,538 @@ class ValidationService:
         )
         
         return result
+    
+    # ==================== CASH FLOW TEMPLATE V1.0 VALIDATIONS ====================
+    
+    def validate_cf_total_income(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate Total Income equals sum of all income line items"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_total_income_sum",
+            "Cash Flow Total Income Sum",
+            "Total Income must equal sum of all income line items",
+            "cash_flow",
+            "balance_check",
+            "total_income = sum(income_items)",
+            "error"
+        )
+        
+        # Get Total Income from header
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="error"
+            )
+        
+        expected_total = header.total_income
+        
+        # Calculate sum of income items
+        actual_total = self.db.query(
+            func.sum(CashFlowData.period_amount)
+        ).filter(
+            CashFlowData.property_id == property_id,
+            CashFlowData.period_id == period_id,
+            CashFlowData.line_section == "INCOME",
+            CashFlowData.is_total == False,  # Exclude the total row itself
+            CashFlowData.is_subtotal == False
+        ).scalar() or Decimal('0')
+        
+        difference = abs(expected_total - actual_total)
+        tolerance = abs(expected_total) * self.tolerance
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_total,
+            actual_value=actual_total,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_total),
+            error_message=None if passed else f"Income items sum to {actual_total:,.2f} but Total Income is {expected_total:,.2f}",
+            severity=rule.severity
+        )
+    
+    def validate_cf_base_rental_percentage(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate Base Rentals are 70-85% of Total Income"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_base_rental_percentage",
+            "Base Rentals Percentage Check",
+            "Base Rentals should be 70-85% of Total Income",
+            "cash_flow",
+            "range_check",
+            "70 <= (base_rentals / total_income * 100) <= 85",
+            "warning"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header or not header.total_income or header.total_income == 0:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=True,  # Skip if no data
+                severity="warning"
+            )
+        
+        percentage = (header.base_rentals / header.total_income) * 100
+        passed = 70 <= percentage <= 85
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('75'),  # Midpoint
+            actual_value=Decimal(str(percentage)),
+            error_message=None if passed else f"Base Rentals are {percentage:.2f}% of Total Income (expected 70-85%)",
+            severity=rule.severity
+        )
+    
+    def validate_cf_total_expenses(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate Total Expenses = Total Operating + Total Additional"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_total_expenses_sum",
+            "Cash Flow Total Expenses Sum",
+            "Total Expenses must equal Total Operating + Total Additional Expenses",
+            "cash_flow",
+            "balance_check",
+            "total_expenses = total_operating + total_additional",
+            "error"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="error"
+            )
+        
+        expected_total = header.total_operating_expenses + (header.total_additional_operating_expenses or Decimal('0'))
+        actual_total = header.total_expenses
+        difference = abs(expected_total - actual_total)
+        tolerance = abs(expected_total) * self.tolerance
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_total,
+            actual_value=actual_total,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_total),
+            error_message=None if passed else f"Operating ({header.total_operating_expenses:,.2f}) + Additional ({header.total_additional_operating_expenses:,.2f}) != Total Expenses ({actual_total:,.2f})",
+            severity=rule.severity
+        )
+    
+    def validate_cf_expense_subtotals(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate expense subtotals equal sum of their line items"""
+        rule = self._get_or_create_rule(
+            "cf_expense_subtotals",
+            "Expense Subtotals Check",
+            "Each expense subtotal should equal sum of its line items",
+            "cash_flow",
+            "balance_check",
+            "subtotal = sum(line_items)",
+            "error"
+        )
+        
+        # Check major subtotals
+        subtotals_to_check = [
+            ("Utility Expenses", "Total Utility Expense"),
+            ("Contracted Services", "Total Contracted Expenses"),
+            ("Repair & Maintenance", "Total R&M Operating Expenses"),
+            ("Administrative Expenses", "Total Administration Expense"),
+            ("Landlord Expenses", "Total LL Expense")
+        ]
+        
+        all_passed = True
+        error_messages = []
+        
+        for category, subtotal_name in subtotals_to_check:
+            # Get subtotal value
+            subtotal = self.db.query(CashFlowData.period_amount).filter(
+                CashFlowData.property_id == property_id,
+                CashFlowData.period_id == period_id,
+                CashFlowData.line_category == category,
+                CashFlowData.is_subtotal == True
+            ).scalar()
+            
+            if subtotal:
+                # Get sum of line items
+                line_sum = self.db.query(
+                    func.sum(CashFlowData.period_amount)
+                ).filter(
+                    CashFlowData.property_id == property_id,
+                    CashFlowData.period_id == period_id,
+                    CashFlowData.line_category == category,
+                    CashFlowData.is_subtotal == False,
+                    CashFlowData.is_total == False
+                ).scalar() or Decimal('0')
+                
+                difference = abs(subtotal - line_sum)
+                tolerance = abs(subtotal) * self.tolerance
+                
+                if difference > tolerance:
+                    all_passed = False
+                    error_messages.append(f"{subtotal_name}: {subtotal:,.2f} != sum({line_sum:,.2f})")
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=all_passed,
+            error_message="; ".join(error_messages) if error_messages else None,
+            severity=rule.severity
+        )
+    
+    def validate_cf_noi_calculation(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate NOI = Total Income - Total Expenses"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_noi_calculation",
+            "NOI Calculation Check",
+            "Net Operating Income must equal Total Income - Total Expenses",
+            "cash_flow",
+            "balance_check",
+            "noi = total_income - total_expenses",
+            "error"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="error"
+            )
+        
+        expected_noi = header.total_income - header.total_expenses
+        actual_noi = header.net_operating_income
+        difference = abs(expected_noi - actual_noi)
+        tolerance = abs(expected_noi) * self.tolerance
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_noi,
+            actual_value=actual_noi,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_noi),
+            error_message=None if passed else f"Income ({header.total_income:,.2f}) - Expenses ({header.total_expenses:,.2f}) = {expected_noi:,.2f}, but NOI is {actual_noi:,.2f}",
+            severity=rule.severity
+        )
+    
+    def validate_cf_noi_percentage(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate NOI is 60-80% of Total Income"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_noi_percentage",
+            "NOI Percentage Range",
+            "NOI should be 60-80% of Total Income for viable properties",
+            "cash_flow",
+            "range_check",
+            "60 <= (noi / total_income * 100) <= 80",
+            "warning"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header or not header.total_income or header.total_income == 0:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=True,
+                severity="warning"
+            )
+        
+        percentage = (header.net_operating_income / header.total_income) * 100
+        passed = 60 <= percentage <= 80
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('70'),
+            actual_value=Decimal(str(percentage)),
+            error_message=None if passed else f"NOI is {percentage:.2f}% of Total Income (expected 60-80%)",
+            severity=rule.severity
+        )
+    
+    def validate_cf_noi_positive(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate NOI is positive for viable properties"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_noi_positive",
+            "Positive NOI Check",
+            "NOI should be positive for viable properties",
+            "cash_flow",
+            "range_check",
+            "noi > 0",
+            "warning"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="warning"
+            )
+        
+        passed = header.net_operating_income > 0
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            actual_value=header.net_operating_income,
+            error_message=None if passed else f"NOI is negative or zero: {header.net_operating_income:,.2f}",
+            severity=rule.severity
+        )
+    
+    def validate_cf_net_income_calculation(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate Net Income = NOI - (Mortgage Interest + Depreciation + Amortization)"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_net_income_calculation",
+            "Net Income Calculation",
+            "Net Income = NOI - Mortgage Interest - Depreciation - Amortization",
+            "cash_flow",
+            "balance_check",
+            "net_income = noi - mortgage_interest - depreciation - amortization",
+            "error"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="error"
+            )
+        
+        expected_net_income = header.net_operating_income - (
+            (header.mortgage_interest or Decimal('0')) +
+            (header.depreciation or Decimal('0')) +
+            (header.amortization or Decimal('0'))
+        )
+        actual_net_income = header.net_income
+        difference = abs(expected_net_income - actual_net_income)
+        tolerance = abs(expected_net_income) * self.tolerance if expected_net_income != 0 else Decimal('1')
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_net_income,
+            actual_value=actual_net_income,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_net_income),
+            error_message=None if passed else f"Net Income calculation mismatch: expected {expected_net_income:,.2f}, actual {actual_net_income:,.2f}",
+            severity=rule.severity
+        )
+    
+    def validate_cf_cash_flow_calculation(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate Cash Flow = Net Income + Total Adjustments"""
+        from app.models.cash_flow_header import CashFlowHeader
+        
+        rule = self._get_or_create_rule(
+            "cf_cash_flow_calculation",
+            "Cash Flow Calculation",
+            "Cash Flow must equal Net Income + Total Adjustments",
+            "cash_flow",
+            "balance_check",
+            "cash_flow = net_income + total_adjustments",
+            "error"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="error"
+            )
+        
+        expected_cash_flow = header.net_income + (header.total_adjustments or Decimal('0'))
+        actual_cash_flow = header.cash_flow
+        difference = abs(expected_cash_flow - actual_cash_flow)
+        tolerance = abs(expected_cash_flow) * self.tolerance if expected_cash_flow != 0 else Decimal('1')
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_cash_flow,
+            actual_value=actual_cash_flow,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_cash_flow),
+            error_message=None if passed else f"Net Income ({header.net_income:,.2f}) + Adjustments ({header.total_adjustments:,.2f}) != Cash Flow ({actual_cash_flow:,.2f})",
+            severity=rule.severity
+        )
+    
+    def validate_cf_cash_account_differences(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate cash account differences = ending - beginning for each account"""
+        from app.models.cash_account_reconciliation import CashAccountReconciliation
+        
+        rule = self._get_or_create_rule(
+            "cf_cash_account_differences",
+            "Cash Account Differences",
+            "Each cash account difference must equal ending balance - beginning balance",
+            "cash_flow",
+            "balance_check",
+            "difference = ending_balance - beginning_balance",
+            "error"
+        )
+        
+        cash_accounts = self.db.query(CashAccountReconciliation).filter(
+            CashAccountReconciliation.property_id == property_id,
+            CashAccountReconciliation.period_id == period_id,
+            CashAccountReconciliation.is_total_row == False  # Exclude total row
+        ).all()
+        
+        if not cash_accounts:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=True,  # Skip if no data
+                severity="error"
+            )
+        
+        all_passed = True
+        error_messages = []
+        
+        for acct in cash_accounts:
+            expected_diff = acct.ending_balance - acct.beginning_balance
+            actual_diff = acct.difference
+            diff = abs(expected_diff - actual_diff)
+            
+            if diff > Decimal('0.01'):  # More than 1 cent difference
+                all_passed = False
+                error_messages.append(
+                    f"{acct.account_name}: Expected {expected_diff:,.2f}, Actual {actual_diff:,.2f}"
+                )
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=all_passed,
+            error_message="; ".join(error_messages) if error_messages else None,
+            severity=rule.severity
+        )
+    
+    def validate_cf_total_cash_balance(self, upload_id: int, property_id: int, period_id: int) -> Dict:
+        """Validate total cash equals sum of all cash account ending balances"""
+        from app.models.cash_flow_header import CashFlowHeader
+        from app.models.cash_account_reconciliation import CashAccountReconciliation
+        
+        rule = self._get_or_create_rule(
+            "cf_total_cash_balance",
+            "Total Cash Balance",
+            "Total Cash must equal sum of all cash account ending balances",
+            "cash_flow",
+            "balance_check",
+            "total_cash = sum(cash_account_ending_balances)",
+            "error"
+        )
+        
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
+        
+        if not header:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Cash Flow Header not found",
+                severity="error"
+            )
+        
+        # Sum all cash account ending balances (excluding total row)
+        actual_total = self.db.query(
+            func.sum(CashAccountReconciliation.ending_balance)
+        ).filter(
+            CashAccountReconciliation.property_id == property_id,
+            CashAccountReconciliation.period_id == period_id,
+            CashAccountReconciliation.is_total_row == False
+        ).scalar() or Decimal('0')
+        
+        expected_total = header.ending_cash_balance
+        difference = abs(expected_total - actual_total)
+        tolerance = abs(expected_total) * self.tolerance if expected_total != 0 else Decimal('1')
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_total,
+            actual_value=actual_total,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_total),
+            error_message=None if passed else f"Sum of cash accounts ({actual_total:,.2f}) != Total Cash ({expected_total:,.2f})",
+            severity=rule.severity
+        )
     
     # ==================== RENT ROLL VALIDATIONS ====================
     

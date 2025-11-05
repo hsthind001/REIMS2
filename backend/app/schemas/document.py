@@ -205,12 +205,31 @@ class IncomeStatementDataItem(BaseModel):
 
 
 class CashFlowDataItem(BaseModel):
-    """Cash flow line item"""
+    """Cash flow line item - Template v1.0 compliant"""
     account_code: str
     account_name: str
+    
+    # Financial Data - Multi-column
     period_amount: float
-    cash_flow_category: Optional[str] = None
+    ytd_amount: Optional[float] = None
+    period_percentage: Optional[float] = None
+    ytd_percentage: Optional[float] = None
+    
+    # Template v1.0: Classification
+    line_section: Optional[str] = None  # INCOME, OPERATING_EXPENSE, ADDITIONAL_EXPENSE, PERFORMANCE_METRICS
+    line_category: Optional[str] = None  # Base Rental Income, Utility Expenses, etc.
+    line_subcategory: Optional[str] = None  # Base Rentals, Electricity Service, etc.
+    
+    # Structure
+    line_number: Optional[int] = None
+    is_subtotal: bool = False
+    is_total: bool = False
+    
+    # Legacy fields (backwards compatibility)
+    cash_flow_category: Optional[str] = None  # operating, investing, financing
     is_inflow: Optional[bool] = None
+    
+    # Quality
     extraction_confidence: Optional[float] = None
     needs_review: bool = False
     

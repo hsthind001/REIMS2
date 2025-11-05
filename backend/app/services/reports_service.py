@@ -502,36 +502,124 @@ class ReportsService:
         ws.column_dimensions['B'].width = 20
     
     def _create_cash_flow_sheet(self, wb: Workbook, summary: Dict):
-        """Create Cash Flow sheet"""
+        """Create Cash Flow sheet with Template v1.0 compliance"""
+        from openpyxl.styles import Alignment
+        
         ws = wb.create_sheet("Cash Flow")
         
         ws['A1'] = "Cash Flow Statement"
         ws['A1'].font = Font(bold=True, size=14)
         
-        row = 4
-        cf_data = [
-            ("Category", "Amount"),
-            ("Operating Activities", summary['cash_flow']['operating_cash_flow']),
-            ("Investing Activities", summary['cash_flow']['investing_cash_flow']),
-            ("Financing Activities", summary['cash_flow']['financing_cash_flow']),
-            ("", ""),
-            ("NET CASH FLOW", summary['cash_flow']['net_cash_flow']),
-            ("Ending Cash Balance", summary['cash_flow']['ending_cash_balance']),
+        # Get cash flow data
+        cf = summary.get('cash_flow', {})
+        
+        row = 3
+        
+        # Header Section
+        ws[f'A{row}'] = "Period:"
+        ws[f'B{row}'] = f"{summary['period']['year']}-{summary['period']['month']:02d}"
+        row += 1
+        ws[f'A{row}'] = "Property:"
+        ws[f'B{row}'] = summary['property']['property_code']
+        row += 2
+        
+        # Income Section
+        ws[f'A{row}'] = "INCOME"
+        ws[f'A{row}'].font = Font(bold=True)
+        row += 1
+        
+        income_data = [
+            ("Total Income", cf.get('total_income')),
+            ("  Base Rentals", cf.get('base_rentals')),
         ]
         
-        for label, value in cf_data:
+        for label, value in income_data:
+            ws[f'A{row}'] = label
+            if value is not None:
+                ws[f'B{row}'] = value
+                ws[f'B{row}'].number_format = '#,##0.00'
+            row += 1
+        
+        row += 1
+        
+        # Expenses Section
+        ws[f'A{row}'] = "EXPENSES"
+        ws[f'A{row}'].font = Font(bold=True)
+        row += 1
+        
+        expense_data = [
+            ("Total Operating Expenses", cf.get('total_operating_expenses')),
+            ("Total Additional Expenses", cf.get('total_additional_expenses')),
+            ("Total Expenses", cf.get('total_expenses')),
+        ]
+        
+        for label, value in expense_data:
+            ws[f'A{row}'] = label
+            if value is not None:
+                ws[f'B{row}'] = value
+                ws[f'B{row}'].number_format = '#,##0.00'
+            row += 1
+        
+        row += 1
+        
+        # Performance Metrics
+        ws[f'A{row}'] = "PERFORMANCE METRICS"
+        ws[f'A{row}'].font = Font(bold=True)
+        row += 1
+        
+        performance_data = [
+            ("Net Operating Income (NOI)", cf.get('net_operating_income')),
+            ("  NOI %", cf.get('noi_percentage')),
+            ("Mortgage Interest", cf.get('mortgage_interest')),
+            ("Depreciation", cf.get('depreciation')),
+            ("Amortization", cf.get('amortization')),
+            ("Net Income", cf.get('net_income')),
+            ("  Net Income %", cf.get('net_income_percentage')),
+        ]
+        
+        for label, value in performance_data:
+            ws[f'A{row}'] = label
+            if value is not None:
+                ws[f'B{row}'] = value
+                if '%' in label:
+                    ws[f'B{row}'].number_format = '0.00"%"'
+                else:
+                    ws[f'B{row}'].number_format = '#,##0.00'
+            row += 1
+        
+        row += 1
+        
+        # Cash Flow Summary
+        ws[f'A{row}'] = "CASH FLOW SUMMARY"
+        ws[f'A{row}'].font = Font(bold=True)
+        row += 1
+        
+        cf_summary = [
+            ("Net Income", cf.get('net_income')),
+            ("Total Adjustments", cf.get('total_adjustments')),
+            ("CASH FLOW", cf.get('cash_flow')),
+            ("  Cash Flow %", cf.get('cash_flow_percentage')),
+            ("", ""),
+            ("Beginning Cash Balance", cf.get('beginning_cash_balance')),
+            ("Ending Cash Balance", cf.get('ending_cash_balance')),
+        ]
+        
+        for label, value in cf_summary:
             ws[f'A{row}'] = label
             if value is not None and value != "":
                 ws[f'B{row}'] = value
-                if isinstance(value, (int, float)):
+                if '%' in label:
+                    ws[f'B{row}'].number_format = '0.00"%"'
+                else:
                     ws[f'B{row}'].number_format = '#,##0.00'
             
-            if label == "NET CASH FLOW":
+            if label == "CASH FLOW":
                 ws[f'A{row}'].font = Font(bold=True)
+                ws[f'B{row}'].font = Font(bold=True)
             
             row += 1
         
-        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['A'].width = 35
         ws.column_dimensions['B'].width = 20
     
     def _create_rent_roll_sheet(self, wb: Workbook, summary: Dict):
