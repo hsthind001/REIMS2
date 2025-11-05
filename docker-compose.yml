@@ -114,9 +114,17 @@ services:
       # CORS
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
       
-      # Database Initialization (Template v1.0)
+      # Database Initialization (Cash Flow Template v1.0)
       RUN_MIGRATIONS: "true"  # Set to false to skip automatic migrations
       SEED_DATABASE: "true"   # Set to false to skip automatic seeding
+      
+      # Cash Flow Template v1.0 Features:
+      # - 3 new tables: cash_flow_headers, cash_flow_adjustments, cash_account_reconciliations
+      # - 100+ category classification engine
+      # - 11 validation rules
+      # - Multi-column extraction (Period/YTD amounts and percentages)
+      # - Adjustments tracking (30+ types across 10 categories)
+      # - Cash reconciliation with beginning/ending balances
     volumes:
       - ./backend/app:/app/app  # Mount app for development
     ports:
