@@ -66,13 +66,46 @@ const Documents = () => {
         file: file
       })
 
-      // Reload recent uploads
-      await loadRecentUploads()
-      
-      alert(`✅ File uploaded successfully!\n\nUpload ID: ${result.upload_id}\nStatus: ${result.extraction_status}\n\nExtraction task started. Check Dashboard for progress.`)
-      
-      // Reset file input
-      e.target.value = ''
+      // Check if file already exists at this location
+      if (result.file_exists && result.existing_file) {
+        const existingFile = result.existing_file
+        const sizeKB = (existingFile.size / 1024).toFixed(1)
+        const lastModified = new Date(existingFile.last_modified).toLocaleString()
+        
+        const confirmOverwrite = window.confirm(
+          `⚠️  FILE ALREADY EXISTS!\n\n` +
+          `Path: ${existingFile.path}\n` +
+          `Size: ${sizeKB} KB\n` +
+          `Last Modified: ${lastModified}\n\n` +
+          `Do you want to REPLACE the existing file?\n\n` +
+          `Click OK to replace, Cancel to keep existing file.`
+        )
+
+        if (!confirmOverwrite) {
+          setUploading(false)
+          e.target.value = ''  // Reset input
+          return
+        }
+
+        // User confirmed - upload with overwrite
+        const overwriteResult = await documentService.uploadWithOverwrite({
+          property_code: selectedProperty,
+          period_year: selectedYear,
+          period_month: selectedMonth,
+          document_type: selectedDocType,
+          file: file,
+          overwrite: true
+        })
+
+        await loadRecentUploads()
+        alert(`✅ File replaced successfully!\n\nUpload ID: ${overwriteResult.upload_id}\nStatus: ${overwriteResult.extraction_status}\n\nExtraction task started.`)
+        e.target.value = ''
+      } else {
+        // New file uploaded successfully
+        await loadRecentUploads()
+        alert(`✅ File uploaded successfully!\n\nUpload ID: ${result.upload_id}\nStatus: ${result.extraction_status}\n\nExtraction task started. Check Dashboard for progress.`)
+        e.target.value = ''
+      }
       
     } catch (error: any) {
       alert(`❌ Upload failed: ${error.message || 'Unknown error'}`)

@@ -15,6 +15,15 @@ from app.db.minio_client import upload_file, get_minio_client
 from app.core.config import settings
 
 
+# Property name mapping for MinIO folder structure
+PROPERTY_NAME_MAPPING = {
+    'ESP001': 'Eastern-Shore-Plaza',
+    'HMND001': 'Hammond-Aire',
+    'TCSH001': 'The-Crossings',
+    'WEND001': 'Wendover-Commons'
+}
+
+
 class DocumentService:
     """Handle document upload workflow and storage"""
     
@@ -29,7 +38,8 @@ class DocumentService:
         period_month: int,
         document_type: str,
         file: UploadFile,
-        uploaded_by: Optional[int] = None
+        uploaded_by: Optional[int] = None,
+        force_overwrite: bool = False
     ) -> Dict:
         """
         Complete document upload workflow
@@ -91,15 +101,39 @@ class DocumentService:
                 "file_path": existing_upload.file_path
             }
         
-        # Step 5: Upload to MinIO
-        file_path = await self.upload_to_storage(
-            file_content,
-            property_code,
+        # Step 5: Generate file path and check if exists
+        file_path = await self.generate_file_path(
+            property_obj,
             period_year,
             period_month,
             document_type,
             file.filename
         )
+        
+        # Check if file already exists at this path (not hash duplicate)
+        if not force_overwrite:
+            existing_file = self.check_file_exists(file_path)
+            if existing_file:
+                return {
+                    "file_exists": True,
+                    "existing_file": existing_file,
+                    "message": "File already exists at this location",
+                    "requires_confirmation": True
+                }
+        
+        # Upload to MinIO
+        success = upload_file(
+            file_data=file_content,
+            object_name=file_path,
+            content_type="application/pdf",
+            bucket_name=settings.MINIO_BUCKET_NAME
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to upload file to storage"
+            )
         
         # Step 6: Create document_uploads record
         upload = DocumentUpload(
@@ -216,60 +250,86 @@ class DocumentService:
             DocumentUpload.is_active == True
         ).first()
     
-    async def upload_to_storage(
+    async def generate_file_path(
         self,
-        file_content: bytes,
-        property_code: str,
+        property_obj: Property,
         period_year: int,
         period_month: int,
         document_type: str,
         original_filename: str
     ) -> str:
         """
-        Upload file to MinIO with organized path structure
+        Generate MinIO file path using new organized structure
         
-        Path format: {property_code}/{year}/{month}/{document_type}_{timestamp}.pdf
+        Path format: {property_code}-{property_name}/{year}/{doc_type}/{standardized_file}.pdf
+        Example: ESP001-Eastern-Shore-Plaza/2025/rent-roll/ESP_2025_Rent_Roll_April.pdf
         
         Args:
-            file_content: File content as bytes
-            property_code: Property code
+            property_obj: Property object (includes code and name)
             period_year: Year
             period_month: Month
             document_type: Document type
             original_filename: Original filename
         
         Returns:
-            str: File path in MinIO
-        
-        Raises:
-            HTTPException: If upload fails
+            str: Standardized file path for MinIO
         """
-        # Generate timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Get property folder name
+        property_code = property_obj.property_code
+        prop_folder = PROPERTY_NAME_MAPPING.get(property_code, property_obj.property_name.replace(' ', '-'))
         
-        # Get file extension
-        _, ext = os.path.splitext(original_filename)
-        if not ext:
-            ext = '.pdf'
+        # Map document types to folder names (with hyphens)
+        doc_type_folders = {
+            'balance_sheet': 'balance-sheet',
+            'income_statement': 'income-statement',
+            'cash_flow': 'cash-flow',
+            'rent_roll': 'rent-roll'
+        }
+        doc_folder = doc_type_folders.get(document_type, document_type)
         
-        # Build file path
-        file_path = f"{property_code}/{period_year}/{period_month:02d}/{document_type}_{timestamp}{ext}"
+        # Generate standardized filename
+        prop_abbr = property_code[:property_code.find('0')] if '0' in property_code else property_code[:4]
         
-        # Upload to MinIO
-        success = upload_file(
-            file_data=file_content,
-            object_name=file_path,
-            content_type="application/pdf",
-            bucket_name=settings.MINIO_BUCKET_NAME
-        )
+        # Month name for rent rolls
+        month_name = datetime(period_year, period_month, 1).strftime('%B') if document_type == 'rent_roll' else ''
         
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to upload file to storage"
-            )
+        if document_type == 'rent_roll' and month_name:
+            filename = f"{prop_abbr}_{period_year}_Rent_Roll_{month_name}.pdf"
+        else:
+            doc_type_map = {
+                'balance_sheet': 'Balance_Sheet',
+                'income_statement': 'Income_Statement',
+                'cash_flow': 'Cash_Flow_Statement'
+            }
+            type_name = doc_type_map.get(document_type, document_type)
+            filename = f"{prop_abbr}_{period_year}_{type_name}.pdf"
+        
+        # Build structured path
+        file_path = f"{property_code}-{prop_folder}/{period_year}/{doc_folder}/{filename}"
         
         return file_path
+    
+    def check_file_exists(self, file_path: str) -> Optional[Dict]:
+        """
+        Check if file already exists in MinIO at the given path
+        
+        Args:
+            file_path: MinIO object path to check
+        
+        Returns:
+            dict with file info if exists, None if not found
+        """
+        try:
+            stat = self.minio_client.stat_object(settings.MINIO_BUCKET_NAME, file_path)
+            return {
+                'exists': True,
+                'path': file_path,
+                'size': stat.size,
+                'last_modified': stat.last_modified.isoformat(),
+                'etag': stat.etag
+            }
+        except:
+            return None
     
     def _get_next_version(
         self,

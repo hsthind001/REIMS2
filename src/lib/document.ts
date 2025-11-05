@@ -28,6 +28,21 @@ export class DocumentService {
   }
 
   /**
+   * Upload document with overwrite confirmation
+   */
+  async uploadWithOverwrite(data: DocumentUploadRequest & { overwrite: boolean }): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('property_code', data.property_code);
+    formData.append('period_year', data.period_year.toString());
+    formData.append('period_month', data.period_month.toString());
+    formData.append('document_type', data.document_type);
+    formData.append('file', data.file);
+    formData.append('force_overwrite', data.overwrite.toString());
+
+    return api.uploadFile<DocumentUploadResponse>('/documents/upload', formData);
+  }
+
+  /**
    * Get list of document uploads with filters
    */
   async getDocuments(params?: {

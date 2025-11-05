@@ -47,11 +47,13 @@ class DocumentUploadRequest(BaseModel):
 
 class DocumentUploadResponse(BaseModel):
     """Response after successful upload"""
-    upload_id: int = Field(..., description="Unique upload ID")
-    task_id: str = Field(..., description="Celery task ID for extraction")
+    upload_id: Optional[int] = Field(None, description="Unique upload ID")
+    task_id: Optional[str] = Field(None, description="Celery task ID for extraction")
     message: str = Field(default="Document uploaded successfully")
-    file_path: str = Field(..., description="Storage path in MinIO")
-    extraction_status: str = Field(default="pending")
+    file_path: Optional[str] = Field(None, description="Storage path in MinIO")
+    extraction_status: Optional[str] = Field(None, description="Extraction status")
+    file_exists: Optional[bool] = Field(False, description="True if file already exists")
+    existing_file: Optional[dict] = Field(None, description="Info about existing file")
     
     class Config:
         schema_extra = {
@@ -59,7 +61,7 @@ class DocumentUploadResponse(BaseModel):
                 "upload_id": 123,
                 "task_id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
                 "message": "Document uploaded successfully",
-                "file_path": "WEND001/2024/12/balance_sheet_20241103_143022.pdf",
+                "file_path": "ESP001-Eastern-Shore-Plaza/2024/balance-sheet/ESP_2024_Balance_Sheet.pdf",
                 "extraction_status": "pending"
             }
         }

@@ -49,6 +49,7 @@ async def upload_document(
     period_month: int = Form(..., ge=1, le=12, description="Financial period month (1-12)"),
     document_type: DocumentTypeEnum = Form(..., description="Type of financial document"),
     file: UploadFile = File(..., description="PDF file to upload"),
+    force_overwrite: bool = Form(False, description="Force overwrite if file exists"),
     db: Session = Depends(get_db)
 ):
     """
@@ -101,10 +102,23 @@ async def upload_document(
             period_month=period_month,
             document_type=document_type.value,
             file=file,
-            uploaded_by=None  # TODO: Get from auth context
+            uploaded_by=None,  # TODO: Get from auth context
+            force_overwrite=force_overwrite
         )
         
-        # Check if duplicate
+        # Check if file already exists (and not forcing overwrite)
+        if result.get("file_exists"):
+            return DocumentUploadResponse(
+                upload_id=None,
+                task_id=None,
+                message=result["message"],
+                file_path=None,
+                extraction_status=None,
+                file_exists=True,
+                existing_file=result.get("existing_file")
+            )
+        
+        # Check if duplicate (by hash)
         if result.get("is_duplicate"):
             return DocumentUploadResponse(
                 upload_id=result["upload_id"],
