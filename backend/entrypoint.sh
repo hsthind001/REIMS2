@@ -10,31 +10,52 @@ while ! pg_isready -h $POSTGRES_SERVER -p $POSTGRES_PORT -U $POSTGRES_USER; do
 done
 echo "✅ PostgreSQL is ready!"
 
-# Run Alembic migrations
-echo "🔄 Running database migrations..."
-cd /app
-alembic upgrade heads || alembic upgrade head
-echo "✅ Migrations complete!"
+# Check if migrations should run (environment variable control)
+RUN_MIGRATIONS=${RUN_MIGRATIONS:-false}
 
-# Seed database (only if not already seeded)
-echo "🌱 Checking if database needs seeding..."
-SEED_CHECK=$(PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT COUNT(*) FROM chart_of_accounts WHERE account_code = '4010-0000';" 2>/dev/null || echo "0")
-
-if [ "$SEED_CHECK" -eq "0" ]; then
-  echo "🌱 Seeding database with accounts and lenders..."
+if [ "$RUN_MIGRATIONS" = "true" ]; then
+  echo "🔄 Checking migration status..."
+  cd /app
   
-  PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts.sql
-  PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts_part2.sql
-  PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_income_statement_template_accounts.sql
-  PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_income_statement_template_accounts_part2.sql
-  PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_lenders.sql
+  # Check if database is initialized
+  MIGRATION_CHECK=$(PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'alembic_version';" 2>/dev/null || echo "0")
   
-  echo "✅ Database seeded successfully!"
+  if [ "$MIGRATION_CHECK" -eq "0" ]; then
+    echo "🔄 Database not initialized, running migrations..."
+    alembic upgrade head
+    echo "✅ Migrations complete!"
+  else
+    # Check if migrations are pending
+    CURRENT_REV=$(PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT version_num FROM alembic_version LIMIT 1;" 2>/dev/null | xargs || echo "none")
+    echo "ℹ️  Current migration: $CURRENT_REV"
+    
+    # Try to upgrade if behind
+    echo "🔄 Checking for pending migrations..."
+    alembic upgrade head || echo "⚠️  Migrations already current or failed (non-critical)"
+  fi
+  
+  # Seed database (only if not already seeded)
+  SEED_DATABASE=${SEED_DATABASE:-false}
+  if [ "$SEED_DATABASE" = "true" ]; then
+    echo "🌱 Checking if database needs seeding..."
+    SEED_CHECK=$(PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT COUNT(*) FROM chart_of_accounts WHERE account_code = '4010-0000';" 2>/dev/null || echo "0")
+    
+    if [ "$SEED_CHECK" -eq "0" ]; then
+      echo "🌱 Seeding database with accounts and lenders..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts.sql
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts_part2.sql
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_income_statement_template_accounts.sql
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_income_statement_template_accounts_part2.sql
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_lenders.sql
+      echo "✅ Database seeded successfully!"
+    else
+      echo "ℹ️  Database already seeded, skipping..."
+    fi
+  fi
 else
-  echo "ℹ️  Database already seeded, skipping..."
+  echo "ℹ️  Migrations disabled (RUN_MIGRATIONS=false), skipping..."
 fi
 
 # Start the application
 echo "🎯 Starting FastAPI application..."
 exec "$@"
-

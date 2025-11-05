@@ -157,13 +157,16 @@ docker compose up -d
 - **Deployment**: Docker Compose
 
 ### Services
-- `postgres`: PostgreSQL database (port 5432)
+- `postgres`: PostgreSQL database (port 5433)
+- `db-init`: Database initialization (runs migrations once, then exits)
 - `redis`: Redis cache and Celery broker (port 6379)
 - `minio`: Object storage (ports 9000, 9001)
 - `backend`: FastAPI application (port 8000)
 - `celery-worker`: Background task processor
 - `flower`: Celery monitoring (port 5555)
 - `frontend`: React application (port 5173)
+
+**Note**: PostgreSQL runs on port **5433** (not 5432) to avoid conflicts with system PostgreSQL installations.
 
 ## 📊 Database Schema
 
@@ -324,11 +327,67 @@ Full API documentation: http://localhost:8000/docs
 - **API Docs**: http://localhost:8000/docs
 - **GitHub Issues**: (Add your repo URL)
 
-### Common Issues
+### Troubleshooting
+
+#### Startup Issues
+
+**Port 5433 already in use:**
+```bash
+# Check what's using port 5433
+sudo lsof -i :5433
+
+# Stop the conflicting service or change REIMS2 to use another port
+```
+
+**Services won't start:**
+```bash
+# View logs for specific service
+docker logs reims-backend -f
+docker logs reims-db-init -f
+
+# Check service status
+docker compose ps
+
+# Restart all services
+docker compose restart
+
+# Nuclear option: Full restart
+docker compose down
+docker compose up -d
+```
+
+**Database migration errors:**
+```bash
+# Check db-init logs
+docker logs reims-db-init
+
+# Manually run migrations
+docker exec reims-backend alembic upgrade head
+
+# Reset database (WARNING: destroys all data)
+docker compose down -v
+docker compose up -d
+```
+
+**Celery worker not processing tasks:**
+```bash
+# Check worker logs
+docker logs reims-celery-worker -f
+
+# Restart worker
+docker compose restart celery-worker
+
+# Monitor tasks in Flower
+# Open http://localhost:5555
+```
+
+#### Application Issues
+
 - **Can't login**: Check username/password, register new account
 - **Upload fails**: Check PDF format and file size (<50MB)
 - **Extraction stuck**: Wait 2-3 minutes, check Celery logs
 - **Can't see data**: Ensure extraction completed (status: "completed")
+- **pgAdmin can't connect**: Use hostname `postgres` (not `localhost`), port `5432` (internal), user `reims`
 
 ## 📄 License
 

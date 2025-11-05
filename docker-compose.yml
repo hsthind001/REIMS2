@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U reims"]
       interval: 10s
@@ -20,6 +20,50 @@ services:
       retries: 5
     networks:
       - reims-network
+
+  # Database Initialization (runs migrations once)
+  db-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reims-db-init
+    restart: "no"  # Only runs once
+    environment:
+      POSTGRES_USER: reims
+      POSTGRES_PASSWORD: reims
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432  # Internal port
+      POSTGRES_DB: reims
+      RUN_MIGRATIONS: "true"
+      SEED_DATABASE: "true"
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - reims-network
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo '🔄 DB Init Container: Creating base tables...';
+        cd /app && python3 -c "from app.db.database import engine, Base; from app.models import user, property, document_upload, financial_period, chart_of_accounts, validation_rule, extraction_template, extraction_log, audit_trail, balance_sheet_data, income_statement_data, cash_flow_data, rent_roll_data, validation_result, financial_metric; Base.metadata.create_all(bind=engine); print('✅ Base tables created')";
+        echo '🔄 DB Init Container: Running migrations...';
+        cd /app && alembic upgrade head;
+        echo '🌱 DB Init Container: Seeding database...';
+        SEED_CHECK=$$(PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -t -c "SELECT COUNT(*) FROM chart_of_accounts WHERE account_code = '4010-0000';" 2>/dev/null || echo '0');
+        if [ "$$SEED_CHECK" -eq "0" ]; then
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts.sql;
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts_part2.sql;
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_income_statement_template_accounts.sql;
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_income_statement_template_accounts_part2.sql;
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_lenders.sql;
+          echo '✅ Database seeded';
+        else
+          echo 'ℹ️  Database already seeded, skipping';
+        fi;
+        echo '✅ DB Init Container: Complete';
 
   # pgAdmin - PostgreSQL GUI
   pgadmin:
@@ -114,9 +158,10 @@ services:
       # CORS
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
       
-      # Database Initialization (Cash Flow Template v1.0)
-      RUN_MIGRATIONS: "true"  # Set to false to skip automatic migrations
-      SEED_DATABASE: "true"   # Set to false to skip automatic seeding
+      # Database Initialization
+      # NOTE: Migrations and seeding are handled by db-init container
+      RUN_MIGRATIONS: "false"  # db-init container handles migrations
+      SEED_DATABASE: "false"   # db-init container handles seeding
       
       # Cash Flow Template v1.0 Features:
       # - 3 new tables: cash_flow_headers, cash_flow_adjustments, cash_account_reconciliations
@@ -130,6 +175,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -147,6 +194,7 @@ services:
       dockerfile: Dockerfile
     container_name: reims-celery-worker
     restart: unless-stopped
+    entrypoint: ["/celery-entrypoint.sh"]
     environment:
       POSTGRES_USER: reims
       POSTGRES_PASSWORD: reims
@@ -162,9 +210,14 @@ services:
     volumes:
       - ./backend/app:/app/app
     depends_on:
-      - postgres
-      - redis
-      - backend
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
     networks:
       - reims-network
     command: celery -A celery_worker.celery_app worker --loglevel=info
@@ -176,6 +229,7 @@ services:
       dockerfile: Dockerfile
     container_name: reims-flower
     restart: unless-stopped
+    entrypoint: ["/flower-entrypoint.sh"]
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379

@@ -12,9 +12,11 @@ WORKDIR /app
 # All system deps and Python packages are already in base image
 COPY . .
 
-# Copy and set entrypoint script
+# Copy and set entrypoint scripts
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY celery-entrypoint.sh /celery-entrypoint.sh
+COPY flower-entrypoint.sh /flower-entrypoint.sh
+RUN chmod +x /entrypoint.sh /celery-entrypoint.sh /flower-entrypoint.sh
 
 # Create directory for temp files
 RUN mkdir -p /tmp

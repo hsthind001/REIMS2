@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "reims"
     POSTGRES_PASSWORD: str = "reims"
     POSTGRES_SERVER: str = "localhost"
-    POSTGRES_PORT: str = "5432"
+    POSTGRES_PORT: str = "5433"
     POSTGRES_DB: str = "reims"
     
     @property
