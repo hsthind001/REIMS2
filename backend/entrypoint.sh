@@ -41,12 +41,21 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
     SEED_CHECK=$(PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT COUNT(*) FROM chart_of_accounts WHERE account_code = '4010-0000';" 2>/dev/null || echo "0")
     
     if [ "$SEED_CHECK" -eq "0" ]; then
-      echo "🌱 Seeding database with accounts and lenders..."
+      echo "🌱 Seeding database with chart of accounts..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts.sql
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_balance_sheet_template_accounts_part2.sql
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_income_statement_template_accounts.sql
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_income_statement_template_accounts_part2.sql
+      
+      echo "🌱 Seeding validation rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_validation_rules.sql
+      
+      echo "🌱 Seeding extraction templates..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_extraction_templates.sql
+      
+      echo "🌱 Seeding lenders..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_lenders.sql
+      
       echo "✅ Database seeded successfully!"
     else
       echo "ℹ️  Database already seeded, skipping..."
