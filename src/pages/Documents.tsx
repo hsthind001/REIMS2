@@ -1,19 +1,84 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { documentService } from '../lib/document'
+import { propertyService } from '../lib/property'
+import type { Property, DocumentUpload } from '../types/api'
 
 const Documents = () => {
   const [uploading, setUploading] = useState(false)
+  const [selectedProperty, setSelectedProperty] = useState('')
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedDocType, setSelectedDocType] = useState<'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll'>('balance_sheet')
+  const [properties, setProperties] = useState<Property[]>([])
+  const [recentUploads, setRecentUploads] = useState<DocumentUpload[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    loadProperties()
+    loadRecentUploads()
+  }, [])
+
+  const loadProperties = async () => {
+    try {
+      const data = await propertyService.getAllProperties()
+      setProperties(data)
+    } catch (error) {
+      console.error('Failed to load properties:', error)
+    }
+  }
+
+  const loadRecentUploads = async () => {
+    try {
+      setLoading(true)
+      const response = await documentService.getDocuments({ limit: 10 })
+      setRecentUploads(response.items || [])
+    } catch (error) {
+      console.error('Failed to load uploads:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
+    // Validate selections
+    if (!selectedProperty) {
+      alert('Please select a property first')
+      return
+    }
+
+    // Validate file is PDF
+    if (!file.type.includes('pdf')) {
+      alert('Please upload a PDF file')
+      return
+    }
+
     setUploading(true)
     
-    // TODO: Implement file upload to backend
-    setTimeout(() => {
+    try {
+      const result = await documentService.uploadDocument({
+        property_code: selectedProperty,
+        period_year: selectedYear,
+        period_month: selectedMonth,
+        document_type: selectedDocType,
+        file: file
+      })
+
+      // Reload recent uploads
+      await loadRecentUploads()
+      
+      alert(`✅ File uploaded successfully!\n\nUpload ID: ${result.upload_id}\nStatus: ${result.extraction_status}\n\nExtraction task started. Check Dashboard for progress.`)
+      
+      // Reset file input
+      e.target.value = ''
+      
+    } catch (error: any) {
+      alert(`❌ Upload failed: ${error.message || 'Unknown error'}`)
+    } finally {
       setUploading(false)
-      alert('Upload functionality will be implemented')
-    }, 1000)
+    }
   }
 
   return (
@@ -29,6 +94,70 @@ const Documents = () => {
         {/* Upload Section */}
         <div className="card wide">
           <h3>Upload Document</h3>
+          
+          {/* Selection Form */}
+          <div className="upload-form" style={{ marginBottom: '1.5rem' }}>
+            <div className="form-group">
+              <label><strong>Property *</strong></label>
+              <select 
+                value={selectedProperty} 
+                onChange={(e) => setSelectedProperty(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+                required
+              >
+                <option value="">Select property...</option>
+                {properties.map(p => (
+                  <option key={p.id} value={p.property_code}>
+                    {p.property_code} - {p.property_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label><strong>Year *</strong></label>
+                <input 
+                  type="number" 
+                  value={selectedYear} 
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value))} 
+                  min="2000" 
+                  max="2100"
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+                />
+              </div>
+              
+              <div className="form-group">
+                <label><strong>Month *</strong></label>
+                <select 
+                  value={selectedMonth} 
+                  onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+                >
+                  {Array.from({length: 12}, (_, i) => (
+                    <option key={i+1} value={i+1}>
+                      {new Date(2000, i).toLocaleString('default', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="form-group">
+              <label><strong>Document Type *</strong></label>
+              <select 
+                value={selectedDocType} 
+                onChange={(e) => setSelectedDocType(e.target.value as any)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+              >
+                <option value="balance_sheet">📊 Balance Sheet</option>
+                <option value="income_statement">💰 Income Statement</option>
+                <option value="cash_flow">💵 Cash Flow Statement</option>
+                <option value="rent_roll">🏠 Rent Roll</option>
+              </select>
+            </div>
+          </div>
+          
           <div className="upload-area">
             <div className="upload-icon">📤</div>
             <p>Drag and drop files here or click to browse</p>
@@ -72,9 +201,44 @@ const Documents = () => {
         {/* Recent Uploads */}
         <div className="card wide">
           <h3>Recent Uploads</h3>
-          <div className="empty-state">
-            No documents uploaded yet
-          </div>
+          {loading ? (
+            <div className="empty-state">Loading uploads...</div>
+          ) : recentUploads.length === 0 ? (
+            <div className="empty-state">No documents uploaded yet</div>
+          ) : (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Property</th>
+                    <th>Type</th>
+                    <th>Period</th>
+                    <th>Status</th>
+                    <th>Uploaded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentUploads.map(doc => (
+                    <tr key={doc.id}>
+                      <td>{doc.original_filename}</td>
+                      <td><strong>{doc.property_code}</strong></td>
+                      <td style={{ textTransform: 'capitalize' }}>
+                        {doc.document_type.replace('_', ' ')}
+                      </td>
+                      <td>{doc.period_year}/{doc.period_month.toString().padStart(2, '0')}</td>
+                      <td>
+                        <span className={`status-badge ${doc.extraction_status}`}>
+                          {doc.extraction_status}
+                        </span>
+                      </td>
+                      <td>{new Date(doc.uploaded_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
