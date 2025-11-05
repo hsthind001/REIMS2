@@ -2,16 +2,16 @@
 Property Definitions for Sample Data Loading
 
 Defines the 4 properties found in sample PDFs:
-- ESP001: Esplanade Shopping Center
+- ESP001: Eastern Shore Plaza
 - HMND001: Hammond Aire Shopping Center  
-- TCSH001: Town Center Shopping
+- TCSH001: The Crossings of Spring Hill
 - WEND001: Wendover Commons
 """
 
 PROPERTIES = [
     {
         "property_code": "ESP001",
-        "property_name": "Esplanade Shopping Center",
+        "property_name": "Eastern Shore Plaza",
         "property_type": "retail",
         "address": "1234 Main Street",
         "city": "Phoenix",
@@ -41,7 +41,7 @@ PROPERTIES = [
     },
     {
         "property_code": "TCSH001",
-        "property_name": "Town Center Shopping",
+        "property_name": "The Crossings of Spring Hill",
         "property_type": "retail",
         "address": "9012 Center Boulevard",
         "city": "Town Center",

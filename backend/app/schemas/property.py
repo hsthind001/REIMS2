@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -7,7 +7,7 @@ import re
 
 class PropertyBase(BaseModel):
     property_code: str
-    property_name: str
+    property_name: str = Field(..., min_length=3, max_length=100)
     property_type: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
@@ -31,6 +31,16 @@ class PropertyCreate(PropertyBase):
             raise ValueError('Property code must be 2-5 uppercase letters followed by 3 digits (e.g., ESP001)')
         return v
     
+    @field_validator('property_name')
+    @classmethod
+    def validate_property_name(cls, v):
+        """Validate property name is not empty and has minimum length"""
+        if not v or v.strip() == '':
+            raise ValueError('Property name cannot be empty')
+        if len(v.strip()) < 3:
+            raise ValueError('Property name must be at least 3 characters')
+        return v.strip()
+    
     @field_validator('status')
     @classmethod
     def validate_status(cls, v):
@@ -51,13 +61,25 @@ class PropertyCreate(PropertyBase):
 
 class PropertyUpdate(BaseModel):
     property_code: Optional[str] = None
-    property_name: Optional[str] = None
+    property_name: Optional[str] = Field(None, min_length=3, max_length=100)
     property_type: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    
+    @field_validator('property_name')
+    @classmethod
+    def validate_property_name(cls, v):
+        """Validate property name if provided"""
+        if v is not None:
+            if v.strip() == '':
+                raise ValueError('Property name cannot be empty')
+            if len(v.strip()) < 3:
+                raise ValueError('Property name must be at least 3 characters')
+            return v.strip()
+        return v
 
 
 class Property(PropertyBase):
