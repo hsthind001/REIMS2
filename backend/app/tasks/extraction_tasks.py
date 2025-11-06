@@ -2,9 +2,11 @@
 Celery Tasks for Document Extraction
 """
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 from app.core.celery_config import celery_app
 from app.db.database import SessionLocal
 from app.services.extraction_orchestrator import ExtractionOrchestrator
+from app.models.document_upload import DocumentUpload
 import logging
 
 # Configure logging
@@ -28,7 +30,13 @@ class DatabaseTask(Task):
             self._db = None
 
 
-@celery_app.task(name="app.tasks.extraction_tasks.extract_document", bind=True, base=DatabaseTask)
+@celery_app.task(
+    name="app.tasks.extraction_tasks.extract_document",
+    bind=True,
+    base=DatabaseTask,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540  # 9 minutes soft limit (allows graceful cleanup)
+)
 def extract_document(self, upload_id: int):
     """
     Celery task: Extract and parse financial document
@@ -36,6 +44,8 @@ def extract_document(self, upload_id: int):
     This task is triggered after document upload and runs asynchronously.
     It downloads the PDF from MinIO, extracts the content, parses financial
     data, and inserts into the appropriate tables.
+    
+    Timeout: 10 minutes (hard), 9 minutes (soft warning)
     
     Args:
         upload_id: DocumentUpload ID
@@ -118,8 +128,52 @@ def extract_document(self, upload_id: int):
                 "message": "Extraction failed"
             }
     
+    except SoftTimeLimitExceeded:
+        logger.error(f"⏱️  Soft timeout reached for upload_id={upload_id} - gracefully terminating")
+        
+        # Update database status to failed
+        try:
+            db = SessionLocal()
+            upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+            if upload:
+                upload.extraction_status = 'failed'
+                upload.notes = "Extraction timeout: Task exceeded 9-minute processing limit"
+                db.commit()
+            db.close()
+        except Exception as db_error:
+            logger.error(f"Failed to update database after timeout: {db_error}")
+        
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "upload_id": upload_id,
+                "status": "Timeout",
+                "progress": 0,
+                "error": "Task exceeded time limit (9 minutes)"
+            }
+        )
+        return {
+            "success": False,
+            "upload_id": upload_id,
+            "error": "Task timeout - exceeded processing time limit",
+            "message": "Extraction task timed out"
+        }
+    
     except Exception as e:
         logger.exception(f"Exception during extraction for upload_id={upload_id}")
+        
+        # Update database status to failed
+        try:
+            db = SessionLocal()
+            upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+            if upload:
+                upload.extraction_status = 'failed'
+                upload.notes = f"Extraction error: {str(e)}"
+                db.commit()
+            db.close()
+        except Exception as db_error:
+            logger.error(f"Failed to update database after exception: {db_error}")
+        
         self.update_state(
             state="FAILURE",
             meta={

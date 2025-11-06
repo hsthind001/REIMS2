@@ -61,6 +61,10 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       echo "ℹ️  Database already seeded, skipping..."
     fi
   fi
+  
+  # Reset orphaned extraction tasks
+  echo "🧹 Checking for orphaned extraction tasks..."
+  python3 /app/scripts/reset_orphaned_tasks.py || echo "⚠️  Orphaned task cleanup failed (non-critical)"
 else
   echo "ℹ️  Migrations disabled (RUN_MIGRATIONS=false), skipping..."
 fi
