@@ -394,9 +394,23 @@ class ExtractionOrchestrator:
         parsed_data: Dict,
         confidence_score: float
     ) -> int:
-        """Insert balance sheet line items with enhanced matching"""
+        """
+        Insert balance sheet line items with enhanced matching
+        
+        DELETE and REPLACE strategy: Deletes all existing balance sheet data
+        for this property+period before inserting new data to ensure clean replacement.
+        """
         items = parsed_data.get("line_items", [])
         records_inserted = 0
+        
+        # DELETE all existing balance sheet data for this property+period
+        deleted_count = self.db.query(BalanceSheetData).filter(
+            BalanceSheetData.property_id == upload.property_id,
+            BalanceSheetData.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        if deleted_count > 0:
+            print(f"🗑️  Deleted {deleted_count} existing balance sheet records for property {upload.property_id}, period {upload.period_id}")
         
         # Deduplicate items by account_code ONLY (matches DB unique constraint)
         # If same account appears multiple times, keep the one with highest confidence/amount
@@ -421,6 +435,7 @@ class ExtractionOrchestrator:
         
         deduplicated_items = list(seen_accounts.values())
         
+        # INSERT all new records
         for item in deduplicated_items:
             account_code = item.get("matched_account_code") or item.get("account_code", "")
             account_name = item.get("matched_account_name") or item.get("account_name", "")
@@ -435,35 +450,20 @@ class ExtractionOrchestrator:
             # Use average of extraction and match confidence
             final_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
             
-            # Check if entry already exists (avoid duplicates)
-            existing = self.db.query(BalanceSheetData).filter(
-                BalanceSheetData.property_id == upload.property_id,
-                BalanceSheetData.period_id == upload.period_id,
-                BalanceSheetData.account_code == account_code
-            ).first()
-            
-            if existing:
-                # Update existing entry
-                existing.amount = Decimal(str(amount))
-                existing.extraction_confidence = Decimal(str(final_confidence))
-                existing.upload_id = upload.id
-                existing.account_id = account_id
-                existing.needs_review = final_confidence < 85.0 or account_id is None
-            else:
-                # Insert new entry
-                bs_data = BalanceSheetData(
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    account_id=account_id,
-                    account_code=account_code,
-                    account_name=account_name,
-                    amount=Decimal(str(amount)),
-                    extraction_confidence=Decimal(str(final_confidence)),
-                    needs_review=final_confidence < 85.0 or account_id is None
-                )
-                self.db.add(bs_data)
-                records_inserted += 1
+            # Insert new entry (no longer check for existing since we deleted all)
+            bs_data = BalanceSheetData(
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                account_id=account_id,
+                account_code=account_code,
+                account_name=account_name,
+                amount=Decimal(str(amount)),
+                extraction_confidence=Decimal(str(final_confidence)),
+                needs_review=final_confidence < 85.0 or account_id is None
+            )
+            self.db.add(bs_data)
+            records_inserted += 1
         
         self.db.commit()
         return records_inserted
@@ -474,85 +474,281 @@ class ExtractionOrchestrator:
         parsed_data: Dict,
         confidence_score: float
     ) -> int:
-        """Insert income statement line items"""
+        """
+        Insert income statement data with Template v1.0 compliance
+        
+        DELETE and REPLACE strategy: Deletes existing header and all line items
+        for this property+period before inserting new data to ensure clean replacement.
+        
+        Inserts:
+        - Header record with summary totals
+        - Line items with full categorization and hierarchy
+        """
+        from app.models.income_statement_header import IncomeStatementHeader
+        from datetime import datetime
+        
         items = parsed_data.get("line_items", [])
+        header_data = parsed_data.get("header", {})
+        
         records_inserted = 0
         
-        # Deduplicate items by account_code + amount + page
-        seen_keys = set()
-        deduplicated_items = []
+        # DELETE existing header (cascade should delete line items via foreign key)
+        deleted_header = self.db.query(IncomeStatementHeader).filter(
+            IncomeStatementHeader.property_id == upload.property_id,
+            IncomeStatementHeader.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        # Also explicitly delete line items (in case no cascade)
+        deleted_items = self.db.query(IncomeStatementData).filter(
+            IncomeStatementData.property_id == upload.property_id,
+            IncomeStatementData.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        if deleted_header > 0 or deleted_items > 0:
+            print(f"🗑️  Deleted {deleted_header} income statement header(s) and {deleted_items} line items for property {upload.property_id}, period {upload.period_id}")
+        
+        # Step 1: Calculate header totals from line items
+        totals = self._calculate_income_statement_totals(items)
+        
+        # Step 2: Parse period dates from header
+        period_start, period_end = self._parse_period_dates(
+            header_data.get("period_start_date"),
+            header_data.get("period_end_date"),
+            upload.period_id
+        )
+        
+        # Step 3: Create NEW IncomeStatementHeader
+        header = IncomeStatementHeader(
+            property_id=upload.property_id,
+            period_id=upload.period_id,
+            upload_id=upload.id,
+            property_name=header_data.get("property_name", ""),
+            property_code=header_data.get("property_code", ""),
+            report_period_start=period_start,
+            report_period_end=period_end,
+            period_type=header_data.get("period_type", "Monthly"),
+            accounting_basis=header_data.get("accounting_basis", "Accrual"),
+            report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+            # Income totals
+            total_income=Decimal(str(totals.get("total_income", 0))),
+            base_rentals=Decimal(str(totals.get("base_rentals", 0))),
+            total_recovery_income=Decimal(str(totals.get("total_recovery_income", 0))),
+            total_other_income=Decimal(str(totals.get("total_other_income", 0))),
+            # Operating expense totals
+            total_operating_expenses=Decimal(str(totals.get("total_operating_expenses", 0))),
+            total_property_expenses=Decimal(str(totals.get("total_property_expenses", 0))),
+            total_utility_expenses=Decimal(str(totals.get("total_utility_expenses", 0))),
+            total_contracted_expenses=Decimal(str(totals.get("total_contracted_expenses", 0))),
+            total_rm_expenses=Decimal(str(totals.get("total_rm_expenses", 0))),
+            total_admin_expenses=Decimal(str(totals.get("total_admin_expenses", 0))),
+            # Additional expense totals
+            total_additional_operating_expenses=Decimal(str(totals.get("total_additional_expenses", 0))),
+            total_management_fees=Decimal(str(totals.get("total_management_fees", 0))),
+            total_leasing_costs=Decimal(str(totals.get("total_leasing_costs", 0))),
+            total_ll_expenses=Decimal(str(totals.get("total_ll_expenses", 0))),
+            # Total expenses
+            total_expenses=Decimal(str(totals.get("total_expenses", 0))),
+            # NOI
+            net_operating_income=Decimal(str(totals.get("noi", 0))),
+            noi_percentage=Decimal(str(totals.get("noi_percentage", 0))),
+            # Other income/expenses (below the line)
+            mortgage_interest=Decimal(str(totals.get("mortgage_interest", 0))),
+            depreciation=Decimal(str(totals.get("depreciation", 0))),
+            amortization=Decimal(str(totals.get("amortization", 0))),
+            total_other_income_expense=Decimal(str(totals.get("total_other", 0))),
+            # Net income
+            net_income=Decimal(str(totals.get("net_income", 0))),
+            net_income_percentage=Decimal(str(totals.get("net_income_percentage", 0))),
+            # Quality
+            extraction_confidence=Decimal(str(confidence_score)),
+            needs_review=confidence_score < 85.0
+        )
+        self.db.add(header)
+        self.db.flush()  # Get header.id
+        
+        # Step 4: Insert NEW line items with full categorization
         for item in items:
             account_code = item.get("account_code", "")
-            period_amount = item.get("period_amount", 0.0)
-            page = item.get("page", 1)
-            unique_key = f"{account_code}_{period_amount}_{page}"
-            if unique_key not in seen_keys:
-                deduplicated_items.append(item)
-                seen_keys.add(unique_key)
-        
-        for item in deduplicated_items:
-            account_code = item.get("account_code", "")
             account_name = item.get("account_name", "")
-            period_amount = item.get("period_amount", 0.0)
-            ytd_amount = item.get("ytd_amount")
-            period_percentage = item.get("period_percentage")
-            ytd_percentage = item.get("ytd_percentage")
             
-            if not account_code or not account_name:
+            if not account_name:
                 continue
             
             # Try to find matching account
-            account = self.db.query(ChartOfAccounts).filter(
-                ChartOfAccounts.account_code == account_code
-            ).first()
-            
-            if not account:
+            account_id = None
+            if account_code:
                 account = self.db.query(ChartOfAccounts).filter(
-                    ChartOfAccounts.account_name.ilike(f"%{account_name}%")
+                    ChartOfAccounts.account_code == account_code
                 ).first()
+                account_id = account.id if account else None
             
-            account_id = account.id if account else None
-            
-            # Check for existing entry
-            existing = self.db.query(IncomeStatementData).filter(
-                IncomeStatementData.property_id == upload.property_id,
-                IncomeStatementData.period_id == upload.period_id,
-                IncomeStatementData.account_code == account_code
-            ).first()
-            
-            if existing:
-                # Update existing
-                existing.period_amount = Decimal(str(period_amount))
-                if ytd_amount is not None:
-                    existing.ytd_amount = Decimal(str(ytd_amount))
-                if period_percentage is not None:
-                    existing.period_percentage = Decimal(str(period_percentage))
-                if ytd_percentage is not None:
-                    existing.ytd_percentage = Decimal(str(ytd_percentage))
-                existing.extraction_confidence = Decimal(str(confidence_score))
-                existing.upload_id = upload.id
-                existing.needs_review = confidence_score < 85.0
-            else:
-                # Insert new
-                is_data = IncomeStatementData(
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    account_id=account_id,
-                    account_code=account_code,
-                    account_name=account_name,
-                    period_amount=Decimal(str(period_amount)),
-                    ytd_amount=Decimal(str(ytd_amount)) if ytd_amount is not None else None,
-                    period_percentage=Decimal(str(period_percentage)) if period_percentage is not None else None,
-                    ytd_percentage=Decimal(str(ytd_percentage)) if ytd_percentage is not None else None,
-                    extraction_confidence=Decimal(str(confidence_score)),
-                    needs_review=confidence_score < 85.0
-                )
-                self.db.add(is_data)
-                records_inserted += 1
+            # Insert new with all Template v1.0 fields (no longer check for existing)
+            is_data = IncomeStatementData(
+                header_id=header.id,
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                account_id=account_id,
+                account_code=account_code or "",
+                account_name=account_name,
+                period_amount=Decimal(str(item.get("period_amount", 0))),
+                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                # Template v1.0: Header metadata
+                period_type=header_data.get("period_type", "Monthly"),
+                accounting_basis=header_data.get("accounting_basis"),
+                report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+                page_number=item.get("page"),
+                # Template v1.0: Hierarchical structure
+                is_subtotal=item.get("is_subtotal", False),
+                is_total=item.get("is_total", False),
+                line_category=item.get("line_category"),
+                line_subcategory=item.get("line_subcategory"),
+                line_number=item.get("line_number"),
+                account_level=item.get("account_level", 3),
+                # Template v1.0: Classification
+                is_below_the_line=item.get("is_below_the_line", False),
+                # Template v1.0: Extraction quality
+                extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
+                match_confidence=Decimal(str(item.get("match_confidence", 0))) if item.get("match_confidence") else None,
+                extraction_method=item.get("extraction_method", "table"),
+                needs_review=item.get("confidence", confidence_score) < 85.0
+            )
+            self.db.add(is_data)
+            records_inserted += 1
         
         self.db.commit()
         return records_inserted
+    
+    def _calculate_income_statement_totals(self, items: List[Dict]) -> Dict:
+        """
+        Calculate summary totals from income statement line items
+        
+        Returns all totals needed for IncomeStatementHeader:
+        - Income totals (base rentals, recovery, other)
+        - Operating expense totals (property, utility, contracted, R&M, admin)
+        - Additional expense totals (management, leasing, LL)
+        - Performance metrics (NOI, Net Income with percentages)
+        """
+        totals = {
+            # Income
+            "total_income": 0,
+            "base_rentals": 0,
+            "total_recovery_income": 0,
+            "total_other_income": 0,
+            # Operating expenses
+            "total_operating_expenses": 0,
+            "total_property_expenses": 0,
+            "total_utility_expenses": 0,
+            "total_contracted_expenses": 0,
+            "total_rm_expenses": 0,
+            "total_admin_expenses": 0,
+            # Additional expenses
+            "total_additional_expenses": 0,
+            "total_management_fees": 0,
+            "total_leasing_costs": 0,
+            "total_ll_expenses": 0,
+            # Total expenses
+            "total_expenses": 0,
+            # NOI
+            "noi": 0,
+            "noi_percentage": 0,
+            # Other income/expenses (below the line)
+            "mortgage_interest": 0,
+            "depreciation": 0,
+            "amortization": 0,
+            "total_other": 0,
+            # Net income
+            "net_income": 0,
+            "net_income_percentage": 0
+        }
+        
+        for item in items:
+            amount = item.get("period_amount", 0)
+            account_code = item.get("account_code", "")
+            account_name = item.get("account_name", "")
+            category = item.get("line_category", "")
+            subcategory = item.get("line_subcategory", "")
+            is_total = item.get("is_total", False)
+            is_subtotal = item.get("is_subtotal", False)
+            
+            # Extract account code number for range checks
+            code_num = 0
+            if account_code and '-' in account_code:
+                try:
+                    code_num = int(account_code.split('-')[0])
+                except:
+                    pass
+            
+            # INCOME SECTION (4000-4999)
+            if category == "INCOME":
+                if is_total and code_num == 4990:
+                    totals["total_income"] = amount
+                elif code_num == 4010:  # Base Rentals
+                    totals["base_rentals"] = amount
+                elif code_num in [4020, 4030, 4040, 4055, 4060]:  # Recovery income
+                    totals["total_recovery_income"] += amount
+                elif code_num in [4018, 4090, 4091]:  # Other income
+                    totals["total_other_income"] += amount
+            
+            # OPERATING EXPENSES SECTION (5000-5999)
+            elif category == "OPERATING_EXPENSE":
+                if is_subtotal or is_total:
+                    if code_num == 5990:  # Total Operating Expenses
+                        totals["total_operating_expenses"] = amount
+                    elif code_num == 5199:  # Total Utility Expense
+                        totals["total_utility_expenses"] = amount
+                    elif code_num == 5299:  # Total Contracted Expenses
+                        totals["total_contracted_expenses"] = amount
+                    elif code_num == 5399:  # Total R&M
+                        totals["total_rm_expenses"] = amount
+                    elif code_num == 5499:  # Total Admin
+                        totals["total_admin_expenses"] = amount
+                elif 5010 <= code_num <= 5014:  # Property costs
+                    totals["total_property_expenses"] += amount
+            
+            # ADDITIONAL EXPENSES SECTION (6000-6199)
+            elif category == "ADDITIONAL_EXPENSE":
+                if is_subtotal or is_total:
+                    if code_num == 6190:  # Total Additional Operating Expenses
+                        totals["total_additional_expenses"] = amount
+                    elif code_num == 6069:  # Total LL Expense
+                        totals["total_ll_expenses"] = amount
+                elif 6010 <= code_num <= 6020:  # Management fees
+                    totals["total_management_fees"] += amount
+                elif code_num in [6014, 6016]:  # Leasing costs
+                    totals["total_leasing_costs"] += amount
+            
+            # TOTAL EXPENSES
+            elif code_num == 6199:
+                totals["total_expenses"] = amount
+            
+            # NOI
+            elif code_num == 6299:
+                totals["noi"] = amount
+            
+            # OTHER INCOME/EXPENSES (BELOW THE LINE) (7000-7999)
+            elif category == "OTHER_EXPENSE" or code_num >= 7000:
+                if code_num == 7010:  # Mortgage Interest
+                    totals["mortgage_interest"] = amount
+                elif code_num == 7020:  # Depreciation
+                    totals["depreciation"] = amount
+                elif code_num == 7030:  # Amortization
+                    totals["amortization"] = amount
+                elif code_num == 7090:  # Total Other Income/Expense
+                    totals["total_other"] = amount
+            
+            # NET INCOME
+            elif code_num == 9090:
+                totals["net_income"] = amount
+        
+        # Calculate percentages
+        if totals["total_income"] > 0:
+            totals["noi_percentage"] = round((totals["noi"] / totals["total_income"]) * 100, 2)
+            totals["net_income_percentage"] = round((totals["net_income"] / totals["total_income"]) * 100, 2)
+        
+        return totals
     
     def _insert_cash_flow_data(
         self,
@@ -562,6 +758,10 @@ class ExtractionOrchestrator:
     ) -> int:
         """
         Insert cash flow data with Template v1.0 compliance
+        
+        DELETE and REPLACE strategy: Deletes all existing cash flow data
+        (header, line items, adjustments, reconciliations) for this property+period
+        before inserting new data to ensure clean replacement.
         
         Inserts:
         - Header record with summary totals
@@ -581,6 +781,30 @@ class ExtractionOrchestrator:
         
         records_inserted = 0
         
+        # DELETE all existing cash flow data for this property+period
+        deleted_header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == upload.property_id,
+            CashFlowHeader.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        deleted_items = self.db.query(CashFlowData).filter(
+            CashFlowData.property_id == upload.property_id,
+            CashFlowData.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        deleted_adjustments = self.db.query(CashFlowAdjustment).filter(
+            CashFlowAdjustment.property_id == upload.property_id,
+            CashFlowAdjustment.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        deleted_reconciliations = self.db.query(CashAccountReconciliation).filter(
+            CashAccountReconciliation.property_id == upload.property_id,
+            CashAccountReconciliation.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        if any([deleted_header, deleted_items, deleted_adjustments, deleted_reconciliations]):
+            print(f"🗑️  Deleted cash flow data: {deleted_header} header, {deleted_items} items, {deleted_adjustments} adjustments, {deleted_reconciliations} reconciliations for property {upload.property_id}, period {upload.period_id}")
+        
         # Step 1: Calculate header totals from line items
         totals = self._calculate_cash_flow_totals(items)
         
@@ -591,62 +815,43 @@ class ExtractionOrchestrator:
             upload.period_id
         )
         
-        # Step 3: Insert or update CashFlowHeader
-        header = self.db.query(CashFlowHeader).filter(
-            CashFlowHeader.property_id == upload.property_id,
-            CashFlowHeader.period_id == upload.period_id
-        ).first()
-        
-        if not header:
-            header = CashFlowHeader(
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                property_name=header_data.get("property_name", ""),
-                property_code=header_data.get("property_code", ""),
-                report_period_start=period_start,
-                report_period_end=period_end,
-                accounting_basis=header_data.get("accounting_basis", "Accrual"),
-                report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
-                # Totals from calculations
-                total_income=Decimal(str(totals.get("total_income", 0))),
-                base_rentals=Decimal(str(totals.get("base_rentals", 0))),
-                total_operating_expenses=Decimal(str(totals.get("total_operating_expenses", 0))),
-                total_additional_operating_expenses=Decimal(str(totals.get("total_additional_expenses", 0))),
-                total_expenses=Decimal(str(totals.get("total_expenses", 0))),
-                net_operating_income=Decimal(str(totals.get("noi", 0))),
-                noi_percentage=Decimal(str(totals.get("noi_percentage", 0))),
-                mortgage_interest=Decimal(str(totals.get("mortgage_interest", 0))),
-                depreciation=Decimal(str(totals.get("depreciation", 0))),
-                amortization=Decimal(str(totals.get("amortization", 0))),
-                total_other_income_expense=Decimal(str(totals.get("total_other", 0))),
-                net_income=Decimal(str(totals.get("net_income", 0))),
-                net_income_percentage=Decimal(str(totals.get("net_income_percentage", 0))),
-                total_adjustments=Decimal(str(sum(adj.get("amount", 0) for adj in adjustments))),
-                cash_flow=Decimal(str(totals.get("cash_flow", 0))),
-                cash_flow_percentage=Decimal(str(totals.get("cash_flow_percentage", 0))),
-                beginning_cash_balance=Decimal(str(totals.get("beginning_cash", 0))),
-                ending_cash_balance=Decimal(str(totals.get("ending_cash", 0))),
-                extraction_confidence=Decimal(str(confidence_score)),
-                needs_review=confidence_score < 85.0
-            )
-            self.db.add(header)
-        else:
-            # Update existing header
-            header.upload_id = upload.id
-            header.property_name = header_data.get("property_name", header.property_name)
-            header.property_code = header_data.get("property_code", header.property_code)
-            header.total_income = Decimal(str(totals.get("total_income", 0)))
-            header.total_expenses = Decimal(str(totals.get("total_expenses", 0)))
-            header.net_operating_income = Decimal(str(totals.get("noi", 0)))
-            header.net_income = Decimal(str(totals.get("net_income", 0)))
-            header.cash_flow = Decimal(str(totals.get("cash_flow", 0)))
-            header.extraction_confidence = Decimal(str(confidence_score))
-            header.needs_review = confidence_score < 85.0
-        
+        # Step 3: Create NEW CashFlowHeader
+        header = CashFlowHeader(
+            property_id=upload.property_id,
+            period_id=upload.period_id,
+            upload_id=upload.id,
+            property_name=header_data.get("property_name", ""),
+            property_code=header_data.get("property_code", ""),
+            report_period_start=period_start,
+            report_period_end=period_end,
+            accounting_basis=header_data.get("accounting_basis", "Accrual"),
+            report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+            # Totals from calculations
+            total_income=Decimal(str(totals.get("total_income", 0))),
+            base_rentals=Decimal(str(totals.get("base_rentals", 0))),
+            total_operating_expenses=Decimal(str(totals.get("total_operating_expenses", 0))),
+            total_additional_operating_expenses=Decimal(str(totals.get("total_additional_expenses", 0))),
+            total_expenses=Decimal(str(totals.get("total_expenses", 0))),
+            net_operating_income=Decimal(str(totals.get("noi", 0))),
+            noi_percentage=Decimal(str(totals.get("noi_percentage", 0))),
+            mortgage_interest=Decimal(str(totals.get("mortgage_interest", 0))),
+            depreciation=Decimal(str(totals.get("depreciation", 0))),
+            amortization=Decimal(str(totals.get("amortization", 0))),
+            total_other_income_expense=Decimal(str(totals.get("total_other", 0))),
+            net_income=Decimal(str(totals.get("net_income", 0))),
+            net_income_percentage=Decimal(str(totals.get("net_income_percentage", 0))),
+            total_adjustments=Decimal(str(sum(adj.get("amount", 0) for adj in adjustments))),
+            cash_flow=Decimal(str(totals.get("cash_flow", 0))),
+            cash_flow_percentage=Decimal(str(totals.get("cash_flow_percentage", 0))),
+            beginning_cash_balance=Decimal(str(totals.get("beginning_cash", 0))),
+            ending_cash_balance=Decimal(str(totals.get("ending_cash", 0))),
+            extraction_confidence=Decimal(str(confidence_score)),
+            needs_review=confidence_score < 85.0
+        )
+        self.db.add(header)
         self.db.flush()  # Get header.id
         
-        # Step 4: Insert line items with full categorization
+        # Step 4: Insert NEW line items with full categorization
         for item in items:
             account_code = item.get("account_code", "")
             account_name = item.get("account_name", "")
@@ -662,59 +867,33 @@ class ExtractionOrchestrator:
                 ).first()
                 account_id = account.id if account else None
             
-            # Check for existing entry
-            existing = self.db.query(CashFlowData).filter(
-                CashFlowData.property_id == upload.property_id,
-                CashFlowData.period_id == upload.period_id,
-                CashFlowData.account_code == account_code,
-                CashFlowData.line_number == item.get("line_number")
-            ).first()
-            
-            if existing:
-                # Update existing
-                existing.header_id = header.id
-                existing.account_name = account_name
-                existing.period_amount = Decimal(str(item.get("period_amount", 0)))
-                existing.ytd_amount = Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None
-                existing.period_percentage = Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None
-                existing.ytd_percentage = Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None
-                existing.line_section = item.get("line_section")
-                existing.line_category = item.get("line_category")
-                existing.line_subcategory = item.get("line_subcategory")
-                existing.is_subtotal = item.get("is_subtotal", False)
-                existing.is_total = item.get("is_total", False)
-                existing.page_number = item.get("page")
-                existing.extraction_confidence = Decimal(str(item.get("confidence", confidence_score)))
-                existing.upload_id = upload.id
-                existing.needs_review = item.get("confidence", confidence_score) < 85.0
-            else:
-                # Insert new
-                cf_data = CashFlowData(
-                    header_id=header.id,
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    account_id=account_id,
-                    account_code=account_code or "",
-                    account_name=account_name,
-                    period_amount=Decimal(str(item.get("period_amount", 0))),
-                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
-                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
-                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
-                    line_section=item.get("line_section"),
-                    line_category=item.get("line_category"),
-                    line_subcategory=item.get("line_subcategory"),
-                    line_number=item.get("line_number"),
-                    is_subtotal=item.get("is_subtotal", False),
-                    is_total=item.get("is_total", False),
-                    page_number=item.get("page"),
-                    extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
-                    needs_review=item.get("confidence", confidence_score) < 85.0
-                )
-                self.db.add(cf_data)
-                records_inserted += 1
+            # Insert new (no longer check for existing)
+            cf_data = CashFlowData(
+                header_id=header.id,
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                account_id=account_id,
+                account_code=account_code or "",
+                account_name=account_name,
+                period_amount=Decimal(str(item.get("period_amount", 0))),
+                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                line_section=item.get("line_section"),
+                line_category=item.get("line_category"),
+                line_subcategory=item.get("line_subcategory"),
+                line_number=item.get("line_number"),
+                is_subtotal=item.get("is_subtotal", False),
+                is_total=item.get("is_total", False),
+                page_number=item.get("page"),
+                extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
+                needs_review=item.get("confidence", confidence_score) < 85.0
+            )
+            self.db.add(cf_data)
+            records_inserted += 1
         
-        # Step 5: Insert adjustments
+        # Step 5: Insert NEW adjustments
         for adj in adjustments:
             adj_record = CashFlowAdjustment(
                 header_id=header.id,
@@ -735,7 +914,7 @@ class ExtractionOrchestrator:
             self.db.add(adj_record)
             records_inserted += 1
         
-        # Step 6: Insert cash account reconciliations
+        # Step 6: Insert NEW cash account reconciliations
         for cash_acct in cash_accounts:
             cash_record = CashAccountReconciliation(
                 header_id=header.id,
@@ -892,6 +1071,9 @@ class ExtractionOrchestrator:
         """
         Insert rent roll tenant data - Template v2.0 implementation
         
+        DELETE and REPLACE strategy: Deletes all existing rent roll data
+        for this property+period before inserting new data to ensure clean replacement.
+        
         Extracts all 24 fields, links gross rent rows, runs validation,
         and calculates quality scores.
         """
@@ -902,6 +1084,15 @@ class ExtractionOrchestrator:
         report_date = parsed_data.get("report_date")
         records_inserted = 0
         parent_row_map = {}  # Maps unit_number -> parent_row_id for gross rent linking
+        
+        # DELETE all existing rent roll data for this property+period
+        deleted_count = self.db.query(RentRollData).filter(
+            RentRollData.property_id == upload.property_id,
+            RentRollData.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        if deleted_count > 0:
+            print(f"🗑️  Deleted {deleted_count} existing rent roll records for property {upload.property_id}, period {upload.period_id}")
         
         # Run validation on all records
         validator = RentRollValidator()
@@ -921,21 +1112,56 @@ class ExtractionOrchestrator:
             # Get validation flags for this record
             record_flags = validator.get_flags_for_record(idx)
             notes_list = [f"[{flag.severity}] {flag.message}" for flag in record_flags]
-            notes = "\n".join(notes_list) if notes_list else None
+            existing_notes = item.get('notes', '')
+            all_notes = existing_notes + ("\n" if existing_notes else "") + "\n".join(notes_list) if notes_list else existing_notes
+            notes = all_notes if all_notes else None
             
-            # Check for existing entry
-            existing = self.db.query(RentRollData).filter(
-                RentRollData.property_id == upload.property_id,
-                RentRollData.period_id == upload.period_id,
-                RentRollData.unit_number == unit_number,
-                RentRollData.is_gross_rent_row == item.get("is_gross_rent_row", False)
-            ).first()
+            # Count flags by severity
+            critical_count = sum(1 for f in record_flags if f.severity == 'CRITICAL')
+            warning_count = sum(1 for f in record_flags if f.severity == 'WARNING')
+            info_count = sum(1 for f in record_flags if f.severity == 'INFO')
+            
+            # Serialize validation flags to JSON
+            import json
+            validation_flags_json = json.dumps([{
+                'severity': f.severity,
+                'field': f.field,
+                'message': f.message,
+                'expected': f.expected,
+                'actual': f.actual
+            } for f in record_flags]) if record_flags else None
+            
+            # Calculate individual record validation score
+            record_score = 100.0 - (critical_count * 5.0) - (warning_count * 1.0)
+            record_score = max(0.0, min(100.0, record_score))
             
             # Prepare all fields
             tenant_name = item.get("tenant_name") or "VACANT"
             is_vacant = item.get("is_vacant", False)
             is_gross_rent_row = item.get("is_gross_rent_row", False)
             occupancy_status = "vacant" if is_vacant else "occupied"
+            
+            # Determine lease status
+            lease_status = item.get("lease_status", "active")
+            if not lease_status and not is_gross_rent_row and not is_vacant:
+                # Calculate lease status if not provided
+                lease_start = item.get("lease_start_date")
+                lease_end = item.get("lease_end_date")
+                if report_date:
+                    try:
+                        report_dt = datetime.strptime(report_date, '%Y-%m-%d').date()
+                        if lease_start:
+                            start_dt = datetime.strptime(lease_start, '%Y-%m-%d').date()
+                            if start_dt > report_dt:
+                                lease_status = "future"
+                        if not lease_end:
+                            lease_status = "month_to_month"
+                        elif lease_end:
+                            end_dt = datetime.strptime(lease_end, '%Y-%m-%d').date()
+                            if end_dt < report_dt:
+                                lease_status = "expired"
+                    except:
+                        lease_status = "active"
             
             # Get parent_row_id for gross rent rows
             parent_row_id = None
@@ -960,76 +1186,57 @@ class ExtractionOrchestrator:
                 except:
                     return None
             
-            if existing:
-                # Update existing record with all fields
-                existing.tenant_name = tenant_name
-                existing.tenant_code = item.get("tenant_id")
-                existing.lease_type = item.get("lease_type")
-                existing.lease_start_date = to_date(item.get("lease_start_date"))
-                existing.lease_end_date = to_date(item.get("lease_end_date"))
-                existing.lease_term_months = item.get("lease_term_months")
-                existing.unit_area_sqft = to_decimal(item.get("unit_area_sqft"))
-                existing.monthly_rent = to_decimal(item.get("monthly_rent"))
-                existing.monthly_rent_per_sqft = to_decimal(item.get("monthly_rent_per_sqft"))
-                existing.annual_rent = to_decimal(item.get("annual_rent"))
-                existing.annual_rent_per_sqft = to_decimal(item.get("annual_rent_per_sqft"))
-                existing.security_deposit = to_decimal(item.get("security_deposit"))
-                existing.loc_amount = to_decimal(item.get("loc_amount"))
+            # Create new record (no longer check for existing)
+            rr_data = RentRollData(
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                # Basic fields
+                unit_number=unit_number,
+                tenant_name=tenant_name,
+                tenant_code=item.get("tenant_id"),
+                lease_type=item.get("lease_type"),
+                # Dates
+                lease_start_date=to_date(item.get("lease_start_date")),
+                lease_end_date=to_date(item.get("lease_end_date")),
+                lease_term_months=item.get("lease_term_months"),
+                # Area
+                unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
+                # Financials
+                monthly_rent=to_decimal(item.get("monthly_rent")),
+                monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
+                annual_rent=to_decimal(item.get("annual_rent")),
+                annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
+                security_deposit=to_decimal(item.get("security_deposit")),
+                loc_amount=to_decimal(item.get("loc_amount")),
                 # Template v2.0 fields
-                existing.tenancy_years = to_decimal(item.get("tenancy_years"))
-                existing.annual_recoveries_per_sf = to_decimal(item.get("annual_recoveries_per_sf"))
-                existing.annual_misc_per_sf = to_decimal(item.get("annual_misc_per_sf"))
-                existing.is_gross_rent_row = is_gross_rent_row
-                existing.parent_row_id = parent_row_id
-                existing.notes = notes
-                existing.occupancy_status = occupancy_status
-                existing.extraction_confidence = Decimal(str(quality_result['quality_score']))
-                existing.upload_id = upload.id
-                existing.needs_review = quality_result['quality_score'] < 99.0
-            else:
-                # Create new record
-                rr_data = RentRollData(
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    # Basic fields
-                    unit_number=unit_number,
-                    tenant_name=tenant_name,
-                    tenant_code=item.get("tenant_id"),
-                    lease_type=item.get("lease_type"),
-                    # Dates
-                    lease_start_date=to_date(item.get("lease_start_date")),
-                    lease_end_date=to_date(item.get("lease_end_date")),
-                    lease_term_months=item.get("lease_term_months"),
-                    # Area
-                    unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
-                    # Financials
-                    monthly_rent=to_decimal(item.get("monthly_rent")),
-                    monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
-                    annual_rent=to_decimal(item.get("annual_rent")),
-                    annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
-                    security_deposit=to_decimal(item.get("security_deposit")),
-                    loc_amount=to_decimal(item.get("loc_amount")),
-                    # Template v2.0 fields
-                    tenancy_years=to_decimal(item.get("tenancy_years")),
-                    annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
-                    annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
-                    is_gross_rent_row=is_gross_rent_row,
-                    parent_row_id=parent_row_id,
-                    notes=notes,
-                    # Status
-                    occupancy_status=occupancy_status,
-                    extraction_confidence=Decimal(str(quality_result['quality_score'])),
-                    needs_review=quality_result['quality_score'] < 99.0
-                )
-                self.db.add(rr_data)
-                self.db.flush()  # Get the ID for parent_row_map
-                
-                # Store ID for gross rent row linking
-                if not is_gross_rent_row:
-                    parent_row_map[unit_number] = rr_data.id
-                
-                records_inserted += 1
+                tenancy_years=to_decimal(item.get("tenancy_years")),
+                annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
+                annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
+                is_gross_rent_row=is_gross_rent_row,
+                parent_row_id=parent_row_id,
+                notes=notes,
+                # Status
+                occupancy_status=occupancy_status,
+                lease_status=lease_status,
+                # Validation tracking
+                validation_score=Decimal(str(record_score)),
+                validation_flags_json=validation_flags_json,
+                critical_flag_count=critical_count,
+                warning_flag_count=warning_count,
+                info_flag_count=info_count,
+                # Extraction metadata
+                extraction_confidence=Decimal(str(confidence_score)),
+                needs_review=(critical_count > 0 or record_score < 99.0)
+            )
+            self.db.add(rr_data)
+            self.db.flush()  # Get the ID for parent_row_map
+            
+            # Store ID for gross rent row linking
+            if not is_gross_rent_row:
+                parent_row_map[unit_number] = rr_data.id
+            
+            records_inserted += 1
         
         self.db.commit()
         

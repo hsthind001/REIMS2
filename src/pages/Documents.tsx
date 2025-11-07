@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react'
 import { documentService } from '../lib/document'
 import { propertyService } from '../lib/property'
+import { qualityService } from '../lib/quality'
+import { QualityBadge } from '../components/QualityBadge'
+import { QualityAlert } from '../components/QualityAlert'
+import FinancialDataViewer from './FinancialDataViewer'
 import type { Property, DocumentUpload } from '../types/api'
+
+interface DocumentWithQuality extends DocumentUpload {
+  quality_severity?: 'critical' | 'warning' | 'info' | 'excellent'
+  needs_review_count?: number
+  match_rate?: number
+  avg_confidence?: number
+}
 
 const Documents = () => {
   const [uploading, setUploading] = useState(false)
@@ -9,9 +20,14 @@ const Documents = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [selectedDocType, setSelectedDocType] = useState<'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll'>('balance_sheet')
+  const [forceOverwrite, setForceOverwrite] = useState(false)
   const [properties, setProperties] = useState<Property[]>([])
-  const [recentUploads, setRecentUploads] = useState<DocumentUpload[]>([])
+  const [recentUploads, setRecentUploads] = useState<DocumentWithQuality[]>([])
   const [loading, setLoading] = useState(false)
+  const [showQualityModal, setShowQualityModal] = useState(false)
+  const [uploadQuality, setUploadQuality] = useState<any>(null)
+  const [showDataViewer, setShowDataViewer] = useState(false)
+  const [selectedUploadId, setSelectedUploadId] = useState<number | null>(null)
 
   useEffect(() => {
     loadProperties()
@@ -31,7 +47,30 @@ const Documents = () => {
     try {
       setLoading(true)
       const response = await documentService.getDocuments({ limit: 10 })
-      setRecentUploads(response.items || [])
+      const uploads = response.items || []
+      
+      // Fetch quality metrics for each completed upload
+      const uploadsWithQuality = await Promise.all(
+        uploads.map(async (upload: DocumentUpload) => {
+          if (upload.extraction_status === 'completed') {
+            try {
+              const quality = await qualityService.getDocumentQuality(upload.id)
+              return {
+                ...upload,
+                quality_severity: quality.severity_level,
+                needs_review_count: quality.needs_review_count,
+                match_rate: quality.match_rate,
+                avg_confidence: quality.avg_confidence
+              }
+            } catch (error) {
+              return upload
+            }
+          }
+          return upload
+        })
+      )
+      
+      setRecentUploads(uploadsWithQuality as DocumentWithQuality[])
     } catch (error) {
       console.error('Failed to load uploads:', error)
     } finally {
@@ -58,13 +97,23 @@ const Documents = () => {
     setUploading(true)
     
     try {
-      const result = await documentService.uploadDocument({
-        property_code: selectedProperty,
-        period_year: selectedYear,
-        period_month: selectedMonth,
-        document_type: selectedDocType,
-        file: file
-      })
+      // Use uploadWithOverwrite if forceOverwrite is checked
+      const result = forceOverwrite
+        ? await documentService.uploadWithOverwrite({
+            property_code: selectedProperty,
+            period_year: selectedYear,
+            period_month: selectedMonth,
+            document_type: selectedDocType,
+            file: file,
+            overwrite: true
+          })
+        : await documentService.uploadDocument({
+            property_code: selectedProperty,
+            period_year: selectedYear,
+            period_month: selectedMonth,
+            document_type: selectedDocType,
+            file: file
+          })
 
       // Check if file already exists at this location
       if (result.file_exists && result.existing_file) {
@@ -98,12 +147,38 @@ const Documents = () => {
         })
 
         await loadRecentUploads()
-        alert(`✅ File replaced successfully!\n\nUpload ID: ${overwriteResult.upload_id}\nStatus: ${overwriteResult.extraction_status}\n\nExtraction task started.`)
+        
+        // Wait 30 seconds for extraction, then show quality modal
+        setTimeout(async () => {
+          try {
+            const quality = await qualityService.getDocumentQuality(overwriteResult.upload_id)
+            setUploadQuality(quality)
+            setShowQualityModal(true)
+            await loadRecentUploads()  // Refresh to show quality badges
+          } catch (error) {
+            console.error('Failed to fetch quality metrics:', error)
+          }
+        }, 30000)
+        
+        alert(`✅ File replaced successfully!\n\nUpload ID: ${overwriteResult.upload_id}\nStatus: ${overwriteResult.extraction_status}\n\nExtraction task started. Quality check will appear in 30 seconds.`)
         e.target.value = ''
       } else {
         // New file uploaded successfully
         await loadRecentUploads()
-        alert(`✅ File uploaded successfully!\n\nUpload ID: ${result.upload_id}\nStatus: ${result.extraction_status}\n\nExtraction task started. Check Dashboard for progress.`)
+        
+        // Wait 30 seconds for extraction, then show quality modal
+        setTimeout(async () => {
+          try {
+            const quality = await qualityService.getDocumentQuality(result.upload_id)
+            setUploadQuality(quality)
+            setShowQualityModal(true)
+            await loadRecentUploads()  // Refresh to show quality badges
+          } catch (error) {
+            console.error('Failed to fetch quality metrics:', error)
+          }
+        }, 30000)
+        
+        alert(`✅ File uploaded successfully!\n\nUpload ID: ${result.upload_id}\nStatus: ${result.extraction_status}\n\nExtraction task started. Quality check will appear in 30 seconds.`)
         e.target.value = ''
       }
       
@@ -189,6 +264,21 @@ const Documents = () => {
                 <option value="rent_roll">🏠 Rent Roll</option>
               </select>
             </div>
+            
+            <div className="form-group" style={{ marginTop: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={forceOverwrite}
+                  onChange={(e) => setForceOverwrite(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <strong>Force Overwrite</strong>
+                <span style={{ fontSize: '0.875rem', color: '#666' }}>
+                  (Replace duplicate files detected by hash)
+                </span>
+              </label>
+            </div>
           </div>
           
           <div className="upload-area">
@@ -248,13 +338,15 @@ const Documents = () => {
                     <th>Type</th>
                     <th>Period</th>
                     <th>Status</th>
+                    <th>Quality</th>
                     <th>Uploaded</th>
+                    <th style={{ width: '180px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentUploads.map(doc => (
                     <tr key={doc.id}>
-                      <td>{doc.original_filename}</td>
+                      <td>{doc.original_filename || doc.file_name}</td>
                       <td><strong>{doc.property_code}</strong></td>
                       <td style={{ textTransform: 'capitalize' }}>
                         {doc.document_type.replace('_', ' ')}
@@ -265,7 +357,56 @@ const Documents = () => {
                           {doc.extraction_status}
                         </span>
                       </td>
-                      <td>{new Date(doc.uploaded_at).toLocaleString()}</td>
+                      <td>
+                        {doc.quality_severity && doc.extraction_status === 'completed' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.75rem' }}>
+                            <QualityBadge 
+                              severity={doc.quality_severity} 
+                              count={doc.needs_review_count}
+                              showIcon={true}
+                            />
+                            {doc.match_rate !== undefined && (
+                              <span style={{ color: '#6b7280' }}>
+                                {doc.match_rate.toFixed(1)}% match
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                            {doc.extraction_status === 'completed' ? 'Loading...' : '-'}
+                          </span>
+                        )}
+                      </td>
+                      <td>{new Date(doc.upload_date).toLocaleString()}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          {doc.extraction_status === 'completed' && (
+                            <button 
+                              onClick={() => {
+                                setSelectedUploadId(doc.id)
+                                setShowDataViewer(true)
+                              }}
+                              className="btn-sm btn-secondary"
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                            >
+                              View Data
+                            </button>
+                          )}
+                          {doc.needs_review_count && doc.needs_review_count > 0 ? (
+                            <button 
+                              onClick={async () => {
+                                const quality = await qualityService.getDocumentQuality(doc.id)
+                                setUploadQuality(quality)
+                                setShowQualityModal(true)
+                              }}
+                              className="btn-sm btn-primary"
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                            >
+                              Review ({doc.needs_review_count})
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -274,6 +415,57 @@ const Documents = () => {
           )}
         </div>
       </div>
+      
+      {/* Quality Modal */}
+      {showQualityModal && uploadQuality && (
+        <div className="modal-overlay" onClick={() => setShowQualityModal(false)}>
+          <QualityAlert
+            severity={uploadQuality.severity_level}
+            metrics={{
+              total_records: uploadQuality.total_records,
+              matched_records: uploadQuality.matched_records,
+              match_rate: uploadQuality.match_rate,
+              avg_confidence: uploadQuality.avg_confidence,
+              needs_review_count: uploadQuality.needs_review_count,
+              critical_count: uploadQuality.critical_count,
+              warning_count: uploadQuality.warning_count,
+              severity_level: uploadQuality.severity_level,
+              match_strategy_breakdown: uploadQuality.match_strategy_breakdown
+            }}
+            uploadId={uploadQuality.upload_id}
+            propertyCode={uploadQuality.property_code}
+            documentType={uploadQuality.document_type}
+            onViewDetails={() => {
+              setShowQualityModal(false)
+              setSelectedUploadId(uploadQuality.upload_id)
+              setShowDataViewer(true)
+            }}
+            onDismiss={() => setShowQualityModal(false)}
+          />
+        </div>
+      )}
+      
+      {/* Financial Data Viewer */}
+      {showDataViewer && selectedUploadId && (
+        <div className="modal-overlay" style={{ alignItems: 'flex-start', paddingTop: '2rem' }}>
+          <div style={{ 
+            width: '95%', 
+            maxWidth: '1400px', 
+            maxHeight: '90vh',
+            overflow: 'auto',
+            backgroundColor: 'white',
+            borderRadius: '0.5rem'
+          }}>
+            <FinancialDataViewer
+              uploadId={selectedUploadId}
+              onClose={() => {
+                setShowDataViewer(false)
+                setSelectedUploadId(null)
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
