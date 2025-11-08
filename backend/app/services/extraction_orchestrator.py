@@ -73,8 +73,8 @@ class ExtractionOrchestrator:
                     "error": f"Upload {upload_id} not found"
                 }
             
-            # Update status to processing
-            upload.extraction_status = "processing"
+            # Update status to extracting
+            upload.extraction_status = "extracting"
             upload.extraction_started_at = datetime.now()
             self.db.commit()
             
@@ -86,7 +86,7 @@ class ExtractionOrchestrator:
             )
             
             if not pdf_data:
-                upload.extraction_status = "failed"
+                upload.extraction_status = "failed_download"
                 upload.extraction_completed_at = datetime.now()
                 upload.notes = "Failed to download file from MinIO storage"
                 self.db.commit()
@@ -106,7 +106,7 @@ class ExtractionOrchestrator:
             )
             
             if not extraction_result.get("success"):
-                upload.extraction_status = "failed"
+                upload.extraction_status = "failed_extraction"
                 upload.extraction_completed_at = datetime.now()
                 upload.notes = f"Text extraction failed: {extraction_result.get('error')}"
                 self.db.commit()
@@ -130,6 +130,10 @@ class ExtractionOrchestrator:
             # ==================== DATA INSERTION & QUALITY ASSURANCE ====================
             # Production-ready extraction with comprehensive quality checks
             
+            # Update status to validating
+            upload.extraction_status = "validating"
+            self.db.commit()
+            
             print(f"💾 Beginning data insertion for {upload.document_type}...")
             
             # Step 4: Parse and insert financial data based on document type
@@ -143,9 +147,9 @@ class ExtractionOrchestrator:
             
             if not parse_result["success"]:
                 # Data parsing failed - mark as failed
-                upload.extraction_status = "failed"
+                upload.extraction_status = "failed_validation"
                 upload.extraction_completed_at = datetime.now()
-                upload.notes = f"Data parsing failed: {parse_result.get('error')}"
+                upload.notes = f"Data parsing/validation failed: {parse_result.get('error')}"
                 self.db.commit()
                 return {
                     "success": False,
@@ -1112,7 +1116,7 @@ class ExtractionOrchestrator:
             # Get validation flags for this record
             record_flags = validator.get_flags_for_record(idx)
             notes_list = [f"[{flag.severity}] {flag.message}" for flag in record_flags]
-            existing_notes = item.get('notes', '')
+            existing_notes = item.get('notes') or ''
             all_notes = existing_notes + ("\n" if existing_notes else "") + "\n".join(notes_list) if notes_list else existing_notes
             notes = all_notes if all_notes else None
             

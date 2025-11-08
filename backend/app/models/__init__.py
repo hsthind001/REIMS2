@@ -8,6 +8,7 @@ from app.models.chart_of_accounts import ChartOfAccounts
 from app.models.lender import Lender
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
+from app.models.income_statement_header import IncomeStatementHeader
 from app.models.cash_flow_header import CashFlowHeader
 from app.models.cash_flow_data import CashFlowData
 from app.models.cash_flow_adjustments import CashFlowAdjustment
@@ -29,6 +30,7 @@ __all__ = [
     "Lender",
     "BalanceSheetData",
     "IncomeStatementData",
+    "IncomeStatementHeader",
     "CashFlowHeader",
     "CashFlowData",
     "CashFlowAdjustment",

@@ -3,6 +3,23 @@ import { documentService } from '../lib/document'
 import { propertyService } from '../lib/property'
 import type { Property, DocumentUpload } from '../types/api'
 
+// Helper function to format extraction status for display
+const formatExtractionStatus = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    'pending': 'Pending',
+    'uploaded_to_minio': 'Uploaded to MinIO',
+    'extracting': 'Extracting',
+    'validating': 'Validating',
+    'processing': 'Processing',
+    'completed': 'Completed',
+    'failed': 'Failed',
+    'failed_download': 'Failed: Download',
+    'failed_extraction': 'Failed: Extraction',
+    'failed_validation': 'Failed: Validation'
+  }
+  return statusMap[status] || status
+}
+
 const Documents = () => {
   const [uploading, setUploading] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState('')
@@ -262,7 +279,7 @@ const Documents = () => {
                       <td>{doc.period_year}/{doc.period_month.toString().padStart(2, '0')}</td>
                       <td>
                         <span className={`status-badge ${doc.extraction_status}`}>
-                          {doc.extraction_status}
+                          {formatExtractionStatus(doc.extraction_status)}
                         </span>
                       </td>
                       <td>{new Date(doc.upload_date).toLocaleString()}</td>

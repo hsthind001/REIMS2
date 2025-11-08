@@ -86,7 +86,7 @@ class DocumentService:
         file_hash = self.calculate_file_hash(file_content)
         file_size = len(file_content)
         
-        # Step 4: Check for duplicate
+        # Step 4: Check for duplicate and auto-replace
         existing_upload = self.check_duplicate(
             property_obj.id,
             period.id,
@@ -94,12 +94,22 @@ class DocumentService:
             file_hash
         )
         if existing_upload:
-            return {
-                "is_duplicate": True,
-                "upload_id": existing_upload.id,
-                "message": "Duplicate file already exists",
-                "file_path": existing_upload.file_path
-            }
+            # Auto-replace: Delete old upload (cascade deletes all related data)
+            print(f"🔄 Duplicate detected (ID {existing_upload.id}). Auto-replacing with new upload...")
+            
+            # Delete old file from MinIO if exists
+            if existing_upload.file_path:
+                try:
+                    from app.db.minio_client import delete_file
+                    delete_file(existing_upload.file_path, settings.MINIO_BUCKET_NAME)
+                    print(f"🗑️  Deleted old file from MinIO: {existing_upload.file_path}")
+                except Exception as e:
+                    print(f"⚠️  Warning: Could not delete old file from MinIO: {e}")
+            
+            # Delete old database record (cascades to all related financial data)
+            self.db.delete(existing_upload)
+            self.db.commit()
+            print(f"✅ Old upload deleted. Proceeding with new upload...")
         
         # Step 5: Generate file path and check if exists
         file_path = await self.generate_file_path(
@@ -122,6 +132,7 @@ class DocumentService:
                 }
         
         # Upload to MinIO
+        print(f"📤 Uploading to MinIO: {file_path}")
         success = upload_file(
             file_data=file_content,
             object_name=file_path,
@@ -135,7 +146,9 @@ class DocumentService:
                 detail="Failed to upload file to storage"
             )
         
-        # Step 6: Create document_uploads record
+        print(f"✅ File uploaded to MinIO successfully")
+        
+        # Step 6: Create document_uploads record with status: uploaded_to_minio
         upload = DocumentUpload(
             property_id=property_obj.id,
             period_id=period.id,
@@ -145,7 +158,7 @@ class DocumentService:
             file_hash=file_hash,
             file_size_bytes=file_size,
             uploaded_by=uploaded_by,
-            extraction_status='pending',
+            extraction_status='uploaded_to_minio',  # Granular status
             version=self._get_next_version(property_obj.id, period.id, document_type),
             is_active=True
         )

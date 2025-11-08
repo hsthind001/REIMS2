@@ -58,14 +58,19 @@ async def upload_document(
     **Workflow:**
     1. Validate property exists
     2. Create/get financial period
-    3. Upload file to MinIO
-    4. Create document_uploads record
-    5. Trigger Celery task for extraction
-    6. Return upload_id and task_id
+    3. Check for duplicate (by file hash)
+    4. If duplicate found: AUTO-DELETE old upload and replace with new one
+    5. Upload file to MinIO
+    6. Create document_uploads record
+    7. Trigger Celery task for extraction
+    8. Return upload_id and task_id
     
-    **Duplicate Detection:**
-    - Uses MD5 hash of file content
-    - If duplicate found, returns existing upload_id
+    **Duplicate Handling (Auto-Replace):**
+    - Uses MD5 hash of file content to detect duplicates
+    - If duplicate found: Automatically deletes old upload (including all related financial data)
+    - Old file removed from MinIO
+    - New file uploaded and extracted
+    - Prevents failed uploads from blocking new attempts
     
     **Returns:**
     - upload_id: Unique identifier for tracking

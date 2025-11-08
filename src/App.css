@@ -492,6 +492,21 @@ body {
   color: #92400e;
 }
 
+.status-badge.uploaded_to_minio {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.status-badge.extracting {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-badge.validating {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .status-badge.processing {
   background: #dbeafe;
   color: #1e40af;
@@ -505,6 +520,21 @@ body {
 .status-badge.failed {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.status-badge.failed_download {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-badge.failed_extraction {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-badge.failed_validation {
+  background: #fef9c3;
+  color: #854d0e;
 }
 
 /* Empty State */

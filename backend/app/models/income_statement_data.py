@@ -13,6 +13,7 @@ class IncomeStatementData(Base):
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
     period_id = Column(Integer, ForeignKey('financial_periods.id', ondelete='CASCADE'), nullable=False, index=True)
     upload_id = Column(Integer, ForeignKey('document_uploads.id', ondelete='SET NULL'))
+    header_id = Column(Integer, ForeignKey('income_statement_headers.id', ondelete='CASCADE'))
     account_id = Column(Integer, ForeignKey('chart_of_accounts.id'), nullable=True)  # Nullable for unmatched accounts
     
     # ==================== HEADER METADATA (Template v1.0) ====================
@@ -74,5 +75,6 @@ class IncomeStatementData(Base):
     property = relationship("Property", back_populates="income_statement_data")
     period = relationship("FinancialPeriod", back_populates="income_statement_data")
     upload = relationship("DocumentUpload", back_populates="income_statement_data")
+    header = relationship("IncomeStatementHeader", back_populates="line_items")
     account = relationship("ChartOfAccounts", back_populates="income_statement_entries")
 

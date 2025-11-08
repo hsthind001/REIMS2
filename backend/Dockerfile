@@ -2,8 +2,9 @@
 FROM reims-base:latest
 
 # Install PostgreSQL client for pg_isready and psql (for migrations and seeding)
+# Install Redis tools for redis-cli (for Flower entrypoint script)
 USER root
-RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y postgresql-client redis-tools && rm -rf /var/lib/apt/lists/*
 
 # Set working directory (already set in base, but explicit for clarity)
 WORKDIR /app
