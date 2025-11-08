@@ -196,12 +196,28 @@ const Documents = () => {
         }
         else {
           // Other 400 errors
-          const errorMsg = detail.message || error.message || 'Bad request'
+          const errorMsg = detail?.message || error.message || 'Bad request'
           alert(`❌ Upload failed: ${errorMsg}`)
         }
       } else {
         // General error
-        const errorMsg = error.response?.data?.detail?.message || error.message || 'Unknown error'
+        let errorMsg = 'Unknown error'
+        if (error.response?.data?.detail) {
+          // If detail is a string, use it directly
+          if (typeof error.response.data.detail === 'string') {
+            errorMsg = error.response.data.detail
+          } 
+          // If detail is an object, try to get message
+          else if (error.response.data.detail.message) {
+            errorMsg = error.response.data.detail.message
+          }
+          // Otherwise show generic message
+          else {
+            errorMsg = JSON.stringify(error.response.data.detail)
+          }
+        } else if (error.message) {
+          errorMsg = error.message
+        }
         alert(`❌ Upload failed: ${errorMsg}`)
       }
     } finally {

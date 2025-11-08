@@ -175,8 +175,15 @@ class MultiEngineExtractor:
                 if month_name in sample_lower:
                     found_months.append(month_num)
             
-            # Get most common year and month
-            detected_year = int(years[0]) if years else None
+            # Get most common year (not just first one)
+            detected_year = None
+            if years:
+                # Count occurrences of each year
+                from collections import Counter
+                year_counts = Counter(years)
+                # Get most common year
+                detected_year = int(year_counts.most_common(1)[0][0])
+            
             detected_month = found_months[0] if found_months else None
             
             # Calculate confidence
