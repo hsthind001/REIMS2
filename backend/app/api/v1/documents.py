@@ -111,6 +111,22 @@ async def upload_document(
             force_overwrite=force_overwrite
         )
         
+        # Check for property mismatch
+        if result.get("property_mismatch"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "property_mismatch",
+                    "message": result["message"],
+                    "selected_property_code": result["selected_property_code"],
+                    "selected_property_name": result["selected_property_name"],
+                    "detected_property_code": result["detected_property_code"],
+                    "detected_property_name": result["detected_property_name"],
+                    "confidence": result["confidence"],
+                    "matches_found": result.get("matches_found", [])
+                }
+            )
+        
         # Check for document type mismatch
         if result.get("type_mismatch"):
             raise HTTPException(

@@ -27,6 +27,96 @@ class MultiEngineExtractor:
         self.classifier = PDFClassifier()
         self.validator = QualityValidator()
     
+    def detect_property_name(self, pdf_data: bytes, available_properties: list) -> Dict:
+        """
+        Detect property name from PDF content
+        
+        Searches for property names, codes, and addresses in first 2 pages
+        
+        Args:
+            pdf_data: PDF file bytes
+            available_properties: List of dicts with property_code, property_name, address
+        
+        Returns:
+            dict: {
+                "detected_property_code": str or None,
+                "detected_property_name": str or None,
+                "confidence": float,
+                "matches_found": list
+            }
+        """
+        try:
+            # Quick extraction of first 2 pages
+            result = self.pymupdf.extract_text(pdf_data)
+            if not result.get("success"):
+                return {"detected_property_code": None, "detected_property_name": None, "confidence": 0, "matches_found": []}
+            
+            # Get text from first 2 pages
+            pages = result.get("pages", [])
+            sample_text = ""
+            for page in pages[:2]:
+                sample_text += page.get("text", "")
+            
+            sample_lower = sample_text.lower()
+            
+            # Search for each property
+            matches = []
+            best_match = None
+            best_score = 0
+            
+            for prop in available_properties:
+                score = 0
+                prop_matches = []
+                
+                # Check property code (e.g., ESP001, HMND001)
+                if prop.get('property_code') and prop['property_code'].lower() in sample_lower:
+                    score += 40
+                    prop_matches.append(f"Code: {prop['property_code']}")
+                
+                # Check property name (e.g., "Eastern Shore Plaza", "Hammond Aire")
+                if prop.get('property_name'):
+                    # Split name into words and check each
+                    name_words = prop['property_name'].lower().split()
+                    matched_words = sum(1 for word in name_words if len(word) > 3 and word in sample_lower)
+                    if matched_words > 0:
+                        word_score = (matched_words / len(name_words)) * 30
+                        score += word_score
+                        prop_matches.append(f"Name: {matched_words}/{len(name_words)} words")
+                
+                # Check address/city if available
+                if prop.get('city') and prop['city'].lower() in sample_lower:
+                    score += 20
+                    prop_matches.append(f"City: {prop['city']}")
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = prop
+                    matches = prop_matches
+            
+            if best_match and best_score >= 30:
+                return {
+                    "detected_property_code": best_match.get('property_code'),
+                    "detected_property_name": best_match.get('property_name'),
+                    "confidence": round(best_score, 1),
+                    "matches_found": matches
+                }
+            
+            return {
+                "detected_property_code": None,
+                "detected_property_name": None,
+                "confidence": 0,
+                "matches_found": []
+            }
+            
+        except Exception as e:
+            return {
+                "detected_property_code": None,
+                "detected_property_name": None,
+                "confidence": 0,
+                "matches_found": [],
+                "error": str(e)
+            }
+    
     def detect_year_and_period(self, pdf_data: bytes) -> Dict:
         """
         Detect year and period from PDF content

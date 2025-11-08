@@ -129,8 +129,22 @@ const Documents = () => {
       const detail = error.response?.data?.detail
       
       if (error.response?.status === 400 && errorType) {
+        // Handle property mismatch
+        if (errorType === 'property_mismatch') {
+          alert(
+            `⚠️  PROPERTY MISMATCH!\n\n` +
+            `You selected: ${detail.selected_property_code} - ${detail.selected_property_name}\n` +
+            `But the PDF appears to be for: ${detail.detected_property_code} - ${detail.detected_property_name}\n` +
+            `Detection confidence: ${detail.confidence}%\n` +
+            `Matches found: ${detail.matches_found?.join(', ') || 'N/A'}\n\n` +
+            `The file was NOT uploaded to prevent data errors.\n\n` +
+            `Please either:\n` +
+            `1. Select the correct property (${detail.detected_property_code}), or\n` +
+            `2. Upload the correct file for ${detail.selected_property_code}`
+          )
+        }
         // Handle document type mismatch
-        if (errorType === 'document_type_mismatch') {
+        else if (errorType === 'document_type_mismatch') {
           const typeNames: Record<string, string> = {
             'balance_sheet': 'Balance Sheet',
             'income_statement': 'Income Statement',
