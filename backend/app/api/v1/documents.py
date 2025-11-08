@@ -125,6 +125,36 @@ async def upload_document(
                 }
             )
         
+        # Check for year mismatch
+        if result.get("year_mismatch"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "year_mismatch",
+                    "message": result["message"],
+                    "selected_year": result["selected_year"],
+                    "detected_year": result["detected_year"],
+                    "period_text": result.get("period_text", ""),
+                    "confidence": result["confidence"]
+                }
+            )
+        
+        # Check for month/period mismatch
+        if result.get("period_mismatch"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "period_mismatch",
+                    "message": result["message"],
+                    "selected_month": result["selected_month"],
+                    "detected_month": result["detected_month"],
+                    "selected_month_name": result["selected_month_name"],
+                    "detected_month_name": result["detected_month_name"],
+                    "period_text": result.get("period_text", ""),
+                    "confidence": result["confidence"]
+                }
+            )
+        
         # Check if file already exists (and not forcing overwrite)
         if result.get("file_exists"):
             return DocumentUploadResponse(

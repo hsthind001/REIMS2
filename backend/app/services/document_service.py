@@ -86,18 +86,24 @@ class DocumentService:
         file_hash = self.calculate_file_hash(file_content)
         file_size = len(file_content)
         
-        # Step 3.5: Intelligent document type validation
-        print(f"🔍 Detecting document type from PDF content...")
+        # Step 3.5: Intelligent document validation (type, year, period)
+        print(f"🔍 Validating document type, year, and period from PDF content...")
         from app.utils.extraction_engine import MultiEngineExtractor
         detector = MultiEngineExtractor()
-        detection_result = detector.detect_document_type(file_content)
         
-        detected_type = detection_result.get("detected_type", "unknown")
-        confidence = detection_result.get("confidence", 0)
+        # Detect document type
+        type_detection = detector.detect_document_type(file_content)
+        detected_type = type_detection.get("detected_type", "unknown")
+        type_confidence = type_detection.get("confidence", 0)
         
-        # Check if detected type matches selected type
-        if detected_type != "unknown" and detected_type != document_type and confidence >= 30:
-            # Type mismatch detected!
+        # Detect year and period
+        period_detection = detector.detect_year_and_period(file_content)
+        detected_year = period_detection.get("year")
+        detected_month = period_detection.get("month")
+        period_confidence = period_detection.get("confidence", 0)
+        
+        # Check document type mismatch
+        if detected_type != "unknown" and detected_type != document_type and type_confidence >= 30:
             type_names = {
                 "balance_sheet": "Balance Sheet",
                 "income_statement": "Income Statement",
@@ -106,18 +112,51 @@ class DocumentService:
             }
             
             print(f"⚠️  Document type mismatch detected!")
-            print(f"   Selected: {document_type} | Detected: {detected_type} (confidence: {confidence}%)")
+            print(f"   Selected: {document_type} | Detected: {detected_type} (confidence: {type_confidence}%)")
             
             return {
                 "type_mismatch": True,
                 "selected_type": document_type,
                 "detected_type": detected_type,
-                "confidence": confidence,
-                "keywords_found": detection_result.get("keywords_found", []),
-                "message": f"Document type mismatch! You selected '{type_names.get(document_type, document_type)}' but the PDF appears to be a '{type_names.get(detected_type, detected_type)}' (confidence: {confidence}%)."
+                "confidence": type_confidence,
+                "keywords_found": type_detection.get("keywords_found", []),
+                "message": f"Document type mismatch! You selected '{type_names.get(document_type, document_type)}' but the PDF appears to be a '{type_names.get(detected_type, detected_type)}' (confidence: {type_confidence}%)."
             }
         
-        print(f"✅ Document type validated: {detected_type} (confidence: {confidence}%)")
+        # Check year mismatch
+        if detected_year and detected_year != period_year and period_confidence >= 50:
+            print(f"⚠️  Year mismatch detected!")
+            print(f"   Selected: {period_year} | Detected: {detected_year} (confidence: {period_confidence}%)")
+            
+            return {
+                "year_mismatch": True,
+                "selected_year": period_year,
+                "detected_year": detected_year,
+                "period_text": period_detection.get("period_text", ""),
+                "confidence": period_confidence,
+                "message": f"Year mismatch! You selected {period_year} but the PDF appears to be for {detected_year}. Period found: {period_detection.get('period_text', 'unknown')}"
+            }
+        
+        # Check month mismatch (only if month was detected)
+        if detected_month and detected_month != period_month and period_confidence >= 50:
+            month_names_display = ["", "January", "February", "March", "April", "May", "June", 
+                                   "July", "August", "September", "October", "November", "December"]
+            
+            print(f"⚠️  Month/period mismatch detected!")
+            print(f"   Selected: {month_names_display[period_month]} | Detected: {month_names_display[detected_month]} (confidence: {period_confidence}%)")
+            
+            return {
+                "period_mismatch": True,
+                "selected_month": period_month,
+                "detected_month": detected_month,
+                "selected_month_name": month_names_display[period_month],
+                "detected_month_name": month_names_display[detected_month],
+                "period_text": period_detection.get("period_text", ""),
+                "confidence": period_confidence,
+                "message": f"Period mismatch! You selected {month_names_display[period_month]} but the PDF appears to be for {month_names_display[detected_month]}. Period found: {period_detection.get('period_text', 'unknown')}"
+            }
+        
+        print(f"✅ Document validated: {detected_type} | Year: {detected_year or 'N/A'} | Month: {detected_month or 'N/A'}")
         
         # Step 4: Check for duplicate and auto-replace
         existing_upload = self.check_duplicate(

@@ -27,6 +27,99 @@ class MultiEngineExtractor:
         self.classifier = PDFClassifier()
         self.validator = QualityValidator()
     
+    def detect_year_and_period(self, pdf_data: bytes) -> Dict:
+        """
+        Detect year and period from PDF content
+        
+        Looks for:
+        - Year (2020-2030)
+        - Month names (January, Feb, etc.)
+        - Month numbers (01-12)
+        - Common period formats ("December 2024", "12/31/2024", "YE 2024")
+        
+        Returns:
+            dict: {
+                "year": int or None,
+                "month": int or None,
+                "period_text": str,
+                "confidence": float
+            }
+        """
+        try:
+            import re
+            from datetime import datetime
+            
+            # Quick extraction of first 2 pages
+            result = self.pymupdf.extract_text(pdf_data)
+            if not result.get("success"):
+                return {"year": None, "month": None, "period_text": "", "confidence": 0}
+            
+            # Get text from first 2 pages
+            pages = result.get("pages", [])
+            sample_text = ""
+            for page in pages[:2]:
+                sample_text += page.get("text", "")
+            
+            # Extract years (2020-2030)
+            years = re.findall(r'\b(202[0-9]|2030)\b', sample_text)
+            
+            # Extract months (names and numbers)
+            month_names = {
+                'january': 1, 'jan': 1,
+                'february': 2, 'feb': 2,
+                'march': 3, 'mar': 3,
+                'april': 4, 'apr': 4,
+                'may': 5,
+                'june': 6, 'jun': 6,
+                'july': 7, 'jul': 7,
+                'august': 8, 'aug': 8,
+                'september': 9, 'sep': 9, 'sept': 9,
+                'october': 10, 'oct': 10,
+                'november': 11, 'nov': 11,
+                'december': 12, 'dec': 12
+            }
+            
+            found_months = []
+            sample_lower = sample_text.lower()
+            for month_name, month_num in month_names.items():
+                if month_name in sample_lower:
+                    found_months.append(month_num)
+            
+            # Get most common year and month
+            detected_year = int(years[0]) if years else None
+            detected_month = found_months[0] if found_months else None
+            
+            # Calculate confidence
+            confidence = 0
+            if detected_year:
+                confidence += 50
+            if detected_month:
+                confidence += 50
+            
+            # Find period text for display
+            period_text = ""
+            if detected_month and detected_year:
+                month_name = list(month_names.keys())[list(month_names.values()).index(detected_month)]
+                period_text = f"{month_name.capitalize()} {detected_year}"
+            elif detected_year:
+                period_text = str(detected_year)
+            
+            return {
+                "year": detected_year,
+                "month": detected_month,
+                "period_text": period_text,
+                "confidence": confidence
+            }
+            
+        except Exception as e:
+            return {
+                "year": None,
+                "month": None,
+                "period_text": "",
+                "confidence": 0,
+                "error": str(e)
+            }
+    
     def detect_document_type(self, pdf_data: bytes) -> Dict:
         """
         Quickly detect financial document type from PDF content

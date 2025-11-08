@@ -125,29 +125,66 @@ const Documents = () => {
       }
       
     } catch (error: any) {
-      // Handle document type mismatch specifically
-      if (error.response?.status === 400 && error.response?.data?.detail?.error === 'document_type_mismatch') {
-        const detail = error.response.data.detail
-        const typeNames: Record<string, string> = {
-          'balance_sheet': 'Balance Sheet',
-          'income_statement': 'Income Statement',
-          'cash_flow': 'Cash Flow Statement',
-          'rent_roll': 'Rent Roll'
+      const errorType = error.response?.data?.detail?.error
+      const detail = error.response?.data?.detail
+      
+      if (error.response?.status === 400 && errorType) {
+        // Handle document type mismatch
+        if (errorType === 'document_type_mismatch') {
+          const typeNames: Record<string, string> = {
+            'balance_sheet': 'Balance Sheet',
+            'income_statement': 'Income Statement',
+            'cash_flow': 'Cash Flow Statement',
+            'rent_roll': 'Rent Roll'
+          }
+          
+          const selectedName = typeNames[detail.selected_type] || detail.selected_type
+          const detectedName = typeNames[detail.detected_type] || detail.detected_type
+          
+          alert(
+            `⚠️  DOCUMENT TYPE MISMATCH!\n\n` +
+            `You selected: ${selectedName}\n` +
+            `But the PDF appears to be: ${detectedName}\n` +
+            `Detection confidence: ${detail.confidence}%\n\n` +
+            `The file was NOT uploaded to prevent data errors.\n\n` +
+            `Please either:\n` +
+            `1. Select the correct document type (${detectedName}), or\n` +
+            `2. Upload the correct file (${selectedName})`
+          )
         }
-        
-        const selectedName = typeNames[detail.selected_type] || detail.selected_type
-        const detectedName = typeNames[detail.detected_type] || detail.detected_type
-        
-        alert(
-          `⚠️  DOCUMENT TYPE MISMATCH!\n\n` +
-          `You selected: ${selectedName}\n` +
-          `But the PDF appears to be: ${detectedName}\n` +
-          `Detection confidence: ${detail.confidence}%\n\n` +
-          `The file was NOT uploaded to prevent data errors.\n\n` +
-          `Please either:\n` +
-          `1. Select the correct document type (${detectedName}), or\n` +
-          `2. Upload the correct file (${selectedName})`
-        )
+        // Handle year mismatch
+        else if (errorType === 'year_mismatch') {
+          alert(
+            `⚠️  YEAR MISMATCH!\n\n` +
+            `You selected: ${detail.selected_year}\n` +
+            `But the PDF appears to be for: ${detail.detected_year}\n` +
+            `Period found in PDF: ${detail.period_text}\n` +
+            `Detection confidence: ${detail.confidence}%\n\n` +
+            `The file was NOT uploaded to prevent data errors.\n\n` +
+            `Please either:\n` +
+            `1. Change the year to ${detail.detected_year}, or\n` +
+            `2. Upload the correct file for ${detail.selected_year}`
+          )
+        }
+        // Handle month/period mismatch
+        else if (errorType === 'period_mismatch') {
+          alert(
+            `⚠️  MONTH/PERIOD MISMATCH!\n\n` +
+            `You selected: ${detail.selected_month_name} (Month ${detail.selected_month})\n` +
+            `But the PDF appears to be for: ${detail.detected_month_name} (Month ${detail.detected_month})\n` +
+            `Period found in PDF: ${detail.period_text}\n` +
+            `Detection confidence: ${detail.confidence}%\n\n` +
+            `The file was NOT uploaded to prevent data errors.\n\n` +
+            `Please either:\n` +
+            `1. Change the month to ${detail.detected_month_name}, or\n` +
+            `2. Upload the correct file for ${detail.selected_month_name}`
+          )
+        }
+        else {
+          // Other 400 errors
+          const errorMsg = detail.message || error.message || 'Bad request'
+          alert(`❌ Upload failed: ${errorMsg}`)
+        }
       } else {
         // General error
         const errorMsg = error.response?.data?.detail?.message || error.message || 'Unknown error'
