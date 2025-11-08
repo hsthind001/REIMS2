@@ -14,11 +14,7 @@ export class ReportsService {
     year: number,
     month: number
   ): Promise<PropertySummary> {
-    return api.get<PropertySummary>('/reports/property-summary', {
-      property_code: propertyCode,
-      year,
-      month
-    });
+    return api.get<PropertySummary>(`/reports/summary/${propertyCode}/${year}/${month}`);
   }
 
   /**
@@ -55,11 +51,8 @@ export class ReportsService {
     year: number,
     accountCodes?: string[]
   ): Promise<any> {
-    return api.get<any>('/reports/annual-trends', {
-      property_code: propertyCode,
-      year,
-      account_codes: accountCodes?.join(',')
-    });
+    const params = accountCodes ? `?account_codes=${accountCodes.join(',')}` : '';
+    return api.get<any>(`/reports/trends/${propertyCode}/${year}${params}`);
   }
 
   /**

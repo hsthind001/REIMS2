@@ -104,26 +104,12 @@ class DocumentService:
         detected_property_code = property_detection.get("detected_property_code")
         property_confidence = property_detection.get("confidence", 0)
         
-        # Check property mismatch
-        if detected_property_code and detected_property_code != property_code and property_confidence >= 30:
-            detected_prop_name = property_detection.get("detected_property_name", detected_property_code)
-            
-            print(f"⚠️  Property mismatch detected!")
-            print(f"   Selected: {property_code} ({property_obj.property_name})")
-            print(f"   Detected: {detected_property_code} ({detected_prop_name}) (confidence: {property_confidence}%)")
-            
-            return {
-                "property_mismatch": True,
-                "selected_property_code": property_code,
-                "selected_property_name": property_obj.property_name,
-                "detected_property_code": detected_property_code,
-                "detected_property_name": detected_prop_name,
-                "confidence": property_confidence,
-                "matches_found": property_detection.get("matches_found", []),
-                "message": f"Property mismatch! You selected '{property_code} - {property_obj.property_name}' but the PDF appears to be for '{detected_property_code} - {detected_prop_name}' (confidence: {property_confidence}%)."
-            }
+        # Property validation DISABLED - caused false positives with A/R cross-references
+        # Financial documents often reference multiple properties in A/R accounts
+        # This was incorrectly flagging valid documents
+        # Users should ensure they select correct property manually
         
-        print(f"✅ Property validated: {detected_property_code or 'N/A'} (confidence: {property_confidence}%)")
+        print(f"ℹ️  Property detected: {detected_property_code or 'N/A'} (confidence: {property_confidence}%) - validation disabled")
         
         # Detect document type
         type_detection = detector.detect_document_type(file_content)

@@ -168,7 +168,7 @@ export default function Dashboard() {
                         />
                         {doc.extraction_status}
                       </td>
-                      <td>{new Date(doc.upload_date).toLocaleDateString()}</td>
+                      <td>{new Date(doc.upload_date).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
