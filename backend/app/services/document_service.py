@@ -137,26 +137,10 @@ class DocumentService:
                 "message": f"Year mismatch! You selected {period_year} but the PDF appears to be for {detected_year}. Period found: {period_detection.get('period_text', 'unknown')}"
             }
         
-        # Check month mismatch (only if month was detected)
-        if detected_month and detected_month != period_month and period_confidence >= 50:
-            month_names_display = ["", "January", "February", "March", "April", "May", "June", 
-                                   "July", "August", "September", "October", "November", "December"]
-            
-            print(f"⚠️  Month/period mismatch detected!")
-            print(f"   Selected: {month_names_display[period_month]} | Detected: {month_names_display[detected_month]} (confidence: {period_confidence}%)")
-            
-            return {
-                "period_mismatch": True,
-                "selected_month": period_month,
-                "detected_month": detected_month,
-                "selected_month_name": month_names_display[period_month],
-                "detected_month_name": month_names_display[detected_month],
-                "period_text": period_detection.get("period_text", ""),
-                "confidence": period_confidence,
-                "message": f"Period mismatch! You selected {month_names_display[period_month]} but the PDF appears to be for {month_names_display[detected_month]}. Period found: {period_detection.get('period_text', 'unknown')}"
-            }
+        # Month validation DISABLED per user request
+        # Users can select any month - only year and type are validated
         
-        print(f"✅ Document validated: {detected_type} | Year: {detected_year or 'N/A'} | Month: {detected_month or 'N/A'}")
+        print(f"✅ Document validated: {detected_type} | Year: {detected_year or 'N/A'} | Month: {detected_month or 'N/A'} (month check disabled)")
         
         # Step 4: Check for duplicate and auto-replace
         existing_upload = self.check_duplicate(
