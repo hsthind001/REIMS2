@@ -7,8 +7,9 @@ import Dashboard from './pages/Dashboard'
 import Properties from './pages/Properties'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
+import Reconciliation from './pages/Reconciliation'
 
-type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -34,6 +35,8 @@ function AppContent() {
         return <Documents />
       case 'reports':
         return <Reports />
+      case 'reconciliation':
+        return <Reconciliation />
       default:
         return <Dashboard />
     }
@@ -120,6 +123,13 @@ function AppContent() {
             >
               <span className="nav-icon">📈</span>
               {sidebarOpen && <span className="nav-text">Reports</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'reconciliation' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('reconciliation')}
+            >
+              <span className="nav-icon">🔄</span>
+              {sidebarOpen && <span className="nav-text">Reconciliation</span>}
             </button>
           </nav>
         </aside>
