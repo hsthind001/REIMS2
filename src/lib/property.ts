@@ -37,17 +37,17 @@ export class PropertyService {
    * Update property
    */
   async updateProperty(
-    propertyCode: string,
+    propertyId: number,
     propertyData: Partial<PropertyCreate>
   ): Promise<Property> {
-    return api.put<Property>(`/properties/${propertyCode}`, propertyData);
+    return api.put<Property>(`/properties/${propertyId}`, propertyData);
   }
 
   /**
    * Delete property
    */
-  async deleteProperty(propertyCode: string): Promise<void> {
-    await api.delete<void>(`/properties/${propertyCode}`);
+  async deleteProperty(propertyId: number): Promise<void> {
+    await api.delete<void>(`/properties/${propertyId}`);
   }
 
   /**

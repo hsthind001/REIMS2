@@ -86,21 +86,20 @@ class DocumentService:
         file_hash = self.calculate_file_hash(file_content)
         file_size = len(file_content)
         
-        # Step 4: Check for duplicate (skip if force_overwrite is enabled)
-        if not force_overwrite:
-            existing_upload = self.check_duplicate(
-                property_obj.id,
-                period.id,
-                document_type,
-                file_hash
-            )
-            if existing_upload:
-                return {
-                    "is_duplicate": True,
-                    "upload_id": existing_upload.id,
-                    "message": "Duplicate file already exists",
-                    "file_path": existing_upload.file_path
-                }
+        # Step 4: Check for duplicate
+        existing_upload = self.check_duplicate(
+            property_obj.id,
+            period.id,
+            document_type,
+            file_hash
+        )
+        if existing_upload:
+            return {
+                "is_duplicate": True,
+                "upload_id": existing_upload.id,
+                "message": "Duplicate file already exists",
+                "file_path": existing_upload.file_path
+            }
         
         # Step 5: Generate file path and check if exists
         file_path = await self.generate_file_path(

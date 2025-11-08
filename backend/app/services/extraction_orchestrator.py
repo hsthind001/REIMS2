@@ -583,40 +583,40 @@ class ExtractionOrchestrator:
                 account_id = account.id if account else None
             
             # Insert new with all Template v1.0 fields (no longer check for existing)
-            is_data = IncomeStatementData(
-                header_id=header.id,
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                account_id=account_id,
-                account_code=account_code or "",
-                account_name=account_name,
-                period_amount=Decimal(str(item.get("period_amount", 0))),
-                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
-                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
-                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
-                # Template v1.0: Header metadata
-                period_type=header_data.get("period_type", "Monthly"),
-                accounting_basis=header_data.get("accounting_basis"),
-                report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
-                page_number=item.get("page"),
-                # Template v1.0: Hierarchical structure
-                is_subtotal=item.get("is_subtotal", False),
-                is_total=item.get("is_total", False),
-                line_category=item.get("line_category"),
-                line_subcategory=item.get("line_subcategory"),
-                line_number=item.get("line_number"),
-                account_level=item.get("account_level", 3),
-                # Template v1.0: Classification
-                is_below_the_line=item.get("is_below_the_line", False),
-                # Template v1.0: Extraction quality
-                extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
-                match_confidence=Decimal(str(item.get("match_confidence", 0))) if item.get("match_confidence") else None,
-                extraction_method=item.get("extraction_method", "table"),
-                needs_review=item.get("confidence", confidence_score) < 85.0
-            )
-            self.db.add(is_data)
-            records_inserted += 1
+                is_data = IncomeStatementData(
+                    header_id=header.id,
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    account_id=account_id,
+                    account_code=account_code or "",
+                    account_name=account_name,
+                    period_amount=Decimal(str(item.get("period_amount", 0))),
+                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                    # Template v1.0: Header metadata
+                    period_type=header_data.get("period_type", "Monthly"),
+                    accounting_basis=header_data.get("accounting_basis"),
+                    report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+                    page_number=item.get("page"),
+                    # Template v1.0: Hierarchical structure
+                    is_subtotal=item.get("is_subtotal", False),
+                    is_total=item.get("is_total", False),
+                    line_category=item.get("line_category"),
+                    line_subcategory=item.get("line_subcategory"),
+                    line_number=item.get("line_number"),
+                    account_level=item.get("account_level", 3),
+                    # Template v1.0: Classification
+                    is_below_the_line=item.get("is_below_the_line", False),
+                    # Template v1.0: Extraction quality
+                    extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
+                    match_confidence=Decimal(str(item.get("match_confidence", 0))) if item.get("match_confidence") else None,
+                    extraction_method=item.get("extraction_method", "table"),
+                    needs_review=item.get("confidence", confidence_score) < 85.0
+                )
+                self.db.add(is_data)
+                records_inserted += 1
         
         self.db.commit()
         return records_inserted
@@ -868,30 +868,30 @@ class ExtractionOrchestrator:
                 account_id = account.id if account else None
             
             # Insert new (no longer check for existing)
-            cf_data = CashFlowData(
-                header_id=header.id,
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                account_id=account_id,
-                account_code=account_code or "",
-                account_name=account_name,
-                period_amount=Decimal(str(item.get("period_amount", 0))),
-                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
-                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
-                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
-                line_section=item.get("line_section"),
-                line_category=item.get("line_category"),
-                line_subcategory=item.get("line_subcategory"),
-                line_number=item.get("line_number"),
-                is_subtotal=item.get("is_subtotal", False),
-                is_total=item.get("is_total", False),
-                page_number=item.get("page"),
-                extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
-                needs_review=item.get("confidence", confidence_score) < 85.0
-            )
-            self.db.add(cf_data)
-            records_inserted += 1
+                cf_data = CashFlowData(
+                    header_id=header.id,
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    account_id=account_id,
+                    account_code=account_code or "",
+                    account_name=account_name,
+                    period_amount=Decimal(str(item.get("period_amount", 0))),
+                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                    line_section=item.get("line_section"),
+                    line_category=item.get("line_category"),
+                    line_subcategory=item.get("line_subcategory"),
+                    line_number=item.get("line_number"),
+                    is_subtotal=item.get("is_subtotal", False),
+                    is_total=item.get("is_total", False),
+                    page_number=item.get("page"),
+                    extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
+                    needs_review=item.get("confidence", confidence_score) < 85.0
+                )
+                self.db.add(cf_data)
+                records_inserted += 1
         
         # Step 5: Insert NEW adjustments
         for adj in adjustments:
@@ -1187,56 +1187,56 @@ class ExtractionOrchestrator:
                     return None
             
             # Create new record (no longer check for existing)
-            rr_data = RentRollData(
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                # Basic fields
-                unit_number=unit_number,
-                tenant_name=tenant_name,
-                tenant_code=item.get("tenant_id"),
-                lease_type=item.get("lease_type"),
-                # Dates
-                lease_start_date=to_date(item.get("lease_start_date")),
-                lease_end_date=to_date(item.get("lease_end_date")),
-                lease_term_months=item.get("lease_term_months"),
-                # Area
-                unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
-                # Financials
-                monthly_rent=to_decimal(item.get("monthly_rent")),
-                monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
-                annual_rent=to_decimal(item.get("annual_rent")),
-                annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
-                security_deposit=to_decimal(item.get("security_deposit")),
-                loc_amount=to_decimal(item.get("loc_amount")),
-                # Template v2.0 fields
-                tenancy_years=to_decimal(item.get("tenancy_years")),
-                annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
-                annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
-                is_gross_rent_row=is_gross_rent_row,
-                parent_row_id=parent_row_id,
-                notes=notes,
-                # Status
-                occupancy_status=occupancy_status,
-                lease_status=lease_status,
-                # Validation tracking
-                validation_score=Decimal(str(record_score)),
-                validation_flags_json=validation_flags_json,
-                critical_flag_count=critical_count,
-                warning_flag_count=warning_count,
-                info_flag_count=info_count,
-                # Extraction metadata
-                extraction_confidence=Decimal(str(confidence_score)),
-                needs_review=(critical_count > 0 or record_score < 99.0)
-            )
-            self.db.add(rr_data)
-            self.db.flush()  # Get the ID for parent_row_map
-            
-            # Store ID for gross rent row linking
-            if not is_gross_rent_row:
-                parent_row_map[unit_number] = rr_data.id
-            
-            records_inserted += 1
+                rr_data = RentRollData(
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    # Basic fields
+                    unit_number=unit_number,
+                    tenant_name=tenant_name,
+                    tenant_code=item.get("tenant_id"),
+                    lease_type=item.get("lease_type"),
+                    # Dates
+                    lease_start_date=to_date(item.get("lease_start_date")),
+                    lease_end_date=to_date(item.get("lease_end_date")),
+                    lease_term_months=item.get("lease_term_months"),
+                    # Area
+                    unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
+                    # Financials
+                    monthly_rent=to_decimal(item.get("monthly_rent")),
+                    monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
+                    annual_rent=to_decimal(item.get("annual_rent")),
+                    annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
+                    security_deposit=to_decimal(item.get("security_deposit")),
+                    loc_amount=to_decimal(item.get("loc_amount")),
+                    # Template v2.0 fields
+                    tenancy_years=to_decimal(item.get("tenancy_years")),
+                    annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
+                    annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
+                    is_gross_rent_row=is_gross_rent_row,
+                    parent_row_id=parent_row_id,
+                    notes=notes,
+                    # Status
+                    occupancy_status=occupancy_status,
+                    lease_status=lease_status,
+                    # Validation tracking
+                    validation_score=Decimal(str(record_score)),
+                    validation_flags_json=validation_flags_json,
+                    critical_flag_count=critical_count,
+                    warning_flag_count=warning_count,
+                    info_flag_count=info_count,
+                    # Extraction metadata
+                    extraction_confidence=Decimal(str(confidence_score)),
+                    needs_review=(critical_count > 0 or record_score < 99.0)
+                )
+                self.db.add(rr_data)
+                self.db.flush()  # Get the ID for parent_row_map
+                
+                # Store ID for gross rent row linking
+                if not is_gross_rent_row:
+                    parent_row_map[unit_number] = rr_data.id
+                
+                records_inserted += 1
         
         self.db.commit()
         

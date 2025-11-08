@@ -32,7 +32,7 @@ export default function Properties() {
     }
 
     try {
-      await propertyService.deleteProperty(property.property_code);
+      await propertyService.deleteProperty(property.id);
       await loadProperties();
     } catch (err: any) {
       alert(`Delete failed: ${err.message}`);
@@ -170,7 +170,7 @@ function PropertyFormModal({
 
     try {
       if (isEditing && property) {
-        await propertyService.updateProperty(property.property_code, formData);
+        await propertyService.updateProperty(property.id, formData);
       } else {
         await propertyService.createProperty(formData);
       }
@@ -227,11 +227,11 @@ function PropertyFormModal({
                 onChange={(e) => setFormData({ ...formData, property_type: e.target.value })}
               >
                 <option value="">Select type...</option>
-                <option value="retail">Retail</option>
-                <option value="office">Office</option>
-                <option value="industrial">Industrial</option>
-                <option value="mixed_use">Mixed Use</option>
-                <option value="multifamily">Multifamily</option>
+                <option value="Retail">Retail</option>
+                <option value="Office">Office</option>
+                <option value="Industrial">Industrial</option>
+                <option value="Mixed Use">Mixed Use</option>
+                <option value="Multifamily">Multifamily</option>
               </select>
             </div>
 

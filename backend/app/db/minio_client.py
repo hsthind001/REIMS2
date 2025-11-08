@@ -49,28 +49,21 @@ def upload_file(
         bool: True if successful, False otherwise
     """
     try:
-        print(f"📤 Uploading to MinIO: bucket={bucket_name}, object={object_name}, size={len(file_data)}")
         ensure_bucket_exists(bucket_name)
         
         file_stream = io.BytesIO(file_data)
         file_size = len(file_data)
         
-        result = minio_client.put_object(
+        minio_client.put_object(
             bucket_name,
             object_name,
             file_stream,
             file_size,
             content_type=content_type
         )
-        print(f"✅ MinIO upload successful: {result.object_name}, etag={result.etag}")
         return True
     except S3Error as e:
-        print(f"❌ S3Error uploading file: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Exception uploading file: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error uploading file: {e}")
         return False
 
 
