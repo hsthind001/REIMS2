@@ -111,6 +111,20 @@ async def upload_document(
             force_overwrite=force_overwrite
         )
         
+        # Check for document type mismatch
+        if result.get("type_mismatch"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "document_type_mismatch",
+                    "message": result["message"],
+                    "selected_type": result["selected_type"],
+                    "detected_type": result["detected_type"],
+                    "confidence": result["confidence"],
+                    "keywords_found": result.get("keywords_found", [])
+                }
+            )
+        
         # Check if file already exists (and not forcing overwrite)
         if result.get("file_exists"):
             return DocumentUploadResponse(

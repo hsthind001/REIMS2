@@ -86,6 +86,39 @@ class DocumentService:
         file_hash = self.calculate_file_hash(file_content)
         file_size = len(file_content)
         
+        # Step 3.5: Intelligent document type validation
+        print(f"🔍 Detecting document type from PDF content...")
+        from app.utils.extraction_engine import MultiEngineExtractor
+        detector = MultiEngineExtractor()
+        detection_result = detector.detect_document_type(file_content)
+        
+        detected_type = detection_result.get("detected_type", "unknown")
+        confidence = detection_result.get("confidence", 0)
+        
+        # Check if detected type matches selected type
+        if detected_type != "unknown" and detected_type != document_type and confidence >= 30:
+            # Type mismatch detected!
+            type_names = {
+                "balance_sheet": "Balance Sheet",
+                "income_statement": "Income Statement",
+                "cash_flow": "Cash Flow Statement",
+                "rent_roll": "Rent Roll"
+            }
+            
+            print(f"⚠️  Document type mismatch detected!")
+            print(f"   Selected: {document_type} | Detected: {detected_type} (confidence: {confidence}%)")
+            
+            return {
+                "type_mismatch": True,
+                "selected_type": document_type,
+                "detected_type": detected_type,
+                "confidence": confidence,
+                "keywords_found": detection_result.get("keywords_found", []),
+                "message": f"Document type mismatch! You selected '{type_names.get(document_type, document_type)}' but the PDF appears to be a '{type_names.get(detected_type, detected_type)}' (confidence: {confidence}%)."
+            }
+        
+        print(f"✅ Document type validated: {detected_type} (confidence: {confidence}%)")
+        
         # Step 4: Check for duplicate and auto-replace
         existing_upload = self.check_duplicate(
             property_obj.id,

@@ -125,9 +125,37 @@ const Documents = () => {
       }
       
     } catch (error: any) {
-      alert(`❌ Upload failed: ${error.message || 'Unknown error'}`)
+      // Handle document type mismatch specifically
+      if (error.response?.status === 400 && error.response?.data?.detail?.error === 'document_type_mismatch') {
+        const detail = error.response.data.detail
+        const typeNames: Record<string, string> = {
+          'balance_sheet': 'Balance Sheet',
+          'income_statement': 'Income Statement',
+          'cash_flow': 'Cash Flow Statement',
+          'rent_roll': 'Rent Roll'
+        }
+        
+        const selectedName = typeNames[detail.selected_type] || detail.selected_type
+        const detectedName = typeNames[detail.detected_type] || detail.detected_type
+        
+        alert(
+          `⚠️  DOCUMENT TYPE MISMATCH!\n\n` +
+          `You selected: ${selectedName}\n` +
+          `But the PDF appears to be: ${detectedName}\n` +
+          `Detection confidence: ${detail.confidence}%\n\n` +
+          `The file was NOT uploaded to prevent data errors.\n\n` +
+          `Please either:\n` +
+          `1. Select the correct document type (${detectedName}), or\n` +
+          `2. Upload the correct file (${selectedName})`
+        )
+      } else {
+        // General error
+        const errorMsg = error.response?.data?.detail?.message || error.message || 'Unknown error'
+        alert(`❌ Upload failed: ${errorMsg}`)
+      }
     } finally {
       setUploading(false)
+      e.target.value = ''  // Reset file input
     }
   }
 

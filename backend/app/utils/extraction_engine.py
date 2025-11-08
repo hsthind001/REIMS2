@@ -27,6 +27,91 @@ class MultiEngineExtractor:
         self.classifier = PDFClassifier()
         self.validator = QualityValidator()
     
+    def detect_document_type(self, pdf_data: bytes) -> Dict:
+        """
+        Quickly detect financial document type from PDF content
+        
+        Analyzes first 2 pages for keywords to determine if document is:
+        - Balance Sheet
+        - Income Statement  
+        - Cash Flow Statement
+        - Rent Roll
+        
+        Returns:
+            dict: {
+                "detected_type": str,
+                "confidence": float,
+                "keywords_found": list
+            }
+        """
+        try:
+            # Quick extraction of first 2 pages only for speed
+            result = self.pymupdf.extract_text(pdf_data)
+            if not result.get("success"):
+                return {"detected_type": "unknown", "confidence": 0, "keywords_found": []}
+            
+            # Get text from first 2 pages
+            pages = result.get("pages", [])
+            sample_text = ""
+            for page in pages[:2]:  # Only first 2 pages
+                sample_text += page.get("text", "").lower()
+            
+            # Define keyword patterns for each document type
+            keywords = {
+                "balance_sheet": [
+                    "assets", "liabilities", "equity", "current assets", "long-term assets",
+                    "current liabilities", "stockholders equity", "total assets", "balance sheet"
+                ],
+                "income_statement": [
+                    "revenue", "income statement", "profit and loss", "p&l", "operating income",
+                    "net income", "operating expenses", "gross income", "income and expense", "statement of operations"
+                ],
+                "cash_flow": [
+                    "cash flow", "operating activities", "investing activities", "financing activities",
+                    "net cash", "cash from operations", "beginning cash", "ending cash"
+                ],
+                "rent_roll": [
+                    "tenant", "unit", "rent roll", "lease", "sq ft", "square feet",
+                    "lease expiration", "monthly rent", "annual rent", "occupancy"
+                ]
+            }
+            
+            # Count keywords for each type
+            scores = {}
+            found_keywords = {}
+            
+            for doc_type, keyword_list in keywords.items():
+                count = 0
+                found = []
+                for keyword in keyword_list:
+                    if keyword in sample_text:
+                        count += 1
+                        found.append(keyword)
+                scores[doc_type] = count
+                found_keywords[doc_type] = found
+            
+            # Determine most likely type
+            if max(scores.values()) == 0:
+                return {"detected_type": "unknown", "confidence": 0, "keywords_found": []}
+            
+            detected_type = max(scores, key=scores.get)
+            total_keywords = len(keywords[detected_type])
+            confidence = (scores[detected_type] / total_keywords) * 100
+            
+            return {
+                "detected_type": detected_type,
+                "confidence": round(confidence, 1),
+                "keywords_found": found_keywords[detected_type]
+            }
+            
+        except Exception as e:
+            return {
+                "detected_type": "unknown",
+                "confidence": 0,
+                "keywords_found": [],
+                "error": str(e)
+            }
+    
     def extract_with_validation(
         self,
         pdf_data: bytes,
