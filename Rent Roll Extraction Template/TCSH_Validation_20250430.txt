@@ -1,0 +1,16 @@
+Rent Roll Extraction Validation Report
+============================================================
+
+Property: TCSH
+Report Date: 2025-04-30
+Extraction Date: 2025-11-04 15:37:03
+
+Summary:
+  Total Active Leases: 37
+  Vacant Units: 0
+  Gross Rent Rows: 0
+  Validation Flags: 0
+  Quality Score: 100.0%
+
+
+RECOMMENDATION: AUTO-APPROVE

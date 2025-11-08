@@ -1,0 +1,111 @@
+property_name,property_code,report_date,unit_number,tenant_name,tenant_id,lease_type,area_sqft,lease_from_date,lease_to_date,term_months,tenancy_years,monthly_rent,monthly_rent_per_sf,annual_rent,annual_rent_per_sf,security_deposit,loc_bank_guarantee,is_vacant,notes
+,TCSH,2025-04-30,1000,"ISP
+Corporation/Fireh
+ouse Subs
+(t0000298)",,Retail NNN,2261.0,2013-11-29,2028-11-30,181,,6307.25,,,,,,False,
+,TCSH,2025-04-30,1001,"Moe's / Cannon
+Restaurant
+Management, LLC
+(t0000318)",,Retail NNN,2400.0,2008-07-04,,,,5688.0,,,,,,False,
+,TCSH,2025-04-30,1002,"Ascend Federal
+Credit Union
+(t0000352)",,Retail NNN,1790.0,2017-05-01,2027-08-31,124,,4036.45,,,,,,False,
+,TCSH,2025-04-30,1005,"CeCe's Yogurt /
+Sherwin 627, LLC
+(t0000549)",,Retail NNN,1200.0,2021-03-15,2026-03-31,61,,3118.27,,,,,,False,
+,TCSH,2025-04-30,1006,"Ascend Fitness,
+Inc. (t0000562)",,Retail NNN,4786.0,2021-09-15,2032-04-30,128,,10768.5,,,,,,False,
+,TCSH,2025-04-30,1007,"Hunter
+Holdings/Sports
+Clips (t0000321)",,Retail NNN,1200.0,2008-06-06,2028-06-30,241,,2719.2,,,,,,False,
+,TCSH,2025-04-30,1008,"P&C Investment
+Group LLC
+(t0000551)",,Retail NNN,1200.0,2021-03-30,2026-07-31,65,,2515.0,,,,,,False,
+,TCSH,2025-04-30,1009,"Top Spring Asian
+Cuisine, Inc.
+(t0000323)",,Retail NNN,4800.0,2009-01-01,2028-12-31,240,,9888.0,,,,,,False,
+,TCSH,2025-04-30,1010,"Back to Health
+Family
+Chiropractic, LLC
+(t0000324)",,Retail NNN,1600.0,2008-12-01,2028-11-30,240,,3570.67,,,,,,False,
+,TCSH,2025-04-30,1011,"Lendmark
+Financial Services
+LLC (t0000550)",,Retail NNN,1600.0,2021-03-03,2026-06-30,64,,3646.66,,,,,,False,
+,TCSH,2025-04-30,1012B,"Greystone
+Investments II,
+LLC (t0000326)",,Retail NNN,1517.0,2014-04-22,2029-04-30,181,,3022.62,,,,,,False,
+,TCSH,2025-04-30,1012C,"Andrea
+Hannahan, DDS,
+PLLC (t0000327)",,Retail NNN,1683.0,2010-06-01,2029-05-31,228,,3786.75,,,,,,False,
+,TCSH,2025-04-30,1013,"GameStop, Inc.",t0000328,Retail NNN,1600.0,2008-05-01,2029-01-31,249,,3570.67,,,,,,False,
+,TCSH,2025-04-30,1014,"Hibbett Sporting
+Goods, Inc. #669
+(t0000329)",,Retail NNN,5000.0,2009-01-30,2026-06-30,210,,6875.0,,,,,,False,
+,TCSH,2025-04-30,1015,Sun Tan City,t0000330,Retail NNN,2400.0,2008-04-22,2028-04-30,241,,4970.0,,,,,,False,
+,TCSH,2025-04-30,1016,"Maurices
+Incorporated
+#1723 (t0000331)",,Retail NNN,5000.0,2008-12-01,2028-12-31,241,,7812.5,,,,,,False,
+,TCSH,2025-04-30,1017,"Tropical Smoothie
+Café / TJR
+Management, Inc
+(t0000471)",,Retail NNN,1600.0,2019-11-08,2030-03-31,125,,3666.67,,,,,,False,
+,TCSH,2025-04-30,1018,"Buffalo Wild
+Wings #0222/IRB
+Holding
+(t0000333)",,Retail NNN,6200.0,2009-03-29,2029-03-31,241,,11091.67,,,,,,False,
+,TCSH,2025-04-30,1019,"Luxy Nails Spa,
+Inc. (t0000334)",,Retail NNN,1600.0,2008-06-01,2028-06-30,241,,3466.67,,,,,,False,
+,TCSH,2025-04-30,1021,Jet's Pizza,t0000335,Retail NNN,1600.0,2009-09-28,2025-09-30,193,,3752.0,,,,,,False,
+,TCSH,2025-04-30,1022,"Ross Dress For
+Less, Inc. #1268
+(t0000297)",,Retail NNN,24911.0,2008-10-24,2029-01-31,244,,25948.96,,,,,,False,
+,TCSH,2025-04-30,1024,"Dollar Tree
+Stores, Inc.
+(t0000336)",,Retail NNN,7500.0,2009-02-12,2029-02-28,241,,8406.25,,,,,,False,
+,TCSH,2025-04-30,1025,"Lopez Group,
+LLC/Amigos
+(t0000337)",,Retail NNN,3800.0,2011-10-06,2026-10-31,181,,6707.0,,,,,,False,
+,TCSH,2025-04-30,1026,"Rack Room
+Shoes, Inc.
+(t0000338)",,Retail NNN,6500.0,2008-07-31,2029-01-31,247,,12203.75,,,,,,False,
+,TCSH,2025-04-30,1027,"Family Eye Care
+Center, LLC
+(t0000339)",,Retail NNN,2000.0,2008-09-01,2028-08-31,240,,4320.85,,,,,,False,
+,TCSH,2025-04-30,1028,"Ulta Salon,
+Cosmetics &
+Fragrance, lnc.
+(t0000340)",,Retail NNN,8027.0,2015-05-29,2030-08-31,184,,12475.3,,,,,,False,
+,TCSH,2025-04-30,1029,"Salted Peace,
+LLC / Rose Perrie
+& Sonia Morse
+(t0000418)",,Retail NNN,2400.0,2018-09-15,2026-12-31,100,,6118.2,,,,,,False,
+,TCSH,2025-04-30,1030,"HomeGoods
+Inc/TJX
+companies Inc
+(t0000489)",,Retail NNN,23391.0,2020-09-30,2030-09-30,121,,24658.01,,,,,,False,
+,TCSH,2025-04-30,1036A,"Kay
+Jewelers/Sterling
+Inc. (t0000342)",,Retail NNN,2500.0,2011-09-30,2027-12-31,196,,4750.0,,,,,,False,
+,TCSH,2025-04-30,"1036B, 1036C","Bath & Body
+Works,
+LLC/Limited Brand
+(t0000468)",,Retail NNN,4500.0,2019-06-17,2030-01-31,128,,9750.0,,,,,,False,
+,TCSH,2025-04-30,1037,"Kirkland's Stores
+Inc#0618
+(t0000344)",,Retail NNN,5200.0,2010-11-17,2027-01-31,195,,4766.67,,,,,,False,
+,TCSH,2025-04-30,1038,"Petsmart, Inc.",t0000345,Retail NNN,18471.0,2008-08-29,2028-08-31,241,,21472.54,,,,,,False,
+,TCSH,2025-04-30,1040,"Old Navy
+#9736/GAP
+(t0000558)",,Retail NNN,15500.0,2022-02-01,2032-05-31,124,,19375.0,,,,,,False,
+,TCSH,2025-04-30,1041,"The Electronic
+Express, Inc.
+(t0000347)",,Retail NNN,20331.0,2009-04-22,2026-04-30,205,,21449.2,,,,,,False,
+,TCSH,2025-04-30,2000,"Chili's, Inc /
+Brinker Interntl
+(t0000470)",,Retail NNN,6387.0,2019-06-26,2030-10-31,137,,10833.33,,,,,,False,
+,TCSH,2025-04-30,2008,"Logan's
+Roadhouse #471
+(t0000349)",,Retail NNN,7290.0,2008-02-04,2028-02-29,241,,13291.67,,,,,,False,
+,TCSH,2025-04-30,2020,"Cracker Barrel Old
+Country Store,
+Inc. (t0000350)",,Retail NNN,10160.0,2008-02-11,2028-02-29,241,,13867.0,,,,,,False,

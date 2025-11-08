@@ -1,0 +1,16 @@
+Rent Roll Extraction Validation Report
+============================================================
+
+Property: WEND
+Report Date: 2025-04-30
+Extraction Date: 2025-11-04 15:37:05
+
+Summary:
+  Total Active Leases: 15
+  Vacant Units: 1
+  Gross Rent Rows: 0
+  Validation Flags: 0
+  Quality Score: 100.0%
+
+
+RECOMMENDATION: AUTO-APPROVE

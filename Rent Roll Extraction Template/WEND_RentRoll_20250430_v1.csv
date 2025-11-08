@@ -1,0 +1,51 @@
+property_name,property_code,report_date,unit_number,tenant_name,tenant_id,lease_type,area_sqft,lease_from_date,lease_to_date,term_months,tenancy_years,monthly_rent,monthly_rent_per_sf,annual_rent,annual_rent_per_sf,security_deposit,loc_bank_guarantee,is_vacant,notes
+,WEND,2025-04-30,B-101,"First Watch
+Restuarants Inc
+(t0000494)",,Retail NNN,3327.0,2020-01-13,2030-01-31,121,,10674.13,,,,,,False,
+,WEND,2025-04-30,B-107,"Greensboro
+Sports Nutrition,
+LLC / Total
+Nutrition
+(t0000495)",,Retail NNN,1360.0,2019-03-15,2027-03-31,97,,4605.13,,,,,,False,
+,WEND,2025-04-30,B-110,"Viva Chicken
+Holdings, LLC
+(t0000496)",,Retail NNN,3553.0,2019-03-13,2029-04-30,122,,11399.21,,,,,,False,
+,WEND,2025-04-30,C-101,"BD of Wendover
+Commons, LLC
+(t0000497)",,Retail NNN,3800.0,2018-07-16,2028-08-31,122,,12191.67,,,,,,False,
+,WEND,2025-04-30,C-110,"Blaze
+Pizza/Ayushayan
+LLC (t0000498)",,Retail NNN,2360.0,2019-10-24,2029-11-30,122,,7129.17,,,,,,False,
+,WEND,2025-04-30,D--10,"Elife Nail Spa,
+LLC (t0000499)",,Retail NNN,2973.0,2018-09-12,2028-09-30,121,,8671.45,,,,,,False,
+,WEND,2025-04-30,D--50,"CEJ Enterprises
+Inc. / A Way To
+Go Travel
+(t0000500)",,Retail NNN,2340.0,2018-11-01,2028-10-31,120,,6368.7,,,,,,False,
+,WEND,2025-04-30,D-100,"Sweet Bites of
+NC, Inc./Cookie
+Plug (t0000795)",,Retail NNN,1200.0,2023-09-14,2028-09-13,60,,3300.0,,,,,,False,
+,WEND,2025-04-30,E-102,"Cost Plus, Inc.
+World Market
+#6054 (t0000502)",,Retail NNN,17868.0,2018-05-20,2029-01-31,129,,18136.02,,,,,,False,
+,WEND,2025-04-30,F-103,"Academy, LTD",t0000503,Retail NNN,64264.0,2017-05-15,2032-05-31,181,,58266.03,,,,,,False,
+,WEND,2025-04-30,H-101,"CAVA Mezze Grill,
+LLC (t0000505)",,Retail NNN,2800.0,2018-04-19,2033-04-30,181,,10266.66,,,,,,False,
+,WEND,2025-04-30,H-110,"The Moses H.
+Cone Memorial
+Hospital Operating
+Corporation
+(t0000557)",,Retail NNN,3200.0,2021-07-12,2026-12-31,66,,11107.31,,,,,,False,
+,WEND,2025-04-30,OP-01,"Outback
+Steakhouse Of
+Florida, LLC
+(t0000493)",,Retail NNN,6609.0,2018-04-09,2028-09-30,126,,13291.67,,,,,,False,
+,WEND,2025-04-30,OP-02,"Havertys
+Furniture
+Companies LLC
+(t0000504)",,Retail NNN,35362.0,2017-04-28,2027-04-30,121,,42388.12,,,,,,False,
+,WEND,2025-04-30,Z-ATM,"Bank of America,
+National
+Association
+(t0000506)",,Retail NNN,0.0,2018-11-01,2028-10-31,120,,1375.0,,,,,,False,
+,WEND,2025-04-30,COMMON,VACANT,,,0.0,,,,,,,,,,,True,

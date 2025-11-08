@@ -1,0 +1,105 @@
+property_name,property_code,report_date,unit_number,tenant_name,tenant_id,lease_type,area_sqft,lease_from_date,lease_to_date,term_months,tenancy_years,monthly_rent,monthly_rent_per_sf,annual_rent,annual_rent_per_sf,security_deposit,loc_bank_guarantee,is_vacant,notes
+,HMND,2025-04-30,001,"Haison Lam and
+Huong Thi-Bich
+Nguyen/ Elite
+Nails (t0000507)",,Retail NNN,703.0,2004-04-17,2028-02-29,287,,2167.58,,,,,,False,
+,HMND,2025-04-30,002-A,"Subway Real
+Estate, LLC
+(t0000508)",,Retail NNN,1312.0,1988-09-19,2026-09-30,457,,4536.0,,,,,,False,
+,HMND,2025-04-30,002-B,"SprintCom, Inc",t0000509,Retail NNN,1590.0,2001-10-12,2027-12-31,315,,4591.13,,,,,,False,
+,HMND,2025-04-30,003,Hi-Tech Cuts,t0000510,Retail NNN,1410.0,1989-06-01,2027-01-31,452,,4133.0,,,,,,False,
+,HMND,2025-04-30,004,"DC Labs, LLC /
+Billedeaux
+Centers LLC
+(t0000511)",,Retail NNN,1023.0,2012-03-08,2028-03-31,193,,2898.5,,,,,,False,
+,HMND,2025-04-30,005,"Regional Finance
+Company of
+Louisiana, LLC
+(t0000682)",,Retail NNN,4200.0,2023-01-01,2029-12-31,84,,5250.0,,,,,,False,
+,HMND,2025-04-30,006,"Foot Locker Retail
+Inc #7837
+(t0000514)",,Retail NNN,10494.0,2017-03-03,2027-03-31,121,,13117.5,,,,,,False,
+,HMND,2025-04-30,008-B,"MC Nail Spa of
+Baton
+Rouge/Salon
+James (t0000515)",,Retail NNN,4452.0,2016-06-28,2026-06-30,121,,7049.58,,,,,,False,
+,HMND,2025-04-30,008-C,"To New York, Inc.",t0000516,Retail NNN,3094.0,2015-03-17,2025-05-31,123,,5383.09,,,,,,False,
+,HMND,2025-04-30,"009-A, 009-B,
+009-C","Jimmy Jazz
+Delmont LLC
+(t0000543)",,Retail NNN,10135.0,2020-02-01,2025-09-30,68,,18158.54,,,,,,False,
+,HMND,2025-04-30,010,"GNC Holdings,
+LLC (GNC KK#
+5391) (t0000517)",,Retail NNN,1380.0,1997-04-09,2027-04-30,361,,3484.93,,,,,,False,
+,HMND,2025-04-30,012,"Kyle J
+Suire/Jambalaya
+Shoppe
+(t0000518)",,Retail NNN,3023.0,2014-01-24,2029-04-30,184,,5038.33,,,,,,False,
+,HMND,2025-04-30,014,"Covered Family
+Financial
+Services, Inc.
+(t0000944)",,Retail NNN,1320.0,2024-05-07,2027-05-31,37,,2224.2,,,,,,False,
+,HMND,2025-04-30,"015, 016","Louisiana
+Firearms LLC
+(t0000555)",,Retail NNN,1815.0,2021-06-01,2026-05-31,60,,3781.25,,,,,,False,
+,HMND,2025-04-30,017,"Roman's Café /
+Jamal Roman
+(t0000521)",,Retail NNN,1910.0,1998-02-11,2028-12-31,371,,3611.01,,,,,,False,
+,HMND,2025-04-30,018,"OneMain
+Financial / Citi
+Financial
+(t0000522)",,Retail NNN,1740.0,2003-04-02,2028-05-31,302,,4077.4,,,,,,False,
+,HMND,2025-04-30,019,"RS Smoothies
+L.L.C (t0000523)",,Retail NNN,1157.0,1996-11-29,2028-12-31,386,,3799.18,,,,,,False,
+,HMND,2025-04-30,021,"Ampler Pizza II
+LLC (t0000525)",,Retail NNN,1745.0,2010-08-24,2031-02-28,247,,3070.94,,,,,,False,
+,HMND,2025-04-30,025,"Michaels #3102 /
+Michaels Stores
+Inc (t0000526)",,Retail NNN,23400.0,1985-09-12,2029-02-28,522,,25935.0,,,,,,False,
+,HMND,2025-04-30,028,"Crunch Fitness /
+Fitness Ventures
+(t0000607)",,Retail NNN,40000.0,2021-11-03,2032-05-31,127,,36666.67,,,,,,False,
+,HMND,2025-04-30,030,"Shoe Carnival,
+Inc. (t0000528)",,Retail NNN,15920.0,1992-08-01,2027-10-31,423,,21226.67,,,,,,False,
+,HMND,2025-04-30,036,"Ashley Stewart,
+Inc. [Store #222]
+(t0000529)",,Retail NNN,6449.0,1992-04-16,2026-06-30,411,,10960.08,,,,,,False,
+,HMND,2025-04-30,044,"Fashion Nola, Inc.
+- Harmeet
+Bandesha
+(t0000941)",,Retail NNN,2125.0,2024-08-24,2027-08-31,37,,2656.25,,,,,,False,
+,HMND,2025-04-30,046,You and I Fashion,t0000532,Retail NNN,1845.0,2016-08-31,2029-12-31,161,,3456.3,,,,,,False,
+,HMND,2025-04-30,048,"K&G Men's
+Company, LLC
+(t0000533)",,Retail NNN,32723.0,2006-01-02,2029-01-31,277,,12500.0,,,,,,False,
+,HMND,2025-04-30,050-B,"Jin Guang
+Weng/BR Buffet
+Group, Inc.
+(t0000963)",,Retail NNN,12500.0,2025-04-11,2035-04-30,121,,14416.67,,,,,,False,
+,HMND,2025-04-30,057,Rainbow USA Inc,t0000536,Retail NNN,13837.0,2010-10-01,2026-01-31,184,,12561.91,,,,,,False,
+,HMND,2025-04-30,060,"Marshalls of MA,
+Inc. (t0000537)",,Retail NNN,25000.0,1985-08-12,2026-01-31,486,,16354.17,,,,,,False,
+,HMND,2025-04-30,062,Mattress Firm Inc.,t0000538,Retail NNN,6600.0,2012-08-07,2027-11-30,184,,13915.0,,,,,,False,
+,HMND,2025-04-30,099,"Burlington Coat
+Factory
+Warehouse
+Corporation #231
+(t0000540)",,Retail NNN,80450.0,1994-06-08,2029-08-31,423,,40560.21,,,,,,False,
+,HMND,2025-04-30,0D0,"Jackson Hewitt \
+Tax Services of
+America, Inc
+(t0000541)",,Retail NNN,3910.0,2005-02-01,2027-05-31,268,,3207.03,,,,,,False,
+,HMND,2025-04-30,0G0,"Salon Studio
+Corporation
+(t0000542)",,Retail NNN,9433.0,2005-12-23,2034-08-31,345,,10112.26,,,,,,False,
+,HMND,2025-04-30,LAND,"Tasty Delites
+Southeast,
+LLC/Dunkin
+Donuts (t0000950)",,Retail NNN,0.0,2025-04-29,2040-04-30,181,,6666.67,,,,,,False,
+,HMND,2025-04-30,020,VACANT,,,1149.0,,,,,,,,,,,True,
+,HMND,2025-04-30,042,VACANT,,,6087.0,,,,,,,,,,,True,
+,HMND,2025-04-30,055,VACANT,,,5853.0,,,,,,,,,,,True,
+,HMND,2025-04-30,064,VACANT,,,810.0,,,,,,,,,,,True,
+,HMND,2025-04-30,0B0,VACANT,,,3449.0,,,,,,,,,,,True,
+,HMND,2025-04-30,0C0,VACANT,,,2550.0,,,,,,,,,,,True,
+,HMND,2025-04-30,0F0,VACANT,,,3067.0,,,,,,,,,,,True,
