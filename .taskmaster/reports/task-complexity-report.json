@@ -1,0 +1,93 @@
+{
+	"meta": {
+		"generatedAt": "2025-11-09T13:27:18.309Z",
+		"tasksAnalyzed": 10,
+		"totalTasks": 10,
+		"analysisCount": 10,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Create Database Schema for Field Metadata",
+			"complexityScore": 5,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Break down the task into subtasks for designing the schema, implementing the migration script, and testing the migration.",
+			"reasoning": "Creating a database schema involves designing the table structure, setting up foreign keys, and ensuring performance with indexes. Testing includes running migrations and verifying data integrity, which adds moderate complexity."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Create SQLAlchemy Model for Metadata",
+			"complexityScore": 4,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Divide the task into creating the model class, establishing relationships, and implementing helper methods.",
+			"reasoning": "This task involves translating the database schema into an ORM model, which is straightforward but requires attention to detail in defining relationships and methods. Testing CRUD operations adds some complexity."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Create Base Extractor Abstract Class",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Outline subtasks for defining abstract methods, creating the dataclass, and implementing helper methods.",
+			"reasoning": "Developing an abstract class requires careful design to ensure extensibility and proper interface definition. The inclusion of a dataclass and helper methods increases the complexity."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Update PyMuPDF Extractor to Use Base Class",
+			"complexityScore": 5,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Identify subtasks for refactoring the extractor to inherit from the base class and implementing confidence calculations.",
+			"reasoning": "Refactoring to use an abstract base class involves modifying existing code and ensuring compatibility with new interfaces, which requires careful testing and validation."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Update PDFPlumber Extractor",
+			"complexityScore": 5,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Create subtasks for refactoring the extractor and implementing table detection metadata.",
+			"reasoning": "Similar to the PyMuPDF task, this involves refactoring and ensuring the extractor correctly implements the new interface, with additional complexity from handling table metadata."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Update Camelot Extractor",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Plan subtasks for refactoring, handling advanced parsing, and adjusting confidence calculations.",
+			"reasoning": "This task is more complex due to the need to handle advanced table parsing and adjust confidence scores based on parsing accuracy, requiring thorough testing."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Create Confidence Engine",
+			"complexityScore": 7,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break down into subtasks for implementing confidence calculation, conflict detection, and resolution strategies.",
+			"reasoning": "Developing a service to aggregate confidence and detect conflicts involves complex logic and requires robust testing to ensure accuracy and reliability."
+		},
+		{
+			"taskId": 8,
+			"taskTitle": "Create Metadata Storage Service",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Outline subtasks for implementing the service, handling transactions, and testing error scenarios.",
+			"reasoning": "This task involves handling multiple engine results and ensuring data integrity with transaction management, which adds complexity."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Integrate Metadata into Extraction Orchestrator",
+			"complexityScore": 8,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Identify subtasks for modifying the orchestrator, implementing metadata capture, and ensuring rollback mechanisms.",
+			"reasoning": "Integrating metadata capture into the orchestrator involves coordinating multiple components and ensuring robust error handling, making it highly complex."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "Create Confidence Indicator Frontend Component",
+			"complexityScore": 4,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Divide into subtasks for designing the component, implementing the UI, and testing responsiveness.",
+			"reasoning": "Developing a frontend component involves UI design and implementation, which is relatively straightforward but requires attention to detail for responsiveness and visual accuracy."
+		}
+	]
+}

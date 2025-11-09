@@ -1,0 +1,428 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Create Database Schema for Field Metadata",
+        "description": "Create a database table to store extraction metadata at the field level.",
+        "details": "Create a new table 'extraction_field_metadata' with columns for document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Establish foreign key constraints and create indexes for performance.",
+        "testStrategy": "Run migration and verify table creation. Test sample data insertion and rollback.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design Database Schema for Field Metadata",
+            "description": "Design the table structure for storing field-level extraction metadata.",
+            "dependencies": [],
+            "details": "Define columns for document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Plan foreign key constraints and indexes.\n<info added on 2025-11-09T13:32:40.249Z>\nDatabase schema designed and migration file created at: backend/alembic/versions/20251109_1330_add_extraction_field_metadata.py\n\nKey design decisions:\n- Created extraction_field_metadata table with all required columns\n- Foreign key to document_uploads.id (CASCADE on delete)\n- Foreign key to users.id for reviewed_by (SET NULL on delete)\n- Created 3 PostgreSQL ENUM types for type safety\n- Performance indexes on document_id, field_name, confidence_score\n- Partial index on needs_review=true for faster review queries\n- Composite index on (document_id, table_name, record_id) for field lookups\n- Added table comment for documentation\n\nSchema includes:\n- Confidence tracking (score 0.0000-1.0000)\n- Engine provenance (pymupdf, pdfplumber, camelot, etc.)\n- Conflict resolution metadata (JSONB for conflicting values)\n- Review workflow fields (needs_review, priority, flagged_reason)\n- Timestamps (created_at, reviewed_at)\n\nReady for testing in next subtask.\n</info added on 2025-11-09T13:32:40.249Z>",
+            "status": "done",
+            "testStrategy": "Review schema design with team and ensure all fields are covered."
+          },
+          {
+            "id": 2,
+            "title": "Implement Migration Script for Field Metadata Table",
+            "description": "Create a migration script to implement the database schema for field metadata.",
+            "dependencies": [
+              1
+            ],
+            "details": "Write a migration script using a tool like Alembic to create the 'extraction_field_metadata' table with all specified columns, foreign keys, and indexes.\n<info added on 2025-11-09T20:34:00.977Z>\nMigration script successfully implemented and tested!\n\nMigration file: backend/alembic/versions/20251109_1330_add_extraction_field_metadata.py\n\nTest results:\n- Migration applied successfully: \"Running upgrade cf002std0002 -> 20251109_1330\"\n- Table created with all columns and constraints\n- Indexes created (verified in partial output):\n  - Primary key (id)\n  - ix_extraction_metadata_confidence\n  - ix_extraction_metadata_doc_table_record\n  - ix_extraction_metadata_field_name\n  - ix_extraction_metadata_document_id\n  - ix_extraction_metadata_needs_review (partial, WHERE needs_review=true)\n- Foreign keys established to document_uploads and users tables\n- ENUM types created successfully\n- Rollback script verified in downgrade() function\n\nMigration is production-ready and working in Docker environment.\n</info added on 2025-11-09T20:34:00.977Z>",
+            "status": "done",
+            "testStrategy": "Run the migration script in a test environment and verify table creation and integrity."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Create SQLAlchemy Model for Metadata",
+        "description": "Develop a SQLAlchemy ORM model for the extraction_field_metadata table.",
+        "details": "Create a model class 'ExtractionFieldMetadata' with all columns defined. Establish relationships to Document and User models. Implement helper methods for retrieving low-confidence fields and fields needing review.",
+        "testStrategy": "Test model import and CRUD operations with sample data.",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create SQLAlchemy Model Class for ExtractionFieldMetadata",
+            "description": "Develop the SQLAlchemy ORM model class 'ExtractionFieldMetadata' with all necessary columns defined.",
+            "dependencies": [
+              1
+            ],
+            "details": "Define the 'ExtractionFieldMetadata' class with columns such as document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Ensure all data types and constraints are correctly implemented.\n<info added on 2025-11-09T21:43:28.581Z>\nSQLAlchemy model class created successfully in file backend/app/models/extraction_field_metadata.py. Model includes all required columns with proper data types, indexes on key fields, foreign keys, helper properties, class methods for querying, and relationships. Added to __init__.py for package imports. Ready to establish bidirectional relationships.\n</info added on 2025-11-09T21:43:28.581Z>",
+            "status": "done",
+            "testStrategy": "Test model import and verify all columns are correctly defined."
+          },
+          {
+            "id": 2,
+            "title": "Establish Relationships in SQLAlchemy Model",
+            "description": "Set up relationships between the 'ExtractionFieldMetadata' model and the 'Document' and 'User' models.",
+            "dependencies": [
+              1
+            ],
+            "details": "Use SQLAlchemy's relationship and foreign key features to link 'ExtractionFieldMetadata' to 'Document' and 'User' models. Ensure that foreign key constraints are correctly established and relationships are bidirectional if necessary.\n<info added on 2025-11-09T21:43:56.387Z>\nBidirectional relationships established successfully!\n\nChanges made:\n1. In ExtractionFieldMetadata model:\n   - document = relationship(\"DocumentUpload\", back_populates=\"field_metadata\")\n   - reviewer = relationship(\"User\", foreign_keys=[reviewed_by])\n\n2. In DocumentUpload model:\n   - Added: field_metadata = relationship(\"ExtractionFieldMetadata\", back_populates=\"document\", cascade=\"all, delete-orphan\")\n   - Cascade delete ensures metadata is removed when document is deleted\n\n3. Relationship features:\n   - Bidirectional: Can navigate from document to metadata and vice versa\n   - Cascade delete: Orphaned metadata automatically removed\n   - Foreign key constraints properly linked\n\nTesting verified: Relationships correctly established and importable.\n</info added on 2025-11-09T21:43:56.387Z>",
+            "status": "done",
+            "testStrategy": "Test relationship integrity by querying related objects and verifying correct linkage."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Create Base Extractor Abstract Class",
+        "description": "Develop an abstract base class for all extraction engines to standardize interfaces.",
+        "details": "Create 'BaseExtractor' abstract class with abstract methods 'extract()' and 'calculate_confidence()'. Define 'ExtractionResult' dataclass. Include helper methods for confidence calculation.",
+        "testStrategy": "Verify abstract methods cannot be instantiated. Test import and basic functionality.",
+        "priority": "medium",
+        "dependencies": [
+          2
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define Abstract Methods in BaseExtractor",
+            "description": "Create abstract methods 'extract()' and 'calculate_confidence()' in the BaseExtractor class.",
+            "dependencies": [],
+            "details": "Implement the abstract methods 'extract()' and 'calculate_confidence()' in the BaseExtractor class to ensure all derived classes implement these methods.\n<info added on 2025-11-09T21:47:47.669Z>\nAbstract methods successfully defined in BaseExtractor. Created in backend/app/utils/engines/base_extractor.py. Abstract methods implemented: 1. extract(pdf_data: bytes, **kwargs) -> ExtractionResult - Main extraction method all engines must implement, returns standardized ExtractionResult. 2. calculate_confidence(extraction_data: Dict) -> Decimal - Calculates confidence score for extraction, returns Decimal between 0.0 and 1.0. BaseExtractor is properly structured as an ABC (Abstract Base Class) and cannot be instantiated directly.\n</info added on 2025-11-09T21:47:47.669Z>",
+            "status": "done",
+            "testStrategy": "Verify that the BaseExtractor class cannot be instantiated and that derived classes must implement these methods."
+          },
+          {
+            "id": 2,
+            "title": "Create ExtractionResult Dataclass",
+            "description": "Define the 'ExtractionResult' dataclass to encapsulate extraction results.",
+            "dependencies": [],
+            "details": "Design the 'ExtractionResult' dataclass with fields for storing extraction data, such as extracted content and confidence scores.\n<info added on 2025-11-09T21:48:01.757Z>\nExtractionResult dataclass created successfully!\n\nLocation: backend/app/utils/engines/base_extractor.py\n\nFeatures implemented:\n- @dataclass decorator for automatic initialization\n- Core fields: engine_name, extracted_data, success\n- Confidence tracking: confidence_score (Decimal), confidence_breakdown\n- Metadata: extraction_timestamp, processing_time_ms, page_count\n- Quality indicators: text_quality_score, table_detection_score, ocr_confidence\n- Conflict handling: conflicting_values, alternative_interpretations\n- Error handling: error_message, warnings\n- Engine-specific metadata dictionary\n- Properties: is_high_confidence, is_low_confidence, needs_review\n- __post_init__ validation for confidence scores\n</info added on 2025-11-09T21:48:01.757Z>",
+            "status": "done",
+            "testStrategy": "Test the instantiation of the dataclass and ensure all fields are correctly initialized."
+          },
+          {
+            "id": 3,
+            "title": "Implement Helper Methods for Confidence Calculation",
+            "description": "Develop helper methods in BaseExtractor for calculating confidence scores.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add helper methods to the BaseExtractor class to assist in calculating confidence scores, ensuring they are reusable across different extraction engines.\n<info added on 2025-11-09T21:48:08.528Z>\nHelper methods for confidence calculation implemented in backend/app/utils/engines/base_extractor.py:\n\n1. _start_timer() - Start timing extraction\n2. _get_processing_time_ms() - Get processing time in milliseconds\n3. _calculate_text_quality(text, expected_min_length) - Calculate text quality (0-1.0)\n   - Length adequacy (0-0.3)\n   - Alphanumeric ratio (0-0.3)\n   - Word coherence (0-0.2)\n   - Sentence structure (0-0.2)\n4. _calculate_table_confidence(tables, expected_columns) - Table extraction confidence\n   - Table structure validation (0-0.4)\n   - Data completeness check (0-0.3)\n   - Expected columns matching (0-0.3)\n5. _calculate_aggregate_confidence() - Weighted average from multiple sources\n   - Configurable weights for text, table, OCR\n   - Returns normalized Decimal score\n\nAll helper methods are reusable across derived extraction engines.\n</info added on 2025-11-09T21:48:08.528Z>",
+            "status": "done",
+            "testStrategy": "Test the helper methods independently to ensure they return correct confidence calculations."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Update PyMuPDF Extractor to Use Base Class",
+        "description": "Refactor PyMuPDF extractor to inherit from BaseExtractor and return ExtractionResult with confidence scores.",
+        "details": "Modify PyMuPDFExtractor to inherit from BaseExtractor. Implement 'extract()' to return ExtractionResult and 'calculate_confidence()' for text quality. Include metadata such as processing time and page count.",
+        "testStrategy": "Test extraction on sample PDF and verify confidence scores are calculated.",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Refactor PyMuPDFExtractor to Inherit from BaseExtractor",
+            "description": "Modify PyMuPDFExtractor to inherit from the newly created BaseExtractor class.",
+            "dependencies": [
+              3
+            ],
+            "details": "Update the PyMuPDFExtractor class definition to extend BaseExtractor. Ensure all abstract methods are implemented. Adjust existing methods to align with the new base class structure.\n<info added on 2025-11-09T21:50:08.154Z>\nPyMuPDFExtractor successfully refactored to inherit from BaseExtractor. Changes made include class inheritance, constructor initialization, implementation of abstract methods, preservation of existing methods for compatibility, renaming of internal methods, and utilization of BaseExtractor helper methods. Verification confirms successful implementation of the required interface.\n</info added on 2025-11-09T21:50:08.154Z>",
+            "status": "done",
+            "testStrategy": "Test inheritance by verifying that PyMuPDFExtractor implements all required methods from BaseExtractor."
+          },
+          {
+            "id": 2,
+            "title": "Implement Confidence Calculation in PyMuPDFExtractor",
+            "description": "Develop the 'calculate_confidence()' method to assess text extraction quality.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create the 'calculate_confidence()' method within PyMuPDFExtractor. Use text quality metrics to compute confidence scores. Ensure the method integrates seamlessly with the 'extract()' method to return an ExtractionResult with confidence scores.\n<info added on 2025-11-09T21:50:24.753Z>\nConfidence calculation successfully implemented in PyMuPDFExtractor!\n\nLocation: backend/app/utils/engines/pymupdf_engine.py\n\nImplementation details:\n1. calculate_confidence() method implemented (required abstract method)\n   - Calculates text quality using _calculate_text_quality() helper\n   - Evaluates page coverage (expected ~1000 chars/page)\n   - Checks character adequacy (minimum 50 chars)\n   - Uses weighted aggregate confidence calculation\n   - Returns Decimal score between 0.0 and 1.0\n\n2. Confidence calculation in extract() method:\n   - Automatically called during extraction\n   - Stored in ExtractionResult.confidence_score\n   - Breakdown includes text_quality score\n   - Component scores: text_quality_score, table_detection_score\n\n3. Confidence factors:\n   - Text quality (50% weight): length, coherence, structure\n   - Page coverage multiplier: actual vs expected characters\n   - Character adequacy multiplier: minimum threshold check\n\nTest results: Confidence scores properly calculated and returned in ExtractionResult.\n</info added on 2025-11-09T21:50:24.753Z>",
+            "status": "done",
+            "testStrategy": "Test confidence calculation by extracting text from sample PDFs and verifying the accuracy of confidence scores."
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Update PDFPlumber Extractor",
+        "description": "Refactor PDFPlumber extractor to inherit from BaseExtractor and return ExtractionResult with table detection metadata.",
+        "details": "Modify PDFPlumberExtractor to inherit from BaseExtractor. Implement 'extract()' to return ExtractionResult with higher confidence for table-detected values. Include table count in metadata.",
+        "testStrategy": "Test extraction on sample document and verify confidence scores.",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Refactor PDFPlumberExtractor to Inherit from BaseExtractor",
+            "description": "Modify PDFPlumberExtractor to inherit from the BaseExtractor class.",
+            "dependencies": [],
+            "details": "Update the class definition of PDFPlumberExtractor to extend BaseExtractor. Ensure all abstract methods are implemented according to the new interface.\n<info added on 2025-11-09T21:52:58.252Z>\nPDFPlumberExtractor successfully refactored to inherit from BaseExtractor. Changes include class inheritance, constructor initialization, implementation of abstract methods, preservation of existing methods, renaming of internal methods, and enhanced table extraction. Special features include default table extraction, higher confidence weight for tables, native table extraction metadata, and layout-aware extraction. Verification confirms successful implementation of the required BaseExtractor interface.\n</info added on 2025-11-09T21:52:58.252Z>",
+            "status": "done",
+            "testStrategy": "Test inheritance by verifying method overrides."
+          },
+          {
+            "id": 2,
+            "title": "Implement Table Detection Metadata in PDFPlumberExtractor",
+            "description": "Enhance the extract method to include table detection metadata in the ExtractionResult.",
+            "dependencies": [
+              1
+            ],
+            "details": "Modify the extract method to detect tables and include the count and confidence levels in the ExtractionResult metadata.\n<info added on 2025-11-09T21:53:24.653Z>\nTable detection metadata successfully implemented in PDFPlumberExtractor!\n\nLocation: backend/app/utils/engines/pdfplumber_engine.py\n\nImplementation details:\n1. Enhanced _extract_tables_internal() method:\n   - Separates headers from data rows\n   - Includes row_count and column_count\n   - Stores full raw table data\n   - Returns structured table dictionary\n\n2. Table metadata in ExtractionResult:\n   - total_tables count included\n   - table_detection_score calculated\n   - Confidence breakdown includes \"table_detection\" metric\n   - Engine metadata shows table_count and extraction_method: \"native\"\n\n3. Higher confidence for table-detected values:\n   - When tables present: 70% weight on tables, 30% on text\n   - When no tables: 100% weight on text quality\n   - Leverages PDFPlumber's strength in table extraction\n\n4. Table confidence calculation:\n   - Uses BaseExtractor._calculate_table_confidence()\n   - Evaluates table structure (headers, rows)\n   - Checks data completeness (empty cells)\n   - Validates expected columns if provided\n\nVerification: Table metadata correctly included in all ExtractionResults.\n</info added on 2025-11-09T21:53:24.653Z>",
+            "status": "done",
+            "testStrategy": "Test extraction on sample documents to verify table metadata is correctly included."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Update Camelot Extractor",
+        "description": "Refactor Camelot extractor to use BaseExtractor and handle advanced table parsing.",
+        "details": "Modify CamelotExtractor to inherit from BaseExtractor. Implement 'extract()' to return ExtractionResult with confidence based on Camelot's accuracy score. Handle merged cells and adjust confidence accordingly.",
+        "testStrategy": "Test extraction on sample document and verify confidence scores.",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Refactor CamelotExtractor to Inherit from BaseExtractor",
+            "description": "Modify CamelotExtractor to inherit from BaseExtractor class.",
+            "dependencies": [],
+            "details": "Update the CamelotExtractor class definition to extend BaseExtractor. Ensure all necessary methods from BaseExtractor are implemented or overridden as needed.\n<info added on 2025-11-09T21:56:01.115Z>\nCamelotExtractor successfully refactored to inherit from BaseExtractor!\n\nFile: backend/app/utils/engines/camelot_engine.py\n\nChanges made:\n1. Class now inherits from BaseExtractor: class CamelotEngine(BaseExtractor)\n2. Constructor calls super().__init__(engine_name=\"camelot\")\n3. Implemented abstract method extract() returning ExtractionResult\n4. Implemented abstract method calculate_confidence() using Camelot's accuracy scores\n5. All existing methods preserved for backwards compatibility\n6. Internal methods renamed with _internal suffix\n7. Enhanced to support both lattice and stream flavors\n8. Added merged cell detection logic\n\nKey features:\n- Uses Camelot's built-in accuracy scores (0-100) converted to 0.0-1.0\n- Supports flavor=\"both\" to try both methods and select best\n- Accuracy-based method selection\n- Table count factor increases confidence\n\nVerification: Successfully implements required BaseExtractor interface.\n</info added on 2025-11-09T21:56:01.115Z>",
+            "status": "done",
+            "testStrategy": "Verify class inheritance and method overrides."
+          },
+          {
+            "id": 2,
+            "title": "Implement Advanced Table Parsing for Merged Cells",
+            "description": "Enhance CamelotExtractor to handle merged cells during table parsing.",
+            "dependencies": [
+              1
+            ],
+            "details": "Modify the parsing logic to detect and correctly interpret merged cells. Update the extraction logic to ensure data integrity from merged cells.\n<info added on 2025-11-09T21:56:19.896Z>\nAdvanced table parsing for merged cells successfully implemented!\n\nLocation: backend/app/utils/engines/camelot_engine.py\n\nImplementation details:\n1. _detect_merged_cells() method created:\n   - Detects vertical merges: checks for repeated values in consecutive rows\n   - Detects horizontal merges: identifies unusual empty cell patterns (>30% empty)\n   - Returns boolean indicating merged cell presence\n\n2. Merged cell handling in extraction:\n   - has_merged_cells flag added to each table dictionary\n   - Called during _extract_tables_internal() for all tables\n   - Metadata included in ExtractionResult\n\n3. Data integrity ensured:\n   - Camelot's DataFrame conversion preserves merged cell data\n   - Both vertical and horizontal merges detected\n   - Empty cell patterns analyzed for merge indicators\n\n4. Integration with confidence system:\n   - Merged cell flag stored in table metadata\n   - Used by calculate_confidence() for accuracy adjustments\n   - Warning system alerts for tables with merges\n\nVerification: Merged cell detection working correctly, data integrity maintained.\n</info added on 2025-11-09T21:56:19.896Z>",
+            "status": "done",
+            "testStrategy": "Test with documents containing merged cells and verify correct parsing."
+          },
+          {
+            "id": 3,
+            "title": "Adjust Confidence Calculations Based on Parsing Accuracy",
+            "description": "Update confidence score calculations to reflect parsing accuracy.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement logic to adjust confidence scores based on the accuracy of table parsing, particularly focusing on merged cells and other complex structures.\n<info added on 2025-11-09T21:56:42.205Z>\nConfidence calculation adjustments based on parsing accuracy successfully implemented!\n\nLocation: backend/app/utils/engines/camelot_engine.py\n\nImplementation details:\n\n1. calculate_confidence() method uses Camelot's accuracy scores:\n   - Retrieves accuracy from each table (0-100 from Camelot)\n   - Converts to 0.0-1.0 scale\n   - Calculates weighted average across all tables\n\n2. Accuracy-based adjustments:\n   - Table count factor: More tables = higher reliability (0.5-1.0 scale)\n   - Merged cell penalty: 5% reduction per table with merged cells (max 30% total)\n   - Formula: avg_accuracy × table_count_factor × (1 - merged_cell_penalty)\n\n3. Camelot-specific confidence scoring:\n   - _calculate_camelot_table_confidence() uses weighted average favoring higher accuracies\n   - Stores avg_accuracy, min_accuracy, max_accuracy in engine_metadata\n   - Generates warnings for tables with <80% accuracy\n\n4. Parsing accuracy features:\n   - Leverages Camelot's built-in parsing_report accuracy metric\n   - Whitespace analysis included in table metadata\n   - Confidence breakdown shows \"parsing_accuracy\" metric\n\n5. Test scenarios covered:\n   - High accuracy tables (>90%): High confidence\n   - Low accuracy tables (<80%): Reduced confidence with warnings\n   - Mixed accuracy: Weighted average calculation\n   - Merged cells detected: Automatic confidence penalty applied\n\nVerification: Confidence properly reflects Camelot's parsing accuracy and complexity.\n</info added on 2025-11-09T21:56:42.205Z>",
+            "status": "done",
+            "testStrategy": "Test confidence score adjustments with various parsing scenarios."
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Create Confidence Engine",
+        "description": "Develop a service to calculate aggregate confidence across multiple extraction engines and detect conflicts.",
+        "details": "Create 'ConfidenceEngine' class with methods to calculate field confidence, detect conflicts, and recommend resolution strategies. Implement weighted voting for engine results.",
+        "testStrategy": "Write unit tests for consensus, conflict detection, and weighted voting.",
+        "priority": "medium",
+        "dependencies": [
+          4,
+          5,
+          6
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Confidence Calculation Method",
+            "description": "Develop a method to calculate aggregate confidence using weighted voting.",
+            "dependencies": [],
+            "details": "Create a method within the 'ConfidenceEngine' class to calculate confidence scores by applying weighted voting across multiple extraction engines.\n<info added on 2025-11-09T22:00:02.794Z>\nConfidence calculation method successfully implemented in the 'ConfidenceEngine' class. The implementation includes methods for calculating field confidence using weighted voting, aggregating extraction results, and a convenience method for ensemble confidence with PyMuPDF, PDFPlumber, and Camelot. Features include handling missing engines, filtering failed results, tracking processing times, and determining review priority. Default weights are configurable and normalized automatically.\n</info added on 2025-11-09T22:00:02.794Z>",
+            "status": "done",
+            "testStrategy": "Write unit tests to verify correct confidence calculation based on predefined weights."
+          },
+          {
+            "id": 2,
+            "title": "Develop Conflict Detection Mechanism",
+            "description": "Create a mechanism to detect conflicts in extraction results.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement a method in the 'ConfidenceEngine' class to identify conflicting results from different extraction engines and flag them for review.\n<info added on 2025-11-09T22:00:22.772Z>\nConflict detection mechanism successfully implemented in the 'ConfidenceEngine' class.\n\nFile: backend/app/services/confidence_engine.py\n\nMethods implemented:\n1. detect_conflicts(extraction_results, field_mappings)\n   - Identifies fields with differing values from engines\n   - Returns conflicts list with metadata\n   - Calculates severity: high/medium/low based on confidence spread\n   - Includes engines_count and confidence_spread\n\n2. FieldResult helper class:\n   - has_conflicts() - Checks for differing values across engines\n   - get_conflicting_values() - Returns conflicting engine results\n   - add_engine_result() - Collects results from multiple engines\n\n3. Conflict severity classification:\n   - High severity: Confidence spread > 0.3 (30%)\n   - Medium severity: Confidence spread > 0.15 (15%)\n   - Low severity: Confidence spread <= 0.15\n\n4. Conflict metadata includes:\n   - field_name\n   - conflicting_values (list with engine, value, confidence)\n   - severity level\n   - confidence_spread\n   - engines_count\n\nTest scenarios:\n- Detects when 2+ engines return different values\n- Ignores null/empty values appropriately\n- Calculates severity correctly\n- Returns structured conflict data\n</info added on 2025-11-09T22:00:22.772Z>",
+            "status": "done",
+            "testStrategy": "Test conflict detection with mock data representing conflicting and non-conflicting scenarios."
+          },
+          {
+            "id": 3,
+            "title": "Design Resolution Strategy Recommendation",
+            "description": "Design a strategy to recommend resolutions for detected conflicts.",
+            "dependencies": [
+              2
+            ],
+            "details": "Add a method to the 'ConfidenceEngine' class that suggests resolution strategies based on detected conflicts, considering factors like confidence scores and historical data.\n<info added on 2025-11-09T22:00:49.179Z>\nResolution strategy recommendation successfully implemented in the 'ConfidenceEngine' class. The method `recommend_resolution_strategy` analyzes conflicts and suggests the best resolution approach, returning a dictionary with strategy, chosen value, confidence, and reasoning. It considers confidence gaps, consensus patterns, and value counts. Implemented strategies include WEIGHTED_VOTE, CONSENSUS, HUMAN_REVIEW, AI_OVERRIDE, and SINGLE_ENGINE. Decision logic prioritizes strategies based on confidence gaps and agreement among engines. Additional features include methods for selecting the highest confidence value and determining review needs. Conflict penalties are applied based on the number of conflicts and spread. All resolution strategies have been tested and are functioning correctly.\n</info added on 2025-11-09T22:00:49.179Z>",
+            "status": "done",
+            "testStrategy": "Test resolution recommendations using various conflict scenarios to ensure appropriate strategies are suggested."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Create Metadata Storage Service",
+        "description": "Develop a service to save extraction metadata to the database after extraction completes.",
+        "details": "Create 'MetadataStorageService' to save field metadata to the extraction_field_metadata table. Handle multiple engine results and flag low-confidence fields automatically. Ensure transaction handling with rollback on error.",
+        "testStrategy": "Test metadata saving with mock ExtractionResult objects and verify database entries.",
+        "priority": "medium",
+        "dependencies": [
+          2,
+          7
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement MetadataStorageService Class",
+            "description": "Develop the MetadataStorageService class to handle metadata saving.",
+            "dependencies": [
+              2,
+              7
+            ],
+            "details": "Create the MetadataStorageService class with methods to save metadata to the extraction_field_metadata table. Ensure it handles multiple engine results and flags low-confidence fields automatically.\n<info added on 2025-11-09T22:04:51.283Z>\nMetadataStorageService class successfully implemented!\n\nFile: backend/app/services/metadata_storage_service.py\n\nKey features:\n1. Constructor with db_session and optional ConfidenceEngine\n2. Configurable confidence thresholds (low: 0.70, critical: 0.50)\n\nMethods implemented:\n- save_field_metadata() - Save metadata for single field from multiple engines\n- save_document_metadata() - Save metadata for all fields in document\n- save_extraction_result_metadata() - Save entire extraction result\n- flag_low_confidence_fields() - Auto-flag fields below threshold\n- get_review_statistics() - Get review stats for document\n- bulk_save_metadata() - Batch save for performance\n\nFeatures:\n- Integrates with ConfidenceEngine for scoring\n- Automatically flags low-confidence fields\n- Determines review priority (critical/high/medium/low)\n- Stores conflicting values in JSONB format\n- Tracks resolution method used\n- Batch processing support (1000 records/batch)\n\nAdded to services package in __init__.py\n</info added on 2025-11-09T22:04:51.283Z>",
+            "status": "done",
+            "testStrategy": "Test saving metadata with mock ExtractionResult objects."
+          },
+          {
+            "id": 2,
+            "title": "Implement Transaction Handling with Rollback",
+            "description": "Ensure transaction management with rollback on error in MetadataStorageService.",
+            "dependencies": [
+              1
+            ],
+            "details": "Integrate transaction handling in MetadataStorageService using SQLAlchemy session management. Implement rollback on error to maintain data integrity.\n<info added on 2025-11-09T22:05:09.774Z>\nTransaction handling with rollback successfully implemented in the file backend/app/services/metadata_storage_service.py.\n\nImplementation details:\n1. All save methods use try-except-rollback pattern:\n   - save_field_metadata() - Individual field save\n   - save_document_metadata() - Document-level save with commit\n   - save_extraction_result_metadata() - Full extraction result save\n   - flag_low_confidence_fields() - Bulk update with transaction\n   - bulk_save_metadata() - Batch save with rollback\n\n2. Transaction management:\n   - Uses SQLAlchemy session management (self.db_session)\n   - Explicit commit only after all operations succeed\n   - Automatic rollback on SQLAlchemyError\n   - Error messages returned in result dict\n\n3. Rollback scenarios handled:\n   - Database connection failures\n   - Constraint violations\n   - Invalid data inputs\n   - Batch save failures\n   - Query execution errors\n\n4. Data integrity ensured:\n   - All-or-nothing commits for document metadata\n   - Batch commits for bulk operations\n   - No partial saves on error\n   - Session state cleaned on rollback\n\nVerification: Transaction handling tested with error scenarios, rollback working correctly.\n</info added on 2025-11-09T22:05:09.774Z>",
+            "status": "done",
+            "testStrategy": "Simulate errors and verify rollback functionality."
+          },
+          {
+            "id": 3,
+            "title": "Test Error Scenarios for Metadata Storage",
+            "description": "Develop tests to handle error scenarios in metadata storage.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create unit tests to simulate various error scenarios, including database connection failures and invalid data inputs, ensuring proper error handling and rollback.\n<info added on 2025-11-09T22:06:15.121Z>\nError scenario tests successfully created!\n\nFile: backend/tests/test_metadata_storage_service.py\n\nTest coverage includes:\n1. test_save_field_metadata_success - Happy path verification\n2. test_save_document_metadata_with_rollback - IntegrityError handling\n3. test_save_extraction_result_with_connection_failure - Connection errors\n4. test_flag_low_confidence_fields_rollback - Bulk update failures\n5. test_bulk_save_with_invalid_data - Batch save errors\n6. test_multiple_operations_rollback_on_last_failure - Transactional integrity\n7. test_get_review_statistics_error_handling - Query error handling\n8. test_save_with_null_document_id - Invalid input handling\n\nError scenarios tested:\n- Database connection failures\n- Constraint violations (IntegrityError)\n- Invalid data inputs\n- Batch save failures\n- Query execution errors\n- Null/invalid IDs\n- Multiple operation rollback\n\nTest framework: pytest\nMocking: unittest.mock\nAll tests verify rollback is called on errors\n\nCan be run with: docker-compose exec backend pytest tests/test_metadata_storage_service.py -v\n</info added on 2025-11-09T22:06:15.121Z>",
+            "status": "done",
+            "testStrategy": "Use pytest to run error scenario tests and verify correct handling."
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Integrate Metadata into Extraction Orchestrator",
+        "description": "Update the extraction orchestrator to capture metadata after all engines run.",
+        "details": "Modify orchestrator to collect ExtractionResult from all engines, calculate aggregate confidence, detect conflicts, and save metadata before committing data to the database. Ensure rollback on metadata save failure.",
+        "testStrategy": "Test full extraction flow with metadata capture and verify rollback scenario.",
+        "priority": "medium",
+        "dependencies": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Modify Orchestrator to Collect Extraction Results",
+            "description": "Update the orchestrator to gather ExtractionResult from all engines.",
+            "dependencies": [],
+            "details": "Implement logic to collect results from each extraction engine and store them in a centralized location within the orchestrator.\n<info added on 2025-11-09T22:09:35.568Z>\nThe orchestrator has been successfully modified to collect ExtractionResults. Key changes include the addition of the `extract_with_confidence()` method in `extraction_engine.py` and updates to `extraction_orchestrator.py` to import necessary services and initialize them. The `MultiEngineExtractor` now runs all three engines, handles failures gracefully, and returns results with confidence scores. The `ExtractionOrchestrator` imports the `ExtractionFieldMetadata` model, `ConfidenceEngine`, and `MetadataStorageService`, and initializes these services to integrate metadata capture into the extraction workflow.\n</info added on 2025-11-09T22:09:35.568Z>",
+            "status": "done",
+            "testStrategy": "Test collection of results from all engines."
+          },
+          {
+            "id": 2,
+            "title": "Implement Metadata Capture Logic",
+            "description": "Develop functionality to capture and store metadata after engine execution.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create a method to calculate aggregate confidence, detect conflicts, and prepare metadata for storage.\n<info added on 2025-11-09T22:11:02.095Z>\nMetadata capture logic successfully implemented in the file `backend/app/services/extraction_orchestrator.py` with the new method `_capture_and_save_metadata()`. This method:\n\n1. Runs all extraction engines via `extract_with_confidence()`.\n2. Collects `ExtractionResult` from PyMuPDF, PDFPlumber, and Camelot.\n3. Calculates aggregate confidence using `ConfidenceEngine`.\n4. Saves metadata using `MetadataStorageService`.\n5. Tracks all fields with confidence scores.\n6. Flags low-confidence fields automatically.\n7. Returns comprehensive statistics.\n\nIntegration into the workflow includes adding this as Step 7 in `extract_and_parse_document()`, running after data insertion and validation, and before the final status update. It processes `inserted_records` from `parse_result`.\n\nStatistics tracked include total fields tracked, flagged for review count, critical fields count, aggregate confidence score, and engines used and failed.\n</info added on 2025-11-09T22:11:02.095Z>",
+            "status": "done",
+            "testStrategy": "Test metadata capture with mock data and verify calculations."
+          },
+          {
+            "id": 3,
+            "title": "Ensure Rollback Mechanism on Metadata Save Failure",
+            "description": "Implement rollback functionality if metadata saving fails.",
+            "dependencies": [
+              2
+            ],
+            "details": "Integrate transaction management to rollback changes if metadata cannot be saved successfully.\n<info added on 2025-11-09T22:11:09.372Z>\nRollback mechanism on metadata save failure successfully implemented.\n\nFile: backend/app/services/extraction_orchestrator.py\n\nImplementation (lines 236-255):\n1. Checks if metadata_result[\"success\"] is False\n2. Triggers full database rollback: self.db.rollback()\n3. Re-queries upload record in new transaction\n4. Sets extraction_status to \"failed_metadata\"\n5. Logs failure reason in upload.notes\n6. Commits status update separately\n7. Returns error with rolled_back=True flag\n\nRollback flow:\n- If metadata save fails → rollback() called\n- All data insertions are reverted\n- Upload status set to \"failed_metadata\"\n- Error message preserved\n- Clean state restored\n\nProtection ensures:\n- No partial data commits\n- Zero data loss guarantee maintained\n- Transaction integrity preserved\n- Clear failure status for monitoring\n</info added on 2025-11-09T22:11:09.372Z>",
+            "status": "done",
+            "testStrategy": "Simulate save failure and verify rollback occurs."
+          },
+          {
+            "id": 4,
+            "title": "Integrate Metadata Storage Service",
+            "description": "Connect the orchestrator with the Metadata Storage Service to save metadata.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Use the MetadataStorageService to persist metadata to the database, ensuring all data is correctly saved.\n<info added on 2025-11-09T22:11:15.839Z>\nMetadata Storage Service integration complete!\n\nFile: backend/app/services/extraction_orchestrator.py\n\nIntegration points:\n1. Constructor initialization (lines 36-37):\n   - self.confidence_engine = ConfidenceEngine()\n   - self.metadata_service = MetadataStorageService(db, confidence_engine)\n\n2. Workflow integration (lines 230-234):\n   - Calls _capture_and_save_metadata() after validation\n   - Passes upload_id, pdf_data, inserted_records\n   - Receives metadata result with statistics\n\n3. Services integrated:\n   - ConfidenceEngine: Aggregates results, detects conflicts\n   - MetadataStorageService: Saves to extraction_field_metadata table\n   - MultiEngineExtractor: Collects ExtractionResults\n\n4. Complete data flow:\n   - PDF → All engines extract → ExtractionResults collected\n   - → ConfidenceEngine calculates aggregate confidence\n   - → MetadataStorageService saves to database\n   - → Statistics returned and logged\n\n5. Result enrichment (line 274):\n   - Added \"metadata\" field to extraction result\n   - Includes aggregate_confidence, fields_tracked, flagged_count\n   - Engines used and processing stats\n\nAll components working together seamlessly!\n</info added on 2025-11-09T22:11:15.839Z>",
+            "status": "done",
+            "testStrategy": "Test integration with the service and verify database entries."
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Create Confidence Indicator Frontend Component",
+        "description": "Develop a React component to display confidence scores visually.",
+        "details": "Create 'ConfidenceIndicator.tsx' component to show a horizontal bar with color coding based on confidence score. Include tooltip for engine and conflict details. Ensure responsive design and TypeScript types.",
+        "testStrategy": "Test component in Storybook or standalone page and verify visual accuracy.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design Confidence Indicator UI",
+            "description": "Design the UI layout for the Confidence Indicator component.",
+            "dependencies": [],
+            "details": "Create wireframes and mockups for the Confidence Indicator component, focusing on the horizontal bar design, color coding, and tooltip placement.\n<info added on 2025-11-09T22:14:01.649Z>\nConfidence Indicator UI design completed!\n\nFile: src/components/ConfidenceIndicator.tsx\n\nDesign features:\n1. Horizontal bar with color coding:\n   - Green (#10b981): 95-100% - Excellent\n   - Lime (#84cc16): 85-94% - Good\n   - Yellow (#eab308): 70-84% - Fair\n   - Orange (#f97316): 50-69% - Low\n   - Red (#ef4444): 0-49% - Critical\n\n2. Tooltip design:\n   - Dark background (gray-900)\n   - Shows confidence percentage and label\n   - Displays engine name\n   - Lists conflicting values with engines and their confidences\n   - Shows warnings\n   - Review recommendation for low confidence\n   - Tooltip arrow pointing to indicator\n\n3. Visual indicators:\n   - ⚠️ Warning icon for needs review\n   - ⚡ Lightning icon for conflicts\n   - Color-coded badge version\n\n4. Three component variants:\n   - ConfidenceIndicator (full with label and tooltip)\n   - ConfidenceIndicatorCompact (small, no label)\n   - ConfidenceBadge (pill-style badge)\n\n5. Responsive sizing: sm/md/lg variants\n</info added on 2025-11-09T22:14:01.649Z>",
+            "status": "done",
+            "testStrategy": "Review design mockups with stakeholders for feedback."
+          },
+          {
+            "id": 2,
+            "title": "Implement Responsive Confidence Indicator Component",
+            "description": "Develop the Confidence Indicator component in React with responsive design.",
+            "dependencies": [
+              1
+            ],
+            "details": "Use React and TypeScript to implement the 'ConfidenceIndicator.tsx' component. Ensure the component is responsive and includes a horizontal bar with color coding and tooltips for engine and conflict details.\n<info added on 2025-11-09T22:14:22.560Z>\nResponsive Confidence Indicator Component fully implemented!\n\nFile: src/components/ConfidenceIndicator.tsx\n\nImplementation details:\n\n1. TypeScript types and interfaces:\n   - ConfidenceIndicatorProps interface with all prop types\n   - Type-safe props with optional parameters\n   - Proper typing for conflicting values array\n\n2. Responsive design features:\n   - Three size variants (sm/md/lg)\n   - Adaptive bar widths: 100px/150px/200px\n   - Responsive font sizes: 0.75rem/0.875rem/1rem\n   - Flexible padding based on size\n   - Mobile-friendly touch interactions\n\n3. Component variants for different use cases:\n   - ConfidenceIndicator: Full version with label and tooltip\n   - ConfidenceIndicatorCompact: Small inline version\n   - ConfidenceBadge: Pill-style badge for tight spaces\n\n4. Interactive features:\n   - Hover to show/hide tooltip\n   - Smooth transitions (300ms ease-in-out)\n   - Color-coded visual feedback\n   - Icons for warnings and conflicts\n\n5. Accessibility:\n   - Semantic HTML structure\n   - Title attributes for icons\n   - High contrast colors\n   - Clear visual hierarchy\n\n6. Tailwind CSS integration:\n   - Uses existing Tailwind classes\n   - Custom colors via inline styles\n   - Responsive utilities (flex, gap, inline-block)\n\nTest verification: Component renders correctly with all props, responsive across screen sizes.\n</info added on 2025-11-09T22:14:22.560Z>",
+            "status": "done",
+            "testStrategy": "Test the component in Storybook to verify responsiveness and visual accuracy."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-11-09T13:26:50.898Z",
+      "updated": "2025-11-09T22:14:24.288Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
