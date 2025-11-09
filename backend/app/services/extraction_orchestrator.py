@@ -18,6 +18,9 @@ from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
 from app.models.financial_metrics import FinancialMetrics
 from app.models.chart_of_accounts import ChartOfAccounts
+from app.models.extraction_field_metadata import ExtractionFieldMetadata
+from app.services.confidence_engine import ConfidenceEngine
+from app.services.metadata_storage_service import MetadataStorageService
 from app.db.minio_client import download_file
 from app.core.config import settings
 
@@ -30,6 +33,8 @@ class ExtractionOrchestrator:
         self.extraction_engine = MultiEngineExtractor()
         self.template_extractor = TemplateExtractor(db)
         self.table_parser = FinancialTableParser()
+        self.confidence_engine = ConfidenceEngine()
+        self.metadata_service = MetadataStorageService(db, self.confidence_engine)
     
     def extract_and_parse_document(self, upload_id: int) -> Dict:
         """
@@ -215,7 +220,43 @@ class ExtractionOrchestrator:
             
             # ==================== END DATA INSERTION & QUALITY ASSURANCE ====================
             
-            # Step 7: Update upload status to completed
+            # Step 7: CAPTURE FIELD-LEVEL CONFIDENCE METADATA (NEW SPRINT 1 FEATURE!)
+            print(f"🎯 Sprint 1 Feature: Capturing field-level confidence metadata...")
+            
+            # Prepare inserted records for metadata capture
+            # Note: parse_result should contain the inserted records by table
+            inserted_records = parse_result.get("inserted_records", {})
+            
+            metadata_result = self._capture_and_save_metadata(
+                upload_id=upload_id,
+                pdf_data=pdf_data,
+                inserted_records=inserted_records
+            )
+            
+            if not metadata_result.get("success"):
+                # ROLLBACK: Metadata save failed - rollback entire extraction
+                print(f"❌ Metadata save failed - rolling back entire extraction!")
+                self.db.rollback()
+                
+                upload = self.db.query(DocumentUpload).filter(
+                    DocumentUpload.id == upload_id
+                ).first()
+                
+                if upload:
+                    upload.extraction_status = "failed_metadata"
+                    upload.extraction_completed_at = datetime.now()
+                    upload.notes = f"Metadata capture failed: {metadata_result.get('error', 'Unknown error')}"
+                    self.db.commit()
+                
+                return {
+                    "success": False,
+                    "error": f"Metadata save failed: {metadata_result.get('error')}",
+                    "rolled_back": True
+                }
+            
+            print(f"✅ Metadata capture completed successfully!")
+            
+            # Step 8: Update upload status to completed
             upload.extraction_status = "completed"
             upload.extraction_completed_at = datetime.now()
             self.db.commit()
@@ -230,6 +271,7 @@ class ExtractionOrchestrator:
                 "confidence_score": extraction_result["validation"]["confidence_score"],
                 "needs_review": extraction_result["needs_review"] or len(warnings) > 0,
                 "validation_results": validation_results,
+                "metadata": metadata_result,  # NEW: Metadata capture results
                 "message": "Extraction completed - all critical validations passed"
             }
         
@@ -1518,5 +1560,94 @@ class ExtractionOrchestrator:
                 "total_checks": 0,
                 "passed_checks": 0,
                 "failed_checks": 0
+            }
+    
+    def _capture_and_save_metadata(
+        self,
+        upload_id: int,
+        pdf_data: bytes,
+        inserted_records: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, Any]:
+        """
+        Capture extraction metadata from all engines and save to database.
+        
+        This is the NEW SPRINT 1 feature that tracks confidence at the field level.
+        
+        Args:
+            upload_id: Document upload ID
+            pdf_data: Original PDF bytes
+            inserted_records: Dict mapping table names to lists of inserted records
+                Example: {'balance_sheet_data': [{'id': 1, 'account_name': 'Cash', ...}]}
+        
+        Returns:
+            Dict with metadata capture results and statistics
+        """
+        try:
+            print(f"📊 Capturing field-level confidence metadata...")
+            
+            # Step 1: Run all extraction engines to get ExtractionResults
+            extraction_results = self.extraction_engine.extract_with_confidence(
+                pdf_data=pdf_data,
+                run_all_engines=True
+            )
+            
+            if not extraction_results or len(extraction_results) == 0:
+                return {
+                    "success": False,
+                    "error": "No extraction results returned from engines"
+                }
+            
+            print(f"✅ Collected results from {len(extraction_results)} engines:")
+            for result in extraction_results:
+                status = "✅" if result.success else "❌"
+                print(f"   {status} {result.engine_name}: confidence {result.confidence_score:.2%}")
+            
+            # Step 2: Calculate aggregate confidence
+            aggregation = self.confidence_engine.aggregate_extraction_results(extraction_results)
+            
+            print(f"📈 Aggregate confidence: {aggregation['aggregate_confidence']:.2%}")
+            print(f"   Engines succeeded: {aggregation['successful_engines']}/{aggregation['total_engines']}")
+            
+            if aggregation.get('needs_review'):
+                print(f"   ⚠️  Flagged for {aggregation['review_priority']} priority review")
+            
+            # Step 3: Save metadata for each extracted field
+            # Note: In production, this would map actual field values from each engine
+            # For now, we save metadata for the inserted records
+            
+            result = self.metadata_service.save_extraction_result_metadata(
+                document_id=upload_id,
+                extraction_results=extraction_results,
+                extracted_records=inserted_records
+            )
+            
+            if not result.get("success"):
+                # Metadata save failed - this will trigger rollback
+                return result
+            
+            print(f"✅ Metadata saved: {result['total_fields']} fields tracked")
+            
+            if result['flagged_for_review'] > 0:
+                print(f"   ⚠️  {result['flagged_for_review']} fields flagged for review ({result['review_percentage']:.1f}%)")
+                if result['critical_fields'] > 0:
+                    print(f"   🚨 {result['critical_fields']} CRITICAL fields need immediate review")
+            
+            return {
+                "success": True,
+                "metadata_saved": True,
+                "aggregate_confidence": float(aggregation['aggregate_confidence']),
+                "total_fields_tracked": result['total_fields'],
+                "flagged_for_review": result['flagged_for_review'],
+                "critical_fields": result['critical_fields'],
+                "engines_used": aggregation['engines_used'],
+                "extraction_results": extraction_results  # Keep for further use
+            }
+        
+        except Exception as e:
+            print(f"❌ Metadata capture failed: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Metadata capture error: {str(e)}",
+                "metadata_saved": False
             }
 

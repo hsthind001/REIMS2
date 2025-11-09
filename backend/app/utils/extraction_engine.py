@@ -3,6 +3,7 @@ from app.utils.engines.pymupdf_engine import PyMuPDFEngine
 from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
 from app.utils.engines.camelot_engine import CamelotEngine
 from app.utils.engines.ocr_engine import OCREngine
+from app.utils.engines.base_extractor import ExtractionResult
 from app.utils.pdf_classifier import PDFClassifier, DocumentType
 from app.utils.quality_validator import QualityValidator
 import time
@@ -589,4 +590,115 @@ class MultiEngineExtractor:
         # In production, implement more sophisticated deduplication
         # For now, just return all tables
         return tables
+    
+    def extract_with_confidence(
+        self,
+        pdf_data: bytes,
+        run_all_engines: bool = True
+    ) -> List[ExtractionResult]:
+        """
+        NEW METHOD: Extract using all engines and return ExtractionResult objects.
+        
+        This method uses the new BaseExtractor framework and returns
+        ExtractionResult objects with confidence scores for metadata tracking.
+        
+        Args:
+            pdf_data: PDF file as bytes
+            run_all_engines: If True, runs all 3 engines. If False, runs based on doc type
+        
+        Returns:
+            List of ExtractionResult objects from each engine
+        """
+        results = []
+        
+        if run_all_engines:
+            # Run all three main engines for maximum confidence
+            
+            # PyMuPDF - Good for text
+            try:
+                pymupdf_result = self.pymupdf.extract(
+                    pdf_data,
+                    extract_tables=False,
+                    extract_metadata=True
+                )
+                results.append(pymupdf_result)
+            except Exception as e:
+                # Add failed result
+                results.append(ExtractionResult(
+                    engine_name="pymupdf",
+                    extracted_data={},
+                    success=False,
+                    error_message=str(e)
+                ))
+            
+            # PDFPlumber - Best for tables
+            try:
+                pdfplumber_result = self.pdfplumber.extract(
+                    pdf_data,
+                    extract_tables=True
+                )
+                results.append(pdfplumber_result)
+            except Exception as e:
+                results.append(ExtractionResult(
+                    engine_name="pdfplumber",
+                    extracted_data={},
+                    success=False,
+                    error_message=str(e)
+                ))
+            
+            # Camelot - Best for complex tables
+            try:
+                camelot_result = self.camelot.extract(
+                    pdf_data,
+                    flavor="both"  # Try both lattice and stream
+                )
+                results.append(camelot_result)
+            except Exception as e:
+                results.append(ExtractionResult(
+                    engine_name="camelot",
+                    extracted_data={},
+                    success=False,
+                    error_message=str(e)
+                ))
+        
+        else:
+            # Run engines based on document type (optimized)
+            classification = self.classifier.classify(pdf_data)
+            doc_type = classification.get("document_type", DocumentType.DIGITAL)
+            recommended = self._get_recommended_engines(doc_type)
+            
+            if "pymupdf" in recommended:
+                try:
+                    results.append(self.pymupdf.extract(pdf_data, extract_metadata=True))
+                except Exception as e:
+                    results.append(ExtractionResult(
+                        engine_name="pymupdf",
+                        extracted_data={},
+                        success=False,
+                        error_message=str(e)
+                    ))
+            
+            if "pdfplumber" in recommended:
+                try:
+                    results.append(self.pdfplumber.extract(pdf_data, extract_tables=True))
+                except Exception as e:
+                    results.append(ExtractionResult(
+                        engine_name="pdfplumber",
+                        extracted_data={},
+                        success=False,
+                        error_message=str(e)
+                    ))
+            
+            if "camelot" in recommended:
+                try:
+                    results.append(self.camelot.extract(pdf_data, flavor="both"))
+                except Exception as e:
+                    results.append(ExtractionResult(
+                        engine_name="camelot",
+                        extracted_data={},
+                        success=False,
+                        error_message=str(e)
+                    ))
+        
+        return results
 

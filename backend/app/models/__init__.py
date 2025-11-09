@@ -1,6 +1,7 @@
 # Models package
 from app.models.user import User
 from app.models.extraction_log import ExtractionLog
+from app.models.extraction_field_metadata import ExtractionFieldMetadata
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.document_upload import DocumentUpload
@@ -26,6 +27,7 @@ from app.models.reconciliation_resolution import ReconciliationResolution
 __all__ = [
     "User",
     "ExtractionLog",
+    "ExtractionFieldMetadata",
     "Property",
     "FinancialPeriod",
     "DocumentUpload",
