@@ -1,0 +1,48 @@
+{
+  "Rules": [
+    {
+      "ID": "hot-to-warm",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "documents/"
+      },
+      "Transition": {
+        "Days": 90,
+        "StorageClass": "WARM"
+      }
+    },
+    {
+      "ID": "warm-to-cold",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "documents/"
+      },
+      "Transition": {
+        "Days": 365,
+        "StorageClass": "COLD"
+      }
+    },
+    {
+      "ID": "cold-to-archive",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "documents/"
+      },
+      "Transition": {
+        "Days": 730,
+        "StorageClass": "ARCHIVE"
+      }
+    },
+    {
+      "ID": "delete-old-backups",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "backups/"
+      },
+      "Expiration": {
+        "Days": 90
+      }
+    }
+  ]
+}
+

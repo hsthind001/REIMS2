@@ -1235,11 +1235,66 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 40,
+        "title": "Create Document Versioning System",
+        "description": "Develop a system to manage document versions, track version history, and provide API and UI for version management.",
+        "details": "1. **Database Schema**: Design tables to store document versions, including fields for version number, document ID, timestamp, and change description. Ensure relationships with existing document tables.\n2. **API Development**: Create RESTful endpoints for creating, retrieving, updating, and deleting document versions. Implement endpoints to compare versions and restore previous versions.\n3. **UI Implementation**: Develop a user interface to display version history, compare versions side-by-side, and restore versions. Use React for the frontend, ensuring responsive design.\n4. **Version Tracking**: Implement logic to automatically create new versions upon document edits, storing differences between versions.\n5. **Security and Access Control**: Ensure that version management respects user permissions and access controls.",
+        "testStrategy": "1. **Database Testing**: Verify schema creation and data integrity with sample version data.\n2. **API Testing**: Use Postman or similar tools to test all API endpoints for correct functionality and error handling.\n3. **UI Testing**: Conduct user testing to ensure the UI is intuitive and functions correctly across devices.\n4. **Version Comparison**: Test the accuracy of version comparisons and the ability to restore previous versions.\n5. **Security Testing**: Ensure that unauthorized users cannot access or modify document versions.",
+        "status": "done",
+        "dependencies": [
+          1,
+          2,
+          8
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 41,
+        "title": "Build Automated Backup System for PostgreSQL and MinIO",
+        "description": "Develop an automated backup system with daily PostgreSQL backups to MinIO, weekly MinIO backups to external storage, backup verification tests, a 30-day retention policy, and monitoring/alerts.",
+        "details": "1. **Daily PostgreSQL Backup to MinIO**: Implement a script or service to perform daily backups of PostgreSQL databases, storing them in MinIO. Use tools like `pg_dump` for database dumps and MinIO client (`mc`) for uploads.\n2. **Weekly MinIO Backup to External Storage**: Schedule a weekly task to back up MinIO data to an external storage solution (e.g., AWS S3, Google Cloud Storage). Ensure data integrity and security during transfer.\n3. **Backup Verification**: Develop a verification process to ensure backups are complete and restorable. This could involve checksum validation and periodic test restores.\n4. **Retention Policy**: Implement a mechanism to automatically delete backups older than 30 days to manage storage space.\n5. **Monitoring and Alerts**: Integrate with the existing notification system (Task 27) to send alerts for backup success/failure and storage capacity warnings. Use monitoring tools to track backup status and performance.",
+        "testStrategy": "1. **Backup Functionality Testing**: Verify that daily PostgreSQL backups are correctly stored in MinIO and that weekly MinIO backups are successfully transferred to external storage.\n2. **Verification Process Testing**: Conduct test restores from backups to ensure data integrity and completeness.\n3. **Retention Policy Testing**: Simulate the passage of time to ensure backups older than 30 days are automatically deleted.\n4. **Monitoring and Alerts Testing**: Trigger backup failures and storage capacity issues to test alert notifications and monitoring accuracy.",
+        "status": "done",
+        "dependencies": [
+          27
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 42,
+        "title": "Implement MinIO Lifecycle Policies for Storage Tiers",
+        "description": "Develop lifecycle policies in MinIO for automated data transitions between hot, warm, cold, and archive storage tiers.",
+        "details": "1. Analyze current storage usage patterns to define criteria for each storage tier: hot (<90 days), warm (90-365 days), cold (365-730 days), and archive (>730 days).\n2. Configure MinIO lifecycle policies to automate data transitions based on these criteria.\n3. Implement scripts or use MinIO's built-in tools to manage lifecycle rules, ensuring seamless data movement between tiers.\n4. Ensure policies are optimized for cost-effectiveness and performance, minimizing storage costs while maintaining data accessibility.\n5. Integrate monitoring and alerting to track policy execution and data transitions, using existing logging frameworks.\n6. Document the lifecycle policy configurations and provide guidelines for future adjustments based on changing data patterns.",
+        "testStrategy": "1. Simulate data with varying ages to test each lifecycle policy, ensuring data transitions occur as expected.\n2. Verify that data is correctly moved between storage tiers according to the defined timeframes.\n3. Monitor system performance and storage costs before and after policy implementation to ensure improvements.\n4. Test alerting mechanisms to confirm notifications are sent when transitions occur or if errors are detected.\n5. Conduct a review of the policy documentation to ensure clarity and completeness.",
+        "status": "done",
+        "dependencies": [
+          29,
+          24
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 43,
+        "title": "Create Disaster Recovery Procedures",
+        "description": "Develop disaster recovery procedures including restore scripts for PostgreSQL, MinIO, and Redis, a full system restore test, and comprehensive documentation.",
+        "details": "1. **PostgreSQL Restore Script**: Develop a script to restore PostgreSQL databases from MinIO backups. Use `pg_restore` for restoring database dumps. Ensure the script handles different database versions and configurations.\n\n2. **MinIO Restore Script**: Create a script to restore MinIO data from external storage. Use MinIO client (`mc`) for downloading and restoring data. Ensure data integrity checks are included.\n\n3. **Redis Restore**: Implement a procedure to restore Redis data from snapshots or backups. Consider using `redis-cli` for importing data and ensure compatibility with the current Redis configuration.\n\n4. **Full System Restore Test**: Design and execute a full system restore test to validate the recovery procedures. This should include restoring all components and verifying system functionality.\n\n5. **Documentation**: Write comprehensive documentation covering all recovery scenarios, including step-by-step guides for each restore process, troubleshooting tips, and contact information for support.",
+        "testStrategy": "1. **Script Testing**: Run each restore script in a controlled environment to verify functionality and data integrity.\n\n2. **Full System Restore Test**: Conduct a full system restore in a staging environment. Verify that all components are restored correctly and the system operates as expected.\n\n3. **Documentation Review**: Have team members review the documentation for clarity and completeness. Conduct a walkthrough to ensure all recovery steps are covered.",
+        "status": "done",
+        "dependencies": [
+          41
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:52:43.207Z",
+      "updated": "2025-11-09T22:54:13.565Z",
       "description": "Tasks for master context"
     }
   }
