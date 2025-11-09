@@ -95,3 +95,5 @@ pyod==1.1.0
 joblib==1.4.2
 passlib[bcrypt]==1.7.4
 PyJWT==2.10.1
+slowapi==0.1.9
+intuitlib==2.0.0

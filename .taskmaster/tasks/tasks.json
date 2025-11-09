@@ -1344,11 +1344,67 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 48,
+        "title": "Create Public API Endpoints with Authentication and Rate Limiting",
+        "description": "Develop public API endpoints for document upload, property financials retrieval, and extraction details with API key authentication and rate limiting.",
+        "details": "Implement the following API endpoints: 1) POST /api/v1/public/documents/upload for uploading documents. 2) GET /api/v1/public/properties/{id}/financials to retrieve financial data for a specific property. 3) GET /api/v1/public/extractions/{id} to fetch extraction details. Use API key authentication to secure these endpoints, leveraging the API Key Management System (Task 47). Implement rate limiting to allow a maximum of 100 requests per hour per API key. Document the API using OpenAPI specifications to ensure clear and comprehensive API documentation. Consider edge cases such as invalid API keys, exceeding rate limits, and malformed requests.",
+        "testStrategy": "1) Verify each endpoint's functionality by making requests with valid and invalid API keys. 2) Test rate limiting by exceeding the 100 requests/hour limit and ensuring further requests are blocked. 3) Validate the OpenAPI documentation by generating client code and ensuring it matches the API behavior. 4) Conduct security tests to ensure API keys are required and properly validated for each request.",
+        "status": "done",
+        "dependencies": [
+          47
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 49,
+        "title": "Build Webhook System with POST /api/v1/webhooks/register Endpoint",
+        "description": "Develop a webhook system with event support, delivery tracking, retry logic, and signature verification.",
+        "details": "1. **Endpoint Development**: Implement the POST /api/v1/webhooks/register endpoint to allow clients to register webhooks. Store webhook URLs and associated event types in the database.\n\n2. **Event Support**: Ensure the system supports the following events: `extraction_complete`, `validation_failed`, and `alert_triggered`. Implement a mechanism to trigger webhooks when these events occur.\n\n3. **Delivery Tracking**: Develop a system to track the delivery status of each webhook, including timestamps and response codes. Store this information for auditing and debugging purposes.\n\n4. **Retry Logic**: Implement a retry mechanism that attempts to deliver webhooks up to 3 times in case of failure. Use exponential backoff for retry intervals.\n\n5. **Signature Verification**: Add a security layer by signing webhook payloads with a secret key. Implement verification logic on the client side to ensure payload integrity.\n\n6. **Integration with API Key Management**: Use the API Key Management System (Task 47) to authenticate webhook registration requests, ensuring only authorized clients can register webhooks.",
+        "testStrategy": "1. **Endpoint Testing**: Use tools like Postman to test the POST /api/v1/webhooks/register endpoint for correct registration and error handling.\n\n2. **Event Trigger Testing**: Simulate events (`extraction_complete`, `validation_failed`, `alert_triggered`) and verify that webhooks are triggered and delivered correctly.\n\n3. **Delivery Tracking Verification**: Check the database for accurate logging of delivery attempts, including timestamps and response codes.\n\n4. **Retry Logic Testing**: Simulate webhook delivery failures and verify that the retry mechanism works as expected, with correct intervals and a maximum of 3 attempts.\n\n5. **Signature Verification Testing**: Ensure that webhook payloads are correctly signed and that the client can verify the signature to confirm payload integrity.",
+        "status": "done",
+        "dependencies": [
+          27,
+          47
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 50,
+        "title": "Implement QuickBooks Connector with OAuth 2.0 and Data Sync",
+        "description": "Develop a connector for QuickBooks using OAuth 2.0 for authentication, enabling export of financial data, chart of accounts mapping, and bi-directional sync.",
+        "details": "1. Set up OAuth 2.0 authentication to securely connect with QuickBooks API.\n2. Implement functionality to export financial data from the application to QuickBooks, ensuring data integrity and format compliance.\n3. Develop a mapping system for the chart of accounts to align application data with QuickBooks structure.\n4. Implement journal entry synchronization to ensure consistency between systems.\n5. Enable bi-directional sync to allow updates from QuickBooks to reflect in the application and vice versa.\n6. Ensure robust error handling and logging for all API interactions.\n7. Use existing logging frameworks to monitor sync operations and performance.",
+        "testStrategy": "1. Verify OAuth 2.0 authentication flow with QuickBooks API using test credentials.\n2. Test data export functionality with sample financial data, ensuring correct format and integrity.\n3. Validate chart of accounts mapping by comparing application data with QuickBooks entries.\n4. Simulate journal entry sync and verify consistency across both systems.\n5. Test bi-directional sync by making changes in QuickBooks and ensuring they reflect in the application, and vice versa.\n6. Conduct performance testing to ensure the connector handles expected data volumes efficiently.",
+        "status": "done",
+        "dependencies": [
+          32,
+          29
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 51,
+        "title": "Create Yardi Connector for Data Import",
+        "description": "Develop a connector to import data from Yardi Voyager using API authentication, data mapping, scheduled sync, and error handling.",
+        "details": "Implement a Yardi Connector service to interface with Yardi Voyager's API. Start by setting up API authentication using OAuth2. Define data mapping rules to transform Yardi data into the application's schema. Implement a scheduler to automate data sync at regular intervals. Incorporate robust error handling to manage integration failures, including logging and retry mechanisms. Ensure the connector can handle large data volumes efficiently and supports incremental updates.",
+        "testStrategy": "Verify API authentication by testing token retrieval and access. Test data mapping by importing sample data and checking for correct transformation. Simulate scheduled syncs and monitor for successful execution. Introduce errors to test error handling and logging. Validate performance with large datasets and ensure incremental updates work as expected.",
+        "status": "done",
+        "dependencies": [
+          1,
+          2,
+          8
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:56:04.758Z",
+      "updated": "2025-11-09T22:58:04.673Z",
       "description": "Tasks for master context"
     }
   }
