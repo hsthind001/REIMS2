@@ -90,3 +90,4 @@ torch==2.5.1
 torchvision==0.20.1
 sentencepiece==0.2.0
 accelerate==1.2.1
+easyocr==1.7.2
