@@ -1,0 +1,49 @@
+{
+  "multifamily": {
+    "operating_expense_ratio": {
+      "min": 0.35,
+      "max": 0.45,
+      "optimal": 0.40
+    },
+    "net_operating_income_ratio": {
+      "min": 0.55,
+      "max": 0.65,
+      "optimal": 0.60
+    },
+    "occupancy_rate": {
+      "min": 0.90,
+      "max": 0.98,
+      "optimal": 0.95
+    }
+  },
+  "retail": {
+    "sales_per_sqft": {
+      "low": 200,
+      "average": 400,
+      "high": 600
+    },
+    "operating_expense_ratio": {
+      "min": 0.25,
+      "max": 0.35,
+      "optimal": 0.30
+    }
+  },
+  "office": {
+    "rent_per_sqft": {
+      "low": 20,
+      "average": 35,
+      "high": 50
+    },
+    "vacancy_rate": {
+      "low": 0.05,
+      "average": 0.10,
+      "high": 0.15
+    },
+    "operating_expense_ratio": {
+      "min": 0.30,
+      "max": 0.40,
+      "optimal": 0.35
+    }
+  }
+}
+
