@@ -1160,11 +1160,86 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 35,
+        "title": "Create Correction Tracking System",
+        "description": "Develop a system to log human corrections to extracted data, store them in a training-data bucket, track correction patterns, and calculate correction rates per engine and field.",
+        "details": "1. Design a database schema to log corrections, including fields for document ID, field name, original value, corrected value, correction timestamp, and user ID.\n2. Implement a service to capture corrections made by users in the UI and store them in the database.\n3. Develop a mechanism to aggregate corrections and store them in a training-data bucket for machine learning purposes.\n4. Create analytics to track correction patterns across documents and calculate correction rates per extraction engine and field.\n5. Integrate with existing metadata storage and extraction systems to ensure seamless data flow and consistency.",
+        "testStrategy": "1. Verify database schema creation and ensure all fields are correctly logged.\n2. Test the correction logging service with mock UI inputs to ensure accurate data capture.\n3. Validate the aggregation and storage of corrections in the training-data bucket.\n4. Run analytics tests to ensure correction patterns and rates are accurately calculated and reported.\n5. Perform end-to-end testing to confirm integration with existing systems and data consistency.",
+        "status": "done",
+        "dependencies": [
+          1,
+          2,
+          8
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 36,
+        "title": "Build Model Retraining Pipeline as Nightly Celery Task",
+        "description": "Develop a pipeline to retrain the LayoutLMv3 model nightly based on new corrections, validate improvements, and auto-deploy if performance increases.",
+        "details": "1. Set up a Celery task to run nightly, checking the Correction Tracking System for over 100 new corrections.\n2. Implement logic to fine-tune the LayoutLMv3 model using these corrections as additional training data.\n3. Validate the retrained model's performance, ensuring at least a 2% improvement in accuracy over the previous version.\n4. Use a versioning system to manage different model versions and ensure rollback capabilities.\n5. Automate deployment of the new model if it meets the improvement criteria, updating the production environment seamlessly.\n6. Ensure the pipeline logs all activities and results for audit and debugging purposes.",
+        "testStrategy": "1. Simulate over 100 corrections and verify the Celery task triggers the retraining process.\n2. Validate the fine-tuning process by checking model accuracy improvements using a test dataset.\n3. Test the versioning system by deploying multiple model versions and ensuring correct version tracking.\n4. Conduct end-to-end tests to ensure the pipeline correctly deploys improved models and logs all actions.\n5. Perform rollback tests to ensure previous model versions can be restored without issues.",
+        "status": "done",
+        "dependencies": [
+          35,
+          12,
+          11
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 37,
+        "title": "Implement Rule Suggestion Engine",
+        "description": "Develop a system to analyze correction patterns, identify repeated corrections, generate regex/template suggestions, and optionally create GitHub PRs for review.",
+        "details": "1. Design a service to track and analyze correction patterns from the Correction Tracking System (Task 35).\n2. Implement algorithms to identify repeated corrections and suggest regex or template improvements.\n3. Integrate with GitHub API to create pull requests for suggested changes, allowing for optional human review.\n4. Ensure the system can handle large datasets and provide real-time suggestions.\n5. Use existing logging and monitoring frameworks to track system performance and suggestions accuracy.",
+        "testStrategy": "1. Verify the system correctly identifies repeated corrections using historical correction data.\n2. Test regex/template suggestion accuracy with known correction patterns.\n3. Simulate GitHub PR creation and ensure suggestions are correctly formatted and submitted.\n4. Conduct performance testing to ensure the system handles large datasets efficiently.\n5. Validate logging and monitoring outputs for accuracy and completeness.",
+        "status": "done",
+        "dependencies": [
+          35,
+          16
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 38,
+        "title": "Create Performance Tracking Dashboard",
+        "description": "Develop a dashboard to track extraction accuracy, correction rate trends, model version comparison, and engine performance with visual charts.",
+        "details": "1. Design a user-friendly dashboard interface using React and D3.js for data visualization.\n2. Integrate with the existing database to fetch extraction accuracy data, correction rates, and model version performance metrics.\n3. Implement charts to display trends over time, such as line charts for accuracy and correction rates, and bar charts for model and engine comparisons.\n4. Ensure the dashboard updates in real-time or at regular intervals to reflect the latest data.\n5. Provide filtering options for users to view data by date range, document type, or specific extraction engines.\n6. Implement backend services to aggregate and serve the necessary data efficiently, ensuring scalability and performance.",
+        "testStrategy": "1. Verify the dashboard loads correctly and displays data accurately by comparing with known database entries.\n2. Test the responsiveness and interactivity of charts across different devices and screen sizes.\n3. Validate filtering functionality by applying various filters and ensuring the data updates accordingly.\n4. Conduct performance testing to ensure the dashboard handles large datasets without significant lag.\n5. Perform user acceptance testing to gather feedback on usability and make necessary adjustments.",
+        "status": "done",
+        "dependencies": [
+          1,
+          2,
+          8,
+          35
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 39,
+        "title": "Build A/B Testing Framework for Model Evaluation",
+        "description": "Develop a framework to conduct A/B testing on new models, comparing performance with existing models, and implement a gradual rollout and rollback mechanism.",
+        "details": "1. Design the A/B testing framework to evaluate new AI models on a subset of documents, comparing their performance against existing models.\n2. Implement a mechanism to randomly assign documents to either the control group (existing model) or the test group (new model).\n3. Develop performance metrics to evaluate model accuracy, speed, and reliability.\n4. Create a gradual rollout strategy, starting with a small percentage of documents and increasing based on performance metrics.\n5. Implement an automatic rollback feature that reverts to the previous model if the new model's performance degrades beyond a predefined threshold.\n6. Integrate with the existing performance tracking dashboard (Task 38) to visualize A/B test results and rollout status.",
+        "testStrategy": "1. Simulate A/B testing with a controlled set of documents and verify that documents are correctly assigned to control and test groups.\n2. Validate performance metrics by comparing results from the new and existing models.\n3. Test the gradual rollout mechanism by monitoring the percentage of documents processed by the new model.\n4. Simulate performance degradation and ensure the rollback mechanism triggers correctly.\n5. Verify integration with the performance tracking dashboard to ensure accurate display of A/B test results.",
+        "status": "done",
+        "dependencies": [
+          16,
+          38,
+          17
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:51:09.621Z",
+      "updated": "2025-11-09T22:52:43.207Z",
       "description": "Tasks for master context"
     }
   }
