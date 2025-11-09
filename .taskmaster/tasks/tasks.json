@@ -969,11 +969,117 @@
             "testStrategy": "Check that the cache processes new data correctly and stores it for subsequent access."
           }
         ]
+      },
+      {
+        "id": 23,
+        "title": "Create Alert Database Schema",
+        "description": "Design and implement a database schema for managing alerts, including anomaly detections, alert rules, and triggered alerts.",
+        "details": "Create three tables: 'anomaly_detections', 'alert_rules', and 'alerts'. The 'anomaly_detections' table should store detected anomalies with columns for z-scores and thresholds. The 'alert_rules' table should include configurable rules with conditions and severity levels. The 'alerts' table will track triggered alerts with status and delivery information. Establish foreign key relationships between these tables to ensure data integrity. Add indexes on timestamp columns for efficient querying and on severity levels to optimize rule evaluation. Ensure that the schema supports scalability and future enhancements.",
+        "testStrategy": "Run database migrations to create the tables and verify their structure. Insert sample data into each table to ensure that foreign key constraints and indexes are functioning correctly. Perform queries to test the efficiency of the indexes, especially on timestamp and severity columns. Validate the relationships between tables by checking referential integrity with sample data.",
+        "status": "done",
+        "dependencies": [
+          1,
+          2
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design Database Schema for Alerts",
+            "description": "Design the database schema for managing alerts, including tables for anomaly detections, alert rules, and triggered alerts.",
+            "dependencies": [],
+            "details": "Create ER diagrams for 'anomaly_detections', 'alert_rules', and 'alerts'. Define columns, data types, and relationships. Ensure scalability and future enhancements.",
+            "status": "done",
+            "testStrategy": "Review ER diagrams with team for accuracy and completeness."
+          },
+          {
+            "id": 2,
+            "title": "Implement Database Schema for Alerts",
+            "description": "Implement the designed database schema in the database system, including tables and relationships.",
+            "dependencies": [
+              1
+            ],
+            "details": "Use SQL to create tables 'anomaly_detections', 'alert_rules', and 'alerts'. Establish foreign key relationships and add indexes on timestamp and severity columns.",
+            "status": "done",
+            "testStrategy": "Run migrations and verify table creation. Insert sample data to test constraints and indexes."
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "title": "Create Statistical Anomaly Detector Service",
+        "description": "Develop a service to detect statistical anomalies using Z-score, percentage change, missing data detection, and historical baseline comparison.",
+        "details": "Implement a microservice named 'AnomalyDetectorService' that processes incoming data streams to identify anomalies. Use Z-score calculations to detect outliers, percentage change to identify significant shifts, and track missing data occurrences. Develop algorithms to establish historical baselines for comparison. Integrate with existing data storage solutions to fetch historical data and store detected anomalies. Ensure the service can handle real-time data processing and batch processing for historical analysis. Implement configuration options for sensitivity and thresholds.",
+        "testStrategy": "Create unit tests for each detection method (Z-score, percentage change, missing data). Simulate data streams with known anomalies to verify detection accuracy. Test integration with the alert database schema to ensure anomalies are logged correctly. Validate performance under load with stress testing to ensure real-time processing capabilities. Conduct end-to-end testing with historical data to verify baseline comparisons.",
+        "status": "done",
+        "dependencies": [
+          1,
+          23
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "Implement ML-Based Anomaly Detector with PyOD",
+        "description": "Develop an anomaly detection system using PyOD with Isolation Forest and Local Outlier Factor algorithms, integrating with the statistical detector.",
+        "details": "Utilize the PyOD library to implement an anomaly detection system. Focus on Isolation Forest and Local Outlier Factor algorithms for detecting anomalies in data streams. Train models per property to capture specific patterns. Integrate this ML-based detector with the existing statistical anomaly detector service (Task 24) to enhance detection capabilities. Ensure the system can handle real-time data processing and batch processing. Implement logging and monitoring to track model performance and anomaly detection rates.",
+        "testStrategy": "Develop unit tests for each algorithm to ensure they correctly identify anomalies. Simulate data streams with known anomalies to verify detection accuracy. Test integration with the statistical detector to ensure seamless operation and improved detection rates. Validate performance under load with stress testing to ensure the system can handle high data throughput.",
+        "status": "done",
+        "dependencies": [
+          24,
+          23
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 26,
+        "title": "Build Alert Rule Configuration System with CRUD API",
+        "description": "Develop a system to manage alert rules with a CRUD API, including rule evaluation, cooldown management, and priority handling.",
+        "details": "Implement a RESTful API to create, read, update, and delete alert rules. Use the existing 'alert_rules' table from Task 23 to store rule configurations. Develop a rule evaluation engine that processes incoming data against these rules to trigger alerts. Implement cooldown management to prevent alert spam by setting a minimum time interval between alerts for the same rule. Add functionality to handle different alert priorities and severities, ensuring that critical alerts are prioritized. Integrate with the anomaly detection services (Tasks 24 and 25) to trigger alerts based on detected anomalies. Ensure the system is scalable and can handle high volumes of data.",
+        "testStrategy": "Write unit tests for each CRUD operation to ensure correct database interactions. Develop integration tests to verify the rule evaluation engine triggers alerts correctly based on sample data. Test cooldown management by simulating rapid successive alerts and verifying that only one alert is triggered within the cooldown period. Validate priority handling by creating rules with different severities and ensuring they are processed in the correct order. Conduct load testing to ensure the system performs well under high data volumes.",
+        "status": "done",
+        "dependencies": [
+          23,
+          24,
+          25
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 27,
+        "title": "Create Multi-Channel Notification System",
+        "description": "Develop a system to send notifications via email, Slack, and in-app with delivery tracking and channel fallback.",
+        "details": "Implement a notification service that supports multiple channels: email, Slack, and in-app notifications. Use a modular design to allow easy addition of new channels. For email, integrate with an SMTP server or a service like SendGrid. For Slack, use webhooks to send messages to specified channels. Implement an in-app notification system using a database table to store notifications and a frontend component to display them. Ensure the system can track delivery status and implement a fallback mechanism to try alternative channels if the primary one fails. Use a priority system to determine the order of channel attempts. Consider security and data privacy, especially for email and Slack integrations.",
+        "testStrategy": "Write unit tests for each notification channel to ensure messages are sent correctly. Develop integration tests to verify the fallback mechanism works as expected when a channel fails. Test delivery tracking by simulating successful and failed deliveries. Verify in-app notifications are stored and displayed correctly. Conduct end-to-end tests to ensure the entire notification flow functions seamlessly across all channels.",
+        "status": "done",
+        "dependencies": [
+          23,
+          26
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 28,
+        "title": "Build Alert Dashboard Frontend",
+        "description": "Develop the frontend for the Alert Dashboard with features like alert list, real-time updates, workflows, filtering, and detail modals.",
+        "details": "Implement a React-based frontend for the Alert Dashboard. Create components for displaying a list of alerts with real-time updates using polling. Implement workflows for acknowledging and resolving alerts. Add filtering options by severity and status. Develop a modal to show detailed information about each alert, including anomaly data. Ensure the UI is responsive and accessible. Integrate with the backend APIs developed in Task 26 for alert rule configurations and Task 23 for alert data.",
+        "testStrategy": "Conduct unit tests for each React component to ensure correct rendering and functionality. Perform integration tests to verify real-time updates and workflows operate as expected. Test filtering functionality with various criteria. Validate the alert detail modal displays correct information. Conduct user acceptance testing to ensure the UI meets design and usability standards.",
+        "status": "done",
+        "dependencies": [
+          23,
+          26
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:40:57.353Z",
+      "updated": "2025-11-09T22:47:35.473Z",
       "description": "Tasks for master context"
     }
   }
