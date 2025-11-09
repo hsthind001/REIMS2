@@ -93,3 +93,5 @@ accelerate==1.2.1
 easyocr==1.7.2
 pyod==1.1.0
 joblib==1.4.2
+passlib[bcrypt]==1.7.4
+PyJWT==2.10.1

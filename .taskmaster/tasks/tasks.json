@@ -1290,11 +1290,65 @@
         ],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 44,
+        "title": "Create RBAC Database Schema and Seed Data",
+        "description": "Design and implement a database schema for role-based access control (RBAC) with predefined roles and permissions.",
+        "details": "Create tables for 'roles', 'user_roles', 'permissions', and 'role_permissions'. Define columns for each table, ensuring proper foreign key relationships. Predefine roles such as Admin, Manager, Analyst, and Viewer, and assign appropriate permissions to each role. Implement a database migration script to create these tables and seed them with initial data. Ensure the schema supports scalability for future roles and permissions.",
+        "testStrategy": "Run the migration script to create the tables and verify their structure. Check the seeded data for correctness by querying the roles and permissions tables. Ensure foreign key constraints are enforced and test data integrity by attempting to insert invalid data. Validate that predefined roles have the correct permissions assigned.",
+        "status": "done",
+        "dependencies": [
+          1,
+          23
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 45,
+        "title": "Build Permission Checking System with Decorator and Function",
+        "description": "Develop a permission checking system using a decorator and function, applying it to sensitive API endpoints for enforcement.",
+        "details": "1. **Design the @require_permission Decorator**: Create a Python decorator that checks if a user has the necessary permissions before executing a function. This decorator should accept parameters for required permissions and handle unauthorized access gracefully.\n\n2. **Implement check_permission() Function**: Develop a function that verifies if a user has specific permissions. This function should query the RBAC database schema (from Task 44) to check user roles and permissions.\n\n3. **Integrate with API Endpoints**: Identify sensitive API endpoints and apply the @require_permission decorator to enforce permission checks. Ensure that all endpoints requiring permission are covered.\n\n4. **API-Level Permission Enforcement**: Implement middleware or hooks in the API framework to ensure that permission checks are consistently applied across all endpoints.\n\n5. **Logging and Monitoring**: Add logging for permission checks to track unauthorized access attempts and monitor system performance.",
+        "testStrategy": "1. **Unit Testing**: Write unit tests for the @require_permission decorator and check_permission() function to ensure they correctly enforce permissions.\n\n2. **Integration Testing**: Test API endpoints with various user roles to verify that permission checks are enforced and unauthorized access is blocked.\n\n3. **Security Testing**: Conduct penetration testing to ensure that the permission system is robust against common security threats.\n\n4. **Performance Testing**: Monitor the performance impact of permission checks on API response times and optimize as necessary.",
+        "status": "done",
+        "dependencies": [
+          44
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 46,
+        "title": "Implement Enhanced Audit Logging with Searchable UI",
+        "description": "Develop a comprehensive audit logging system that logs all permission checks, data access, and modifications, with a UI for filtering by user, action, and timestamp.",
+        "details": "1. Design a logging framework to capture all permission checks, data access events, and modifications across the application. Use a centralized logging service to aggregate logs.\n2. Implement a database schema to store audit logs, ensuring it supports efficient querying and indexing for performance.\n3. Develop a user interface using React to provide a searchable audit trail. Include filters for user, action type, and timestamp.\n4. Integrate with existing authentication and authorization systems to ensure accurate logging of user actions.\n5. Ensure compliance with data privacy regulations by implementing data anonymization where necessary.\n6. Use existing logging frameworks and libraries to maintain consistency with current systems.",
+        "testStrategy": "1. Verify that all permission checks, data access, and modifications are logged correctly by simulating various user actions and reviewing the logs.\n2. Test the UI for filtering capabilities, ensuring it accurately filters logs by user, action, and timestamp.\n3. Conduct performance testing on the logging system to ensure it handles high volumes of data efficiently.\n4. Validate data anonymization processes to ensure compliance with privacy regulations.\n5. Perform integration tests with existing authentication systems to verify accurate user action logging.",
+        "status": "done",
+        "dependencies": [
+          34,
+          24
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 47,
+        "title": "Create API Key Management System",
+        "description": "Develop a system to manage API keys, including generation, scoped permissions, key rotation, usage tracking, and revocation.",
+        "details": "Implement an API Key Management System with the following features: 1) API Key Generation: Create a secure method for generating unique API keys. 2) Scoped Permissions: Allow each key to have specific permissions, such as read, write, or admin access. 3) Key Rotation: Implement a mechanism to rotate keys periodically to enhance security. 4) Usage Tracking: Track API key usage statistics, including request counts and timestamps. 5) Revocation: Provide functionality to revoke keys immediately. Use a database to store keys and their metadata, ensuring secure storage and retrieval. Consider integrating with existing RBAC systems for permission management.",
+        "testStrategy": "1) Test API key generation for uniqueness and security. 2) Verify that scoped permissions are correctly enforced by attempting operations with different keys. 3) Simulate key rotation and ensure old keys are invalidated. 4) Track usage statistics and verify accuracy by comparing with logged requests. 5) Test key revocation by revoking a key and ensuring it can no longer be used.",
+        "status": "done",
+        "dependencies": [
+          44
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:54:13.565Z",
+      "updated": "2025-11-09T22:56:04.758Z",
       "description": "Tasks for master context"
     }
   }
