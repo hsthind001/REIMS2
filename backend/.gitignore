@@ -56,7 +56,9 @@ logs/
 htmlcov/
 .tox/
 
-# Alembic
-alembic/versions/*.py
-!alembic/versions/__init__.py
+# Alembic - Only ignore cache, NOT migrations!
+alembic/__pycache__/
+alembic/*.pyc
+# Migration files SHOULD be committed to Git
+# !alembic/versions/*.py are needed for database schema
 
