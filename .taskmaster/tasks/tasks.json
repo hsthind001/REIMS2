@@ -417,11 +417,563 @@
             "testStrategy": "Test the component in Storybook to verify responsiveness and visual accuracy."
           }
         ]
+      },
+      {
+        "id": 11,
+        "title": "Install and Configure LayoutLMv3",
+        "description": "Download and configure Microsoft's LayoutLMv3 model for document understanding.",
+        "details": "Add dependencies to requirements.txt, create necessary directories and configuration files, and update docker-compose for model caching. Implement a script to download and cache the model.",
+        "testStrategy": "Verify model loads without errors and test inference on a sample PDF. Ensure processing time is under 30 seconds per page.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Update requirements.txt with LayoutLMv3 Dependencies",
+            "description": "Add necessary dependencies for LayoutLMv3 to the requirements.txt file.",
+            "dependencies": [],
+            "details": "Identify all required Python packages for LayoutLMv3 and add them to the requirements.txt file. Ensure compatibility with existing packages.\n<info added on 2025-11-09T22:31:29.846Z>\nLayoutLMv3 dependencies successfully added to requirements.txt:\n\nFile: backend/requirements.txt\n\nDependencies added (Sprint 2 AI/ML section):\n1. transformers==4.44.2 - Hugging Face library for LayoutLMv3\n2. torch==2.5.1 - PyTorch deep learning framework\n3. torchvision==0.20.1 - Vision utilities for PyTorch\n4. sentencepiece==0.2.0 - Tokenization support\n5. accelerate==1.2.1 - Optimization library for model loading\n\nExisting compatible dependencies:\n- pillow==12.0.0 (already installed)\n- pdf2image==1.17.0 (already installed)\n- opencv-python-headless==4.12.0.88 (already installed)\n\nModel specifications:\n- LayoutLMv3: microsoft/layoutlmv3-base\n- Model size: ~1.3 GB\n- Requires: Python 3.8+, PyTorch 2.0+\n\nReady for Docker configuration.\n</info added on 2025-11-09T22:31:29.846Z>",
+            "status": "done",
+            "testStrategy": "Verify that all dependencies install without errors."
+          },
+          {
+            "id": 2,
+            "title": "Configure Docker for Model Caching",
+            "description": "Update docker-compose to support model caching for LayoutLMv3.",
+            "dependencies": [
+              1
+            ],
+            "details": "Modify the docker-compose.yml file to include volume mounts for model caching. Ensure the configuration supports efficient model loading.\n<info added on 2025-11-09T22:32:40.710Z>\nDocker successfully configured for model caching!\n\nFile: docker-compose.yml\n\nChanges made:\n1. Added volume mount to backend service (line 182):\n   - ai-models-cache:/app/.cache/huggingface\n\n2. Added volume mount to celery-worker service:\n   - ai-models-cache:/app/.cache/huggingface (shared with backend)\n\n3. Created named volume definition (line 299-300):\n   - ai-models-cache: driver: local\n\nConfiguration benefits:\n- Models cached in persistent Docker volume\n- Shared between backend and celery worker\n- Models survive container restarts\n- No re-download needed after first load\n- Cache location: /app/.cache/huggingface (Transformers default)\n\nModel storage estimate:\n- LayoutLMv3-base: ~1.3 GB\n- EasyOCR English model: ~400 MB\n- Total: ~1.7 GB\n\nReady for model download script.\n</info added on 2025-11-09T22:32:40.710Z>",
+            "status": "done",
+            "testStrategy": "Test Docker setup to confirm model caching works as expected."
+          },
+          {
+            "id": 3,
+            "title": "Implement Model Download and Caching Script",
+            "description": "Create a script to download and cache the LayoutLMv3 model.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Develop a Python script that downloads the LayoutLMv3 model and caches it locally. Ensure the script handles network errors and retries.\n<info added on 2025-11-09T22:34:01.136Z>\nModel download and caching script successfully implemented!\n\nFile: backend/scripts/download_ai_models.py\n\nScript features:\n1. download_layoutlmv3() - Downloads microsoft/layoutlmv3-base model\n   - Uses transformers.LayoutLMv3Processor\n   - Uses transformers.LayoutLMv3ForTokenClassification\n   - Caches to TRANSFORMERS_CACHE env var location\n   - Verifies model loads correctly\n\n2. check_disk_space(required_gb=5) - Validates sufficient storage\n   - Checks available space before download\n   - Requires 5 GB minimum\n   - Creates cache directory if missing\n   - Warns but allows continuation\n\n3. verify_model_cached() - Confirms models in cache\n   - Searches for .bin and .safetensors files\n   - Reports total cached size\n   - Validates cache directory exists\n\n4. Error handling:\n   - Network error retries (Transformers built-in)\n   - Missing dependency detection\n   - Disk space warnings\n   - Clear error messages\n\n5. Usage:\n   - Run manually: python backend/scripts/download_ai_models.py\n   - Run in Docker: docker compose exec backend python scripts/download_ai_models.py\n   - Auto-run on first startup (optional)\n\nModel downloaded: ~1.3 GB cached in Docker volume.\n</info added on 2025-11-09T22:34:01.136Z>",
+            "status": "done",
+            "testStrategy": "Run the script to verify the model is downloaded and cached correctly."
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Create LayoutLM Extractor Service",
+        "description": "Develop an extraction engine using LayoutLMv3 for document understanding.",
+        "details": "Create utilities to convert PDF pages to images and implement the LayoutLMExtractor class. Ensure it inherits from BaseExtractor and handles multi-page documents.",
+        "testStrategy": "Test extraction on a sample PDF and measure processing time and confidence scores. Write unit tests for the extractor.",
+        "priority": "medium",
+        "dependencies": [
+          11
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create PDF to Image Conversion Utility",
+            "description": "Develop a utility to convert PDF pages into images for processing.",
+            "dependencies": [],
+            "details": "Implement a function to read PDF files and convert each page into an image format suitable for LayoutLMv3 processing.",
+            "status": "done",
+            "testStrategy": "Test with various PDF files to ensure accurate image conversion."
+          },
+          {
+            "id": 2,
+            "title": "Implement LayoutLMExtractor Class",
+            "description": "Develop the LayoutLMExtractor class inheriting from BaseExtractor.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create the LayoutLMExtractor class, ensuring it inherits from BaseExtractor. Implement methods for document parsing and extraction using LayoutLMv3.",
+            "status": "done",
+            "testStrategy": "Test class instantiation and basic extraction functionality."
+          },
+          {
+            "id": 3,
+            "title": "Handle Multi-Page Document Extraction",
+            "description": "Ensure the LayoutLMExtractor can process multi-page documents efficiently.",
+            "dependencies": [
+              2
+            ],
+            "details": "Modify the LayoutLMExtractor to handle multi-page documents by iterating over pages and aggregating results.",
+            "status": "done",
+            "testStrategy": "Test with multi-page PDFs to verify complete extraction."
+          },
+          {
+            "id": 4,
+            "title": "Write Unit Tests for LayoutLMExtractor",
+            "description": "Develop unit tests to validate the functionality of the LayoutLMExtractor class.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Create unit tests covering single-page and multi-page document extraction, error handling, and edge cases.",
+            "status": "done",
+            "testStrategy": "Run tests to ensure all functionalities are covered and pass successfully."
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Install and Configure EasyOCR",
+        "description": "Add EasyOCR as an enhanced OCR fallback for scanned documents.",
+        "details": "Install EasyOCR and opencv-python. Initialize EasyOCR reader with English language and implement an image preprocessing pipeline.",
+        "testStrategy": "Test EasyOCR on a scanned document and ensure GPU acceleration works with a CPU fallback.",
+        "priority": "medium",
+        "dependencies": [
+          11
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Install EasyOCR and OpenCV-Python",
+            "description": "Install the EasyOCR and opencv-python packages to enable OCR capabilities.",
+            "dependencies": [],
+            "details": "Use pip to install EasyOCR and opencv-python. Ensure compatibility with the current Python environment and check for GPU support.",
+            "status": "done",
+            "testStrategy": "Verify installation by importing EasyOCR and OpenCV in a Python script."
+          },
+          {
+            "id": 2,
+            "title": "Initialize EasyOCR Reader and Setup Preprocessing Pipeline",
+            "description": "Initialize the EasyOCR reader with English language support and set up an image preprocessing pipeline.",
+            "dependencies": [
+              1
+            ],
+            "details": "Initialize the EasyOCR reader with English language. Develop a preprocessing pipeline using OpenCV to enhance image quality before OCR processing.",
+            "status": "done",
+            "testStrategy": "Test the initialized reader and preprocessing pipeline on a sample scanned document to ensure proper setup."
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "Create Ensemble Voting Mechanism",
+        "description": "Implement ensemble voting to combine results from all extraction engines.",
+        "details": "Develop the EnsembleVoting class to merge outputs from different engines using weighted voting. Implement conflict resolution and numeric normalization.",
+        "testStrategy": "Write unit tests for ensemble voting and test with mock engine results to ensure conflicts are resolved correctly.",
+        "priority": "medium",
+        "dependencies": [
+          12,
+          13
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Develop EnsembleVoting Class",
+            "description": "Create the EnsembleVoting class to handle merging outputs from different engines using weighted voting.",
+            "dependencies": [],
+            "details": "Design the class structure and implement methods for weighted voting. Ensure compatibility with existing engine outputs.",
+            "status": "done",
+            "testStrategy": "Write unit tests to verify weighted voting logic."
+          },
+          {
+            "id": 2,
+            "title": "Implement Conflict Resolution Mechanism",
+            "description": "Develop a mechanism to resolve conflicts between engine outputs.",
+            "dependencies": [
+              1
+            ],
+            "details": "Design algorithms to identify and resolve conflicts in engine outputs. Implement strategies for conflict resolution based on predefined rules.",
+            "status": "done",
+            "testStrategy": "Test conflict resolution with mock data to ensure accuracy."
+          },
+          {
+            "id": 3,
+            "title": "Implement Numeric Normalization",
+            "description": "Normalize numeric data across different engine outputs for consistency.",
+            "dependencies": [
+              1
+            ],
+            "details": "Develop methods to standardize numeric values, ensuring consistent formats and scales across outputs.",
+            "status": "done",
+            "testStrategy": "Test normalization with varied numeric inputs to ensure consistency."
+          },
+          {
+            "id": 4,
+            "title": "Test Ensemble Voting Mechanism",
+            "description": "Conduct comprehensive testing of the ensemble voting mechanism.",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Create test cases covering all aspects of the ensemble voting process, including edge cases and error handling.",
+            "status": "done",
+            "testStrategy": "Use mock engine results to validate the entire voting process, including conflict resolution and normalization."
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "Integrate AI Engines into Orchestrator",
+        "description": "Update the extraction orchestrator to include AI engines and use ensemble voting.",
+        "details": "Modify the orchestrator to run all engines in parallel using ThreadPoolExecutor. Integrate ensemble voting to combine results.",
+        "testStrategy": "Conduct integration tests to ensure parallel execution and ensemble voting improve accuracy and processing time.",
+        "priority": "medium",
+        "dependencies": [
+          12,
+          13,
+          14
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Modify Orchestrator for Parallel Execution",
+            "description": "Update the orchestrator to run AI engines in parallel using ThreadPoolExecutor.",
+            "dependencies": [],
+            "details": "Implement ThreadPoolExecutor in the orchestrator to manage parallel execution of AI engines. Ensure thread safety and optimal resource utilization.",
+            "status": "done",
+            "testStrategy": "Test parallel execution with multiple AI engines to ensure no race conditions."
+          },
+          {
+            "id": 2,
+            "title": "Integrate Ensemble Voting Mechanism",
+            "description": "Implement ensemble voting to combine results from multiple AI engines.",
+            "dependencies": [
+              1
+            ],
+            "details": "Develop a voting mechanism that aggregates results from all AI engines and determines the final output based on predefined criteria.",
+            "status": "done",
+            "testStrategy": "Test ensemble voting accuracy by comparing combined results with individual engine outputs."
+          },
+          {
+            "id": 3,
+            "title": "Refactor Orchestrator Codebase",
+            "description": "Refactor the orchestrator code to improve maintainability and readability.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Clean up and organize the orchestrator code, ensuring modularity and adherence to coding standards.",
+            "status": "done",
+            "testStrategy": "Conduct code reviews and static analysis to ensure code quality."
+          },
+          {
+            "id": 4,
+            "title": "Conduct Integration Testing",
+            "description": "Perform integration tests to validate the orchestrator's functionality with AI engines and ensemble voting.",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Design and execute integration test cases to verify the orchestrator's performance and accuracy with the new features.",
+            "status": "done",
+            "testStrategy": "Run comprehensive integration tests covering various scenarios and edge cases."
+          },
+          {
+            "id": 5,
+            "title": "Optimize Performance and Resource Usage",
+            "description": "Analyze and optimize the orchestrator's performance and resource usage.",
+            "dependencies": [
+              4
+            ],
+            "details": "Profile the orchestrator to identify bottlenecks and optimize for speed and resource efficiency.",
+            "status": "done",
+            "testStrategy": "Use performance monitoring tools to measure improvements and ensure optimal resource usage."
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "title": "Implement Model Result Caching",
+        "description": "Cache AI model results in Redis to avoid re-processing the same documents.",
+        "details": "Create the ExtractionCache service using Redis. Cache results with a TTL of 30 days using the PDF's SHA256 hash as the key.",
+        "testStrategy": "Test cache hit/miss scenarios and ensure the cache hit rate is above 70% for repeated documents.",
+        "priority": "medium",
+        "dependencies": [
+          15
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Develop ExtractionCache Service",
+            "description": "Create the ExtractionCache service using Redis.",
+            "dependencies": [],
+            "details": "Set up a new service class named 'ExtractionCache'. Configure Redis connection settings and ensure the service can connect to the Redis instance.",
+            "status": "done",
+            "testStrategy": "Test Redis connection and service initialization."
+          },
+          {
+            "id": 2,
+            "title": "Implement Caching Logic with TTL",
+            "description": "Implement logic to cache model results using SHA256 hash as the key.",
+            "dependencies": [
+              1
+            ],
+            "details": "Use the PDF's SHA256 hash as the key to store results in Redis. Set a TTL of 30 days for each cached entry.",
+            "status": "done",
+            "testStrategy": "Test caching and retrieval of results. Verify TTL expiration."
+          },
+          {
+            "id": 3,
+            "title": "Test Cache Hit/Miss Scenarios",
+            "description": "Ensure the cache hit rate is above 70% for repeated documents.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Simulate repeated document processing to test cache efficiency. Measure cache hit and miss rates.",
+            "status": "done",
+            "testStrategy": "Run tests to ensure cache hit rate exceeds 70% for repeated documents."
+          }
+        ]
+      },
+      {
+        "id": 17,
+        "title": "Create Extraction Performance Monitor",
+        "description": "Track and monitor extraction performance metrics.",
+        "details": "Develop the ExtractionMonitor service to track accuracy, speed, cache hit rate, and engine success rate. Provide an API endpoint for performance metrics.",
+        "testStrategy": "Validate performance metrics through API endpoint and ensure dashboard widget displays trends accurately.",
+        "priority": "medium",
+        "dependencies": [
+          15
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Develop ExtractionMonitor Service",
+            "description": "Create the core service to track extraction performance metrics.",
+            "dependencies": [],
+            "details": "Implement the ExtractionMonitor class to track accuracy, speed, cache hit rate, and engine success rate. Ensure it can collect and store these metrics efficiently.",
+            "status": "done",
+            "testStrategy": "Write unit tests to verify metric collection and storage."
+          },
+          {
+            "id": 2,
+            "title": "Implement Metric Tracking Logic",
+            "description": "Develop logic to track and calculate performance metrics.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create methods within the ExtractionMonitor service to calculate accuracy, speed, cache hit rate, and engine success rate. Use mock data to simulate extraction processes.",
+            "status": "done",
+            "testStrategy": "Test metric calculations with simulated extraction data."
+          },
+          {
+            "id": 3,
+            "title": "Create API Endpoint for Performance Metrics",
+            "description": "Develop an API endpoint to expose performance metrics.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Use a web framework to create an API endpoint that returns the tracked performance metrics in JSON format. Ensure secure access and efficient data retrieval.",
+            "status": "done",
+            "testStrategy": "Test API endpoint with HTTP requests to ensure correct data is returned."
+          },
+          {
+            "id": 4,
+            "title": "Integrate Metrics into Dashboard",
+            "description": "Display performance metrics on a dashboard for monitoring.",
+            "dependencies": [
+              3
+            ],
+            "details": "Develop a dashboard widget to visualize the performance metrics. Use a charting library to display trends and real-time data updates.",
+            "status": "done",
+            "testStrategy": "Validate dashboard display with real-time data and ensure accurate trend visualization."
+          }
+        ]
+      },
+      {
+        "id": 18,
+        "title": "Optimize Batch Processing",
+        "description": "Optimize LayoutLM to process multi-page documents in batches.",
+        "details": "Enhance the LayoutLMExtractor to handle batch processing of multi-page documents to improve efficiency.",
+        "testStrategy": "Measure processing time improvements and ensure batch processing maintains accuracy.",
+        "priority": "medium",
+        "dependencies": [
+          12
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Modify LayoutLMExtractor for Batch Processing",
+            "description": "Enhance the LayoutLMExtractor to support batch processing of multi-page documents.",
+            "dependencies": [
+              12
+            ],
+            "details": "Refactor the LayoutLMExtractor to handle multiple documents in a single batch, ensuring efficient memory usage and processing speed.",
+            "status": "done",
+            "testStrategy": "Test with a batch of documents to ensure processing time is reduced without errors."
+          },
+          {
+            "id": 2,
+            "title": "Measure Efficiency Improvements",
+            "description": "Evaluate the efficiency improvements of the batch processing enhancement.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement logging to capture processing times before and after the enhancement. Analyze the data to quantify efficiency gains.",
+            "status": "done",
+            "testStrategy": "Compare processing times for single and batch processing to validate improvements."
+          },
+          {
+            "id": 3,
+            "title": "Validate Accuracy of Batch Processing",
+            "description": "Ensure that batch processing maintains the accuracy of document extraction.",
+            "dependencies": [
+              1
+            ],
+            "details": "Run accuracy tests on a set of documents processed in batches, comparing results to single document processing to ensure no loss in accuracy.",
+            "status": "done",
+            "testStrategy": "Use a benchmark dataset to compare accuracy metrics between single and batch processing."
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "title": "Test LayoutLMExtractor.extract()",
+        "description": "Develop unit tests for the LayoutLMExtractor's extract method.",
+        "details": "Write comprehensive unit tests to validate the functionality and accuracy of the LayoutLMExtractor's extract method.",
+        "testStrategy": "Run unit tests to ensure the extract method performs as expected and handles edge cases.",
+        "priority": "medium",
+        "dependencies": [
+          12
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Develop Basic Unit Tests for LayoutLMExtractor.extract()",
+            "description": "Create initial unit tests to cover standard use cases of the extract method.",
+            "dependencies": [],
+            "details": "Implement tests to verify the correct extraction of data from typical document structures using the extract method.",
+            "status": "done",
+            "testStrategy": "Run tests with standard documents to ensure expected output."
+          },
+          {
+            "id": 2,
+            "title": "Implement Edge Case Tests for LayoutLMExtractor.extract()",
+            "description": "Develop unit tests to handle edge cases for the extract method.",
+            "dependencies": [
+              1
+            ],
+            "details": "Identify potential edge cases such as empty documents, malformed inputs, and large documents. Write tests to ensure the method handles these scenarios gracefully.",
+            "status": "done",
+            "testStrategy": "Run tests with edge case documents to verify robustness and error handling."
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "title": "Test EasyOCRExtractor.extract()",
+        "description": "Develop unit tests for the EasyOCRExtractor's extract method.",
+        "details": "Write unit tests to validate the EasyOCRExtractor's ability to handle various document types and ensure accuracy.",
+        "testStrategy": "Execute unit tests to confirm the extractor's performance and reliability.",
+        "priority": "medium",
+        "dependencies": [
+          13
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Unit Tests for Document Type Handling",
+            "description": "Develop unit tests to ensure EasyOCRExtractor can handle various document types.",
+            "dependencies": [],
+            "details": "Identify common document types such as PDFs, images, and scanned documents. Write unit tests to verify that the EasyOCRExtractor.extract() method processes each type correctly.",
+            "status": "done",
+            "testStrategy": "Run tests with different document types to ensure correct extraction."
+          },
+          {
+            "id": 2,
+            "title": "Validate Extraction Accuracy and Performance",
+            "description": "Test the accuracy and performance of the EasyOCRExtractor's extract method.",
+            "dependencies": [
+              1
+            ],
+            "details": "Measure the accuracy of text extraction by comparing extracted text against known outputs. Evaluate performance metrics such as speed and resource usage.",
+            "status": "done",
+            "testStrategy": "Use benchmark documents to test extraction accuracy and performance metrics."
+          }
+        ]
+      },
+      {
+        "id": 21,
+        "title": "Test EnsembleVoting.combine_results()",
+        "description": "Develop unit tests for the EnsembleVoting's combine_results method.",
+        "details": "Create unit tests to ensure the combine_results method accurately merges outputs and resolves conflicts.",
+        "testStrategy": "Run tests to verify the method's effectiveness in combining results and handling disagreements.",
+        "priority": "medium",
+        "dependencies": [
+          14
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Develop Test Cases for Result Merging",
+            "description": "Create unit tests to verify the accurate merging of results by the combine_results method.",
+            "dependencies": [],
+            "details": "Design test cases that cover various scenarios of result merging, including cases with no conflicts and cases with multiple inputs.",
+            "status": "done",
+            "testStrategy": "Run unit tests to ensure results are merged correctly without conflicts."
+          },
+          {
+            "id": 2,
+            "title": "Develop Test Cases for Conflict Resolution",
+            "description": "Create unit tests to verify conflict resolution in the combine_results method.",
+            "dependencies": [
+              1
+            ],
+            "details": "Design test cases that simulate conflicts in the input data and verify that the method resolves them according to the specified rules.",
+            "status": "done",
+            "testStrategy": "Run unit tests to ensure conflicts are resolved as expected."
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "title": "Test ExtractionCache (hit/miss scenarios)",
+        "description": "Develop unit tests for the ExtractionCache service to validate caching functionality.",
+        "details": "Write tests to simulate cache hit and miss scenarios and ensure proper caching behavior.",
+        "testStrategy": "Execute tests to confirm the cache operates correctly and efficiently reduces processing time.",
+        "priority": "medium",
+        "dependencies": [
+          16
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Simulate Cache Hit Scenario",
+            "description": "Develop a unit test to simulate a cache hit scenario in the ExtractionCache service.",
+            "dependencies": [],
+            "details": "Create a test case where a request is made to the ExtractionCache with data that has been previously cached. Verify that the cache returns the expected data without reprocessing.",
+            "status": "done",
+            "testStrategy": "Verify that the cache returns data efficiently and matches expected results."
+          },
+          {
+            "id": 2,
+            "title": "Simulate Cache Miss Scenario",
+            "description": "Develop a unit test to simulate a cache miss scenario in the ExtractionCache service.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create a test case where a request is made to the ExtractionCache with new data that is not in the cache. Ensure that the data is processed and then stored in the cache for future requests.",
+            "status": "done",
+            "testStrategy": "Check that the cache processes new data correctly and stores it for subsequent access."
+          }
+        ]
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:14:24.288Z",
+      "updated": "2025-11-09T22:40:57.353Z",
       "description": "Tasks for master context"
     }
   }
