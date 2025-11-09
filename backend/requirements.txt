@@ -83,3 +83,10 @@ vine==5.1.0
 watchfiles==1.1.1
 wcwidth==0.2.14
 websockets==15.0.1
+
+# AI/ML Dependencies for Sprint 2
+transformers==4.44.2
+torch==2.5.1
+torchvision==0.20.1
+sentencepiece==0.2.0
+accelerate==1.2.1

@@ -116,6 +116,7 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_SERVER_URL: http://localhost:9000
     volumes:
       - minio-data:/data
     ports:
@@ -178,6 +179,7 @@ services:
       # - Cash reconciliation with beginning/ending balances
     volumes:
       - ./backend/app:/app/app  # Mount app for development
+      - ai-models-cache:/app/.cache/huggingface  # Cache for LayoutLMv3 models
     ports:
       - "8000:8000"
     depends_on:
@@ -215,6 +217,7 @@ services:
       MINIO_SECRET_KEY: minioadmin
     volumes:
       - ./backend/app:/app/app
+      - ai-models-cache:/app/.cache/huggingface  # Share model cache
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -294,4 +297,6 @@ volumes:
     driver: local
   minio-data:
     driver: local
+  ai-models-cache:
+    driver: local  # Cache for AI/ML models (LayoutLMv3, EasyOCR)
 
