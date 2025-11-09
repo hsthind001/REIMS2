@@ -3,9 +3,12 @@ from app.utils.engines.pymupdf_engine import PyMuPDFEngine
 from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
 from app.utils.engines.camelot_engine import CamelotEngine
 from app.utils.engines.ocr_engine import OCREngine
+from app.utils.engines.layoutlm_engine import LayoutLMEngine
+from app.utils.engines.easyocr_engine import EasyOCREngine
 from app.utils.engines.base_extractor import ExtractionResult
 from app.utils.pdf_classifier import PDFClassifier, DocumentType
 from app.utils.quality_validator import QualityValidator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 
@@ -23,6 +26,8 @@ class MultiEngineExtractor:
         self.pdfplumber = PDFPlumberEngine()
         self.camelot = CamelotEngine()
         self.ocr = OCREngine()
+        self.layoutlm = LayoutLMEngine()  # NEW Sprint 2
+        self.easyocr = EasyOCREngine()    # NEW Sprint 2
         
         # Initialize utilities
         self.classifier = PDFClassifier()
