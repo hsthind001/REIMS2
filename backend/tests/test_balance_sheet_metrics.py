@@ -21,16 +21,20 @@ from app.models.financial_metrics import FinancialMetrics
 class TestLiquidityMetrics:
     """Test liquidity metric calculations (Template v1.0)"""
     
-    def test_current_ratio_calculation(self, db_session, sample_balance_sheet_data):
+    def test_current_ratio_calculation(self, db_session, sample_properties, sample_financial_periods, sample_balance_sheet_data):
         """Test Current Ratio = Current Assets / Current Liabilities"""
         metrics_service = MetricsService(db_session)
         
-        # Setup: Current Assets = 481979.78, Current Liabilities = 150000.00
-        # Expected Current Ratio = 3.21 (approximately)
+        # Use actual IDs from fixtures
+        prop = sample_properties[0]  # ESP
+        period = sample_financial_periods[0]
+        
+        # Setup: Current Assets = 400000.00, Current Liabilities = 75000.00
+        # Expected Current Ratio = 5.33 (approximately)
         
         metrics = metrics_service.calculate_balance_sheet_metrics(
-            property_id=1,
-            period_id=1
+            property_id=prop.id,
+            period_id=period.id
         )
         
         assert metrics["current_ratio"] is not None
@@ -336,11 +340,7 @@ class TestSafeDivide:
 
 
 # Test Fixtures
-@pytest.fixture
-def db_session():
-    """Mock database session"""
-    # Implement with actual test database
-    pass
+# db_session fixture is imported from conftest.py
 
 
 @pytest.fixture

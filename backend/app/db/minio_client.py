@@ -160,8 +160,7 @@ def get_file_url(
             object_name,
             expires=timedelta(seconds=expires_seconds)
         )
-        # Replace internal Docker hostname with localhost for browser access
-        url = url.replace('http://minio:9000', 'http://localhost:9000')
+        # MinIO now generates URLs with correct external endpoint via MINIO_SERVER_URL
         return url
     except S3Error as e:
         print(f"Error generating URL: {e}")

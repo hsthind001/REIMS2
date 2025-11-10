@@ -21,80 +21,29 @@ from app.models.rent_roll_data import RentRollData
 from app.models.financial_metrics import FinancialMetrics
 
 
-# Test database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-@pytest.fixture(scope="function")
-def db_session():
-    """Create fresh database for each test"""
-    from app.db.database import Base
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    yield session
-    session.close()
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture
-def test_property(db_session):
-    """Create test property"""
-    prop = Property(property_code='WEND001', property_name='Wendover Commons', status='active')
-    db_session.add(prop)
-    db_session.commit()
-    return prop
-
-
-@pytest.fixture
-def test_period(db_session, test_property):
-    """Create test period"""
-    period = FinancialPeriod(
-        property_id=test_property.id,
-        period_year=2024,
-        period_month=12,
-        period_start_date=date(2024, 12, 1),
-        period_end_date=date(2024, 12, 31)
-    )
-    db_session.add(period)
-    db_session.commit()
-    return period
+# Use fixtures from conftest.py:
+# - db_session (PostgreSQL test database)
+# - sample_properties
+# - sample_chart_of_accounts
+# - sample_financial_periods
+# - sample_balance_sheet_data
+# - sample_cash_flow_data
+# - sample_income_statement_data
 
 
 class TestBalanceSheetMetrics:
     """Test balance sheet metrics calculations"""
     
-    def test_balance_sheet_totals(self, db_session, test_property, test_period):
+    def test_balance_sheet_totals(self, db_session, sample_properties, sample_financial_periods, sample_balance_sheet_data):
         """Test calculation of balance sheet totals"""
-        # Create balance sheet data with actual Wendover values
-        bs_data = [
-            ('1999-0000', 'TOTAL ASSETS', Decimal('22939865.40')),
-            ('2999-0000', 'TOTAL LIABILITIES', Decimal('21769610.72')),
-            ('3999-0000', 'TOTAL CAPITAL', Decimal('1170254.68')),
-        ]
-        
-        for code, name, amount in bs_data:
-            item = BalanceSheetData(
-                property_id=test_property.id,
-                period_id=test_period.id,
-                account_id=None,
-                account_code=code,
-                account_name=name,
-                amount=amount
-            )
-            db_session.add(item)
-        
-        db_session.commit()
+        # Use fixtures
+        prop = sample_properties[0]
+        period = sample_financial_periods[0]
         
         # Calculate metrics
         metrics_service = MetricsService(db_session)
         metrics_data = metrics_service.calculate_balance_sheet_metrics(
-            test_property.id, test_period.id
+            prop.id, period.id
         )
         
         # Verify totals
@@ -102,7 +51,7 @@ class TestBalanceSheetMetrics:
         assert metrics_data['total_liabilities'] == Decimal('21769610.72')
         assert metrics_data['total_equity'] == Decimal('1170254.68')
     
-    def test_current_ratio_calculation(self, db_session, test_property, test_period):
+    def test_current_ratio_calculation(self, db_session, sample_properties, sample_financial_periods, sample_balance_sheet_data):
         """Test current ratio = Current Assets / Current Liabilities"""
         # Create current accounts
         bs_data = [

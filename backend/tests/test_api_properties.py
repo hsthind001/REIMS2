@@ -91,15 +91,28 @@ def db_session():
 
 @pytest.fixture
 def client(db_session):
-    """Create test client with database override"""
+    """Create authenticated test client with database override"""
+    from app.api.dependencies import get_current_user
+    
+    # Get the system user from db_session
+    system_user = db_session.query(User).filter(User.username == "system").first()
+    
     def override_get_db():
         try:
             yield db_session
         finally:
             pass
     
+    def override_get_current_user():
+        """Override authentication to return system user"""
+        return system_user
+    
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    
+    test_client = TestClient(app)
+    yield test_client
+    
     app.dependency_overrides.clear()
 
 

@@ -23,29 +23,22 @@ from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
 
 
-# Test database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Use fixtures from conftest.py:
+# - db_session (PostgreSQL test database)
+# - sample_properties
+# - sample_chart_of_accounts
+# - sample_financial_periods
+# - sample_balance_sheet_data
+# - sample_cash_flow_data
+# - sample_income_statement_data
 
 
 @pytest.fixture(scope="function")
-def db_session():
-    """Create fresh database for each test"""
-    from app.db.database import Base
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    
+def validation_rules(db_session):
+    """Create validation rules for testing"""
     # Seed validation rules
-    _seed_test_rules(session)
-    
-    yield session
-    session.close()
-    Base.metadata.drop_all(bind=engine)
+    _seed_test_rules(db_session)
+    return db_session
 
 
 def _seed_test_rules(db):

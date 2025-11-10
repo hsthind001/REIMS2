@@ -1,0 +1,535 @@
+TASKMASTER CONFIGURATION FILE
+REIMS 2.0 Enhancement Project
+Version: 1.0
+
+================================================================================
+PROJECT CONFIGURATION
+================================================================================
+
+project_name: "REIMS 2.0 World-Class Enhancement"
+project_root: "."  # Current directory (where REIMS2 exists)
+project_type: "enhancement"  # Not a new project, enhancing existing
+
+development_approach: "agile"
+sprint_duration_weeks: 2
+total_sprints: 8
+story_points_per_sprint: 40
+
+================================================================================
+TASKMASTER SETTINGS
+================================================================================
+
+# Task Breakdown
+task_breakdown_depth: 3
+# Break complex tasks into max 3 levels of subtasks
+
+max_subtask_duration_hours: 4
+# Each subtask should be <4 hours of work
+
+auto_break_complex_tasks: true
+# Automatically break HIGH complexity tasks
+
+# Execution Settings
+execution_mode: "sequential"
+# Tasks must execute in order (dependencies exist)
+
+allow_parallel_subtasks: true
+# Subtasks within a task can run in parallel if independent
+
+auto_validate_completion: true
+# Run validation tests after each task
+
+auto_commit_on_success: true
+# Git commit after successful task completion with descriptive message
+
+rollback_on_failure: true
+# Revert changes if task validation fails
+
+# Testing Requirements
+run_unit_tests_after_task: true
+run_integration_tests_after_sprint: true
+test_coverage_minimum: 80
+# Minimum 80% code coverage required
+
+# Documentation
+auto_update_changelog: true
+auto_update_api_docs: true
+documentation_style: "markdown"
+
+# Error Handling
+max_retry_attempts: 3
+retry_delay_seconds: 5
+continue_on_non_critical_errors: false
+
+# Validation
+require_acceptance_criteria_met: true
+require_manual_approval_for_high_risk: true
+# High risk tasks (database migrations, auth changes) need human approval
+
+# Performance Monitoring
+track_task_duration: true
+track_resource_usage: true
+alert_on_slow_tasks: true
+slow_task_threshold_hours: 6
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+
+backend_directory: "backend/"
+frontend_directory: "frontend/"
+tests_directory: "backend/tests/"
+docs_directory: "docs/"
+scripts_directory: "backend/scripts/"
+
+# Important Files
+docker_compose_file: "docker-compose.yml"
+backend_requirements: "backend/requirements.txt"
+frontend_package: "frontend/package.json"
+env_file: ".env"
+
+================================================================================
+DEPENDENCIES AND TOOLS
+================================================================================
+
+# Required Tools (must be installed)
+required_tools:
+  - docker
+  - docker-compose
+  - git
+  - python3.13
+  - node20
+  - cursor
+
+# Python Environment
+python_version: "3.13"
+python_package_manager: "pip"
+virtual_env: false  # Using Docker containers
+
+# Node Environment
+node_version: "20"
+node_package_manager: "npm"
+
+# Database
+database_type: "postgresql"
+database_version: "17.6"
+database_migration_tool: "alembic"
+
+# Container Management
+container_runtime: "docker"
+compose_version: "v2"
+
+================================================================================
+TASK VALIDATION RULES
+================================================================================
+
+# Database Tasks
+database_tasks:
+  require_backup_before: true
+  require_rollback_script: true
+  require_manual_verification: true
+  
+# Code Changes
+code_tasks:
+  require_tests: true
+  require_type_hints: true  # For Python
+  require_docstrings: true
+  linting_required: true
+
+# API Changes
+api_tasks:
+  require_openapi_update: true
+  require_backward_compatibility: true
+  require_version_bump: true
+
+# Frontend Changes
+frontend_tasks:
+  require_typescript: true
+  require_component_tests: false  # Optional
+  require_responsive_design: true
+
+# Security Changes
+security_tasks:
+  require_security_review: true
+  require_manual_approval: true
+  require_audit_log: true
+
+================================================================================
+GIT COMMIT CONVENTIONS
+================================================================================
+
+commit_message_format: "conventional_commits"
+# Format: <type>(<scope>): <subject>
+
+commit_types:
+  - feat      # New feature
+  - fix       # Bug fix
+  - docs      # Documentation
+  - style     # Formatting
+  - refactor  # Code restructuring
+  - test      # Adding tests
+  - chore     # Maintenance
+
+# Examples:
+# feat(extraction): add LayoutLMv3 integration
+# fix(database): correct migration rollback script
+# docs(api): update confidence endpoint documentation
+
+auto_generate_commit_message: true
+commit_on_task_completion: true
+
+# Branching Strategy
+branching_strategy: "feature-branch"
+main_branch: "main"
+feature_branch_prefix: "feature/"
+sprint_branch_prefix: "sprint/"
+
+# Example branches:
+# sprint/01-foundation
+# feature/s1-01-database-schema
+# feature/s1-02-sqlalchemy-model
+
+================================================================================
+TESTING CONFIGURATION
+================================================================================
+
+# Test Framework
+python_test_framework: "pytest"
+frontend_test_framework: "jest"
+
+# Test Execution
+test_command_backend: "docker-compose exec backend pytest -v"
+test_command_frontend: "docker-compose exec frontend npm test"
+
+# Coverage
+coverage_tool: "pytest-cov"
+coverage_threshold: 80
+coverage_report_format: "html"
+
+# Test Categories
+unit_test_pattern: "test_*.py"
+integration_test_pattern: "test_integration_*.py"
+e2e_test_pattern: "test_e2e_*.py"
+
+# When to Run Tests
+run_tests_on: 
+  - task_completion
+  - before_commit
+  - sprint_completion
+  - before_deployment
+
+================================================================================
+LOGGING AND MONITORING
+================================================================================
+
+# Logging
+log_level: "INFO"
+log_file: "taskmaster_execution.log"
+log_rotation: "daily"
+log_retention_days: 30
+
+# Task Tracking
+track_task_duration: true
+track_resource_usage: true
+log_validation_results: true
+log_test_results: true
+
+# Alerts
+alert_on_task_failure: true
+alert_on_test_failure: true
+alert_on_slow_execution: true
+alert_method: "console"  # Options: console, email, slack
+
+================================================================================
+SPRINT-SPECIFIC SETTINGS
+================================================================================
+
+# Sprint 1: Foundation
+sprint_1:
+  risk_level: "low"
+  require_database_backup: true
+  critical_tasks: ["S1-01", "S1-02", "S1-09"]
+  
+# Sprint 2: AI/ML
+sprint_2:
+  risk_level: "medium-high"
+  require_model_validation: true
+  disk_space_required_gb: 50
+  memory_required_gb: 16
+  critical_tasks: ["S2-01", "S2-02", "S2-05"]
+
+# Sprint 3: Alerts
+sprint_3:
+  risk_level: "medium"
+  require_notification_testing: true
+  critical_tasks: ["S3-01", "S3-02", "S3-04"]
+
+# Sprint 4: Validation
+sprint_4:
+  risk_level: "low"
+  require_historical_data: true
+  
+# Sprint 5: Learning
+sprint_5:
+  risk_level: "medium"
+  require_model_retraining: true
+
+# Sprint 6: Resilience
+sprint_6:
+  risk_level: "low"
+  require_backup_testing: true
+  require_restore_testing: true
+
+# Sprint 7: Security
+sprint_7:
+  risk_level: "high"
+  require_security_audit: true
+  require_manual_approval: true
+  critical_tasks: ["S7-01", "S7-02", "S7-03"]
+
+# Sprint 8: Integration
+sprint_8:
+  risk_level: "medium"
+  require_api_testing: true
+  require_external_service_mocks: true
+
+================================================================================
+RESOURCE LIMITS
+================================================================================
+
+# Docker Container Limits
+backend_memory_limit: "4g"
+backend_cpu_limit: "2.0"
+frontend_memory_limit: "2g"
+frontend_cpu_limit: "1.0"
+postgres_memory_limit: "2g"
+redis_memory_limit: "512m"
+
+# Disk Space
+minimum_disk_space_gb: 50
+warning_disk_space_gb: 100
+
+# Parallel Execution
+max_parallel_tasks: 1  # Sequential execution
+max_parallel_subtasks: 3
+
+================================================================================
+ENVIRONMENT VARIABLES
+================================================================================
+
+# Required Environment Variables
+required_env_vars:
+  - DATABASE_URL
+  - REDIS_URL
+  - MINIO_ENDPOINT
+  - SECRET_KEY
+  - CLAUDE_API_KEY  # For TaskMaster AI assistance
+  - OPENAI_API_KEY  # Optional, for GPT integration
+
+# Optional Environment Variables
+optional_env_vars:
+  - SLACK_WEBHOOK_URL
+  - SMTP_SERVER
+  - SMTP_PORT
+  - BACKUP_LOCATION
+
+================================================================================
+QUALITY GATES
+================================================================================
+
+# Must Pass Before Proceeding to Next Task
+quality_gates:
+  - all_unit_tests_pass
+  - no_critical_linting_errors
+  - code_coverage_above_threshold
+  - acceptance_criteria_met
+  - no_unhandled_exceptions
+  - database_migrations_reversible
+
+# Must Pass Before Sprint Completion
+sprint_quality_gates:
+  - all_integration_tests_pass
+  - documentation_updated
+  - no_regression_in_existing_features
+  - performance_benchmarks_met
+  - security_scan_clean
+
+# Must Pass Before Production Deployment
+deployment_quality_gates:
+  - all_tests_pass
+  - security_audit_complete
+  - backup_tested
+  - rollback_plan_documented
+  - monitoring_configured
+
+================================================================================
+REPORTING
+================================================================================
+
+# Progress Reports
+generate_daily_report: true
+generate_sprint_report: true
+report_format: "markdown"
+report_location: "reports/"
+
+# Report Contents
+include_in_report:
+  - tasks_completed
+  - tasks_in_progress
+  - tasks_blocked
+  - test_results
+  - code_coverage
+  - time_spent
+  - estimated_completion
+
+# Stakeholder Updates
+send_stakeholder_update: false  # Disable automated emails
+stakeholder_email_list: []
+
+================================================================================
+BACKUP AND RECOVERY
+================================================================================
+
+# Automatic Backups
+auto_backup_before_migration: true
+auto_backup_before_sprint: true
+backup_location: "./backups/"
+
+# Backup Retention
+backup_retention_days: 30
+critical_backup_retention_days: 90
+
+# Recovery
+auto_recovery_on_failure: true
+max_recovery_attempts: 2
+
+================================================================================
+INTEGRATION WITH EXTERNAL TOOLS
+================================================================================
+
+# Git
+git_auto_push: false  # Don't auto-push, allow manual review
+git_auto_pull: false  # Don't auto-pull, avoid conflicts
+
+# Cursor IDE
+cursor_integration: true
+cursor_auto_apply_suggestions: false  # Require manual review
+
+# CI/CD (if available)
+ci_cd_enabled: false
+ci_cd_provider: ""
+
+# Monitoring (if available)
+monitoring_enabled: false
+monitoring_provider: ""
+
+================================================================================
+CUSTOM COMMANDS
+================================================================================
+
+# Pre-Task Commands
+pre_task_commands:
+  - "docker-compose ps"  # Check services running
+  - "docker-compose logs --tail=50 backend"  # Check for recent errors
+
+# Post-Task Commands
+post_task_commands:
+  - "docker-compose restart backend"  # Restart to apply changes
+  - "docker-compose logs --tail=20 backend"  # Verify no errors
+
+# Validation Commands
+validation_commands:
+  database_health: "docker-compose exec postgres pg_isready"
+  backend_health: "curl -f http://localhost:8000/api/health"
+  frontend_health: "curl -f http://localhost:5173"
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+# Common Issues and Solutions
+common_issues:
+  database_connection_failed:
+    check: "docker-compose ps postgres"
+    solution: "docker-compose restart postgres"
+  
+  port_already_in_use:
+    check: "lsof -i :8000"
+    solution: "Kill existing process or change port"
+  
+  docker_build_failed:
+    check: "docker-compose logs backend"
+    solution: "Review logs, fix Dockerfile, rebuild"
+  
+  migration_failed:
+    check: "docker-compose exec postgres psql -U reims_user -d reims_db -c 'SELECT * FROM alembic_version'"
+    solution: "alembic downgrade -1, fix migration, alembic upgrade head"
+
+# Debug Mode
+debug_mode: false  # Set to true for verbose logging
+debug_breakpoints: []  # List of tasks to pause at for inspection
+
+================================================================================
+TASKMASTER AI ASSISTANT SETTINGS
+================================================================================
+
+# AI Model
+ai_model: "claude-3.5-sonnet"  # Or "gpt-4" if using OpenAI
+temperature: 0.3  # Lower = more deterministic
+max_tokens: 4000
+
+# AI Assistance Scope
+ai_can:
+  - analyze_task_complexity
+  - suggest_implementation_approach
+  - generate_code_snippets
+  - identify_dependencies
+  - suggest_test_cases
+  - debug_errors
+
+ai_cannot:
+  - approve_high_risk_changes
+  - deploy_to_production
+  - modify_security_settings
+  - access_production_data
+
+# AI Prompting
+use_project_context: true
+include_codebase_in_prompt: true
+max_context_tokens: 8000
+
+================================================================================
+SUCCESS CRITERIA
+================================================================================
+
+# Task-Level Success
+task_success_criteria:
+  - acceptance_criteria_met: true
+  - tests_passing: true
+  - code_reviewed: false  # Manual review optional
+  - documentation_updated: true
+
+# Sprint-Level Success
+sprint_success_criteria:
+  - all_tasks_completed: true
+  - integration_tests_passing: true
+  - definition_of_done_met: true
+  - no_critical_bugs: true
+
+# Project-Level Success
+project_success_criteria:
+  - all_sprints_completed: true
+  - accuracy_target_met: true  # 99.5%
+  - performance_target_met: true  # <30s per doc
+  - security_audit_passed: true
+  - production_ready: true
+
+================================================================================
+END OF CONFIGURATION
+================================================================================
+
+Usage:
+1. Save this file as: taskmaster_config.yaml
+2. Load into TaskMaster: taskmaster --config taskmaster_config.yaml
+3. Load Sprint PRD: taskmaster load SPRINT_01_FOUNDATION_PRD.txt
+4. Execute: taskmaster start

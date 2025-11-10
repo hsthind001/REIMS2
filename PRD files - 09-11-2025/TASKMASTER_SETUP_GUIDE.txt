@@ -1,0 +1,713 @@
+TASKMASTER SETUP AND EXECUTION GUIDE
+REIMS 2.0 Enhancement Project
+
+================================================================================
+WHAT IS TASKMASTER?
+================================================================================
+
+TaskMaster is an AI-powered task automation tool that:
+✓ Analyzes complex tasks and breaks them into subtasks
+✓ Evaluates task complexity and dependencies
+✓ Executes tasks automatically using AI (Claude/GPT)
+✓ Runs validation tests after each task
+✓ Commits successful changes to Git
+✓ Rolls back failed tasks automatically
+
+Think of TaskMaster as your AI development partner that can:
+- Read PRD files
+- Understand project structure
+- Write code following patterns
+- Test implementations
+- Manage the entire development workflow
+
+================================================================================
+PREREQUISITES
+================================================================================
+
+STEP 1: Verify TaskMaster Installation
+---
+$ taskmaster --version
+# Should show: TaskMaster v1.x.x or higher
+
+If not installed:
+$ pip install taskmaster-ai
+# Or follow installation guide at: https://taskmaster.ai/install
+
+STEP 2: Verify AI API Keys
+---
+TaskMaster needs either Claude or OpenAI API access.
+
+Check environment variables:
+$ echo $CLAUDE_API_KEY
+$ echo $OPENAI_API_KEY
+
+If not set:
+# For Claude (recommended)
+$ export CLAUDE_API_KEY="your-api-key-here"
+
+# For OpenAI (alternative)
+$ export OPENAI_API_KEY="your-api-key-here"
+
+Make permanent by adding to ~/.bashrc or ~/.zshrc:
+$ echo 'export CLAUDE_API_KEY="your-key"' >> ~/.bashrc
+$ source ~/.bashrc
+
+STEP 3: Verify REIMS2 System is Operational
+---
+Navigate to your REIMS2 directory:
+$ cd /path/to/REIMS2
+
+Check Docker containers are running:
+$ docker-compose ps
+
+Expected output:
+NAME                STATUS              PORTS
+postgres            Up                  0.0.0.0:5433->5432/tcp
+redis               Up                  0.0.0.0:6379->6379/tcp
+minio               Up                  0.0.0.0:9000->9000/tcp
+backend             Up                  0.0.0.0:8000->8000/tcp
+frontend            Up                  0.0.0.0:5173->5173/tcp
+
+If not running:
+$ docker-compose up -d
+
+Verify backend is healthy:
+$ curl http://localhost:8000/api/health
+# Should return: {"status": "healthy"}
+
+STEP 4: Download PRD Files
+---
+You should have these files in your project directory:
+- REIMS_MASTER_PRD.txt
+- SPRINT_01_FOUNDATION_PRD.txt
+- SPRINT_02_INTELLIGENCE_PRD.txt
+- TASKMASTER_CONFIG.yaml
+
+Organize them:
+$ mkdir -p taskmaster_prd
+$ mv *PRD.txt taskmaster_prd/
+$ mv TASKMASTER_CONFIG.yaml taskmaster_prd/
+
+================================================================================
+TASKMASTER INITIALIZATION
+================================================================================
+
+STEP 1: Initialize TaskMaster in Your Project
+---
+$ cd /path/to/REIMS2
+$ taskmaster init
+
+This creates .taskmaster/ directory with:
+- task_history.json (execution log)
+- context_cache/ (AI context storage)
+- backups/ (automatic backups)
+
+STEP 2: Configure TaskMaster
+---
+$ taskmaster config load taskmaster_prd/TASKMASTER_CONFIG.yaml
+
+Verify configuration:
+$ taskmaster config show
+
+Expected output:
+✓ Project: REIMS 2.0 World-Class Enhancement
+✓ Execution mode: sequential
+✓ Auto-validate: enabled
+✓ Auto-commit: enabled
+✓ AI model: claude-3.5-sonnet
+
+STEP 3: Load Project Context
+---
+TaskMaster needs to understand your codebase.
+
+$ taskmaster context scan
+
+This will:
+- Analyze directory structure
+- Index Python files
+- Index TypeScript files
+- Identify patterns and conventions
+- Build AI context for better code generation
+
+Takes 2-5 minutes. Output:
+✓ Scanned 127 backend files
+✓ Scanned 43 frontend files
+✓ Identified 24 database models
+✓ Found 18 API endpoints
+✓ Detected coding patterns
+✓ Context ready for AI assistance
+
+================================================================================
+EXECUTING SPRINT 1: FOUNDATION
+================================================================================
+
+STEP 1: Load Sprint 1 PRD
+---
+$ taskmaster prd load taskmaster_prd/SPRINT_01_FOUNDATION_PRD.txt
+
+TaskMaster will:
+- Parse the PRD
+- Extract all tasks (S1-01 through S1-14)
+- Analyze dependencies
+- Evaluate complexity
+- Build execution plan
+
+Expected output:
+✓ Loaded Sprint 1: Foundation - Field-Level Confidence & Metadata
+✓ Found 14 tasks
+✓ Total story points: 40
+✓ Estimated duration: 2 weeks
+✓ Dependencies resolved
+✓ Execution plan ready
+
+STEP 2: Review Execution Plan
+---
+$ taskmaster plan show
+
+Output shows task order:
+Task S1-01: Create Database Schema [MEDIUM] [3h] [P0]
+  Dependencies: None
+  Subtasks: 7
+  ├─ Get Alembic revision ID
+  ├─ Create migration file
+  ├─ Run migration
+  ├─ Verify table exists
+  ├─ Test insert
+  ├─ Test rollback
+  └─ Re-run upgrade
+
+Task S1-02: Create SQLAlchemy Model [LOW] [2h] [P0]
+  Dependencies: S1-01
+  Subtasks: 5
+  ...
+
+[Shows all 14 tasks with dependencies visualized]
+
+STEP 3: Start Automated Execution
+---
+IMPORTANT: Make sure you're on a clean git branch!
+
+$ git checkout -b sprint/01-foundation
+$ git status  # Should show: "nothing to commit, working tree clean"
+
+Start TaskMaster:
+$ taskmaster start
+
+OR for interactive mode (approve each task before execution):
+$ taskmaster start --interactive
+
+WHAT HAPPENS NEXT:
+
+TaskMaster will execute tasks automatically:
+
+[Task S1-01: Create Database Schema]
+├─ Analyzing task...
+├─ Breaking into 7 subtasks...
+├─ Subtask 1: Get Alembic revision ID
+│  ├─ Executing: ls backend/alembic/versions/
+│  ├─ Found revision: 9a8b7c6d5e4f
+│  └─ ✓ Complete
+├─ Subtask 2: Create migration file
+│  ├─ Generating migration code...
+│  ├─ Creating: backend/alembic/versions/001_add_extraction_metadata.py
+│  ├─ Writing migration content...
+│  └─ ✓ Complete
+├─ Subtask 3: Run migration
+│  ├─ Executing: docker-compose exec backend alembic upgrade head
+│  ├─ Output: INFO [alembic.runtime.migration] Running upgrade...
+│  └─ ✓ Complete
+├─ Subtask 4: Verify table exists
+│  ├─ Executing: docker-compose exec postgres psql -U reims_user...
+│  ├─ Output: extraction_field_metadata exists
+│  └─ ✓ Complete
+├─ Subtask 5: Test insert
+│  ├─ Creating test record...
+│  └─ ✓ Complete
+├─ Subtask 6: Test rollback
+│  ├─ Executing: alembic downgrade -1
+│  └─ ✓ Complete
+├─ Subtask 7: Re-run upgrade
+│  ├─ Executing: alembic upgrade head
+│  └─ ✓ Complete
+├─ Running validation tests...
+├─ ✓ All acceptance criteria met
+├─ Creating git commit...
+├─ ✓ Committed: feat(database): add extraction_field_metadata table
+└─ ✓ Task S1-01 Complete [Actual: 2.8h]
+
+[Task S1-02: Create SQLAlchemy Model]
+├─ Dependencies satisfied: S1-01 ✓
+├─ Analyzing task...
+...
+
+This continues for all 14 tasks.
+
+STEP 4: Monitor Progress
+---
+While TaskMaster runs, you can monitor in another terminal:
+
+$ taskmaster status
+
+Output:
+Sprint: 1 - Foundation
+Progress: 35% (5/14 tasks complete)
+Current: S1-06 - Update Camelot Extractor
+Estimated completion: 3.2 hours
+Status: ✓ Healthy
+
+Recently completed:
+✓ S1-01 - Create Database Schema [2.8h]
+✓ S1-02 - Create SQLAlchemy Model [1.9h]
+✓ S1-03 - Create Base Extractor [2.1h]
+✓ S1-04 - Update PyMuPDF Extractor [3.2h]
+✓ S1-05 - Update PDFPlumber Extractor [2.7h]
+
+Current subtask:
+├─ Implementing calculate_confidence() method... [75%]
+
+View detailed logs:
+$ taskmaster logs --tail 50
+
+STEP 5: Handling Issues
+---
+If TaskMaster encounters an error:
+
+[Task S1-06: Update Camelot Extractor]
+├─ Subtask 3: Implement calculate_confidence()
+│  ├─ Error: SyntaxError in camelot_extractor.py line 42
+│  ├─ Attempting fix... (Attempt 1/3)
+│  ├─ Error persists: SyntaxError in camelot_extractor.py line 42
+│  ├─ Attempting fix... (Attempt 2/3)
+│  └─ ✓ Fixed! Syntax error resolved
+├─ Running tests...
+└─ ✓ Complete
+
+If TaskMaster can't fix after 3 attempts:
+
+[Task S1-09: Integrate Metadata into Orchestrator]
+├─ Subtask 4: Update transaction handling
+│  ├─ Error: Complex integration issue detected
+│  ├─ Attempted fix 3 times, unsuccessful
+│  ├─ Rolling back changes...
+│  └─ ⚠ Task requires manual intervention
+
+TaskMaster pauses and provides context:
+─────────────────────────────────────────
+⚠ MANUAL INTERVENTION REQUIRED
+─────────────────────────────────────────
+Task: S1-09 - Integrate Metadata into Orchestrator
+Issue: Integration complexity exceeds AI capability
+File: backend/app/services/extraction_orchestrator.py
+Error: Transaction handling conflicts with existing code
+
+Suggested actions:
+1. Review file: backend/app/services/extraction_orchestrator.py
+2. Check logs: .taskmaster/task_s1-09.log
+3. Compare with backup: .taskmaster/backups/orchestrator_pre_s1-09.py
+4. Fix manually using guidance in PRD
+5. Resume: taskmaster resume S1-09
+
+Context preserved. Resume when ready.
+─────────────────────────────────────────
+
+To resume after manual fix:
+$ git add backend/app/services/extraction_orchestrator.py
+$ git commit -m "fix(extraction): resolve transaction handling in orchestrator"
+$ taskmaster resume S1-09
+
+TaskMaster will:
+- Verify your fix
+- Run tests
+- Continue to next task
+
+STEP 6: Sprint Completion
+---
+When all tasks complete:
+
+═══════════════════════════════════════════════════
+✓ SPRINT 1 COMPLETE
+═══════════════════════════════════════════════════
+Tasks completed: 14/14 (100%)
+Time spent: 38.7 hours (est. 40 hours)
+Tests passing: 127/127 (100%)
+Code coverage: 84%
+
+Definition of Done:
+✓ All database migrations successful
+✓ All models created and tested
+✓ All extractors return ExtractionResult
+✓ ConfidenceEngine operational
+✓ Metadata captured for 100% of extractions
+✓ Frontend displays confidence indicators
+✓ API endpoints functional
+✓ Unit tests pass (84% coverage)
+✓ Integration tests pass
+✓ No regression detected
+
+Git commits: 18
+Branch: sprint/01-foundation
+Ready to merge to main
+
+Next steps:
+1. Review sprint/01-foundation branch
+2. Test manually (optional)
+3. Merge to main: git merge sprint/01-foundation
+4. Load Sprint 2: taskmaster prd load SPRINT_02_INTELLIGENCE_PRD.txt
+═══════════════════════════════════════════════════
+
+================================================================================
+EXECUTING REMAINING SPRINTS (2-8)
+================================================================================
+
+After Sprint 1 completes, continue with Sprint 2:
+
+STEP 1: Merge Sprint 1 to Main
+---
+$ git checkout main
+$ git merge sprint/01-foundation
+$ git push origin main
+
+STEP 2: Start Sprint 2
+---
+$ git checkout -b sprint/02-intelligence
+$ taskmaster prd load taskmaster_prd/SPRINT_02_INTELLIGENCE_PRD.txt
+$ taskmaster start
+
+IMPORTANT FOR SPRINT 2:
+- Ensure 50GB disk space free (AI models are large)
+- First run will download LayoutLMv3 (~5GB)
+- Takes 20-30 minutes to download models
+- GPU recommended but not required
+
+STEP 3: Continue Through Sprint 8
+---
+Repeat for each sprint:
+- Sprint 3: Alerts (load SPRINT_03_ALERTS_PRD.txt)
+- Sprint 4: Validation
+- Sprint 5: Learning
+- Sprint 6: Resilience
+- Sprint 7: Security
+- Sprint 8: Integration
+
+Note: Sprints 3-8 PRD files will be provided or can be generated based on the detailed plan in the analysis document.
+
+================================================================================
+INTERACTIVE MODE (RECOMMENDED FOR FIRST TIME)
+================================================================================
+
+If you want more control, use interactive mode:
+
+$ taskmaster start --interactive
+
+In interactive mode, TaskMaster will:
+1. Show task details
+2. Show proposed implementation
+3. Wait for your approval
+4. Execute after approval
+5. Show results
+6. Wait for validation approval
+
+Example interaction:
+
+═══════════════════════════════════════════════════
+Task S1-01: Create Database Schema
+Complexity: MEDIUM | Duration: 3h | Priority: P0
+Dependencies: None
+
+Proposed Implementation:
+────────────────────────────────────────────────────
+Will create Alembic migration file:
+backend/alembic/versions/001_add_extraction_metadata.py
+
+Schema changes:
++ CREATE TABLE extraction_field_metadata (...)
++ CREATE INDEX idx_efm_document (...)
++ CREATE INDEX idx_efm_confidence (...)
+
+Risk Assessment: LOW
+- Database is backed up ✓
+- Rollback script included ✓
+- No data loss risk ✓
+
+Proceed with this task? [Y/n/s/q]
+(Y=Yes, n=No/skip, s=Show details, q=Quit)
+────────────────────────────────────────────────────
+> y
+
+Executing task...
+[Progress shown as before]
+✓ Task complete
+
+Review changes? [Y/n]
+> y
+
+Files changed:
+  M backend/alembic/versions/001_add_extraction_metadata.py
+  M backend/app/models/extraction_metadata.py
+
+View diff? [Y/n]
+> y
+
+[Shows git diff]
+
+Accept and commit? [Y/n/r]
+(Y=Accept, n=Reject/rollback, r=Retry)
+> y
+
+✓ Committed: feat(database): add extraction_field_metadata table
+
+Continue to next task? [Y/n]
+> y
+
+================================================================================
+USEFUL TASKMASTER COMMANDS
+================================================================================
+
+# View current status
+$ taskmaster status
+
+# View detailed execution log
+$ taskmaster logs
+
+# View specific task log
+$ taskmaster logs S1-05
+
+# Pause execution
+$ taskmaster pause
+
+# Resume execution
+$ taskmaster resume
+
+# Skip a task (if optional)
+$ taskmaster skip S1-14
+
+# Retry a failed task
+$ taskmaster retry S1-09
+
+# Show completed tasks
+$ taskmaster history
+
+# Generate sprint report
+$ taskmaster report sprint-1
+
+# Reset TaskMaster state (careful!)
+$ taskmaster reset --confirm
+
+# Backup current state
+$ taskmaster backup create "before-sprint-2"
+
+# Restore from backup
+$ taskmaster backup restore "before-sprint-2"
+
+# Check project health
+$ taskmaster health
+
+# Validate environment
+$ taskmaster validate-env
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ISSUE: TaskMaster not starting
+---
+Check:
+$ taskmaster validate-env
+
+Common causes:
+1. Docker not running: docker-compose up -d
+2. API key missing: echo $CLAUDE_API_KEY
+3. Port conflicts: lsof -i :8000
+
+ISSUE: Tasks failing repeatedly
+---
+Enable debug mode:
+$ taskmaster config set debug_mode true
+$ taskmaster logs --debug
+
+This shows AI prompts and responses for debugging.
+
+ISSUE: Tests not passing
+---
+Run tests manually:
+$ docker-compose exec backend pytest -v
+
+Fix failing tests, then:
+$ taskmaster resume
+
+ISSUE: Git conflicts
+---
+TaskMaster detects uncommitted changes:
+$ git status
+$ git stash  # Or commit changes
+$ taskmaster resume
+
+ISSUE: Slow execution
+---
+Check resource usage:
+$ docker stats
+
+Increase Docker memory:
+1. Docker Desktop → Settings → Resources
+2. Increase memory to 8GB minimum
+3. Restart Docker
+
+ISSUE: Can't reach external services
+---
+Check network:
+$ taskmaster validate-network
+
+Common fixes:
+- Check internet connection
+- Verify proxy settings
+- Check firewall rules
+
+ISSUE: Task seems stuck
+---
+In another terminal:
+$ taskmaster status
+
+If truly stuck (>2 hours no progress):
+$ taskmaster pause
+$ taskmaster logs --tail 100
+# Review logs, identify issue
+$ taskmaster resume
+
+Or force restart:
+$ taskmaster stop
+$ taskmaster start --resume-from S1-XX
+
+================================================================================
+BEST PRACTICES
+================================================================================
+
+1. ALWAYS start on clean git branch
+   $ git status  # Should be clean
+   $ git checkout -b sprint/XX-name
+
+2. REVIEW before starting
+   $ taskmaster plan show
+   $ taskmaster validate-env
+
+3. MONITOR progress
+   Keep terminal open showing taskmaster status
+
+4. TEST manually after sprint
+   Even though TaskMaster runs tests, manual testing is valuable
+
+5. BACKUP before major changes
+   $ taskmaster backup create "before-sprint-X"
+
+6. COMMIT intermediate work
+   TaskMaster auto-commits, but manual commits are fine too
+
+7. USE interactive mode first time
+   $ taskmaster start --interactive
+   Get comfortable with TaskMaster behavior
+
+8. CHECK Docker resources
+   $ docker stats
+   Ensure containers have enough memory
+
+9. KEEP logs
+   TaskMaster logs are invaluable for debugging
+
+10. ASK for help
+    $ taskmaster help <command>
+
+================================================================================
+EXPECTED TIMELINE
+================================================================================
+
+With TaskMaster automation:
+
+Sprint 1 (Foundation): 2-3 days automated + 1 day review = 3-4 days
+Sprint 2 (AI/ML): 3-4 days automated + 1 day review = 4-5 days
+Sprint 3 (Alerts): 2-3 days automated + 1 day review = 3-4 days
+Sprint 4 (Validation): 2 days automated + 1 day review = 3 days
+Sprint 5 (Learning): 3 days automated + 1 day review = 4 days
+Sprint 6 (Resilience): 2 days automated + 1 day review = 3 days
+Sprint 7 (Security): 3 days automated + 1 day review = 4 days
+Sprint 8 (Integration): 3 days automated + 1 day review = 4 days
+
+Total: 28-32 days (4-5 weeks) with TaskMaster automation
+vs. 16 weeks (4 months) manual development
+
+70% time savings with TaskMaster!
+
+================================================================================
+SUCCESS METRICS
+================================================================================
+
+After all sprints complete, verify:
+
+$ taskmaster metrics show
+
+Expected metrics:
+✓ Extraction accuracy: 99.5%+ (target met)
+✓ Processing time: <30s per document (target met)
+✓ Test coverage: 85%+ (target met)
+✓ Zero data loss: ✓
+✓ All features operational: ✓
+
+Run full validation:
+$ taskmaster validate-complete
+
+This runs:
+- All unit tests
+- All integration tests
+- Performance benchmarks
+- Security scan
+- Regression tests
+
+If all pass:
+═══════════════════════════════════════════════════
+✓ REIMS 2.0 IS NOW WORLD-CLASS
+═══════════════════════════════════════════════════
+
+================================================================================
+NEXT STEPS AFTER COMPLETION
+================================================================================
+
+1. Deploy to production:
+   $ taskmaster deploy --environment production
+
+2. Generate documentation:
+   $ taskmaster docs generate
+
+3. Create final report:
+   $ taskmaster report final
+
+4. Archive project:
+   $ taskmaster archive
+
+5. Celebrate! 🎉
+   You've transformed REIMS into a world-class system using 100% open-source tools and AI automation!
+
+================================================================================
+SUPPORT
+================================================================================
+
+TaskMaster Documentation: https://taskmaster.ai/docs
+REIMS Project Docs: ./docs/
+Community Forum: https://taskmaster.ai/community
+
+For issues:
+1. Check TaskMaster logs: taskmaster logs --debug
+2. Check PRD file for guidance
+3. Review this guide
+4. Post in community forum
+
+================================================================================
+END OF SETUP GUIDE
+================================================================================
+
+You're now ready to transform REIMS 2.0 into a world-class system using TaskMaster automation!
+
+Start with:
+$ cd /path/to/REIMS2
+$ taskmaster init
+$ taskmaster prd load taskmaster_prd/SPRINT_01_FOUNDATION_PRD.txt
+$ taskmaster start --interactive
+
+Good luck! 🚀

@@ -1,0 +1,807 @@
+SPRINT 2: INTELLIGENCE - AI/ML EXTRACTION LAYER
+PRODUCT REQUIREMENTS DOCUMENT FOR TASKMASTER
+Version: 1.0
+Sprint Duration: Weeks 3-4
+Story Points: 40
+
+================================================================================
+SPRINT OVERVIEW
+================================================================================
+
+GOAL:
+Integrate AI/ML models (LayoutLMv3, EasyOCR) to achieve 99%+ extraction accuracy. Implement ensemble voting to combine results from rule-based and AI engines.
+
+BUSINESS VALUE:
+- Achieve 97%+ accuracy (from 95% baseline)
+- Handle complex document layouts that rule engines miss
+- Reduce human review time by 40%
+- Establish foundation for active learning (Sprint 5)
+
+DEPENDENCIES:
+- Sprint 1 MUST be complete (requires field-level metadata)
+- extraction_field_metadata table exists
+- BaseExtractor class implemented
+- All existing engines updated (PyMuPDF, PDFPlumber, Camelot)
+
+RISK LEVEL: MEDIUM-HIGH
+- AI models are new to the stack
+- Model downloads are large (~5GB)
+- GPU availability affects performance
+- Integration complexity is high
+
+================================================================================
+TASK BREAKDOWN
+================================================================================
+
+TASK S2-01: INSTALL AND CONFIGURE LAYOUTLMV3
+Priority: P0
+Complexity: HIGH
+Dependencies: Sprint 1 complete
+Estimated Time: 4 hours
+Risk: MEDIUM
+
+DESCRIPTION:
+Download and configure Microsoft's LayoutLMv3 model for document understanding.
+
+ACCEPTANCE CRITERIA:
+☐ transformers, torch, pillow installed in requirements.txt
+☐ LayoutLMv3 model downloaded and cached
+☐ Model loads without errors
+☐ GPU detection working (falls back to CPU)
+☐ Test inference on sample PDF successful
+☐ Processing time <30 seconds per page
+
+IMPLEMENTATION DETAILS:
+
+Files to Create/Modify:
+1. backend/requirements.txt - Add dependencies
+2. backend/app/services/extraction/ai_models/__init__.py
+3. backend/app/services/extraction/ai_models/layoutlm_config.py
+4. backend/scripts/download_models.py
+5. docker-compose.yml - Add model cache volume
+
+Dependencies to Add:
+```
+transformers==4.36.0
+torch==2.1.0
+torchvision==0.16.0
+pillow==10.1.0
+pdf2image==1.16.3
+pytesseract==0.3.10
+```
+
+Configuration File: backend/app/services/extraction/ai_models/layoutlm_config.py
+```python
+import torch
+
+MODEL_NAME = "microsoft/layoutlmv3-base"
+CACHE_DIR = "/app/models/cache"
+MAX_TOKENS = 512
+BATCH_SIZE = 4
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Performance settings
+if DEVICE == "cpu":
+    BATCH_SIZE = 2  # Reduce batch size for CPU
+    MAX_TOKENS = 256  # Reduce context window for CPU
+```
+
+Model Download Script: backend/scripts/download_models.py
+```python
+#!/usr/bin/env python3
+"""Download and cache AI models on first run"""
+import os
+from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification
+from app.services.extraction.ai_models.layoutlm_config import MODEL_NAME, CACHE_DIR
+
+def download_layoutlm():
+    print(f"Downloading LayoutLMv3 model: {MODEL_NAME}")
+    print(f"Cache directory: {CACHE_DIR}")
+    
+    # Create cache directory
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    
+    # Download processor and model
+    processor = LayoutLMv3Processor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+    model = LayoutLMv3ForTokenClassification.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+    
+    print("✓ LayoutLMv3 downloaded successfully")
+    print(f"Model size: ~1.2GB")
+    
+    # Test loading
+    print("Testing model load...")
+    model.eval()
+    print("✓ Model loads correctly")
+
+if __name__ == "__main__":
+    download_layoutlm()
+```
+
+Docker Compose Update:
+```yaml
+services:
+  backend:
+    volumes:
+      - ./backend/models:/app/models  # ADD THIS LINE
+    environment:
+      - TRANSFORMERS_CACHE=/app/models/cache
+```
+
+SUBTASKS:
+1. Update backend/requirements.txt with AI dependencies
+2. Create ai_models directory structure
+3. Create layoutlm_config.py with settings
+4. Create download_models.py script
+5. Update docker-compose.yml with volume mount
+6. Rebuild backend container: docker-compose build backend
+7. Run download script: docker-compose exec backend python scripts/download_models.py
+8. Verify model loads: docker-compose exec backend python -c "from transformers import LayoutLMv3Processor; print('✓ OK')"
+
+VALIDATION:
+```bash
+# Test model availability
+docker-compose exec backend python -c "
+from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification
+from app.services.extraction.ai_models.layoutlm_config import MODEL_NAME, CACHE_DIR
+processor = LayoutLMv3Processor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+model = LayoutLMv3ForTokenClassification.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+print('✓ LayoutLMv3 loaded successfully')
+print(f'Device: {next(model.parameters()).device}')
+"
+```
+
+---
+
+TASK S2-02: CREATE LAYOUTLM EXTRACTOR SERVICE
+Priority: P0
+Complexity: HIGH
+Dependencies: S2-01
+Estimated Time: 6 hours
+Risk: HIGH
+
+DESCRIPTION:
+Create extraction engine using LayoutLMv3 for document understanding.
+
+ACCEPTANCE CRITERIA:
+☐ LayoutLMExtractor class inherits from BaseExtractor
+☐ Converts PDF pages to images
+☐ Runs LayoutLMv3 inference
+☐ Extracts key-value pairs
+☐ Returns ExtractionResult with confidence
+☐ Handles multi-page documents
+☐ Processing time <30 seconds per document
+
+IMPLEMENTATION DETAILS:
+
+Files to Create:
+1. backend/app/services/extraction/pdf_to_image.py
+2. backend/app/services/extraction/layoutlm_extractor.py
+3. backend/app/services/extraction/layoutlm_prompts.py
+
+PDF to Image Converter: pdf_to_image.py
+```python
+from pdf2image import convert_from_path
+from PIL import Image, ImageEnhance
+from typing import List
+import numpy as np
+
+def convert_pdf_to_images(pdf_path: str, dpi: int = 200) -> List[Image.Image]:
+    """Convert PDF pages to PIL Images"""
+    images = convert_from_path(pdf_path, dpi=dpi)
+    return [preprocess_image(img) for img in images]
+
+def preprocess_image(image: Image.Image) -> Image.Image:
+    """Preprocess image for better OCR"""
+    # Convert to RGB
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Resize if too large
+    max_size = 2000
+    if max(image.size) > max_size:
+        ratio = max_size / max(image.size)
+        new_size = (int(image.width * ratio), int(image.height * ratio))
+        image = image.resize(new_size, Image.LANCZOS)
+    
+    # Enhance contrast
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(1.2)
+    
+    return image
+```
+
+LayoutLM Extractor: layoutlm_extractor.py
+```python
+from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification
+import torch
+from typing import Dict, Any
+from app.services.extraction.base_extractor import BaseExtractor, ExtractionResult
+from app.services.extraction.ai_models.layoutlm_config import MODEL_NAME, CACHE_DIR, DEVICE
+from app.services.extraction.pdf_to_image import convert_pdf_to_images
+import time
+
+class LayoutLMExtractor(BaseExtractor):
+    """AI-powered document understanding using LayoutLMv3"""
+    
+    def __init__(self):
+        self.processor = None
+        self.model = None
+    
+    def _load_model(self):
+        """Lazy load model (only when first used)"""
+        if self.model is None:
+            self.processor = LayoutLMv3Processor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+            self.model = LayoutLMv3ForTokenClassification.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+            self.model.to(DEVICE)
+            self.model.eval()
+    
+    def extract(self, pdf_path: str, doc_type: str) -> ExtractionResult:
+        """Extract using LayoutLMv3"""
+        start_time = time.time()
+        self._load_model()
+        
+        try:
+            # Convert PDF to images
+            images = convert_pdf_to_images(pdf_path)
+            
+            # Run inference on each page
+            all_entities = []
+            for i, image in enumerate(images):
+                encoding = self.processor(image, return_tensors="pt")
+                encoding = {k: v.to(DEVICE) for k, v in encoding.items()}
+                
+                with torch.no_grad():
+                    outputs = self.model(**encoding)
+                
+                # Extract entities from outputs
+                entities = self._extract_entities(outputs, encoding)
+                all_entities.extend(entities)
+            
+            # Convert entities to structured data
+            extracted_data = self._entities_to_fields(all_entities, doc_type)
+            
+            # Calculate confidence
+            confidence_scores = self.calculate_confidence(extracted_data)
+            
+            processing_time = time.time() - start_time
+            metadata = {
+                'processing_time_ms': round(processing_time * 1000, 2),
+                'page_count': len(images),
+                'entities_found': len(all_entities),
+                'model': MODEL_NAME,
+                'device': DEVICE
+            }
+            
+            return ExtractionResult(
+                data=extracted_data,
+                confidence=confidence_scores,
+                engine='layoutlm',
+                metadata=metadata,
+                raw_output=all_entities
+            )
+        
+        except Exception as e:
+            return ExtractionResult(
+                data={},
+                confidence={},
+                engine='layoutlm',
+                metadata={'error': str(e)},
+                raw_output=None
+            )
+    
+    def calculate_confidence(self, extraction_data: dict) -> Dict[str, float]:
+        """Calculate confidence from model outputs"""
+        # Base confidence for AI model is high (0.85)
+        confidence = {}
+        for field_name, value in extraction_data.items():
+            if value is None:
+                confidence[field_name] = 0.0
+            else:
+                # LayoutLM base confidence
+                confidence[field_name] = 0.85
+                
+                # Boost if value looks valid
+                if self._is_valid_number(str(value)):
+                    confidence[field_name] += 0.10
+        
+        return confidence
+    
+    def _extract_entities(self, outputs, encoding):
+        """Extract entities from model outputs"""
+        # TODO: TaskMaster should implement entity extraction logic
+        # This involves processing model's token classifications
+        pass
+    
+    def _entities_to_fields(self, entities, doc_type):
+        """Convert entities to structured field data"""
+        # TODO: TaskMaster should implement field mapping logic
+        pass
+```
+
+SUBTASKS:
+1. Create pdf_to_image.py with conversion utilities
+2. Create layoutlm_extractor.py with LayoutLMExtractor class
+3. Implement _extract_entities() method
+4. Implement _entities_to_fields() method
+5. Create layoutlm_prompts.py with field templates
+6. Test on sample PDF: /mnt/project/ESP_2023_Balance_Sheet.pdf
+7. Measure processing time and confidence scores
+8. Write unit tests
+
+VALIDATION:
+```python
+from app.services.extraction.layoutlm_extractor import LayoutLMExtractor
+
+extractor = LayoutLMExtractor()
+result = extractor.extract('/mnt/project/ESP_2023_Balance_Sheet.pdf', 'balance_sheet')
+
+assert result.engine == 'layoutlm'
+assert len(result.data) > 0
+print(f"✓ Extracted {len(result.data)} fields")
+print(f"✓ Avg confidence: {sum(result.confidence.values())/len(result.confidence):.2%}")
+print(f"✓ Processing time: {result.metadata['processing_time_ms']}ms")
+```
+
+---
+
+TASK S2-03: INSTALL AND CONFIGURE EASYOCR
+Priority: P1
+Complexity: MEDIUM
+Dependencies: S2-01
+Estimated Time: 3 hours
+Risk: MEDIUM
+
+DESCRIPTION:
+Add EasyOCR as enhanced OCR fallback for scanned documents.
+
+ACCEPTANCE CRITERIA:
+☐ easyocr and opencv-python installed
+☐ EasyOCR reader initialized with English language
+☐ Image preprocessing pipeline implemented
+☐ GPU acceleration working (with CPU fallback)
+☐ Test on scanned document successful
+
+IMPLEMENTATION:
+(Similar pattern to S2-01, S2-02 but for EasyOCR)
+
+Add to requirements.txt:
+```
+easyocr==1.7.0
+opencv-python==4.8.1
+```
+
+Create: backend/app/services/extraction/easyocr_extractor.py
+
+---
+
+TASK S2-04: CREATE ENSEMBLE VOTING MECHANISM
+Priority: P1
+Complexity: HIGH
+Dependencies: S2-02, S2-03
+Estimated Time: 5 hours
+Risk: MEDIUM
+
+DESCRIPTION:
+Implement ensemble voting to combine results from all extraction engines (rule-based + AI).
+
+ACCEPTANCE CRITERIA:
+☐ EnsembleVoting class created
+☐ combine_results() merges all engine outputs
+☐ resolve_conflicts() handles disagreements
+☐ Weighted voting implemented (AI engines get higher weight)
+☐ Numeric normalization working
+☐ Unit tests pass
+
+IMPLEMENTATION:
+
+File to Create: backend/app/services/ensemble_voting.py
+
+```python
+from typing import List, Dict, Any, Tuple
+from app.services.extraction.base_extractor import ExtractionResult
+
+class EnsembleVoting:
+    """Combine results from multiple extraction engines"""
+    
+    ENGINE_WEIGHTS = {
+        'layoutlm': 0.35,    # AI model
+        'easyocr': 0.30,     # Enhanced OCR
+        'pdfplumber': 0.20,  # Table detection
+        'camelot': 0.10,     # Advanced tables
+        'pymupdf': 0.05,     # Basic extraction
+    }
+    
+    def combine_results(
+        self, 
+        engine_results: List[ExtractionResult], 
+        doc_type: str
+    ) -> Dict[str, Any]:
+        """
+        Combine results from all engines using weighted voting.
+        
+        Returns:
+            {
+                'data': {...},  # Final merged data
+                'metadata': {...},  # Ensemble metadata
+                'conflicts': [...]  # List of conflicts detected
+            }
+        """
+        all_fields = self._get_all_fields(engine_results)
+        final_data = {}
+        conflicts = []
+        
+        for field in all_fields:
+            # Get all values for this field
+            values = self._get_field_values(field, engine_results)
+            
+            if len(values) == 0:
+                continue
+            
+            # Check for conflicts
+            if self._has_conflict(values):
+                conflict_info = self._analyze_conflict(field, values)
+                conflicts.append(conflict_info)
+            
+            # Resolve to single value
+            final_value, resolution_method = self._resolve_field(field, values, engine_results)
+            final_data[field] = final_value
+        
+        return {
+            'data': final_data,
+            'metadata': {
+                'engines_used': [r.engine for r in engine_results],
+                'total_conflicts': len(conflicts),
+                'resolution_methods': self._count_resolutions(final_data)
+            },
+            'conflicts': conflicts
+        }
+    
+    def _resolve_field(
+        self, 
+        field: str, 
+        values: Dict[str, Any], 
+        engine_results: List[ExtractionResult]
+    ) -> Tuple[Any, str]:
+        """Resolve field value using weighted voting"""
+        
+        # Strategy 1: If all agree, use consensus
+        unique_values = set(str(v) for v in values.values())
+        if len(unique_values) == 1:
+            return list(values.values())[0], 'consensus'
+        
+        # Strategy 2: Weighted voting
+        weighted_votes = {}
+        for engine, value in values.items():
+            weight = self.ENGINE_WEIGHTS.get(engine, 0.05)
+            value_str = str(value)
+            if value_str not in weighted_votes:
+                weighted_votes[value_str] = 0
+            weighted_votes[value_str] += weight
+        
+        # Winner = highest weighted value
+        winner = max(weighted_votes, key=weighted_votes.get)
+        return eval(winner), 'weighted_vote'
+    
+    def _has_conflict(self, values: Dict[str, Any]) -> bool:
+        """Check if engines extracted different values"""
+        unique = set(str(v) for v in values.values())
+        return len(unique) > 1
+    
+    def _analyze_conflict(self, field: str, values: Dict[str, Any]) -> Dict:
+        """Analyze conflict severity"""
+        numeric_values = []
+        for v in values.values():
+            try:
+                cleaned = str(v).replace(',', '').replace('$', '')
+                numeric_values.append(float(cleaned))
+            except:
+                pass
+        
+        deviation = 0.0
+        if len(numeric_values) >= 2:
+            min_v = min(numeric_values)
+            max_v = max(numeric_values)
+            if min_v > 0:
+                deviation = abs((max_v - min_v) / min_v) * 100
+        
+        return {
+            'field': field,
+            'values': values,
+            'deviation_pct': deviation,
+            'severity': 'high' if deviation > 10 else 'medium'
+        }
+```
+
+SUBTASKS:
+1. Create ensemble_voting.py
+2. Implement combine_results()
+3. Implement _resolve_field()
+4. Implement conflict detection
+5. Create numeric_normalizer.py utility
+6. Write unit tests
+7. Test with mock engine results
+
+---
+
+TASK S2-05: INTEGRATE AI ENGINES INTO ORCHESTRATOR
+Priority: P0
+Complexity: HIGH
+Dependencies: S2-02, S2-03, S2-04
+Estimated Time: 5 hours
+Risk: HIGH
+
+DESCRIPTION:
+Update extraction orchestrator to include AI engines and use ensemble voting.
+
+ACCEPTANCE CRITERIA:
+☐ Orchestrator runs all engines in parallel (ThreadPoolExecutor)
+☐ AI engines (LayoutLM, EasyOCR) included in engine list
+☐ EnsembleVoting combines all results
+☐ Final result uses ensemble output
+☐ Processing time improved (parallel execution)
+☐ Metadata tracks which engines were used
+☐ Integration tests pass
+
+IMPLEMENTATION:
+
+File to Modify: backend/app/services/extraction_orchestrator.py
+
+Key Changes:
+1. Import new extractors:
+   ```python
+   from app.services.extraction.layoutlm_extractor import LayoutLMExtractor
+   from app.services.extraction.easyocr_extractor import EasyOCRExtractor
+   from app.services.ensemble_voting import EnsembleVoting
+   ```
+
+2. Add to engine list:
+   ```python
+   self.engines = [
+       PyMuPDFExtractor(),
+       PDFPlumberExtractor(),
+       CamelotExtractor(),
+       LayoutLMExtractor(),  # NEW
+       EasyOCRExtractor(),   # NEW
+   ]
+   ```
+
+3. Parallel execution:
+   ```python
+   from concurrent.futures import ThreadPoolExecutor, as_completed
+   
+   def extract_parallel(self, pdf_path, doc_type):
+       results = []
+       
+       with ThreadPoolExecutor(max_workers=5) as executor:
+           futures = {
+               executor.submit(engine.extract, pdf_path, doc_type): engine
+               for engine in self.engines
+           }
+           
+           for future in as_completed(futures, timeout=120):
+               try:
+                   result = future.result()
+                   results.append(result)
+               except Exception as e:
+                   logger.error(f"Engine failed: {e}")
+       
+       return results
+   ```
+
+4. Ensemble voting:
+   ```python
+   # After all engines complete
+   ensemble = EnsembleVoting()
+   final_result = ensemble.combine_results(engine_results, doc_type)
+   ```
+
+SUBTASKS:
+1. Import new extractors
+2. Add to engine list
+3. Implement parallel execution with ThreadPoolExecutor
+4. Add timeout handling (120 seconds)
+5. Integrate EnsembleVoting
+6. Update metadata storage to save ensemble results
+7. Test on sample documents
+8. Measure performance improvement
+
+VALIDATION:
+- Processing time should decrease (parallel execution)
+- Accuracy should increase (ensemble voting)
+- Test: docker-compose exec backend python -m pytest tests/test_extraction_orchestrator.py -v
+
+---
+
+TASK S2-06: IMPLEMENT MODEL RESULT CACHING
+Priority: P2
+Complexity: MEDIUM
+Dependencies: S2-05
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Cache AI model results in Redis to avoid re-processing same documents.
+
+ACCEPTANCE CRITERIA:
+☐ ExtractionCache service created
+☐ Uses Redis for caching
+☐ Cache key is PDF SHA256 hash
+☐ TTL set to 30 days
+☐ Cache hit rate >70% for repeated documents
+☐ Invalidation works
+
+IMPLEMENTATION:
+
+File to Create: backend/app/services/extraction_cache.py
+
+```python
+import hashlib
+import json
+import redis
+from typing import Optional
+from app.services.extraction.base_extractor import ExtractionResult
+
+class ExtractionCache:
+    """Cache extraction results to avoid reprocessing"""
+    
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+        self.ttl_seconds = 30 * 24 * 60 * 60  # 30 days
+    
+    def get_pdf_hash(self, pdf_path: str) -> str:
+        """Calculate SHA256 hash of PDF content"""
+        sha256 = hashlib.sha256()
+        with open(pdf_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    
+    def get_cached_result(self, pdf_hash: str) -> Optional[dict]:
+        """Retrieve cached extraction result"""
+        cached = self.redis.get(f"extraction:{pdf_hash}")
+        if cached:
+            return json.loads(cached)
+        return None
+    
+    def cache_result(self, pdf_hash: str, result: dict):
+        """Cache extraction result"""
+        self.redis.setex(
+            f"extraction:{pdf_hash}",
+            self.ttl_seconds,
+            json.dumps(result)
+        )
+```
+
+Integration into Orchestrator:
+```python
+# In extract() method, before running engines:
+pdf_hash = self.cache.get_pdf_hash(pdf_path)
+cached = self.cache.get_cached_result(pdf_hash)
+if cached:
+    logger.info(f"Cache hit for {pdf_path}")
+    return cached
+
+# After extraction:
+self.cache.cache_result(pdf_hash, final_result)
+```
+
+---
+
+TASK S2-07: CREATE EXTRACTION PERFORMANCE MONITOR
+Priority: P3
+Complexity: LOW
+Dependencies: S2-05
+Estimated Time: 2 hours
+Risk: LOW
+
+DESCRIPTION:
+Track and monitor extraction performance metrics.
+
+ACCEPTANCE CRITERIA:
+☐ ExtractionMonitor service created
+☐ Tracks: accuracy, speed, cache hit rate, engine success rate
+☐ API endpoint returns performance metrics
+☐ Dashboard widget shows trends
+
+---
+
+TASK S2-08: OPTIMIZE BATCH PROCESSING
+Priority: P3
+Complexity: MEDIUM
+Dependencies: S2-02
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Optimize LayoutLM to process multi-page documents in batches.
+
+---
+
+================================================================================
+SPRINT 2 TESTING REQUIREMENTS
+================================================================================
+
+UNIT TESTS:
+☐ Test LayoutLMExtractor.extract()
+☐ Test EasyOCRExtractor.extract()
+☐ Test EnsembleVoting.combine_results()
+☐ Test ExtractionCache (hit/miss scenarios)
+☐ Test pdf_to_image conversion
+
+INTEGRATION TESTS:
+☐ Test full extraction pipeline with AI models
+☐ Test parallel execution works
+☐ Test ensemble produces better results than individual engines
+☐ Test cache reduces processing time
+☐ Compare accuracy: before vs after Sprint 2
+
+PERFORMANCE TESTS:
+☐ Measure processing time per document
+☐ Measure memory usage
+☐ Test GPU vs CPU performance
+☐ Test cache hit rate
+
+TEST DOCUMENTS:
+- /mnt/project/ESP_2023_Balance_Sheet.pdf
+- /mnt/project/TCSH_2023_Income_Statement.pdf
+- /mnt/project/Wendover_Commons_2023_Cash_Flow_Statement.pdf
+
+SUCCESS METRICS:
+- Accuracy >97% (baseline: 95%)
+- Processing time <45 seconds per document
+- Cache hit rate >70% on repeated documents
+
+================================================================================
+SPRINT 2 DEFINITION OF DONE
+================================================================================
+
+TECHNICAL:
+☐ LayoutLMv3 model integrated and operational
+☐ EasyOCR integrated as OCR fallback
+☐ Ensemble voting working correctly
+☐ Parallel execution improves speed
+☐ Cache reduces repeat processing time
+☐ All tests pass
+☐ Extraction accuracy improved >2%
+
+DOCUMENTATION:
+☐ Model setup documented in README
+☐ API updated with new metadata fields
+☐ Performance benchmarks documented
+
+DEPLOYMENT:
+☐ Docker containers build successfully
+☐ Models download automatically on first run
+☐ GPU detection working
+☐ No regression in existing features
+
+================================================================================
+TASKMASTER EXECUTION NOTES
+================================================================================
+
+COMPLEXITY: HIGH
+This sprint involves new technologies (AI models) and significant integration work.
+
+TASK ORDER:
+S2-01 → S2-02 → S2-03 → S2-04 → S2-05 → S2-06 → S2-07 → S2-08
+
+CRITICAL TASKS:
+- S2-01, S2-02, S2-05 are critical path
+- S2-03, S2-04 can run in parallel with S2-02
+- S2-06, S2-07, S2-08 are enhancements (can be deferred if timeline tight)
+
+EXPECTED CHALLENGES:
+1. Model download size (5GB) - ensure sufficient disk space
+2. GPU availability - must work on CPU as fallback
+3. Memory usage - AI models require 4-8GB RAM
+4. Integration complexity - multiple engines with different interfaces
+
+MITIGATION:
+1. Check disk space before downloading: df -h
+2. Test on CPU first, GPU is optimization
+3. Set memory limits in docker-compose.yml
+4. Extensive unit testing of each component
+
+================================================================================
+END OF SPRINT 2 PRD
+================================================================================

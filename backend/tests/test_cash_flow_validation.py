@@ -25,7 +25,7 @@ from app.models.cash_account_reconciliation import CashAccountReconciliation
 
 
 @pytest.fixture
-def setup_test_cash_flow(db: Session):
+def setup_test_cash_flow(db_session: Session):
     """Create test cash flow data"""
     # Create property
     property = Property(
@@ -33,8 +33,8 @@ def setup_test_cash_flow(db: Session):
         property_name="Test Property",
         status="active"
     )
-    db.add(property)
-    db.flush()
+    db_session.add(property)
+    db_session.flush()
     
     # Create period
     period = FinancialPeriod(
@@ -44,8 +44,8 @@ def setup_test_cash_flow(db: Session):
         period_start_date=date(2024, 12, 1),
         period_end_date=date(2024, 12, 31)
     )
-    db.add(period)
-    db.flush()
+    db_session.add(period)
+    db_session.flush()
     
     # Create upload
     upload = DocumentUpload(
@@ -55,8 +55,8 @@ def setup_test_cash_flow(db: Session):
         file_name="test_cf.pdf",
         extraction_status="completed"
     )
-    db.add(upload)
-    db.flush()
+    db_session.add(upload)
+    db_session.flush()
     
     # Create header with proper calculations
     header = CashFlowHeader(
@@ -95,8 +95,8 @@ def setup_test_cash_flow(db: Session):
         ending_cash_balance=Decimal('390000.00'),
         extraction_confidence=Decimal('95.00')
     )
-    db.add(header)
-    db.flush()
+    db_session.add(header)
+    db_session.flush()
     
     # Create line items
     line_items = [
@@ -170,7 +170,7 @@ def setup_test_cash_flow(db: Session):
     ]
     
     for item in line_items:
-        db.add(item)
+        db_session.add(item)
     
     # Create adjustments
     adjustments = [
@@ -199,7 +199,7 @@ def setup_test_cash_flow(db: Session):
     ]
     
     for adj in adjustments:
-        db.add(adj)
+        db_session.add(adj)
     
     # Create cash accounts
     cash_accounts = [
@@ -220,9 +220,9 @@ def setup_test_cash_flow(db: Session):
     ]
     
     for acct in cash_accounts:
-        db.add(acct)
+        db_session.add(acct)
     
-    db.commit()
+    db_session.commit()
     
     return {
         "property": property,
@@ -235,10 +235,10 @@ def setup_test_cash_flow(db: Session):
 class TestIncomeValidation:
     """Test income validation rules"""
     
-    def test_total_income_sum_validation(self, db, setup_test_cash_flow):
+    def test_total_income_sum_validation(self, db_session, setup_test_cash_flow):
         """Test total income equals sum of income items"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_total_income(
             data["upload"].id,
@@ -251,7 +251,7 @@ class TestIncomeValidation:
     def test_base_rental_percentage_validation(self, db, setup_test_cash_flow):
         """Test base rentals are 70-85% of total income"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_base_rental_percentage(
             data["upload"].id,
@@ -269,7 +269,7 @@ class TestExpenseValidation:
     def test_total_expenses_sum_validation(self, db, setup_test_cash_flow):
         """Test total expenses equals operating + additional"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_total_expenses(
             data["upload"].id,
@@ -286,7 +286,7 @@ class TestNOIValidation:
     def test_noi_calculation_validation(self, db, setup_test_cash_flow):
         """Test NOI = Total Income - Total Expenses"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_noi_calculation(
             data["upload"].id,
@@ -299,7 +299,7 @@ class TestNOIValidation:
     def test_noi_percentage_validation(self, db, setup_test_cash_flow):
         """Test NOI is 60-80% of Total Income"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_noi_percentage(
             data["upload"].id,
@@ -313,7 +313,7 @@ class TestNOIValidation:
     def test_noi_positive_validation(self, db, setup_test_cash_flow):
         """Test NOI is positive"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_noi_positive(
             data["upload"].id,
@@ -330,7 +330,7 @@ class TestNetIncomeValidation:
     def test_net_income_calculation_validation(self, db, setup_test_cash_flow):
         """Test Net Income = NOI - (Mortgage + Depreciation + Amortization)"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_net_income_calculation(
             data["upload"].id,
@@ -347,7 +347,7 @@ class TestCashFlowValidation:
     def test_cash_flow_calculation_validation(self, db, setup_test_cash_flow):
         """Test Cash Flow = Net Income + Total Adjustments"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_cash_flow_calculation(
             data["upload"].id,
@@ -360,7 +360,7 @@ class TestCashFlowValidation:
     def test_cash_account_differences_validation(self, db, setup_test_cash_flow):
         """Test cash account differences = ending - beginning"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_cash_account_differences(
             data["upload"].id,
@@ -373,7 +373,7 @@ class TestCashFlowValidation:
     def test_total_cash_balance_validation(self, db, setup_test_cash_flow):
         """Test total cash equals sum of all cash accounts"""
         data = setup_test_cash_flow
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         
         result = validator.validate_cf_total_cash_balance(
             data["upload"].id,
@@ -387,7 +387,7 @@ class TestCashFlowValidation:
 class TestEdgeCases:
     """Test edge cases and special scenarios"""
     
-    def test_negative_noi_warning(self, db):
+    def test_negative_noi_warning(self, db_session):
         """Test that negative NOI triggers warning"""
         # Create minimal test data with negative NOI
         property = Property(property_code="NEG001", property_name="Negative NOI Property", status="active")
@@ -430,17 +430,17 @@ class TestEdgeCases:
             cash_flow=Decimal('-50000.00'),
             extraction_confidence=Decimal('95.00')
         )
-        db.add(header)
-        db.commit()
+        db_session.add(header)
+        db_session.commit()
         
-        validator = ValidationService(db)
+        validator = ValidationService(db_session)
         result = validator.validate_cf_noi_positive(upload.id, property.id, period.id)
         
         # Should fail but with warning severity
         assert result["passed"] == False
         assert result["severity"] == "warning"
     
-    def test_zero_total_income_handling(self, db):
+    def test_zero_total_income_handling(self, db_session):
         """Test handling of zero total income"""
         # This should be caught by completeness checks
         # Percentage calculations should handle division by zero gracefully

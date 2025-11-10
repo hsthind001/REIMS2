@@ -1,0 +1,366 @@
+REIMS 2.0 - WORLD-CLASS ENHANCEMENT PROJECT
+MASTER PRODUCT REQUIREMENTS DOCUMENT
+Version: 1.0
+Date: November 9, 2025
+Type: Enhancement Project (builds on existing REIMS2 system)
+
+================================================================================
+PROJECT OVERVIEW
+================================================================================
+
+OBJECTIVE:
+Transform the existing REIMS 2.0 system from 95% accuracy to 99.5%+ accuracy with zero data loss, making it the world's best real estate financial monitoring system using 100% open-source technologies.
+
+EXISTING SYSTEM LOCATION:
+- Backend: backend/ (FastAPI, Python 3.13)
+- Frontend: frontend/ (React 18, TypeScript)
+- Database: PostgreSQL 17.6 (Docker container)
+- Storage: MinIO (Docker container)
+- Infrastructure: Docker Compose
+
+ENHANCEMENT APPROACH:
+This is NOT a rewrite. All enhancements build incrementally on the existing codebase. The system remains operational throughout development. Each sprint adds new capabilities without breaking existing features.
+
+DEVELOPMENT METHOD:
+Agile methodology with 8 two-week sprints (16 weeks total). TaskMaster will manage task breakdown, dependency resolution, and execution automation.
+
+================================================================================
+CRITICAL CONSTRAINTS
+================================================================================
+
+1. ZERO COST REQUIREMENT:
+   - All tools must be open-source
+   - No paid APIs or licenses
+   - Self-hosted solutions only
+   - Current monthly savings target: $6,750 vs commercial alternatives
+
+2. BACKWARD COMPATIBILITY:
+   - Existing extraction must continue working
+   - No breaking changes to database schema (only additions)
+   - Existing API endpoints must remain functional
+   - Frontend must work during incremental updates
+
+3. DOCKER COMPOSE DEPLOYMENT:
+   - All new services must integrate into existing docker-compose.yml
+   - Container resource limits must be specified
+   - Health checks required for all new services
+   - Volume mounts must persist data
+
+4. TECHNOLOGY STACK LOCKED:
+   - Backend: FastAPI (no framework changes)
+   - Frontend: React + TypeScript (no framework changes)
+   - Database: PostgreSQL (no database engine changes)
+   - Queue: Celery + Redis (existing, expand usage)
+
+================================================================================
+PROJECT PHASES (SPRINTS 1-8)
+================================================================================
+
+SPRINT 1 (Weeks 1-2): Foundation - Field-Level Confidence & Metadata
+- Complexity: MEDIUM
+- Dependencies: None (builds on existing system)
+- Estimated Story Points: 40
+- Risk Level: LOW
+
+SPRINT 2 (Weeks 3-4): Intelligence - AI/ML Extraction Layer
+- Complexity: HIGH
+- Dependencies: Sprint 1 (requires metadata infrastructure)
+- Estimated Story Points: 40
+- Risk Level: MEDIUM (new AI models)
+
+SPRINT 3 (Weeks 5-6): Alerts - Real-Time Anomaly Detection System
+- Complexity: HIGH
+- Dependencies: Sprint 1 (requires field metadata)
+- Estimated Story Points: 40
+- Risk Level: MEDIUM (new notification infrastructure)
+
+SPRINT 4 (Weeks 7-8): Validation - Multi-Layer Statistical Validation
+- Complexity: MEDIUM
+- Dependencies: Sprint 1, Sprint 3 (requires metadata and anomaly detection)
+- Estimated Story Points: 40
+- Risk Level: LOW
+
+SPRINT 5 (Weeks 9-10): Learning - Active Learning Pipeline
+- Complexity: HIGH
+- Dependencies: Sprint 2 (requires AI models), Sprint 4 (requires validation)
+- Estimated Story Points: 40
+- Risk Level: MEDIUM
+
+SPRINT 6 (Weeks 11-12): Resilience - Disaster Recovery & Versioning
+- Complexity: MEDIUM
+- Dependencies: None (independent infrastructure)
+- Estimated Story Points: 40
+- Risk Level: LOW
+
+SPRINT 7 (Weeks 13-14): Security - RBAC & Enhanced Security
+- Complexity: MEDIUM
+- Dependencies: None (independent infrastructure)
+- Estimated Story Points: 40
+- Risk Level: MEDIUM (security-critical)
+
+SPRINT 8 (Weeks 15-16): Integration - API & External Systems
+- Complexity: HIGH
+- Dependencies: Sprint 7 (requires RBAC for API auth)
+- Estimated Story Points: 40
+- Risk Level: MEDIUM
+
+================================================================================
+SUCCESS CRITERIA
+================================================================================
+
+SPRINT 2 COMPLETION:
+✓ Extraction accuracy >97% (baseline: 95%)
+✓ AI models (LayoutLMv3, EasyOCR) operational
+✓ Ensemble voting producing better results than any single engine
+✓ Field-level confidence tracking working
+
+SPRINT 4 COMPLETION:
+✓ Zero critical validation misses
+✓ Anomaly detection identifies >95% of issues
+✓ Alert response time <30 minutes
+✓ Multi-layer validation operational
+
+SPRINT 6 COMPLETION:
+✓ Disaster recovery tested and operational
+✓ Active learning showing monthly accuracy improvement
+✓ 99%+ data quality score achieved
+✓ Document versioning working
+
+SPRINT 8 COMPLETION (PROJECT COMPLETE):
+✓ Full API documentation published
+✓ External integrations (QuickBooks/Yardi) operational
+✓ System handles 1000+ documents/month
+✓ RBAC securing all sensitive operations
+✓ System is provably world-class in domain
+
+================================================================================
+TASKMASTER EXECUTION INSTRUCTIONS
+================================================================================
+
+FOR EACH SPRINT PRD FILE:
+
+1. COMPLEXITY EVALUATION:
+   - TaskMaster should analyze task complexity (LOW/MEDIUM/HIGH)
+   - HIGH complexity tasks MUST be broken into subtasks
+   - Each subtask should be <4 hours of work
+   - Dependencies must be resolved before task execution
+
+2. DEPENDENCY RESOLUTION:
+   - Check if prerequisite sprints are complete
+   - Verify required database tables exist
+   - Confirm required services are running
+   - Validate required dependencies are installed
+
+3. AUTOMATED TESTING:
+   - After each task completion, run relevant tests
+   - Unit tests must pass before proceeding
+   - Integration tests for cross-component changes
+   - Regression tests to ensure no breakage
+
+4. ROLLBACK CAPABILITY:
+   - Each task should create a git commit
+   - Tag commits with task ID
+   - Enable rollback if task fails validation
+   - Preserve database state before migrations
+
+5. DOCUMENTATION UPDATES:
+   - Auto-update CHANGELOG.md with completed tasks
+   - Update API documentation for new endpoints
+   - Update README.md if new setup steps added
+   - Generate migration guide if breaking changes
+
+================================================================================
+PROJECT METRICS TO TRACK
+================================================================================
+
+EXTRACTION QUALITY:
+- Accuracy rate (target: 99.5%+)
+- Confidence scores (average across all fields)
+- Review rate (% of fields needing human review)
+- Correction rate (% of human corrections needed)
+
+PERFORMANCE:
+- Extraction time (target: <30 seconds per document)
+- API response time (target: <200ms for reads)
+- Database query time (target: <100ms)
+- Cache hit rate (target: >80%)
+
+RELIABILITY:
+- Uptime (target: 99.9%)
+- Failed extractions (target: <0.5%)
+- Alert delivery rate (target: 100%)
+- Backup success rate (target: 100%)
+
+SECURITY:
+- Audit trail completeness (target: 100%)
+- Failed auth attempts (monitor for attacks)
+- API rate limit violations (monitor for abuse)
+- Vulnerability scan results (target: 0 high/critical)
+
+================================================================================
+DEVELOPMENT ENVIRONMENT REQUIREMENTS
+================================================================================
+
+PREREQUISITES:
+- Docker Desktop 24.0+ running
+- Docker Compose V2
+- Git 2.40+
+- Python 3.13+ (for backend development)
+- Node.js 20+ (for frontend development)
+- Cursor IDE with Claude API key configured
+- TaskMaster installed and configured
+
+DISK SPACE:
+- Minimum: 50GB free
+- Recommended: 100GB free (for AI models)
+- AI models: ~5GB (LayoutLMv3, EasyOCR)
+- Database + documents: ~10GB (grows over time)
+
+MEMORY:
+- Minimum: 16GB RAM
+- Recommended: 32GB RAM (for AI model inference)
+- Docker memory limit: 8GB minimum
+
+CPU:
+- Minimum: 4 cores
+- Recommended: 8 cores
+- GPU: Optional but recommended for faster AI inference
+
+================================================================================
+SPRINT EXECUTION ORDER
+================================================================================
+
+MANDATORY SEQUENCE:
+Sprint 1 → Sprint 2 → Sprint 3 → Sprint 4 → Sprint 5 → Sprint 6 → Sprint 7 → Sprint 8
+
+CANNOT SKIP OR REORDER because:
+- Sprint 2 requires Sprint 1's metadata infrastructure
+- Sprint 3 requires Sprint 1's field-level tracking
+- Sprint 4 requires Sprint 1 and 3
+- Sprint 5 requires Sprint 2 and 4
+- Sprint 6-8 can run in parallel after Sprint 5 completes (if desired)
+
+RECOMMENDED: Execute in order 1-8 for clearest path.
+
+================================================================================
+TASKMASTER CONFIGURATION
+================================================================================
+
+SUGGESTED TASKMASTER SETTINGS:
+
+task_breakdown_depth: 3
+# Break complex tasks into max 3 levels of subtasks
+
+max_task_complexity: HIGH
+# TaskMaster can handle high complexity tasks
+
+auto_test_after_task: true
+# Run tests after each task completion
+
+auto_commit_on_success: true
+# Git commit after successful task completion
+
+rollback_on_failure: true
+# Revert changes if task fails validation
+
+parallel_execution: false
+# Execute tasks sequentially (safer for database migrations)
+
+validation_required: true
+# Require validation before marking task complete
+
+documentation_update: true
+# Auto-update documentation after task completion
+
+================================================================================
+NEXT STEPS FOR TASKMASTER INTEGRATION
+================================================================================
+
+1. Review this MASTER_PRD.txt to understand overall project structure
+
+2. Load Sprint 1 PRD: SPRINT_01_FOUNDATION_PRD.txt
+   - TaskMaster will analyze complexity
+   - Create task breakdown
+   - Identify dependencies
+   - Generate execution plan
+
+3. Confirm execution plan before starting
+
+4. TaskMaster executes Sprint 1 tasks automatically:
+   - Creates database migrations
+   - Updates code files
+   - Runs tests
+   - Commits changes
+   - Validates completion
+
+5. After Sprint 1 completion, load Sprint 2 PRD and repeat
+
+6. Continue through Sprint 8
+
+7. Final validation: Run full test suite, verify all success criteria met
+
+================================================================================
+RISK MITIGATION
+================================================================================
+
+HIGH-RISK TASKS (require extra validation):
+- Database migrations (Sprint 1, 3, 6, 7)
+- AI model integration (Sprint 2, 5)
+- Authentication changes (Sprint 7)
+- External API integration (Sprint 8)
+
+MITIGATION STRATEGIES:
+- Create database backup before migrations
+- Test migrations on copy of production data
+- Canary deployment for AI models (A/B test)
+- Security audit for auth changes
+- Sandbox testing for external integrations
+
+ROLLBACK PROCEDURES:
+- Database: Alembic downgrade commands ready
+- Code: Git revert to previous commit
+- Services: Docker container rollback
+- Data: Restore from backup
+
+================================================================================
+SUPPORT AND TROUBLESHOOTING
+================================================================================
+
+IF TASKMASTER ENCOUNTERS ERRORS:
+
+1. Database connection issues:
+   - Verify docker-compose up is running
+   - Check PostgreSQL logs: docker-compose logs postgres
+   - Verify connection string in .env file
+
+2. Dependency installation failures:
+   - Check requirements.txt syntax
+   - Verify Python version (3.13+)
+   - Try: pip install --upgrade pip
+
+3. Test failures:
+   - Review test output for specific failure
+   - Check if test data/fixtures are present
+   - Verify test database is seeded
+
+4. Docker build failures:
+   - Check Dockerfile syntax
+   - Verify base image availability
+   - Check network connectivity for downloads
+
+5. Model download failures:
+   - Verify internet connection
+   - Check Hugging Face hub availability
+   - Try manual download and cache
+
+GETTING HELP:
+- Review sprint-specific PRD for detailed context
+- Check existing codebase for similar patterns
+- Consult framework documentation (FastAPI, React)
+- Review error logs in docker-compose logs
+
+================================================================================
+END OF MASTER PRD
+================================================================================
+
+Next: Load SPRINT_01_FOUNDATION_PRD.txt into TaskMaster to begin execution.

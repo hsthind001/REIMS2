@@ -2,7 +2,7 @@
 Extraction Orchestrator - Coordinates PDF extraction and financial data parsing
 """
 from sqlalchemy.orm import Session
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from datetime import datetime
 import re
