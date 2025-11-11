@@ -86,6 +86,7 @@ websockets==15.0.1
 
 # AI/ML Dependencies for Sprint 2
 transformers==4.44.2
+tokenizers==0.19.1  # Pin to compatible version for transformers 4.44.2 (requires >=0.19,<0.20)
 torch==2.6.0
 torchvision==0.21.0
 sentencepiece==0.2.0
