@@ -31,7 +31,7 @@ def upgrade() -> None:
         VALUES 
             (
                 'ESP001', 
-                'Esplanade Shopping Center', 
+                'Eastern Shore Plaza', 
                 'retail',
                 '1234 Main Street',
                 'Phoenix',
@@ -63,7 +63,7 @@ def upgrade() -> None:
             ),
             (
                 'TCSH001',
-                'Town Center Shopping',
+                'The Crossings of Spring Hill',
                 'retail',
                 '9012 Center Boulevard',
                 'Town Center',
