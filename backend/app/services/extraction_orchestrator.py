@@ -21,6 +21,9 @@ from app.models.chart_of_accounts import ChartOfAccounts
 from app.models.extraction_field_metadata import ExtractionFieldMetadata
 from app.services.confidence_engine import ConfidenceEngine
 from app.services.metadata_storage_service import MetadataStorageService
+from app.services.ensemble_engine import EnsembleEngine
+from app.services.active_learning_service import ActiveLearningService
+from app.services.model_monitoring_service import ModelMonitoringService
 from app.db.minio_client import download_file
 from app.core.config import settings
 
@@ -34,7 +37,10 @@ class ExtractionOrchestrator:
         self.template_extractor = TemplateExtractor(db)
         self.table_parser = FinancialTableParser()
         self.confidence_engine = ConfidenceEngine()
+        self.ensemble_engine = EnsembleEngine()
         self.metadata_service = MetadataStorageService(db, self.confidence_engine)
+        self.active_learning = ActiveLearningService(db)
+        self.model_monitoring = ModelMonitoringService(db)
     
     def extract_and_parse_document(self, upload_id: int) -> Dict:
         """
