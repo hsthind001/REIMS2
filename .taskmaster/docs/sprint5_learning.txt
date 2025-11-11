@@ -1,0 +1,8 @@
+SPRINT 5: ACTIVE LEARNING PIPELINE
+OBJECTIVES:
+- Track human corrections (IMPLEMENTED: active_learning_service.py)
+- Model retraining pipeline
+- Rule suggestion engine
+- Performance tracking dashboard
+STATUS: Core service already implemented in Sprint 2
+

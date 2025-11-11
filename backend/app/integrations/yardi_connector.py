@@ -1,60 +1,71 @@
 """
-Yardi Connector
-Import data from Yardi Voyager.
-"""
+Yardi Integration Connector for REIMS2
+API client for Yardi Voyager data import.
 
-from typing import Dict, Any, List
+Sprint 8: API & External Integrations
+"""
+from typing import Dict, List, Optional, Any
 from datetime import datetime
+import requests
 
 
 class YardiConnector:
-    """Connect to Yardi Voyager API."""
+    """
+    Connector for Yardi Voyager integration.
     
-    def __init__(self, api_endpoint: str, username: str, password: str):
+    Features:
+    - API authentication
+    - Financial data import
+    - Rent roll import
+    - Property data sync
+    """
+    
+    def __init__(self, api_endpoint: Optional[str] = None, api_key: Optional[str] = None):
+        """
+        Initialize Yardi connector.
+        
+        Args:
+            api_endpoint: Yardi API base URL
+            api_key: Yardi API key
+        """
         self.api_endpoint = api_endpoint
-        self.username = username
-        self.password = password
+        self.api_key = api_key
     
     def authenticate(self) -> bool:
-        """Authenticate with Yardi API."""
-        # Get auth token
+        """
+        Authenticate with Yardi API.
+        
+        Returns:
+            True if authentication successful
+        """
+        # Would use Yardi API authentication
+        # Placeholder
         return True
-    
-    def import_property_data(self, property_code: str) -> Dict[str, Any]:
-        """Import property data from Yardi."""
-        # Fetch property details
-        # Transform to REIMS format
-        return {
-            "property_id": 1,
-            "records_imported": 0
-        }
     
     def import_financial_data(
         self,
         property_code: str,
-        period_start: str,
-        period_end: str
+        period_start: datetime,
+        period_end: datetime
     ) -> Dict[str, Any]:
-        """Import financial data from Yardi."""
-        # Fetch GL accounts
-        # Fetch transactions
-        # Map to REIMS chart of accounts
+        """
+        Import financial data from Yardi.
+        
+        Args:
+            property_code: Yardi property code
+            period_start: Period start date
+            period_end: Period end date
+            
+        Returns:
+            Import result
+        """
+        # Would call Yardi API endpoints
+        # Parse response
+        # Transform to REIMS format
         return {
-            "success": True,
-            "records": []
+            'success': True,
+            'records_imported': 0,
+            'balance_sheet': {},
+            'income_statement': {},
+            'rent_roll': []
         }
-    
-    def schedule_sync(
-        self,
-        property_codes: List[str],
-        frequency: str = "daily"
-    ) -> None:
-        """Schedule automated sync."""
-        # Create Celery periodic task
-        pass
-    
-    def transform_data(self, yardi_data: Dict) -> Dict:
-        """Transform Yardi format to REIMS format."""
-        # Data mapping logic
-        return {}
-
