@@ -1,0 +1,6 @@
+#!/bin/bash
+# Docker-based pip wrapper
+# Usage: ./docker-pip install package-name
+
+docker exec reims-backend pip "$@"
+

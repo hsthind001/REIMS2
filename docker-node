@@ -1,0 +1,14 @@
+#!/bin/bash
+# Docker-based Node.js wrapper
+# Usage: ./docker-node --version
+# Usage: ./docker-node script.js
+# Usage: ./docker-node  (interactive shell)
+
+if [ $# -eq 0 ]; then
+    # No arguments - start interactive shell
+    docker run --rm -it -v "$(pwd):/app" -w /app node:20-alpine sh
+else
+    # Run node with arguments
+    docker run --rm -v "$(pwd):/app" -w /app node:20-alpine node "$@"
+fi
+
