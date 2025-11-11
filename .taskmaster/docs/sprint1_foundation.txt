@@ -1,0 +1,1180 @@
+SPRINT 1: FOUNDATION - FIELD-LEVEL CONFIDENCE & METADATA
+PRODUCT REQUIREMENTS DOCUMENT FOR TASKMASTER
+Version: 1.0
+Sprint Duration: Weeks 1-2
+Story Points: 40
+
+================================================================================
+SPRINT OVERVIEW
+================================================================================
+
+GOAL:
+Implement field-level confidence tracking and metadata capture for all extracted data. This provides the foundation for AI/ML integration, anomaly detection, and quality monitoring.
+
+BUSINESS VALUE:
+- Enables identification of unreliable extractions before data enters database
+- Provides transparency on data quality for stakeholders
+- Creates foundation for continuous improvement (active learning)
+- Reduces manual review time by highlighting low-confidence fields only
+
+DEPENDENCIES:
+- Existing REIMS2 system operational (backend/, frontend/, docker-compose.yml)
+- PostgreSQL database accessible
+- Existing extraction engines (PyMuPDF, PDFPlumber, Camelot) working
+
+OUTPUTS:
+- New database table: extraction_field_metadata
+- Updated extraction engines returning confidence scores
+- Frontend components displaying confidence indicators
+- API endpoints for metadata retrieval
+
+================================================================================
+TASK BREAKDOWN
+================================================================================
+
+TASK S1-01: CREATE DATABASE SCHEMA FOR FIELD METADATA
+Priority: P0 (Must complete first)
+Complexity: MEDIUM
+Dependencies: None
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Create database table to store extraction metadata at field level. This table will track which engine extracted each field, with what confidence, and whether it needs review.
+
+ACCEPTANCE CRITERIA:
+☐ Table extraction_field_metadata created with all required columns
+☐ Foreign key constraints established to documents table
+☐ Performance indexes created (document_id, field_name, confidence_score)
+☐ Migration runs successfully: alembic upgrade head
+☐ Rollback works: alembic downgrade -1
+☐ Sample data can be inserted without errors
+
+IMPLEMENTATION DETAILS:
+
+File to Create: backend/alembic/versions/001_add_extraction_metadata.py
+
+Migration Script:
+```python
+"""add extraction field metadata table
+
+Revision ID: 001_extraction_metadata
+Create Date: 2025-11-09
+"""
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+revision = '001_extraction_metadata'
+down_revision = 'previous_migration_id'  # TaskMaster: Get from alembic/versions/
+branch_labels = None
+depends_on = None
+
+def upgrade():
+    # Create enum types first
+    op.execute("CREATE TYPE extraction_engine_type AS ENUM ('pymupdf', 'pdfplumber', 'camelot', 'tesseract', 'easyocr', 'layoutlm', 'ensemble')")
+    op.execute("CREATE TYPE resolution_method_type AS ENUM ('consensus', 'weighted_vote', 'ai_override', 'human_review', 'single_engine')")
+    op.execute("CREATE TYPE review_priority_type AS ENUM ('critical', 'high', 'medium', 'low')")
+    
+    # Create table
+    op.create_table(
+        'extraction_field_metadata',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('document_id', sa.Integer(), nullable=False),
+        sa.Column('table_name', sa.String(100), nullable=False),
+        sa.Column('record_id', sa.Integer(), nullable=False),
+        sa.Column('field_name', sa.String(100), nullable=False),
+        
+        # Confidence and provenance
+        sa.Column('confidence_score', sa.Numeric(5, 4), nullable=False),
+        sa.Column('extraction_engine', sa.String(50), nullable=False),
+        
+        # Conflict resolution
+        sa.Column('conflicting_values', postgresql.JSONB, nullable=True),
+        sa.Column('resolution_method', sa.String(50), nullable=True),
+        
+        # Quality flags
+        sa.Column('needs_review', sa.Boolean(), default=False),
+        sa.Column('review_priority', sa.String(20), nullable=True),
+        sa.Column('flagged_reason', sa.Text(), nullable=True),
+        
+        # Audit
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()')),
+        sa.Column('reviewed_at', sa.DateTime(), nullable=True),
+        sa.Column('reviewed_by', sa.Integer(), nullable=True),
+        
+        sa.PrimaryKeyConstraint('id'),
+        sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['reviewed_by'], ['users.id']),
+        sa.CheckConstraint('confidence_score >= 0 AND confidence_score <= 1', name='check_confidence_range'),
+        sa.UniqueConstraint('document_id', 'table_name', 'record_id', 'field_name', name='unique_field_per_record')
+    )
+    
+    # Create indexes
+    op.create_index('idx_efm_document', 'extraction_field_metadata', ['document_id'])
+    op.create_index('idx_efm_confidence', 'extraction_field_metadata', ['confidence_score'])
+    op.create_index('idx_efm_needs_review', 'extraction_field_metadata', ['needs_review'], postgresql_where=sa.text('needs_review = TRUE'))
+    op.create_index('idx_efm_table_record', 'extraction_field_metadata', ['table_name', 'record_id'])
+
+def downgrade():
+    op.drop_index('idx_efm_table_record', table_name='extraction_field_metadata')
+    op.drop_index('idx_efm_needs_review', table_name='extraction_field_metadata')
+    op.drop_index('idx_efm_confidence', table_name='extraction_field_metadata')
+    op.drop_index('idx_efm_document', table_name='extraction_field_metadata')
+    op.drop_table('extraction_field_metadata')
+    op.execute("DROP TYPE IF EXISTS review_priority_type")
+    op.execute("DROP TYPE IF EXISTS resolution_method_type")
+    op.execute("DROP TYPE IF EXISTS extraction_engine_type")
+```
+
+SUBTASKS:
+1. Get current Alembic revision ID from backend/alembic/versions/
+2. Create migration file with content above (replace 'previous_migration_id')
+3. Run migration: docker-compose exec backend alembic upgrade head
+4. Verify table exists: docker-compose exec postgres psql -U reims_user -d reims_db -c "\d extraction_field_metadata"
+5. Test insert sample record
+6. Test rollback: docker-compose exec backend alembic downgrade -1
+7. Re-run upgrade
+
+VALIDATION:
+- Run: docker-compose exec backend python -c "from app.database import engine; from sqlalchemy import inspect; print('extraction_field_metadata' in inspect(engine).get_table_names())"
+- Expected output: True
+
+---
+
+TASK S1-02: CREATE SQLALCHEMY MODEL FOR METADATA
+Priority: P0
+Complexity: LOW
+Dependencies: S1-01 (requires table to exist)
+Estimated Time: 2 hours
+Risk: LOW
+
+DESCRIPTION:
+Create SQLAlchemy ORM model for the new extraction_field_metadata table. This provides type-safe database access from Python code.
+
+ACCEPTANCE CRITERIA:
+☐ Model class ExtractionFieldMetadata created in backend/app/models/
+☐ All columns defined with correct types
+☐ Relationships to Document and User models established
+☐ Helper methods implemented (get_low_confidence_fields, etc.)
+☐ Model can be imported without errors
+☐ CRUD operations work (create, read, update, delete)
+
+IMPLEMENTATION DETAILS:
+
+File to Create: backend/app/models/extraction_metadata.py
+
+```python
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Numeric, CheckConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from typing import Optional, List
+from app.database import Base
+
+class ExtractionFieldMetadata(Base):
+    __tablename__ = 'extraction_field_metadata'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey('documents.id', ondelete='CASCADE'), nullable=False)
+    table_name = Column(String(100), nullable=False)
+    record_id = Column(Integer, nullable=False)
+    field_name = Column(String(100), nullable=False)
+    
+    # Confidence and provenance
+    confidence_score = Column(Numeric(5, 4), nullable=False)
+    extraction_engine = Column(String(50), nullable=False)
+    
+    # Conflict resolution
+    conflicting_values = Column(JSONB, nullable=True)
+    resolution_method = Column(String(50), nullable=True)
+    
+    # Quality flags
+    needs_review = Column(Boolean, default=False)
+    review_priority = Column(String(20), nullable=True)
+    flagged_reason = Column(Text, nullable=True)
+    
+    # Audit
+    created_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    
+    # Relationships
+    document = relationship("Document", back_populates="field_metadata")
+    reviewed_by_user = relationship("User", foreign_keys=[reviewed_by])
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint('confidence_score >= 0 AND confidence_score <= 1', name='check_confidence_range'),
+    )
+    
+    def __repr__(self):
+        return f"<FieldMetadata(doc={self.document_id}, field={self.field_name}, confidence={self.confidence_score})>"
+    
+    @property
+    def confidence_percentage(self) -> str:
+        """Return confidence as formatted percentage"""
+        return f"{float(self.confidence_score) * 100:.1f}%"
+    
+    @property
+    def confidence_tier(self) -> str:
+        """Categorize confidence level"""
+        score = float(self.confidence_score)
+        if score >= 0.95:
+            return "high"
+        elif score >= 0.85:
+            return "medium"
+        else:
+            return "low"
+    
+    @property
+    def status_color(self) -> str:
+        """UI color for confidence tier"""
+        tier = self.confidence_tier
+        return {"high": "green", "medium": "yellow", "low": "red"}[tier]
+    
+    @classmethod
+    def get_low_confidence_fields(cls, db, document_id: int, threshold: float = 0.85) -> List['ExtractionFieldMetadata']:
+        """Get all fields below confidence threshold for a document"""
+        return db.query(cls).filter(
+            cls.document_id == document_id,
+            cls.confidence_score < threshold
+        ).order_by(cls.confidence_score.asc()).all()
+    
+    @classmethod
+    def get_fields_needing_review(cls, db, document_id: int) -> List['ExtractionFieldMetadata']:
+        """Get all fields flagged for review"""
+        return db.query(cls).filter(
+            cls.document_id == document_id,
+            cls.needs_review == True
+        ).order_by(cls.review_priority.desc()).all()
+    
+    def mark_reviewed(self, user_id: int):
+        """Mark field as reviewed by user"""
+        self.reviewed_at = datetime.utcnow()
+        self.reviewed_by = user_id
+        self.needs_review = False
+```
+
+SUBTASKS:
+1. Create file backend/app/models/extraction_metadata.py with content above
+2. Update backend/app/models/__init__.py to import new model:
+   ```python
+   from app.models.extraction_metadata import ExtractionFieldMetadata
+   ```
+3. Update Document model (backend/app/models/document.py) to add relationship:
+   ```python
+   field_metadata = relationship("ExtractionFieldMetadata", back_populates="document", cascade="all, delete-orphan")
+   ```
+4. Test import: docker-compose exec backend python -c "from app.models.extraction_metadata import ExtractionFieldMetadata; print('✓ Model imported')"
+5. Test CRUD operations with sample data
+
+VALIDATION:
+- Run Python test to verify model works:
+```python
+from app.models.extraction_metadata import ExtractionFieldMetadata
+from app.database import SessionLocal
+
+db = SessionLocal()
+test_record = ExtractionFieldMetadata(
+    document_id=1,
+    table_name='balance_sheet_data',
+    record_id=1,
+    field_name='total_assets',
+    confidence_score=0.95,
+    extraction_engine='pymupdf'
+)
+db.add(test_record)
+db.commit()
+print(f"✓ Created record: {test_record}")
+```
+
+---
+
+TASK S1-03: CREATE BASE EXTRACTOR ABSTRACT CLASS
+Priority: P1
+Complexity: LOW
+Dependencies: S1-02 (uses model structure)
+Estimated Time: 2 hours
+Risk: LOW
+
+DESCRIPTION:
+Create abstract base class that all extraction engines will inherit from. This standardizes the interface and ensures all engines return confidence scores.
+
+ACCEPTANCE CRITERIA:
+☐ BaseExtractor abstract class created
+☐ ExtractionResult dataclass defined
+☐ Abstract methods declared: extract(), calculate_confidence()
+☐ Helper methods for confidence calculation included
+☐ Type hints used throughout
+☐ Docstrings explain usage
+
+IMPLEMENTATION DETAILS:
+
+File to Create: backend/app/services/extraction/base_extractor.py
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, Any, Optional
+import re
+
+@dataclass
+class ExtractionResult:
+    """Structured result from extraction engine"""
+    data: Dict[str, Any]  # Extracted field values
+    confidence: Dict[str, float]  # Per-field confidence scores (0.0 to 1.0)
+    engine: str  # Engine identifier (e.g., 'pymupdf', 'layoutlm')
+    metadata: Dict[str, Any]  # Additional metadata (processing time, etc.)
+    raw_output: Any = None  # Original engine output for debugging
+
+class BaseExtractor(ABC):
+    """
+    Abstract base class for all extraction engines.
+    
+    All extractors must implement:
+    1. extract() - Main extraction logic
+    2. calculate_confidence() - Per-field confidence scoring
+    
+    Usage:
+        class MyExtractor(BaseExtractor):
+            def extract(self, pdf_path, doc_type):
+                # extraction logic
+                return ExtractionResult(...)
+            
+            def calculate_confidence(self, extraction_data):
+                # confidence calculation
+                return {'field1': 0.95, 'field2': 0.88}
+    """
+    
+    @abstractmethod
+    def extract(self, pdf_path: str, doc_type: str) -> ExtractionResult:
+        """
+        Extract data from PDF file.
+        
+        Args:
+            pdf_path: Path to PDF file
+            doc_type: Document type ('balance_sheet', 'income_statement', etc.)
+        
+        Returns:
+            ExtractionResult with data and confidence scores
+        """
+        pass
+    
+    @abstractmethod
+    def calculate_confidence(self, extraction_data: dict) -> Dict[str, float]:
+        """
+        Calculate per-field confidence scores.
+        
+        Args:
+            extraction_data: Raw extracted data
+        
+        Returns:
+            Dict mapping field_name -> confidence (0.0 to 1.0)
+        """
+        pass
+    
+    def _calculate_text_confidence(self, text: str) -> float:
+        """
+        Helper method to estimate confidence based on text quality.
+        
+        Args:
+            text: Extracted text string
+        
+        Returns:
+            Confidence score 0.0 to 1.0
+        """
+        if not text or len(text.strip()) == 0:
+            return 0.0
+        
+        # Clean text (alphanumeric + common punctuation)
+        clean_chars = sum(1 for c in text if c.isalnum() or c in '.,- ')
+        total_chars = len(text)
+        
+        if total_chars == 0:
+            return 0.0
+        
+        clean_ratio = clean_chars / total_chars
+        
+        # Score based on cleanliness
+        if clean_ratio > 0.95:
+            return 0.95  # Very clean text
+        elif clean_ratio > 0.85:
+            return 0.80  # Some special characters
+        elif clean_ratio > 0.70:
+            return 0.60  # Noisy text
+        else:
+            return 0.40  # Very noisy (likely OCR errors)
+    
+    def _is_valid_number(self, value: str) -> bool:
+        """Check if string represents a valid number"""
+        try:
+            # Remove common formatting
+            cleaned = value.replace(',', '').replace('$', '').replace('(', '-').replace(')', '')
+            float(cleaned)
+            return True
+        except (ValueError, AttributeError):
+            return False
+    
+    def _normalize_field_name(self, field: str) -> str:
+        """Normalize field name for consistency"""
+        # Convert to lowercase, replace spaces with underscores
+        normalized = field.lower().strip()
+        normalized = re.sub(r'\s+', '_', normalized)
+        normalized = re.sub(r'[^a-z0-9_]', '', normalized)
+        return normalized
+```
+
+SUBTASKS:
+1. Create directory: backend/app/services/extraction/ (if not exists)
+2. Create file: backend/app/services/extraction/__init__.py
+3. Create file: backend/app/services/extraction/base_extractor.py with content above
+4. Test import: docker-compose exec backend python -c "from app.services.extraction.base_extractor import BaseExtractor, ExtractionResult; print('✓ Import successful')"
+
+VALIDATION:
+- Verify abstract methods cannot be instantiated:
+```python
+from app.services.extraction.base_extractor import BaseExtractor
+try:
+    extractor = BaseExtractor()
+except TypeError as e:
+    print(f"✓ Abstract class cannot be instantiated: {e}")
+```
+
+---
+
+TASK S1-04: UPDATE PYMUPDF EXTRACTOR TO USE BASE CLASS
+Priority: P1
+Complexity: MEDIUM
+Dependencies: S1-03 (requires BaseExtractor)
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Refactor existing PyMuPDF extractor to inherit from BaseExtractor and return ExtractionResult with confidence scores.
+
+ACCEPTANCE CRITERIA:
+☐ PyMuPDFExtractor inherits from BaseExtractor
+☐ extract() returns ExtractionResult (not plain dict)
+☐ calculate_confidence() implemented with logic for text quality
+☐ Metadata includes processing time and page count
+☐ Backward compatible (existing code still works)
+☐ Tests pass
+
+IMPLEMENTATION DETAILS:
+
+File to Modify: backend/app/services/extraction/pymupdf_extractor.py
+
+```python
+import fitz  # PyMuPDF
+import time
+from typing import Dict, Any
+from app.services.extraction.base_extractor import BaseExtractor, ExtractionResult
+
+class PyMuPDFExtractor(BaseExtractor):
+    """
+    Fast PDF text extraction using PyMuPDF.
+    Best for: Digital PDFs with clean text (not scanned documents)
+    """
+    
+    def extract(self, pdf_path: str, doc_type: str) -> ExtractionResult:
+        """Extract text from PDF using PyMuPDF"""
+        start_time = time.time()
+        
+        try:
+            doc = fitz.open(pdf_path)
+            text = ""
+            page_count = len(doc)
+            
+            for page in doc:
+                text += page.get_text()
+            
+            doc.close()
+            
+            # Parse text into structured data (use existing parsing logic)
+            extracted_data = self._parse_text_to_fields(text, doc_type)
+            
+            # Calculate confidence for each field
+            confidence_scores = self.calculate_confidence(extracted_data)
+            
+            # Metadata
+            processing_time = time.time() - start_time
+            metadata = {
+                'processing_time_ms': round(processing_time * 1000, 2),
+                'page_count': page_count,
+                'extraction_method': 'text_extraction',
+                'text_length': len(text)
+            }
+            
+            return ExtractionResult(
+                data=extracted_data,
+                confidence=confidence_scores,
+                engine='pymupdf',
+                metadata=metadata,
+                raw_output=text
+            )
+        
+        except Exception as e:
+            # Return empty result on error (don't crash)
+            return ExtractionResult(
+                data={},
+                confidence={},
+                engine='pymupdf',
+                metadata={'error': str(e)},
+                raw_output=None
+            )
+    
+    def calculate_confidence(self, extraction_data: dict) -> Dict[str, float]:
+        """Calculate per-field confidence based on text quality"""
+        confidence = {}
+        
+        for field_name, value in extraction_data.items():
+            if value is None or value == '':
+                confidence[field_name] = 0.0
+                continue
+            
+            value_str = str(value)
+            
+            # Base confidence from text quality
+            base_confidence = self._calculate_text_confidence(value_str)
+            
+            # Boost confidence if value looks like proper number
+            if self._is_valid_number(value_str):
+                base_confidence += 0.10
+            
+            # Boost if field name was clearly detected
+            if self._field_name_detected_nearby(field_name, value_str):
+                base_confidence += 0.10
+            
+            # Cap at 1.0
+            confidence[field_name] = min(base_confidence, 1.0)
+        
+        return confidence
+    
+    def _parse_text_to_fields(self, text: str, doc_type: str) -> Dict[str, Any]:
+        """
+        Parse extracted text into structured fields.
+        (Use existing parsing logic from current implementation)
+        """
+        # TODO: TaskMaster should copy existing parsing logic here
+        # This is the logic currently in backend/app/services/extraction/
+        # that extracts fields from raw text
+        pass
+    
+    def _field_name_detected_nearby(self, field_name: str, value: str) -> bool:
+        """Check if field name appears near value in text (heuristic)"""
+        # Simple heuristic: return True for now
+        # Can be improved with actual text position analysis
+        return True
+```
+
+SUBTASKS:
+1. Locate existing PyMuPDF extraction logic in backend/app/services/extraction/
+2. Backup current file: cp pymupdf_extractor.py pymupdf_extractor.py.backup
+3. Update class to inherit from BaseExtractor
+4. Refactor extract() method to return ExtractionResult
+5. Implement calculate_confidence() method
+6. Copy existing _parse_text_to_fields logic into new structure
+7. Test extraction on sample PDF: /mnt/project/ESP_2023_Balance_Sheet.pdf
+8. Verify confidence scores are calculated
+9. Run existing tests to ensure no breakage
+
+VALIDATION:
+```python
+from app.services.extraction.pymupdf_extractor import PyMuPDFExtractor
+
+extractor = PyMuPDFExtractor()
+result = extractor.extract('/mnt/project/ESP_2023_Balance_Sheet.pdf', 'balance_sheet')
+
+assert isinstance(result, ExtractionResult)
+assert result.engine == 'pymupdf'
+assert len(result.confidence) > 0
+print(f"✓ Extracted {len(result.data)} fields")
+print(f"✓ Average confidence: {sum(result.confidence.values()) / len(result.confidence):.2%}")
+```
+
+---
+
+TASK S1-05: UPDATE PDFPLUMBER EXTRACTOR
+Priority: P1
+Complexity: MEDIUM
+Dependencies: S1-03, S1-04 (requires BaseExtractor, follows PyMuPDF pattern)
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Refactor PDFPlumber extractor to inherit from BaseExtractor. PDFPlumber has better table detection than PyMuPDF.
+
+ACCEPTANCE CRITERIA:
+☐ PDFPlumberExtractor inherits from BaseExtractor
+☐ Returns ExtractionResult with table detection metadata
+☐ Higher confidence for table-detected values (0.90 vs 0.75 for inline text)
+☐ calculate_confidence() considers table quality
+☐ Tests pass
+
+IMPLEMENTATION DETAILS:
+
+File to Modify: backend/app/services/extraction/pdfplumber_extractor.py
+
+(TaskMaster: Follow same pattern as S1-04, but specific to PDFPlumber)
+
+Key differences:
+- Use pdfplumber.open() instead of fitz.open()
+- Detect tables with page.find_tables()
+- Higher confidence (0.90) for values extracted from tables
+- Lower confidence (0.75) for inline text
+- Include table count in metadata
+
+SUBTASKS:
+1. Backup existing file
+2. Update class inheritance
+3. Implement extract() returning ExtractionResult
+4. Implement calculate_confidence() with table-aware logic
+5. Test on sample document
+6. Verify backward compatibility
+
+---
+
+TASK S1-06: UPDATE CAMELOT EXTRACTOR
+Priority: P1
+Complexity: MEDIUM
+Dependencies: S1-03, S1-04
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Refactor Camelot extractor (advanced table parser) to use BaseExtractor.
+
+Key differences:
+- Camelot provides built-in accuracy score (0-100)
+- Convert Camelot accuracy to 0-1 scale
+- Higher confidence for lattice method vs stream method
+- Handle merged cells (reduce confidence)
+
+(Similar structure to S1-04, S1-05)
+
+---
+
+TASK S1-07: CREATE CONFIDENCE ENGINE
+Priority: P2
+Complexity: MEDIUM
+Dependencies: S1-04, S1-05, S1-06 (requires all extractors updated)
+Estimated Time: 4 hours
+Risk: MEDIUM
+
+DESCRIPTION:
+Create service to calculate aggregate confidence across multiple extraction engines and detect conflicts.
+
+ACCEPTANCE CRITERIA:
+☐ ConfidenceEngine class created
+☐ calculate_field_confidence() works with multiple engine results
+☐ detect_conflicts() identifies when engines disagree
+☐ recommend_resolution() suggests best value
+☐ Weighted voting implemented
+☐ Unit tests pass
+
+IMPLEMENTATION DETAILS:
+
+File to Create: backend/app/services/confidence_engine.py
+
+```python
+from typing import List, Dict, Tuple, Any
+from app.services.extraction.base_extractor import ExtractionResult
+
+class ConfidenceEngine:
+    """
+    Calculate aggregate confidence across multiple extraction engines.
+    Detect conflicts and recommend resolution strategies.
+    """
+    
+    # Engine weights for voting (AI engines get higher weight)
+    ENGINE_WEIGHTS = {
+        'layoutlm': 0.35,  # AI model (highest)
+        'pdfplumber': 0.25,  # Good table detection
+        'camelot': 0.20,  # Advanced table parsing
+        'pymupdf': 0.15,  # Fast but simple
+        'easyocr': 0.05,  # OCR fallback (lowest)
+    }
+    
+    def calculate_field_confidence(
+        self, 
+        field_name: str, 
+        engine_results: List[ExtractionResult]
+    ) -> float:
+        """
+        Calculate aggregate confidence for a field across all engines.
+        
+        Args:
+            field_name: Name of field to score
+            engine_results: List of ExtractionResult from different engines
+        
+        Returns:
+            Aggregate confidence score (0.0 to 1.0)
+        """
+        # Collect confidence scores from engines that extracted this field
+        confidences = []
+        engines = []
+        
+        for result in engine_results:
+            if field_name in result.confidence:
+                confidences.append(result.confidence[field_name])
+                engines.append(result.engine)
+        
+        if not confidences:
+            return 0.0
+        
+        # Check if all engines agree on the value
+        values = [r.data.get(field_name) for r in engine_results if field_name in r.data]
+        all_agree = len(set(str(v) for v in values)) == 1
+        
+        # Calculate weighted average
+        weighted_sum = 0.0
+        weight_total = 0.0
+        
+        for conf, engine in zip(confidences, engines):
+            weight = self.ENGINE_WEIGHTS.get(engine, 0.1)
+            weighted_sum += conf * weight
+            weight_total += weight
+        
+        if weight_total == 0:
+            return 0.0
+        
+        base_confidence = weighted_sum / weight_total
+        
+        # Bonuses
+        if all_agree:
+            base_confidence *= 1.15  # 15% bonus for consensus
+        
+        if len(confidences) >= 3:
+            base_confidence *= 1.10  # 10% bonus for redundancy
+        
+        # Cap at 1.0
+        return min(base_confidence, 1.0)
+    
+    def detect_conflicts(
+        self, 
+        field_name: str, 
+        engine_results: List[ExtractionResult]
+    ) -> Dict[str, Any]:
+        """
+        Detect if engines extracted different values for same field.
+        
+        Returns:
+            {
+                'has_conflict': bool,
+                'conflicting_values': {engine: value},
+                'max_deviation': float (percentage),
+                'severity': str ('critical', 'high', 'medium', 'low')
+            }
+        """
+        values = {}
+        for result in engine_results:
+            if field_name in result.data:
+                values[result.engine] = result.data[field_name]
+        
+        if len(values) <= 1:
+            return {'has_conflict': False}
+        
+        # Check if all values are the same
+        unique_values = set(str(v) for v in values.values())
+        if len(unique_values) == 1:
+            return {'has_conflict': False}
+        
+        # Calculate deviation for numeric values
+        max_deviation = 0.0
+        numeric_values = []
+        
+        for v in values.values():
+            try:
+                # Normalize number format
+                cleaned = str(v).replace(',', '').replace('$', '').replace('(', '-').replace(')', '')
+                numeric_values.append(float(cleaned))
+            except (ValueError, AttributeError):
+                pass
+        
+        if len(numeric_values) >= 2:
+            min_val = min(numeric_values)
+            max_val = max(numeric_values)
+            if min_val != 0:
+                max_deviation = abs((max_val - min_val) / min_val) * 100
+        
+        # Determine severity
+        if max_deviation > 20:
+            severity = 'critical'
+        elif max_deviation > 10:
+            severity = 'high'
+        elif max_deviation > 5:
+            severity = 'medium'
+        else:
+            severity = 'low'
+        
+        return {
+            'has_conflict': True,
+            'conflicting_values': values,
+            'max_deviation': max_deviation,
+            'severity': severity
+        }
+    
+    def recommend_resolution(
+        self, 
+        field_name: str, 
+        engine_results: List[ExtractionResult]
+    ) -> Tuple[Any, str]:
+        """
+        Recommend which value to use when engines conflict.
+        
+        Returns:
+            (recommended_value, resolution_method)
+        """
+        conflict = self.detect_conflicts(field_name, engine_results)
+        
+        if not conflict['has_conflict']:
+            # No conflict, use any value
+            for result in engine_results:
+                if field_name in result.data:
+                    return (result.data[field_name], 'single_engine')
+        
+        values = conflict['conflicting_values']
+        
+        # Strategy 1: If majority agrees, use majority
+        value_counts = {}
+        for engine, value in values.items():
+            value_str = str(value)
+            if value_str not in value_counts:
+                value_counts[value_str] = []
+            value_counts[value_str].append(engine)
+        
+        if len(value_counts) > 1:
+            most_common_value = max(value_counts, key=lambda k: len(value_counts[k]))
+            if len(value_counts[most_common_value]) >= len(values) / 2:
+                return (eval(most_common_value), 'consensus')
+        
+        # Strategy 2: Use highest weighted engine
+        best_engine = None
+        best_weight = 0.0
+        
+        for engine in values.keys():
+            weight = self.ENGINE_WEIGHTS.get(engine, 0.1)
+            if weight > best_weight:
+                best_weight = weight
+                best_engine = engine
+        
+        if best_engine:
+            return (values[best_engine], 'weighted_vote')
+        
+        # Strategy 3: Flag for human review
+        return (None, 'human_review')
+```
+
+SUBTASKS:
+1. Create file backend/app/services/confidence_engine.py
+2. Implement calculate_field_confidence()
+3. Implement detect_conflicts()
+4. Implement recommend_resolution()
+5. Write unit tests (backend/tests/test_confidence_engine.py)
+6. Test with mock ExtractionResult objects
+
+VALIDATION:
+- Test consensus case (all engines agree)
+- Test conflict case (engines disagree)
+- Test weighted voting
+- Verify confidence bonuses applied correctly
+
+---
+
+TASK S1-08: CREATE METADATA STORAGE SERVICE
+Priority: P2
+Complexity: MEDIUM
+Dependencies: S1-02, S1-07
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+Create service to save extraction metadata to database after extraction completes.
+
+ACCEPTANCE CRITERIA:
+☐ MetadataStorageService class created
+☐ save_field_metadata() saves to extraction_field_metadata table
+☐ Handles multiple engine results (ensemble)
+☐ Flags low-confidence fields automatically
+☐ Transaction handling (rollback on error)
+☐ Unit tests pass
+
+IMPLEMENTATION DETAILS:
+
+File to Create: backend/app/services/metadata_storage_service.py
+
+(TaskMaster: Create service that takes List[ExtractionResult] and saves to database)
+
+Key methods:
+- save_field_metadata(db, document_id, table_name, record_id, engine_results)
+- Iterate through all fields
+- Call ConfidenceEngine to calculate aggregate confidence
+- Detect conflicts
+- Save to extraction_field_metadata table
+- Flag for review if confidence < 0.85
+
+---
+
+TASK S1-09: INTEGRATE METADATA INTO EXTRACTION ORCHESTRATOR
+Priority: P2
+Complexity: HIGH
+Dependencies: S1-04, S1-05, S1-06, S1-07, S1-08
+Estimated Time: 4 hours
+Risk: MEDIUM
+
+DESCRIPTION:
+Update extraction orchestrator to capture metadata after all engines run.
+
+ACCEPTANCE CRITERIA:
+☐ Orchestrator collects ExtractionResult from all engines
+☐ Calls ConfidenceEngine for aggregate scores
+☐ Calls MetadataStorageService to save metadata
+☐ Metadata saved before data commit (transactional)
+☐ If metadata save fails, rollback entire extraction
+☐ Existing extraction flow still works
+☐ Integration tests pass
+
+IMPLEMENTATION DETAILS:
+
+File to Modify: backend/app/services/extraction_orchestrator.py
+
+Changes:
+1. After running all extraction engines, collect all ExtractionResult objects
+2. For each field:
+   - Calculate aggregate confidence using ConfidenceEngine
+   - Detect conflicts
+   - Recommend resolution
+3. Use ensemble result for final data
+4. Save metadata before committing data to database
+5. If metadata save fails, rollback entire transaction
+
+(TaskMaster: Complex task, break into subtasks)
+
+SUBTASKS:
+1. Update orchestrator to collect ExtractionResult from each engine
+2. Add ConfidenceEngine integration
+3. Add MetadataStorageService integration
+4. Update transaction handling
+5. Test on sample document
+6. Verify metadata is saved
+7. Test rollback scenario
+
+---
+
+TASK S1-10: CREATE CONFIDENCE INDICATOR FRONTEND COMPONENT
+Priority: P3
+Complexity: MEDIUM
+Dependencies: None (frontend independent)
+Estimated Time: 3 hours
+Risk: LOW
+
+DESCRIPTION:
+React component to display confidence scores visually.
+
+ACCEPTANCE CRITERIA:
+☐ ConfidenceIndicator.tsx component created
+☐ Shows horizontal bar with color coding
+☐ Green (>95%), Yellow (85-95%), Red (<85%)
+☐ Tooltip shows engine and conflict details
+☐ Responsive design
+☐ TypeScript types defined
+
+IMPLEMENTATION DETAILS:
+
+File to Create: frontend/src/components/ConfidenceIndicator.tsx
+
+```typescript
+interface ConfidenceIndicatorProps {
+  score: number;  // 0.0 to 1.0
+  engine?: string;
+  conflicts?: Record<string, any>;
+  showDetails?: boolean;
+}
+
+export function ConfidenceIndicator({ score, engine, conflicts, showDetails = false }: ConfidenceIndicatorProps) {
+  const percentage = (score * 100).toFixed(1);
+  
+  const getColor = () => {
+    if (score >= 0.95) return '#22c55e';  // Green
+    if (score >= 0.85) return '#eab308';  // Yellow
+    return '#ef4444';  // Red
+  };
+  
+  return (
+    <div className="confidence-indicator">
+      <div className="confidence-bar" style={{ width: '100px', background: '#e5e7eb' }}>
+        <div 
+          style={{
+            width: `${score * 100}%`,
+            background: getColor(),
+            height: '8px',
+            transition: 'width 0.3s'
+          }}
+        />
+      </div>
+      {showDetails && <span className="confidence-text">{percentage}%</span>}
+    </div>
+  );
+}
+```
+
+SUBTASKS:
+1. Create component file
+2. Add TypeScript interfaces
+3. Implement color logic
+4. Add tooltip (use existing tooltip component if available)
+5. Add CSS styling
+6. Test in Storybook or standalone page
+
+---
+
+TASK S1-11: CREATE CONFIDENCE DATA TABLE COMPONENT
+Priority: P3
+Complexity: MEDIUM
+Dependencies: S1-10
+Estimated Time: 4 hours
+Risk: LOW
+
+DESCRIPTION:
+Enhanced table component that displays extracted data with confidence indicators.
+
+(TaskMaster: Create React component following existing table patterns in frontend/src/components/)
+
+---
+
+TASK S1-12: CREATE METADATA API ENDPOINTS
+Priority: P3
+Complexity: LOW
+Dependencies: S1-02, S1-08
+Estimated Time: 2 hours
+Risk: LOW
+
+DESCRIPTION:
+REST API endpoints for fetching field metadata.
+
+Endpoints:
+- GET /api/documents/{id}/field-metadata
+- GET /api/analytics/confidence-summary
+- PUT /api/metadata/{id}/mark-reviewed
+
+---
+
+TASK S1-13: UPDATE DOCUMENTS PAGE WITH CONFIDENCE VIEW
+Priority: P3
+Complexity: MEDIUM
+Dependencies: S1-11, S1-12
+Estimated Time: 4 hours
+Risk: LOW
+
+DESCRIPTION:
+Update Documents page to show confidence indicators and metadata.
+
+---
+
+TASK S1-14: CREATE PYDANTIC SCHEMAS FOR METADATA
+Priority: P3
+Complexity: LOW
+Dependencies: S1-12
+Estimated Time: 1 hour
+Risk: LOW
+
+DESCRIPTION:
+Data validation schemas for API requests/responses.
+
+---
+
+================================================================================
+SPRINT 1 TESTING REQUIREMENTS
+================================================================================
+
+UNIT TESTS (Required):
+☐ Test ExtractionFieldMetadata model CRUD operations
+☐ Test ConfidenceEngine.calculate_field_confidence()
+☐ Test ConfidenceEngine.detect_conflicts()
+☐ Test ConfidenceEngine.recommend_resolution()
+☐ Test MetadataStorageService.save_field_metadata()
+☐ Test BaseExtractor abstract methods
+☐ Test PyMuPDFExtractor.calculate_confidence()
+
+INTEGRATION TESTS (Required):
+☐ Test full extraction flow with metadata capture
+☐ Test metadata is saved to database
+☐ Test confidence indicators display in frontend
+☐ Test API endpoints return correct data
+☐ Test transaction rollback on metadata save failure
+
+REGRESSION TESTS (Required):
+☐ Existing extraction tests still pass
+☐ Existing document upload flow works
+☐ Existing reports still generate
+☐ No performance degradation (<10% slower)
+
+TEST DATA:
+- Use existing documents in /mnt/project/
+- ESP_2023_Balance_Sheet.pdf
+- TCSH_2023_Income_Statement.pdf
+- Wendover_Commons_2023_Cash_Flow_Statement.pdf
+
+================================================================================
+SPRINT 1 DEFINITION OF DONE
+================================================================================
+
+TECHNICAL CHECKLIST:
+☐ All database migrations run successfully
+☐ All SQLAlchemy models created and tested
+☐ All extraction engines return ExtractionResult
+☐ ConfidenceEngine produces accurate scores
+☐ Metadata is captured for 100% of extractions
+☐ Frontend displays confidence indicators
+☐ API endpoints return expected data
+☐ All unit tests pass (>80% coverage)
+☐ All integration tests pass
+☐ No regression in existing functionality
+
+DOCUMENTATION CHECKLIST:
+☐ CHANGELOG.md updated with new features
+☐ API documentation includes new endpoints
+☐ README.md includes setup for new dependencies
+☐ Database schema diagram updated
+
+DEPLOYMENT CHECKLIST:
+☐ Docker containers build successfully
+☐ docker-compose up starts all services
+☐ Database migrations run on container startup
+☐ Health check passes for all services
+☐ Sample extraction completes end-to-end
+
+================================================================================
+TASKMASTER EXECUTION NOTES
+================================================================================
+
+TASK ORDER:
+Tasks must be executed in order: S1-01 → S1-02 → S1-03 → S1-04/S1-05/S1-06 (parallel) → S1-07 → S1-08 → S1-09 → S1-10 → S1-11 → S1-12 → S1-13 → S1-14
+
+COMPLEXITY BREAKDOWN:
+- S1-01, S1-02, S1-03: Low complexity (straightforward creation)
+- S1-04, S1-05, S1-06: Medium (refactoring existing code)
+- S1-07, S1-08: Medium (new logic but clear requirements)
+- S1-09: High (integration, many moving parts)
+- S1-10 through S1-14: Low to Medium (frontend work)
+
+EXPECTED ISSUES:
+1. S1-09 (Integration): May need debugging if engines don't return expected format
+2. S1-04/05/06: Existing code may have different structure than expected
+3. S1-13: Frontend state management may need adjustment
+
+SOLUTIONS:
+1. Add extensive logging to orchestrator
+2. Review existing code before modifying
+3. Use React DevTools to debug state
+
+VALIDATION AFTER EACH TASK:
+- Run: docker-compose restart backend
+- Check logs: docker-compose logs backend
+- Test endpoint: curl localhost:8000/api/health
+- Run tests: docker-compose exec backend pytest
+
+================================================================================
+END OF SPRINT 1 PRD
+================================================================================

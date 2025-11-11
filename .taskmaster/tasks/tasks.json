@@ -2,1409 +2,198 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": 52,
         "title": "Create Database Schema for Field Metadata",
         "description": "Create a database table to store extraction metadata at the field level.",
-        "details": "Create a new table 'extraction_field_metadata' with columns for document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Establish foreign key constraints and create indexes for performance.",
-        "testStrategy": "Run migration and verify table creation. Test sample data insertion and rollback.",
+        "details": "Create a new table 'extraction_field_metadata' with columns for document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Implement foreign key constraints and performance indexes. Use Alembic for migrations.",
+        "testStrategy": "Run Alembic migrations and verify table creation. Insert sample data and test rollback.",
         "priority": "medium",
         "dependencies": [],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Design Database Schema for Field Metadata",
-            "description": "Design the table structure for storing field-level extraction metadata.",
-            "dependencies": [],
-            "details": "Define columns for document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Plan foreign key constraints and indexes.\n<info added on 2025-11-09T13:32:40.249Z>\nDatabase schema designed and migration file created at: backend/alembic/versions/20251109_1330_add_extraction_field_metadata.py\n\nKey design decisions:\n- Created extraction_field_metadata table with all required columns\n- Foreign key to document_uploads.id (CASCADE on delete)\n- Foreign key to users.id for reviewed_by (SET NULL on delete)\n- Created 3 PostgreSQL ENUM types for type safety\n- Performance indexes on document_id, field_name, confidence_score\n- Partial index on needs_review=true for faster review queries\n- Composite index on (document_id, table_name, record_id) for field lookups\n- Added table comment for documentation\n\nSchema includes:\n- Confidence tracking (score 0.0000-1.0000)\n- Engine provenance (pymupdf, pdfplumber, camelot, etc.)\n- Conflict resolution metadata (JSONB for conflicting values)\n- Review workflow fields (needs_review, priority, flagged_reason)\n- Timestamps (created_at, reviewed_at)\n\nReady for testing in next subtask.\n</info added on 2025-11-09T13:32:40.249Z>",
-            "status": "done",
-            "testStrategy": "Review schema design with team and ensure all fields are covered."
-          },
-          {
-            "id": 2,
-            "title": "Implement Migration Script for Field Metadata Table",
-            "description": "Create a migration script to implement the database schema for field metadata.",
-            "dependencies": [
-              1
-            ],
-            "details": "Write a migration script using a tool like Alembic to create the 'extraction_field_metadata' table with all specified columns, foreign keys, and indexes.\n<info added on 2025-11-09T20:34:00.977Z>\nMigration script successfully implemented and tested!\n\nMigration file: backend/alembic/versions/20251109_1330_add_extraction_field_metadata.py\n\nTest results:\n- Migration applied successfully: \"Running upgrade cf002std0002 -> 20251109_1330\"\n- Table created with all columns and constraints\n- Indexes created (verified in partial output):\n  - Primary key (id)\n  - ix_extraction_metadata_confidence\n  - ix_extraction_metadata_doc_table_record\n  - ix_extraction_metadata_field_name\n  - ix_extraction_metadata_document_id\n  - ix_extraction_metadata_needs_review (partial, WHERE needs_review=true)\n- Foreign keys established to document_uploads and users tables\n- ENUM types created successfully\n- Rollback script verified in downgrade() function\n\nMigration is production-ready and working in Docker environment.\n</info added on 2025-11-09T20:34:00.977Z>",
-            "status": "done",
-            "testStrategy": "Run the migration script in a test environment and verify table creation and integrity."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 2,
+        "id": 53,
         "title": "Create SQLAlchemy Model for Metadata",
         "description": "Develop a SQLAlchemy ORM model for the extraction_field_metadata table.",
-        "details": "Create a model class 'ExtractionFieldMetadata' with all columns defined. Establish relationships to Document and User models. Implement helper methods for retrieving low-confidence fields and fields needing review.",
-        "testStrategy": "Test model import and CRUD operations with sample data.",
+        "details": "Create a model class 'ExtractionFieldMetadata' with all necessary columns and relationships to Document and User models. Implement helper methods for retrieving low-confidence fields and fields needing review.",
+        "testStrategy": "Test CRUD operations and model import. Verify relationships and helper methods.",
         "priority": "medium",
         "dependencies": [
-          1
+          52
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Create SQLAlchemy Model Class for ExtractionFieldMetadata",
-            "description": "Develop the SQLAlchemy ORM model class 'ExtractionFieldMetadata' with all necessary columns defined.",
-            "dependencies": [
-              1
-            ],
-            "details": "Define the 'ExtractionFieldMetadata' class with columns such as document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Ensure all data types and constraints are correctly implemented.\n<info added on 2025-11-09T21:43:28.581Z>\nSQLAlchemy model class created successfully in file backend/app/models/extraction_field_metadata.py. Model includes all required columns with proper data types, indexes on key fields, foreign keys, helper properties, class methods for querying, and relationships. Added to __init__.py for package imports. Ready to establish bidirectional relationships.\n</info added on 2025-11-09T21:43:28.581Z>",
-            "status": "done",
-            "testStrategy": "Test model import and verify all columns are correctly defined."
-          },
-          {
-            "id": 2,
-            "title": "Establish Relationships in SQLAlchemy Model",
-            "description": "Set up relationships between the 'ExtractionFieldMetadata' model and the 'Document' and 'User' models.",
-            "dependencies": [
-              1
-            ],
-            "details": "Use SQLAlchemy's relationship and foreign key features to link 'ExtractionFieldMetadata' to 'Document' and 'User' models. Ensure that foreign key constraints are correctly established and relationships are bidirectional if necessary.\n<info added on 2025-11-09T21:43:56.387Z>\nBidirectional relationships established successfully!\n\nChanges made:\n1. In ExtractionFieldMetadata model:\n   - document = relationship(\"DocumentUpload\", back_populates=\"field_metadata\")\n   - reviewer = relationship(\"User\", foreign_keys=[reviewed_by])\n\n2. In DocumentUpload model:\n   - Added: field_metadata = relationship(\"ExtractionFieldMetadata\", back_populates=\"document\", cascade=\"all, delete-orphan\")\n   - Cascade delete ensures metadata is removed when document is deleted\n\n3. Relationship features:\n   - Bidirectional: Can navigate from document to metadata and vice versa\n   - Cascade delete: Orphaned metadata automatically removed\n   - Foreign key constraints properly linked\n\nTesting verified: Relationships correctly established and importable.\n</info added on 2025-11-09T21:43:56.387Z>",
-            "status": "done",
-            "testStrategy": "Test relationship integrity by querying related objects and verifying correct linkage."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 3,
+        "id": 54,
         "title": "Create Base Extractor Abstract Class",
         "description": "Develop an abstract base class for all extraction engines to standardize interfaces.",
-        "details": "Create 'BaseExtractor' abstract class with abstract methods 'extract()' and 'calculate_confidence()'. Define 'ExtractionResult' dataclass. Include helper methods for confidence calculation.",
+        "details": "Create 'BaseExtractor' with abstract methods 'extract' and 'calculate_confidence'. Define 'ExtractionResult' dataclass. Implement helper methods for confidence calculation.",
         "testStrategy": "Verify abstract methods cannot be instantiated. Test import and basic functionality.",
         "priority": "medium",
         "dependencies": [
-          2
+          53
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Define Abstract Methods in BaseExtractor",
-            "description": "Create abstract methods 'extract()' and 'calculate_confidence()' in the BaseExtractor class.",
-            "dependencies": [],
-            "details": "Implement the abstract methods 'extract()' and 'calculate_confidence()' in the BaseExtractor class to ensure all derived classes implement these methods.\n<info added on 2025-11-09T21:47:47.669Z>\nAbstract methods successfully defined in BaseExtractor. Created in backend/app/utils/engines/base_extractor.py. Abstract methods implemented: 1. extract(pdf_data: bytes, **kwargs) -> ExtractionResult - Main extraction method all engines must implement, returns standardized ExtractionResult. 2. calculate_confidence(extraction_data: Dict) -> Decimal - Calculates confidence score for extraction, returns Decimal between 0.0 and 1.0. BaseExtractor is properly structured as an ABC (Abstract Base Class) and cannot be instantiated directly.\n</info added on 2025-11-09T21:47:47.669Z>",
-            "status": "done",
-            "testStrategy": "Verify that the BaseExtractor class cannot be instantiated and that derived classes must implement these methods."
-          },
-          {
-            "id": 2,
-            "title": "Create ExtractionResult Dataclass",
-            "description": "Define the 'ExtractionResult' dataclass to encapsulate extraction results.",
-            "dependencies": [],
-            "details": "Design the 'ExtractionResult' dataclass with fields for storing extraction data, such as extracted content and confidence scores.\n<info added on 2025-11-09T21:48:01.757Z>\nExtractionResult dataclass created successfully!\n\nLocation: backend/app/utils/engines/base_extractor.py\n\nFeatures implemented:\n- @dataclass decorator for automatic initialization\n- Core fields: engine_name, extracted_data, success\n- Confidence tracking: confidence_score (Decimal), confidence_breakdown\n- Metadata: extraction_timestamp, processing_time_ms, page_count\n- Quality indicators: text_quality_score, table_detection_score, ocr_confidence\n- Conflict handling: conflicting_values, alternative_interpretations\n- Error handling: error_message, warnings\n- Engine-specific metadata dictionary\n- Properties: is_high_confidence, is_low_confidence, needs_review\n- __post_init__ validation for confidence scores\n</info added on 2025-11-09T21:48:01.757Z>",
-            "status": "done",
-            "testStrategy": "Test the instantiation of the dataclass and ensure all fields are correctly initialized."
-          },
-          {
-            "id": 3,
-            "title": "Implement Helper Methods for Confidence Calculation",
-            "description": "Develop helper methods in BaseExtractor for calculating confidence scores.",
-            "dependencies": [
-              1
-            ],
-            "details": "Add helper methods to the BaseExtractor class to assist in calculating confidence scores, ensuring they are reusable across different extraction engines.\n<info added on 2025-11-09T21:48:08.528Z>\nHelper methods for confidence calculation implemented in backend/app/utils/engines/base_extractor.py:\n\n1. _start_timer() - Start timing extraction\n2. _get_processing_time_ms() - Get processing time in milliseconds\n3. _calculate_text_quality(text, expected_min_length) - Calculate text quality (0-1.0)\n   - Length adequacy (0-0.3)\n   - Alphanumeric ratio (0-0.3)\n   - Word coherence (0-0.2)\n   - Sentence structure (0-0.2)\n4. _calculate_table_confidence(tables, expected_columns) - Table extraction confidence\n   - Table structure validation (0-0.4)\n   - Data completeness check (0-0.3)\n   - Expected columns matching (0-0.3)\n5. _calculate_aggregate_confidence() - Weighted average from multiple sources\n   - Configurable weights for text, table, OCR\n   - Returns normalized Decimal score\n\nAll helper methods are reusable across derived extraction engines.\n</info added on 2025-11-09T21:48:08.528Z>",
-            "status": "done",
-            "testStrategy": "Test the helper methods independently to ensure they return correct confidence calculations."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 4,
+        "id": 55,
         "title": "Update PyMuPDF Extractor to Use Base Class",
         "description": "Refactor PyMuPDF extractor to inherit from BaseExtractor and return ExtractionResult with confidence scores.",
-        "details": "Modify PyMuPDFExtractor to inherit from BaseExtractor. Implement 'extract()' to return ExtractionResult and 'calculate_confidence()' for text quality. Include metadata such as processing time and page count.",
-        "testStrategy": "Test extraction on sample PDF and verify confidence scores are calculated.",
+        "details": "Modify PyMuPDFExtractor to inherit from BaseExtractor. Implement 'extract' to return ExtractionResult and 'calculate_confidence' for text quality. Include metadata like processing time and page count.",
+        "testStrategy": "Test extraction on sample PDF and verify confidence scores. Run existing tests to ensure no breakage.",
         "priority": "medium",
         "dependencies": [
-          3
+          54
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Refactor PyMuPDFExtractor to Inherit from BaseExtractor",
-            "description": "Modify PyMuPDFExtractor to inherit from the newly created BaseExtractor class.",
-            "dependencies": [
-              3
-            ],
-            "details": "Update the PyMuPDFExtractor class definition to extend BaseExtractor. Ensure all abstract methods are implemented. Adjust existing methods to align with the new base class structure.\n<info added on 2025-11-09T21:50:08.154Z>\nPyMuPDFExtractor successfully refactored to inherit from BaseExtractor. Changes made include class inheritance, constructor initialization, implementation of abstract methods, preservation of existing methods for compatibility, renaming of internal methods, and utilization of BaseExtractor helper methods. Verification confirms successful implementation of the required interface.\n</info added on 2025-11-09T21:50:08.154Z>",
-            "status": "done",
-            "testStrategy": "Test inheritance by verifying that PyMuPDFExtractor implements all required methods from BaseExtractor."
-          },
-          {
-            "id": 2,
-            "title": "Implement Confidence Calculation in PyMuPDFExtractor",
-            "description": "Develop the 'calculate_confidence()' method to assess text extraction quality.",
-            "dependencies": [
-              1
-            ],
-            "details": "Create the 'calculate_confidence()' method within PyMuPDFExtractor. Use text quality metrics to compute confidence scores. Ensure the method integrates seamlessly with the 'extract()' method to return an ExtractionResult with confidence scores.\n<info added on 2025-11-09T21:50:24.753Z>\nConfidence calculation successfully implemented in PyMuPDFExtractor!\n\nLocation: backend/app/utils/engines/pymupdf_engine.py\n\nImplementation details:\n1. calculate_confidence() method implemented (required abstract method)\n   - Calculates text quality using _calculate_text_quality() helper\n   - Evaluates page coverage (expected ~1000 chars/page)\n   - Checks character adequacy (minimum 50 chars)\n   - Uses weighted aggregate confidence calculation\n   - Returns Decimal score between 0.0 and 1.0\n\n2. Confidence calculation in extract() method:\n   - Automatically called during extraction\n   - Stored in ExtractionResult.confidence_score\n   - Breakdown includes text_quality score\n   - Component scores: text_quality_score, table_detection_score\n\n3. Confidence factors:\n   - Text quality (50% weight): length, coherence, structure\n   - Page coverage multiplier: actual vs expected characters\n   - Character adequacy multiplier: minimum threshold check\n\nTest results: Confidence scores properly calculated and returned in ExtractionResult.\n</info added on 2025-11-09T21:50:24.753Z>",
-            "status": "done",
-            "testStrategy": "Test confidence calculation by extracting text from sample PDFs and verifying the accuracy of confidence scores."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 5,
+        "id": 56,
         "title": "Update PDFPlumber Extractor",
-        "description": "Refactor PDFPlumber extractor to inherit from BaseExtractor and return ExtractionResult with table detection metadata.",
-        "details": "Modify PDFPlumberExtractor to inherit from BaseExtractor. Implement 'extract()' to return ExtractionResult with higher confidence for table-detected values. Include table count in metadata.",
-        "testStrategy": "Test extraction on sample document and verify confidence scores.",
+        "description": "Refactor PDFPlumber extractor to inherit from BaseExtractor and enhance table detection.",
+        "details": "Modify PDFPlumberExtractor to inherit from BaseExtractor. Implement 'extract' to return ExtractionResult with table detection metadata. Adjust confidence based on table quality.",
+        "testStrategy": "Test extraction on sample document and verify confidence scores. Ensure backward compatibility.",
         "priority": "medium",
         "dependencies": [
-          3
+          54,
+          55
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Refactor PDFPlumberExtractor to Inherit from BaseExtractor",
-            "description": "Modify PDFPlumberExtractor to inherit from the BaseExtractor class.",
-            "dependencies": [],
-            "details": "Update the class definition of PDFPlumberExtractor to extend BaseExtractor. Ensure all abstract methods are implemented according to the new interface.\n<info added on 2025-11-09T21:52:58.252Z>\nPDFPlumberExtractor successfully refactored to inherit from BaseExtractor. Changes include class inheritance, constructor initialization, implementation of abstract methods, preservation of existing methods, renaming of internal methods, and enhanced table extraction. Special features include default table extraction, higher confidence weight for tables, native table extraction metadata, and layout-aware extraction. Verification confirms successful implementation of the required BaseExtractor interface.\n</info added on 2025-11-09T21:52:58.252Z>",
-            "status": "done",
-            "testStrategy": "Test inheritance by verifying method overrides."
-          },
-          {
-            "id": 2,
-            "title": "Implement Table Detection Metadata in PDFPlumberExtractor",
-            "description": "Enhance the extract method to include table detection metadata in the ExtractionResult.",
-            "dependencies": [
-              1
-            ],
-            "details": "Modify the extract method to detect tables and include the count and confidence levels in the ExtractionResult metadata.\n<info added on 2025-11-09T21:53:24.653Z>\nTable detection metadata successfully implemented in PDFPlumberExtractor!\n\nLocation: backend/app/utils/engines/pdfplumber_engine.py\n\nImplementation details:\n1. Enhanced _extract_tables_internal() method:\n   - Separates headers from data rows\n   - Includes row_count and column_count\n   - Stores full raw table data\n   - Returns structured table dictionary\n\n2. Table metadata in ExtractionResult:\n   - total_tables count included\n   - table_detection_score calculated\n   - Confidence breakdown includes \"table_detection\" metric\n   - Engine metadata shows table_count and extraction_method: \"native\"\n\n3. Higher confidence for table-detected values:\n   - When tables present: 70% weight on tables, 30% on text\n   - When no tables: 100% weight on text quality\n   - Leverages PDFPlumber's strength in table extraction\n\n4. Table confidence calculation:\n   - Uses BaseExtractor._calculate_table_confidence()\n   - Evaluates table structure (headers, rows)\n   - Checks data completeness (empty cells)\n   - Validates expected columns if provided\n\nVerification: Table metadata correctly included in all ExtractionResults.\n</info added on 2025-11-09T21:53:24.653Z>",
-            "status": "done",
-            "testStrategy": "Test extraction on sample documents to verify table metadata is correctly included."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 6,
+        "id": 57,
         "title": "Update Camelot Extractor",
         "description": "Refactor Camelot extractor to use BaseExtractor and handle advanced table parsing.",
-        "details": "Modify CamelotExtractor to inherit from BaseExtractor. Implement 'extract()' to return ExtractionResult with confidence based on Camelot's accuracy score. Handle merged cells and adjust confidence accordingly.",
-        "testStrategy": "Test extraction on sample document and verify confidence scores.",
+        "details": "Modify CamelotExtractor to inherit from BaseExtractor. Implement 'extract' to return ExtractionResult. Convert Camelot accuracy to 0-1 scale and adjust confidence for lattice method.",
+        "testStrategy": "Test extraction on sample document and verify confidence scores. Ensure backward compatibility.",
         "priority": "medium",
         "dependencies": [
-          3
+          54,
+          55
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Refactor CamelotExtractor to Inherit from BaseExtractor",
-            "description": "Modify CamelotExtractor to inherit from BaseExtractor class.",
-            "dependencies": [],
-            "details": "Update the CamelotExtractor class definition to extend BaseExtractor. Ensure all necessary methods from BaseExtractor are implemented or overridden as needed.\n<info added on 2025-11-09T21:56:01.115Z>\nCamelotExtractor successfully refactored to inherit from BaseExtractor!\n\nFile: backend/app/utils/engines/camelot_engine.py\n\nChanges made:\n1. Class now inherits from BaseExtractor: class CamelotEngine(BaseExtractor)\n2. Constructor calls super().__init__(engine_name=\"camelot\")\n3. Implemented abstract method extract() returning ExtractionResult\n4. Implemented abstract method calculate_confidence() using Camelot's accuracy scores\n5. All existing methods preserved for backwards compatibility\n6. Internal methods renamed with _internal suffix\n7. Enhanced to support both lattice and stream flavors\n8. Added merged cell detection logic\n\nKey features:\n- Uses Camelot's built-in accuracy scores (0-100) converted to 0.0-1.0\n- Supports flavor=\"both\" to try both methods and select best\n- Accuracy-based method selection\n- Table count factor increases confidence\n\nVerification: Successfully implements required BaseExtractor interface.\n</info added on 2025-11-09T21:56:01.115Z>",
-            "status": "done",
-            "testStrategy": "Verify class inheritance and method overrides."
-          },
-          {
-            "id": 2,
-            "title": "Implement Advanced Table Parsing for Merged Cells",
-            "description": "Enhance CamelotExtractor to handle merged cells during table parsing.",
-            "dependencies": [
-              1
-            ],
-            "details": "Modify the parsing logic to detect and correctly interpret merged cells. Update the extraction logic to ensure data integrity from merged cells.\n<info added on 2025-11-09T21:56:19.896Z>\nAdvanced table parsing for merged cells successfully implemented!\n\nLocation: backend/app/utils/engines/camelot_engine.py\n\nImplementation details:\n1. _detect_merged_cells() method created:\n   - Detects vertical merges: checks for repeated values in consecutive rows\n   - Detects horizontal merges: identifies unusual empty cell patterns (>30% empty)\n   - Returns boolean indicating merged cell presence\n\n2. Merged cell handling in extraction:\n   - has_merged_cells flag added to each table dictionary\n   - Called during _extract_tables_internal() for all tables\n   - Metadata included in ExtractionResult\n\n3. Data integrity ensured:\n   - Camelot's DataFrame conversion preserves merged cell data\n   - Both vertical and horizontal merges detected\n   - Empty cell patterns analyzed for merge indicators\n\n4. Integration with confidence system:\n   - Merged cell flag stored in table metadata\n   - Used by calculate_confidence() for accuracy adjustments\n   - Warning system alerts for tables with merges\n\nVerification: Merged cell detection working correctly, data integrity maintained.\n</info added on 2025-11-09T21:56:19.896Z>",
-            "status": "done",
-            "testStrategy": "Test with documents containing merged cells and verify correct parsing."
-          },
-          {
-            "id": 3,
-            "title": "Adjust Confidence Calculations Based on Parsing Accuracy",
-            "description": "Update confidence score calculations to reflect parsing accuracy.",
-            "dependencies": [
-              1,
-              2
-            ],
-            "details": "Implement logic to adjust confidence scores based on the accuracy of table parsing, particularly focusing on merged cells and other complex structures.\n<info added on 2025-11-09T21:56:42.205Z>\nConfidence calculation adjustments based on parsing accuracy successfully implemented!\n\nLocation: backend/app/utils/engines/camelot_engine.py\n\nImplementation details:\n\n1. calculate_confidence() method uses Camelot's accuracy scores:\n   - Retrieves accuracy from each table (0-100 from Camelot)\n   - Converts to 0.0-1.0 scale\n   - Calculates weighted average across all tables\n\n2. Accuracy-based adjustments:\n   - Table count factor: More tables = higher reliability (0.5-1.0 scale)\n   - Merged cell penalty: 5% reduction per table with merged cells (max 30% total)\n   - Formula: avg_accuracy × table_count_factor × (1 - merged_cell_penalty)\n\n3. Camelot-specific confidence scoring:\n   - _calculate_camelot_table_confidence() uses weighted average favoring higher accuracies\n   - Stores avg_accuracy, min_accuracy, max_accuracy in engine_metadata\n   - Generates warnings for tables with <80% accuracy\n\n4. Parsing accuracy features:\n   - Leverages Camelot's built-in parsing_report accuracy metric\n   - Whitespace analysis included in table metadata\n   - Confidence breakdown shows \"parsing_accuracy\" metric\n\n5. Test scenarios covered:\n   - High accuracy tables (>90%): High confidence\n   - Low accuracy tables (<80%): Reduced confidence with warnings\n   - Mixed accuracy: Weighted average calculation\n   - Merged cells detected: Automatic confidence penalty applied\n\nVerification: Confidence properly reflects Camelot's parsing accuracy and complexity.\n</info added on 2025-11-09T21:56:42.205Z>",
-            "status": "done",
-            "testStrategy": "Test confidence score adjustments with various parsing scenarios."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 7,
+        "id": 58,
         "title": "Create Confidence Engine",
         "description": "Develop a service to calculate aggregate confidence across multiple extraction engines and detect conflicts.",
-        "details": "Create 'ConfidenceEngine' class with methods to calculate field confidence, detect conflicts, and recommend resolution strategies. Implement weighted voting for engine results.",
-        "testStrategy": "Write unit tests for consensus, conflict detection, and weighted voting.",
+        "details": "Implement 'ConfidenceEngine' with methods 'calculate_field_confidence', 'detect_conflicts', and 'recommend_resolution'. Use weighted voting for confidence calculation.",
+        "testStrategy": "Write unit tests for consensus, conflict detection, and weighted voting. Verify confidence bonuses.",
         "priority": "medium",
         "dependencies": [
-          4,
-          5,
-          6
+          55,
+          56,
+          57
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Implement Confidence Calculation Method",
-            "description": "Develop a method to calculate aggregate confidence using weighted voting.",
-            "dependencies": [],
-            "details": "Create a method within the 'ConfidenceEngine' class to calculate confidence scores by applying weighted voting across multiple extraction engines.\n<info added on 2025-11-09T22:00:02.794Z>\nConfidence calculation method successfully implemented in the 'ConfidenceEngine' class. The implementation includes methods for calculating field confidence using weighted voting, aggregating extraction results, and a convenience method for ensemble confidence with PyMuPDF, PDFPlumber, and Camelot. Features include handling missing engines, filtering failed results, tracking processing times, and determining review priority. Default weights are configurable and normalized automatically.\n</info added on 2025-11-09T22:00:02.794Z>",
-            "status": "done",
-            "testStrategy": "Write unit tests to verify correct confidence calculation based on predefined weights."
-          },
-          {
-            "id": 2,
-            "title": "Develop Conflict Detection Mechanism",
-            "description": "Create a mechanism to detect conflicts in extraction results.",
-            "dependencies": [
-              1
-            ],
-            "details": "Implement a method in the 'ConfidenceEngine' class to identify conflicting results from different extraction engines and flag them for review.\n<info added on 2025-11-09T22:00:22.772Z>\nConflict detection mechanism successfully implemented in the 'ConfidenceEngine' class.\n\nFile: backend/app/services/confidence_engine.py\n\nMethods implemented:\n1. detect_conflicts(extraction_results, field_mappings)\n   - Identifies fields with differing values from engines\n   - Returns conflicts list with metadata\n   - Calculates severity: high/medium/low based on confidence spread\n   - Includes engines_count and confidence_spread\n\n2. FieldResult helper class:\n   - has_conflicts() - Checks for differing values across engines\n   - get_conflicting_values() - Returns conflicting engine results\n   - add_engine_result() - Collects results from multiple engines\n\n3. Conflict severity classification:\n   - High severity: Confidence spread > 0.3 (30%)\n   - Medium severity: Confidence spread > 0.15 (15%)\n   - Low severity: Confidence spread <= 0.15\n\n4. Conflict metadata includes:\n   - field_name\n   - conflicting_values (list with engine, value, confidence)\n   - severity level\n   - confidence_spread\n   - engines_count\n\nTest scenarios:\n- Detects when 2+ engines return different values\n- Ignores null/empty values appropriately\n- Calculates severity correctly\n- Returns structured conflict data\n</info added on 2025-11-09T22:00:22.772Z>",
-            "status": "done",
-            "testStrategy": "Test conflict detection with mock data representing conflicting and non-conflicting scenarios."
-          },
-          {
-            "id": 3,
-            "title": "Design Resolution Strategy Recommendation",
-            "description": "Design a strategy to recommend resolutions for detected conflicts.",
-            "dependencies": [
-              2
-            ],
-            "details": "Add a method to the 'ConfidenceEngine' class that suggests resolution strategies based on detected conflicts, considering factors like confidence scores and historical data.\n<info added on 2025-11-09T22:00:49.179Z>\nResolution strategy recommendation successfully implemented in the 'ConfidenceEngine' class. The method `recommend_resolution_strategy` analyzes conflicts and suggests the best resolution approach, returning a dictionary with strategy, chosen value, confidence, and reasoning. It considers confidence gaps, consensus patterns, and value counts. Implemented strategies include WEIGHTED_VOTE, CONSENSUS, HUMAN_REVIEW, AI_OVERRIDE, and SINGLE_ENGINE. Decision logic prioritizes strategies based on confidence gaps and agreement among engines. Additional features include methods for selecting the highest confidence value and determining review needs. Conflict penalties are applied based on the number of conflicts and spread. All resolution strategies have been tested and are functioning correctly.\n</info added on 2025-11-09T22:00:49.179Z>",
-            "status": "done",
-            "testStrategy": "Test resolution recommendations using various conflict scenarios to ensure appropriate strategies are suggested."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 8,
+        "id": 59,
         "title": "Create Metadata Storage Service",
         "description": "Develop a service to save extraction metadata to the database after extraction completes.",
-        "details": "Create 'MetadataStorageService' to save field metadata to the extraction_field_metadata table. Handle multiple engine results and flag low-confidence fields automatically. Ensure transaction handling with rollback on error.",
-        "testStrategy": "Test metadata saving with mock ExtractionResult objects and verify database entries.",
+        "details": "Implement 'MetadataStorageService' with 'save_field_metadata' method. Handle multiple engine results and flag low-confidence fields. Ensure transaction handling.",
+        "testStrategy": "Test metadata saving with mock ExtractionResult objects. Verify transaction rollback on error.",
         "priority": "medium",
         "dependencies": [
-          2,
-          7
+          53,
+          58
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Implement MetadataStorageService Class",
-            "description": "Develop the MetadataStorageService class to handle metadata saving.",
-            "dependencies": [
-              2,
-              7
-            ],
-            "details": "Create the MetadataStorageService class with methods to save metadata to the extraction_field_metadata table. Ensure it handles multiple engine results and flags low-confidence fields automatically.\n<info added on 2025-11-09T22:04:51.283Z>\nMetadataStorageService class successfully implemented!\n\nFile: backend/app/services/metadata_storage_service.py\n\nKey features:\n1. Constructor with db_session and optional ConfidenceEngine\n2. Configurable confidence thresholds (low: 0.70, critical: 0.50)\n\nMethods implemented:\n- save_field_metadata() - Save metadata for single field from multiple engines\n- save_document_metadata() - Save metadata for all fields in document\n- save_extraction_result_metadata() - Save entire extraction result\n- flag_low_confidence_fields() - Auto-flag fields below threshold\n- get_review_statistics() - Get review stats for document\n- bulk_save_metadata() - Batch save for performance\n\nFeatures:\n- Integrates with ConfidenceEngine for scoring\n- Automatically flags low-confidence fields\n- Determines review priority (critical/high/medium/low)\n- Stores conflicting values in JSONB format\n- Tracks resolution method used\n- Batch processing support (1000 records/batch)\n\nAdded to services package in __init__.py\n</info added on 2025-11-09T22:04:51.283Z>",
-            "status": "done",
-            "testStrategy": "Test saving metadata with mock ExtractionResult objects."
-          },
-          {
-            "id": 2,
-            "title": "Implement Transaction Handling with Rollback",
-            "description": "Ensure transaction management with rollback on error in MetadataStorageService.",
-            "dependencies": [
-              1
-            ],
-            "details": "Integrate transaction handling in MetadataStorageService using SQLAlchemy session management. Implement rollback on error to maintain data integrity.\n<info added on 2025-11-09T22:05:09.774Z>\nTransaction handling with rollback successfully implemented in the file backend/app/services/metadata_storage_service.py.\n\nImplementation details:\n1. All save methods use try-except-rollback pattern:\n   - save_field_metadata() - Individual field save\n   - save_document_metadata() - Document-level save with commit\n   - save_extraction_result_metadata() - Full extraction result save\n   - flag_low_confidence_fields() - Bulk update with transaction\n   - bulk_save_metadata() - Batch save with rollback\n\n2. Transaction management:\n   - Uses SQLAlchemy session management (self.db_session)\n   - Explicit commit only after all operations succeed\n   - Automatic rollback on SQLAlchemyError\n   - Error messages returned in result dict\n\n3. Rollback scenarios handled:\n   - Database connection failures\n   - Constraint violations\n   - Invalid data inputs\n   - Batch save failures\n   - Query execution errors\n\n4. Data integrity ensured:\n   - All-or-nothing commits for document metadata\n   - Batch commits for bulk operations\n   - No partial saves on error\n   - Session state cleaned on rollback\n\nVerification: Transaction handling tested with error scenarios, rollback working correctly.\n</info added on 2025-11-09T22:05:09.774Z>",
-            "status": "done",
-            "testStrategy": "Simulate errors and verify rollback functionality."
-          },
-          {
-            "id": 3,
-            "title": "Test Error Scenarios for Metadata Storage",
-            "description": "Develop tests to handle error scenarios in metadata storage.",
-            "dependencies": [
-              1,
-              2
-            ],
-            "details": "Create unit tests to simulate various error scenarios, including database connection failures and invalid data inputs, ensuring proper error handling and rollback.\n<info added on 2025-11-09T22:06:15.121Z>\nError scenario tests successfully created!\n\nFile: backend/tests/test_metadata_storage_service.py\n\nTest coverage includes:\n1. test_save_field_metadata_success - Happy path verification\n2. test_save_document_metadata_with_rollback - IntegrityError handling\n3. test_save_extraction_result_with_connection_failure - Connection errors\n4. test_flag_low_confidence_fields_rollback - Bulk update failures\n5. test_bulk_save_with_invalid_data - Batch save errors\n6. test_multiple_operations_rollback_on_last_failure - Transactional integrity\n7. test_get_review_statistics_error_handling - Query error handling\n8. test_save_with_null_document_id - Invalid input handling\n\nError scenarios tested:\n- Database connection failures\n- Constraint violations (IntegrityError)\n- Invalid data inputs\n- Batch save failures\n- Query execution errors\n- Null/invalid IDs\n- Multiple operation rollback\n\nTest framework: pytest\nMocking: unittest.mock\nAll tests verify rollback is called on errors\n\nCan be run with: docker-compose exec backend pytest tests/test_metadata_storage_service.py -v\n</info added on 2025-11-09T22:06:15.121Z>",
-            "status": "done",
-            "testStrategy": "Use pytest to run error scenario tests and verify correct handling."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 9,
+        "id": 60,
         "title": "Integrate Metadata into Extraction Orchestrator",
         "description": "Update the extraction orchestrator to capture metadata after all engines run.",
-        "details": "Modify orchestrator to collect ExtractionResult from all engines, calculate aggregate confidence, detect conflicts, and save metadata before committing data to the database. Ensure rollback on metadata save failure.",
-        "testStrategy": "Test full extraction flow with metadata capture and verify rollback scenario.",
+        "details": "Collect ExtractionResult from all engines in the orchestrator. Use ConfidenceEngine for aggregate scores and MetadataStorageService to save metadata. Ensure transactional integrity.",
+        "testStrategy": "Test full extraction flow with metadata capture. Verify metadata is saved and rollback on failure.",
         "priority": "medium",
         "dependencies": [
-          4,
-          5,
-          6,
-          7,
-          8
+          55,
+          56,
+          57,
+          58,
+          59
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Modify Orchestrator to Collect Extraction Results",
-            "description": "Update the orchestrator to gather ExtractionResult from all engines.",
-            "dependencies": [],
-            "details": "Implement logic to collect results from each extraction engine and store them in a centralized location within the orchestrator.\n<info added on 2025-11-09T22:09:35.568Z>\nThe orchestrator has been successfully modified to collect ExtractionResults. Key changes include the addition of the `extract_with_confidence()` method in `extraction_engine.py` and updates to `extraction_orchestrator.py` to import necessary services and initialize them. The `MultiEngineExtractor` now runs all three engines, handles failures gracefully, and returns results with confidence scores. The `ExtractionOrchestrator` imports the `ExtractionFieldMetadata` model, `ConfidenceEngine`, and `MetadataStorageService`, and initializes these services to integrate metadata capture into the extraction workflow.\n</info added on 2025-11-09T22:09:35.568Z>",
-            "status": "done",
-            "testStrategy": "Test collection of results from all engines."
-          },
-          {
-            "id": 2,
-            "title": "Implement Metadata Capture Logic",
-            "description": "Develop functionality to capture and store metadata after engine execution.",
-            "dependencies": [
-              1
-            ],
-            "details": "Create a method to calculate aggregate confidence, detect conflicts, and prepare metadata for storage.\n<info added on 2025-11-09T22:11:02.095Z>\nMetadata capture logic successfully implemented in the file `backend/app/services/extraction_orchestrator.py` with the new method `_capture_and_save_metadata()`. This method:\n\n1. Runs all extraction engines via `extract_with_confidence()`.\n2. Collects `ExtractionResult` from PyMuPDF, PDFPlumber, and Camelot.\n3. Calculates aggregate confidence using `ConfidenceEngine`.\n4. Saves metadata using `MetadataStorageService`.\n5. Tracks all fields with confidence scores.\n6. Flags low-confidence fields automatically.\n7. Returns comprehensive statistics.\n\nIntegration into the workflow includes adding this as Step 7 in `extract_and_parse_document()`, running after data insertion and validation, and before the final status update. It processes `inserted_records` from `parse_result`.\n\nStatistics tracked include total fields tracked, flagged for review count, critical fields count, aggregate confidence score, and engines used and failed.\n</info added on 2025-11-09T22:11:02.095Z>",
-            "status": "done",
-            "testStrategy": "Test metadata capture with mock data and verify calculations."
-          },
-          {
-            "id": 3,
-            "title": "Ensure Rollback Mechanism on Metadata Save Failure",
-            "description": "Implement rollback functionality if metadata saving fails.",
-            "dependencies": [
-              2
-            ],
-            "details": "Integrate transaction management to rollback changes if metadata cannot be saved successfully.\n<info added on 2025-11-09T22:11:09.372Z>\nRollback mechanism on metadata save failure successfully implemented.\n\nFile: backend/app/services/extraction_orchestrator.py\n\nImplementation (lines 236-255):\n1. Checks if metadata_result[\"success\"] is False\n2. Triggers full database rollback: self.db.rollback()\n3. Re-queries upload record in new transaction\n4. Sets extraction_status to \"failed_metadata\"\n5. Logs failure reason in upload.notes\n6. Commits status update separately\n7. Returns error with rolled_back=True flag\n\nRollback flow:\n- If metadata save fails → rollback() called\n- All data insertions are reverted\n- Upload status set to \"failed_metadata\"\n- Error message preserved\n- Clean state restored\n\nProtection ensures:\n- No partial data commits\n- Zero data loss guarantee maintained\n- Transaction integrity preserved\n- Clear failure status for monitoring\n</info added on 2025-11-09T22:11:09.372Z>",
-            "status": "done",
-            "testStrategy": "Simulate save failure and verify rollback occurs."
-          },
-          {
-            "id": 4,
-            "title": "Integrate Metadata Storage Service",
-            "description": "Connect the orchestrator with the Metadata Storage Service to save metadata.",
-            "dependencies": [
-              2,
-              3
-            ],
-            "details": "Use the MetadataStorageService to persist metadata to the database, ensuring all data is correctly saved.\n<info added on 2025-11-09T22:11:15.839Z>\nMetadata Storage Service integration complete!\n\nFile: backend/app/services/extraction_orchestrator.py\n\nIntegration points:\n1. Constructor initialization (lines 36-37):\n   - self.confidence_engine = ConfidenceEngine()\n   - self.metadata_service = MetadataStorageService(db, confidence_engine)\n\n2. Workflow integration (lines 230-234):\n   - Calls _capture_and_save_metadata() after validation\n   - Passes upload_id, pdf_data, inserted_records\n   - Receives metadata result with statistics\n\n3. Services integrated:\n   - ConfidenceEngine: Aggregates results, detects conflicts\n   - MetadataStorageService: Saves to extraction_field_metadata table\n   - MultiEngineExtractor: Collects ExtractionResults\n\n4. Complete data flow:\n   - PDF → All engines extract → ExtractionResults collected\n   - → ConfidenceEngine calculates aggregate confidence\n   - → MetadataStorageService saves to database\n   - → Statistics returned and logged\n\n5. Result enrichment (line 274):\n   - Added \"metadata\" field to extraction result\n   - Includes aggregate_confidence, fields_tracked, flagged_count\n   - Engines used and processing stats\n\nAll components working together seamlessly!\n</info added on 2025-11-09T22:11:15.839Z>",
-            "status": "done",
-            "testStrategy": "Test integration with the service and verify database entries."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 10,
+        "id": 61,
         "title": "Create Confidence Indicator Frontend Component",
         "description": "Develop a React component to display confidence scores visually.",
-        "details": "Create 'ConfidenceIndicator.tsx' component to show a horizontal bar with color coding based on confidence score. Include tooltip for engine and conflict details. Ensure responsive design and TypeScript types.",
-        "testStrategy": "Test component in Storybook or standalone page and verify visual accuracy.",
+        "details": "Create 'ConfidenceIndicator.tsx' to show a horizontal bar with color coding based on confidence score. Implement tooltip for engine and conflict details.",
+        "testStrategy": "Test component in Storybook or standalone page. Verify responsiveness and tooltip functionality.",
         "priority": "medium",
         "dependencies": [],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Design Confidence Indicator UI",
-            "description": "Design the UI layout for the Confidence Indicator component.",
-            "dependencies": [],
-            "details": "Create wireframes and mockups for the Confidence Indicator component, focusing on the horizontal bar design, color coding, and tooltip placement.\n<info added on 2025-11-09T22:14:01.649Z>\nConfidence Indicator UI design completed!\n\nFile: src/components/ConfidenceIndicator.tsx\n\nDesign features:\n1. Horizontal bar with color coding:\n   - Green (#10b981): 95-100% - Excellent\n   - Lime (#84cc16): 85-94% - Good\n   - Yellow (#eab308): 70-84% - Fair\n   - Orange (#f97316): 50-69% - Low\n   - Red (#ef4444): 0-49% - Critical\n\n2. Tooltip design:\n   - Dark background (gray-900)\n   - Shows confidence percentage and label\n   - Displays engine name\n   - Lists conflicting values with engines and their confidences\n   - Shows warnings\n   - Review recommendation for low confidence\n   - Tooltip arrow pointing to indicator\n\n3. Visual indicators:\n   - ⚠️ Warning icon for needs review\n   - ⚡ Lightning icon for conflicts\n   - Color-coded badge version\n\n4. Three component variants:\n   - ConfidenceIndicator (full with label and tooltip)\n   - ConfidenceIndicatorCompact (small, no label)\n   - ConfidenceBadge (pill-style badge)\n\n5. Responsive sizing: sm/md/lg variants\n</info added on 2025-11-09T22:14:01.649Z>",
-            "status": "done",
-            "testStrategy": "Review design mockups with stakeholders for feedback."
-          },
-          {
-            "id": 2,
-            "title": "Implement Responsive Confidence Indicator Component",
-            "description": "Develop the Confidence Indicator component in React with responsive design.",
-            "dependencies": [
-              1
-            ],
-            "details": "Use React and TypeScript to implement the 'ConfidenceIndicator.tsx' component. Ensure the component is responsive and includes a horizontal bar with color coding and tooltips for engine and conflict details.\n<info added on 2025-11-09T22:14:22.560Z>\nResponsive Confidence Indicator Component fully implemented!\n\nFile: src/components/ConfidenceIndicator.tsx\n\nImplementation details:\n\n1. TypeScript types and interfaces:\n   - ConfidenceIndicatorProps interface with all prop types\n   - Type-safe props with optional parameters\n   - Proper typing for conflicting values array\n\n2. Responsive design features:\n   - Three size variants (sm/md/lg)\n   - Adaptive bar widths: 100px/150px/200px\n   - Responsive font sizes: 0.75rem/0.875rem/1rem\n   - Flexible padding based on size\n   - Mobile-friendly touch interactions\n\n3. Component variants for different use cases:\n   - ConfidenceIndicator: Full version with label and tooltip\n   - ConfidenceIndicatorCompact: Small inline version\n   - ConfidenceBadge: Pill-style badge for tight spaces\n\n4. Interactive features:\n   - Hover to show/hide tooltip\n   - Smooth transitions (300ms ease-in-out)\n   - Color-coded visual feedback\n   - Icons for warnings and conflicts\n\n5. Accessibility:\n   - Semantic HTML structure\n   - Title attributes for icons\n   - High contrast colors\n   - Clear visual hierarchy\n\n6. Tailwind CSS integration:\n   - Uses existing Tailwind classes\n   - Custom colors via inline styles\n   - Responsive utilities (flex, gap, inline-block)\n\nTest verification: Component renders correctly with all props, responsive across screen sizes.\n</info added on 2025-11-09T22:14:22.560Z>",
-            "status": "done",
-            "testStrategy": "Test the component in Storybook to verify responsiveness and visual accuracy."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 11,
-        "title": "Install and Configure LayoutLMv3",
-        "description": "Download and configure Microsoft's LayoutLMv3 model for document understanding.",
-        "details": "Add dependencies to requirements.txt, create necessary directories and configuration files, and update docker-compose for model caching. Implement a script to download and cache the model.",
-        "testStrategy": "Verify model loads without errors and test inference on a sample PDF. Ensure processing time is under 30 seconds per page.",
-        "priority": "medium",
-        "dependencies": [],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Update requirements.txt with LayoutLMv3 Dependencies",
-            "description": "Add necessary dependencies for LayoutLMv3 to the requirements.txt file.",
-            "dependencies": [],
-            "details": "Identify all required Python packages for LayoutLMv3 and add them to the requirements.txt file. Ensure compatibility with existing packages.\n<info added on 2025-11-09T22:31:29.846Z>\nLayoutLMv3 dependencies successfully added to requirements.txt:\n\nFile: backend/requirements.txt\n\nDependencies added (Sprint 2 AI/ML section):\n1. transformers==4.44.2 - Hugging Face library for LayoutLMv3\n2. torch==2.5.1 - PyTorch deep learning framework\n3. torchvision==0.20.1 - Vision utilities for PyTorch\n4. sentencepiece==0.2.0 - Tokenization support\n5. accelerate==1.2.1 - Optimization library for model loading\n\nExisting compatible dependencies:\n- pillow==12.0.0 (already installed)\n- pdf2image==1.17.0 (already installed)\n- opencv-python-headless==4.12.0.88 (already installed)\n\nModel specifications:\n- LayoutLMv3: microsoft/layoutlmv3-base\n- Model size: ~1.3 GB\n- Requires: Python 3.8+, PyTorch 2.0+\n\nReady for Docker configuration.\n</info added on 2025-11-09T22:31:29.846Z>",
-            "status": "done",
-            "testStrategy": "Verify that all dependencies install without errors."
-          },
-          {
-            "id": 2,
-            "title": "Configure Docker for Model Caching",
-            "description": "Update docker-compose to support model caching for LayoutLMv3.",
-            "dependencies": [
-              1
-            ],
-            "details": "Modify the docker-compose.yml file to include volume mounts for model caching. Ensure the configuration supports efficient model loading.\n<info added on 2025-11-09T22:32:40.710Z>\nDocker successfully configured for model caching!\n\nFile: docker-compose.yml\n\nChanges made:\n1. Added volume mount to backend service (line 182):\n   - ai-models-cache:/app/.cache/huggingface\n\n2. Added volume mount to celery-worker service:\n   - ai-models-cache:/app/.cache/huggingface (shared with backend)\n\n3. Created named volume definition (line 299-300):\n   - ai-models-cache: driver: local\n\nConfiguration benefits:\n- Models cached in persistent Docker volume\n- Shared between backend and celery worker\n- Models survive container restarts\n- No re-download needed after first load\n- Cache location: /app/.cache/huggingface (Transformers default)\n\nModel storage estimate:\n- LayoutLMv3-base: ~1.3 GB\n- EasyOCR English model: ~400 MB\n- Total: ~1.7 GB\n\nReady for model download script.\n</info added on 2025-11-09T22:32:40.710Z>",
-            "status": "done",
-            "testStrategy": "Test Docker setup to confirm model caching works as expected."
-          },
-          {
-            "id": 3,
-            "title": "Implement Model Download and Caching Script",
-            "description": "Create a script to download and cache the LayoutLMv3 model.",
-            "dependencies": [
-              1,
-              2
-            ],
-            "details": "Develop a Python script that downloads the LayoutLMv3 model and caches it locally. Ensure the script handles network errors and retries.\n<info added on 2025-11-09T22:34:01.136Z>\nModel download and caching script successfully implemented!\n\nFile: backend/scripts/download_ai_models.py\n\nScript features:\n1. download_layoutlmv3() - Downloads microsoft/layoutlmv3-base model\n   - Uses transformers.LayoutLMv3Processor\n   - Uses transformers.LayoutLMv3ForTokenClassification\n   - Caches to TRANSFORMERS_CACHE env var location\n   - Verifies model loads correctly\n\n2. check_disk_space(required_gb=5) - Validates sufficient storage\n   - Checks available space before download\n   - Requires 5 GB minimum\n   - Creates cache directory if missing\n   - Warns but allows continuation\n\n3. verify_model_cached() - Confirms models in cache\n   - Searches for .bin and .safetensors files\n   - Reports total cached size\n   - Validates cache directory exists\n\n4. Error handling:\n   - Network error retries (Transformers built-in)\n   - Missing dependency detection\n   - Disk space warnings\n   - Clear error messages\n\n5. Usage:\n   - Run manually: python backend/scripts/download_ai_models.py\n   - Run in Docker: docker compose exec backend python scripts/download_ai_models.py\n   - Auto-run on first startup (optional)\n\nModel downloaded: ~1.3 GB cached in Docker volume.\n</info added on 2025-11-09T22:34:01.136Z>",
-            "status": "done",
-            "testStrategy": "Run the script to verify the model is downloaded and cached correctly."
-          }
-        ]
-      },
-      {
-        "id": 12,
-        "title": "Create LayoutLM Extractor Service",
-        "description": "Develop an extraction engine using LayoutLMv3 for document understanding.",
-        "details": "Create utilities to convert PDF pages to images and implement the LayoutLMExtractor class. Ensure it inherits from BaseExtractor and handles multi-page documents.",
-        "testStrategy": "Test extraction on a sample PDF and measure processing time and confidence scores. Write unit tests for the extractor.",
+        "id": 62,
+        "title": "Create Confidence Data Table Component",
+        "description": "Develop an enhanced table component to display extracted data with confidence indicators.",
+        "details": "Create a React component following existing table patterns to integrate confidence indicators. Ensure compatibility with existing frontend structure.",
+        "testStrategy": "Test component integration with sample data. Verify confidence indicators display correctly.",
         "priority": "medium",
         "dependencies": [
-          11
+          61
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Create PDF to Image Conversion Utility",
-            "description": "Develop a utility to convert PDF pages into images for processing.",
-            "dependencies": [],
-            "details": "Implement a function to read PDF files and convert each page into an image format suitable for LayoutLMv3 processing.",
-            "status": "done",
-            "testStrategy": "Test with various PDF files to ensure accurate image conversion."
-          },
-          {
-            "id": 2,
-            "title": "Implement LayoutLMExtractor Class",
-            "description": "Develop the LayoutLMExtractor class inheriting from BaseExtractor.",
-            "dependencies": [
-              1
-            ],
-            "details": "Create the LayoutLMExtractor class, ensuring it inherits from BaseExtractor. Implement methods for document parsing and extraction using LayoutLMv3.",
-            "status": "done",
-            "testStrategy": "Test class instantiation and basic extraction functionality."
-          },
-          {
-            "id": 3,
-            "title": "Handle Multi-Page Document Extraction",
-            "description": "Ensure the LayoutLMExtractor can process multi-page documents efficiently.",
-            "dependencies": [
-              2
-            ],
-            "details": "Modify the LayoutLMExtractor to handle multi-page documents by iterating over pages and aggregating results.",
-            "status": "done",
-            "testStrategy": "Test with multi-page PDFs to verify complete extraction."
-          },
-          {
-            "id": 4,
-            "title": "Write Unit Tests for LayoutLMExtractor",
-            "description": "Develop unit tests to validate the functionality of the LayoutLMExtractor class.",
-            "dependencies": [
-              2,
-              3
-            ],
-            "details": "Create unit tests covering single-page and multi-page document extraction, error handling, and edge cases.",
-            "status": "done",
-            "testStrategy": "Run tests to ensure all functionalities are covered and pass successfully."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 13,
-        "title": "Install and Configure EasyOCR",
-        "description": "Add EasyOCR as an enhanced OCR fallback for scanned documents.",
-        "details": "Install EasyOCR and opencv-python. Initialize EasyOCR reader with English language and implement an image preprocessing pipeline.",
-        "testStrategy": "Test EasyOCR on a scanned document and ensure GPU acceleration works with a CPU fallback.",
+        "id": 63,
+        "title": "Create Metadata API Endpoints",
+        "description": "Develop REST API endpoints for fetching field metadata.",
+        "details": "Implement endpoints for fetching field metadata, confidence summary, and marking metadata as reviewed. Ensure endpoints follow RESTful conventions.",
+        "testStrategy": "Test API endpoints with sample requests. Verify data retrieval and update operations.",
         "priority": "medium",
         "dependencies": [
-          11
+          53,
+          59
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Install EasyOCR and OpenCV-Python",
-            "description": "Install the EasyOCR and opencv-python packages to enable OCR capabilities.",
-            "dependencies": [],
-            "details": "Use pip to install EasyOCR and opencv-python. Ensure compatibility with the current Python environment and check for GPU support.",
-            "status": "done",
-            "testStrategy": "Verify installation by importing EasyOCR and OpenCV in a Python script."
-          },
-          {
-            "id": 2,
-            "title": "Initialize EasyOCR Reader and Setup Preprocessing Pipeline",
-            "description": "Initialize the EasyOCR reader with English language support and set up an image preprocessing pipeline.",
-            "dependencies": [
-              1
-            ],
-            "details": "Initialize the EasyOCR reader with English language. Develop a preprocessing pipeline using OpenCV to enhance image quality before OCR processing.",
-            "status": "done",
-            "testStrategy": "Test the initialized reader and preprocessing pipeline on a sample scanned document to ensure proper setup."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 14,
-        "title": "Create Ensemble Voting Mechanism",
-        "description": "Implement ensemble voting to combine results from all extraction engines.",
-        "details": "Develop the EnsembleVoting class to merge outputs from different engines using weighted voting. Implement conflict resolution and numeric normalization.",
-        "testStrategy": "Write unit tests for ensemble voting and test with mock engine results to ensure conflicts are resolved correctly.",
+        "id": 64,
+        "title": "Update Documents Page with Confidence View",
+        "description": "Enhance the Documents page to show confidence indicators and metadata.",
+        "details": "Integrate confidence indicators and metadata display into the Documents page. Ensure seamless user experience and data accuracy.",
+        "testStrategy": "Test page updates with sample documents. Verify confidence indicators and metadata display correctly.",
         "priority": "medium",
         "dependencies": [
-          12,
-          13
+          62,
+          63
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Develop EnsembleVoting Class",
-            "description": "Create the EnsembleVoting class to handle merging outputs from different engines using weighted voting.",
-            "dependencies": [],
-            "details": "Design the class structure and implement methods for weighted voting. Ensure compatibility with existing engine outputs.",
-            "status": "done",
-            "testStrategy": "Write unit tests to verify weighted voting logic."
-          },
-          {
-            "id": 2,
-            "title": "Implement Conflict Resolution Mechanism",
-            "description": "Develop a mechanism to resolve conflicts between engine outputs.",
-            "dependencies": [
-              1
-            ],
-            "details": "Design algorithms to identify and resolve conflicts in engine outputs. Implement strategies for conflict resolution based on predefined rules.",
-            "status": "done",
-            "testStrategy": "Test conflict resolution with mock data to ensure accuracy."
-          },
-          {
-            "id": 3,
-            "title": "Implement Numeric Normalization",
-            "description": "Normalize numeric data across different engine outputs for consistency.",
-            "dependencies": [
-              1
-            ],
-            "details": "Develop methods to standardize numeric values, ensuring consistent formats and scales across outputs.",
-            "status": "done",
-            "testStrategy": "Test normalization with varied numeric inputs to ensure consistency."
-          },
-          {
-            "id": 4,
-            "title": "Test Ensemble Voting Mechanism",
-            "description": "Conduct comprehensive testing of the ensemble voting mechanism.",
-            "dependencies": [
-              1,
-              2,
-              3
-            ],
-            "details": "Create test cases covering all aspects of the ensemble voting process, including edge cases and error handling.",
-            "status": "done",
-            "testStrategy": "Use mock engine results to validate the entire voting process, including conflict resolution and normalization."
-          }
-        ]
+        "status": "pending",
+        "subtasks": []
       },
       {
-        "id": 15,
-        "title": "Integrate AI Engines into Orchestrator",
-        "description": "Update the extraction orchestrator to include AI engines and use ensemble voting.",
-        "details": "Modify the orchestrator to run all engines in parallel using ThreadPoolExecutor. Integrate ensemble voting to combine results.",
-        "testStrategy": "Conduct integration tests to ensure parallel execution and ensemble voting improve accuracy and processing time.",
+        "id": 65,
+        "title": "Create Pydantic Schemas for Metadata",
+        "description": "Develop data validation schemas for API requests and responses.",
+        "details": "Create Pydantic schemas for metadata-related API endpoints. Ensure data validation and serialization accuracy.",
+        "testStrategy": "Test schema validation with sample data. Verify correct serialization and deserialization.",
         "priority": "medium",
         "dependencies": [
-          12,
-          13,
-          14
+          63
         ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Modify Orchestrator for Parallel Execution",
-            "description": "Update the orchestrator to run AI engines in parallel using ThreadPoolExecutor.",
-            "dependencies": [],
-            "details": "Implement ThreadPoolExecutor in the orchestrator to manage parallel execution of AI engines. Ensure thread safety and optimal resource utilization.",
-            "status": "done",
-            "testStrategy": "Test parallel execution with multiple AI engines to ensure no race conditions."
-          },
-          {
-            "id": 2,
-            "title": "Integrate Ensemble Voting Mechanism",
-            "description": "Implement ensemble voting to combine results from multiple AI engines.",
-            "dependencies": [
-              1
-            ],
-            "details": "Develop a voting mechanism that aggregates results from all AI engines and determines the final output based on predefined criteria.",
-            "status": "done",
-            "testStrategy": "Test ensemble voting accuracy by comparing combined results with individual engine outputs."
-          },
-          {
-            "id": 3,
-            "title": "Refactor Orchestrator Codebase",
-            "description": "Refactor the orchestrator code to improve maintainability and readability.",
-            "dependencies": [
-              1,
-              2
-            ],
-            "details": "Clean up and organize the orchestrator code, ensuring modularity and adherence to coding standards.",
-            "status": "done",
-            "testStrategy": "Conduct code reviews and static analysis to ensure code quality."
-          },
-          {
-            "id": 4,
-            "title": "Conduct Integration Testing",
-            "description": "Perform integration tests to validate the orchestrator's functionality with AI engines and ensemble voting.",
-            "dependencies": [
-              1,
-              2,
-              3
-            ],
-            "details": "Design and execute integration test cases to verify the orchestrator's performance and accuracy with the new features.",
-            "status": "done",
-            "testStrategy": "Run comprehensive integration tests covering various scenarios and edge cases."
-          },
-          {
-            "id": 5,
-            "title": "Optimize Performance and Resource Usage",
-            "description": "Analyze and optimize the orchestrator's performance and resource usage.",
-            "dependencies": [
-              4
-            ],
-            "details": "Profile the orchestrator to identify bottlenecks and optimize for speed and resource efficiency.",
-            "status": "done",
-            "testStrategy": "Use performance monitoring tools to measure improvements and ensure optimal resource usage."
-          }
-        ]
-      },
-      {
-        "id": 16,
-        "title": "Implement Model Result Caching",
-        "description": "Cache AI model results in Redis to avoid re-processing the same documents.",
-        "details": "Create the ExtractionCache service using Redis. Cache results with a TTL of 30 days using the PDF's SHA256 hash as the key.",
-        "testStrategy": "Test cache hit/miss scenarios and ensure the cache hit rate is above 70% for repeated documents.",
-        "priority": "medium",
-        "dependencies": [
-          15
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Develop ExtractionCache Service",
-            "description": "Create the ExtractionCache service using Redis.",
-            "dependencies": [],
-            "details": "Set up a new service class named 'ExtractionCache'. Configure Redis connection settings and ensure the service can connect to the Redis instance.",
-            "status": "done",
-            "testStrategy": "Test Redis connection and service initialization."
-          },
-          {
-            "id": 2,
-            "title": "Implement Caching Logic with TTL",
-            "description": "Implement logic to cache model results using SHA256 hash as the key.",
-            "dependencies": [
-              1
-            ],
-            "details": "Use the PDF's SHA256 hash as the key to store results in Redis. Set a TTL of 30 days for each cached entry.",
-            "status": "done",
-            "testStrategy": "Test caching and retrieval of results. Verify TTL expiration."
-          },
-          {
-            "id": 3,
-            "title": "Test Cache Hit/Miss Scenarios",
-            "description": "Ensure the cache hit rate is above 70% for repeated documents.",
-            "dependencies": [
-              1,
-              2
-            ],
-            "details": "Simulate repeated document processing to test cache efficiency. Measure cache hit and miss rates.",
-            "status": "done",
-            "testStrategy": "Run tests to ensure cache hit rate exceeds 70% for repeated documents."
-          }
-        ]
-      },
-      {
-        "id": 17,
-        "title": "Create Extraction Performance Monitor",
-        "description": "Track and monitor extraction performance metrics.",
-        "details": "Develop the ExtractionMonitor service to track accuracy, speed, cache hit rate, and engine success rate. Provide an API endpoint for performance metrics.",
-        "testStrategy": "Validate performance metrics through API endpoint and ensure dashboard widget displays trends accurately.",
-        "priority": "medium",
-        "dependencies": [
-          15
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Develop ExtractionMonitor Service",
-            "description": "Create the core service to track extraction performance metrics.",
-            "dependencies": [],
-            "details": "Implement the ExtractionMonitor class to track accuracy, speed, cache hit rate, and engine success rate. Ensure it can collect and store these metrics efficiently.",
-            "status": "done",
-            "testStrategy": "Write unit tests to verify metric collection and storage."
-          },
-          {
-            "id": 2,
-            "title": "Implement Metric Tracking Logic",
-            "description": "Develop logic to track and calculate performance metrics.",
-            "dependencies": [
-              1
-            ],
-            "details": "Create methods within the ExtractionMonitor service to calculate accuracy, speed, cache hit rate, and engine success rate. Use mock data to simulate extraction processes.",
-            "status": "done",
-            "testStrategy": "Test metric calculations with simulated extraction data."
-          },
-          {
-            "id": 3,
-            "title": "Create API Endpoint for Performance Metrics",
-            "description": "Develop an API endpoint to expose performance metrics.",
-            "dependencies": [
-              1,
-              2
-            ],
-            "details": "Use a web framework to create an API endpoint that returns the tracked performance metrics in JSON format. Ensure secure access and efficient data retrieval.",
-            "status": "done",
-            "testStrategy": "Test API endpoint with HTTP requests to ensure correct data is returned."
-          },
-          {
-            "id": 4,
-            "title": "Integrate Metrics into Dashboard",
-            "description": "Display performance metrics on a dashboard for monitoring.",
-            "dependencies": [
-              3
-            ],
-            "details": "Develop a dashboard widget to visualize the performance metrics. Use a charting library to display trends and real-time data updates.",
-            "status": "done",
-            "testStrategy": "Validate dashboard display with real-time data and ensure accurate trend visualization."
-          }
-        ]
-      },
-      {
-        "id": 18,
-        "title": "Optimize Batch Processing",
-        "description": "Optimize LayoutLM to process multi-page documents in batches.",
-        "details": "Enhance the LayoutLMExtractor to handle batch processing of multi-page documents to improve efficiency.",
-        "testStrategy": "Measure processing time improvements and ensure batch processing maintains accuracy.",
-        "priority": "medium",
-        "dependencies": [
-          12
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Modify LayoutLMExtractor for Batch Processing",
-            "description": "Enhance the LayoutLMExtractor to support batch processing of multi-page documents.",
-            "dependencies": [
-              12
-            ],
-            "details": "Refactor the LayoutLMExtractor to handle multiple documents in a single batch, ensuring efficient memory usage and processing speed.",
-            "status": "done",
-            "testStrategy": "Test with a batch of documents to ensure processing time is reduced without errors."
-          },
-          {
-            "id": 2,
-            "title": "Measure Efficiency Improvements",
-            "description": "Evaluate the efficiency improvements of the batch processing enhancement.",
-            "dependencies": [
-              1
-            ],
-            "details": "Implement logging to capture processing times before and after the enhancement. Analyze the data to quantify efficiency gains.",
-            "status": "done",
-            "testStrategy": "Compare processing times for single and batch processing to validate improvements."
-          },
-          {
-            "id": 3,
-            "title": "Validate Accuracy of Batch Processing",
-            "description": "Ensure that batch processing maintains the accuracy of document extraction.",
-            "dependencies": [
-              1
-            ],
-            "details": "Run accuracy tests on a set of documents processed in batches, comparing results to single document processing to ensure no loss in accuracy.",
-            "status": "done",
-            "testStrategy": "Use a benchmark dataset to compare accuracy metrics between single and batch processing."
-          }
-        ]
-      },
-      {
-        "id": 19,
-        "title": "Test LayoutLMExtractor.extract()",
-        "description": "Develop unit tests for the LayoutLMExtractor's extract method.",
-        "details": "Write comprehensive unit tests to validate the functionality and accuracy of the LayoutLMExtractor's extract method.",
-        "testStrategy": "Run unit tests to ensure the extract method performs as expected and handles edge cases.",
-        "priority": "medium",
-        "dependencies": [
-          12
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Develop Basic Unit Tests for LayoutLMExtractor.extract()",
-            "description": "Create initial unit tests to cover standard use cases of the extract method.",
-            "dependencies": [],
-            "details": "Implement tests to verify the correct extraction of data from typical document structures using the extract method.",
-            "status": "done",
-            "testStrategy": "Run tests with standard documents to ensure expected output."
-          },
-          {
-            "id": 2,
-            "title": "Implement Edge Case Tests for LayoutLMExtractor.extract()",
-            "description": "Develop unit tests to handle edge cases for the extract method.",
-            "dependencies": [
-              1
-            ],
-            "details": "Identify potential edge cases such as empty documents, malformed inputs, and large documents. Write tests to ensure the method handles these scenarios gracefully.",
-            "status": "done",
-            "testStrategy": "Run tests with edge case documents to verify robustness and error handling."
-          }
-        ]
-      },
-      {
-        "id": 20,
-        "title": "Test EasyOCRExtractor.extract()",
-        "description": "Develop unit tests for the EasyOCRExtractor's extract method.",
-        "details": "Write unit tests to validate the EasyOCRExtractor's ability to handle various document types and ensure accuracy.",
-        "testStrategy": "Execute unit tests to confirm the extractor's performance and reliability.",
-        "priority": "medium",
-        "dependencies": [
-          13
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Create Unit Tests for Document Type Handling",
-            "description": "Develop unit tests to ensure EasyOCRExtractor can handle various document types.",
-            "dependencies": [],
-            "details": "Identify common document types such as PDFs, images, and scanned documents. Write unit tests to verify that the EasyOCRExtractor.extract() method processes each type correctly.",
-            "status": "done",
-            "testStrategy": "Run tests with different document types to ensure correct extraction."
-          },
-          {
-            "id": 2,
-            "title": "Validate Extraction Accuracy and Performance",
-            "description": "Test the accuracy and performance of the EasyOCRExtractor's extract method.",
-            "dependencies": [
-              1
-            ],
-            "details": "Measure the accuracy of text extraction by comparing extracted text against known outputs. Evaluate performance metrics such as speed and resource usage.",
-            "status": "done",
-            "testStrategy": "Use benchmark documents to test extraction accuracy and performance metrics."
-          }
-        ]
-      },
-      {
-        "id": 21,
-        "title": "Test EnsembleVoting.combine_results()",
-        "description": "Develop unit tests for the EnsembleVoting's combine_results method.",
-        "details": "Create unit tests to ensure the combine_results method accurately merges outputs and resolves conflicts.",
-        "testStrategy": "Run tests to verify the method's effectiveness in combining results and handling disagreements.",
-        "priority": "medium",
-        "dependencies": [
-          14
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Develop Test Cases for Result Merging",
-            "description": "Create unit tests to verify the accurate merging of results by the combine_results method.",
-            "dependencies": [],
-            "details": "Design test cases that cover various scenarios of result merging, including cases with no conflicts and cases with multiple inputs.",
-            "status": "done",
-            "testStrategy": "Run unit tests to ensure results are merged correctly without conflicts."
-          },
-          {
-            "id": 2,
-            "title": "Develop Test Cases for Conflict Resolution",
-            "description": "Create unit tests to verify conflict resolution in the combine_results method.",
-            "dependencies": [
-              1
-            ],
-            "details": "Design test cases that simulate conflicts in the input data and verify that the method resolves them according to the specified rules.",
-            "status": "done",
-            "testStrategy": "Run unit tests to ensure conflicts are resolved as expected."
-          }
-        ]
-      },
-      {
-        "id": 22,
-        "title": "Test ExtractionCache (hit/miss scenarios)",
-        "description": "Develop unit tests for the ExtractionCache service to validate caching functionality.",
-        "details": "Write tests to simulate cache hit and miss scenarios and ensure proper caching behavior.",
-        "testStrategy": "Execute tests to confirm the cache operates correctly and efficiently reduces processing time.",
-        "priority": "medium",
-        "dependencies": [
-          16
-        ],
-        "status": "done",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Simulate Cache Hit Scenario",
-            "description": "Develop a unit test to simulate a cache hit scenario in the ExtractionCache service.",
-            "dependencies": [],
-            "details": "Create a test case where a request is made to the ExtractionCache with data that has been previously cached. Verify that the cache returns the expected data without reprocessing.",
-            "status": "done",
-            "testStrategy": "Verify that the cache returns data efficiently and matches expected results."
-          },
-          {
-            "id": 2,
-            "title": "Simulate Cache Miss Scenario",
-            "description": "Develop a unit test to simulate a cache miss scenario in the ExtractionCache service.",
-            "dependencies": [
-              1
-            ],
-            "details": "Create a test case where a request is made to the ExtractionCache with new data that is not in the cache. Ensure that the data is processed and then stored in the cache for future requests.",
-            "status": "done",
-            "testStrategy": "Check that the cache processes new data correctly and stores it for subsequent access."
-          }
-        ]
-      },
-      {
-        "id": 23,
-        "title": "Create Alert Database Schema",
-        "description": "Design and implement a database schema for managing alerts, including anomaly detections, alert rules, and triggered alerts.",
-        "details": "Create three tables: 'anomaly_detections', 'alert_rules', and 'alerts'. The 'anomaly_detections' table should store detected anomalies with columns for z-scores and thresholds. The 'alert_rules' table should include configurable rules with conditions and severity levels. The 'alerts' table will track triggered alerts with status and delivery information. Establish foreign key relationships between these tables to ensure data integrity. Add indexes on timestamp columns for efficient querying and on severity levels to optimize rule evaluation. Ensure that the schema supports scalability and future enhancements.",
-        "testStrategy": "Run database migrations to create the tables and verify their structure. Insert sample data into each table to ensure that foreign key constraints and indexes are functioning correctly. Perform queries to test the efficiency of the indexes, especially on timestamp and severity columns. Validate the relationships between tables by checking referential integrity with sample data.",
-        "status": "done",
-        "dependencies": [
-          1,
-          2
-        ],
-        "priority": "high",
-        "subtasks": [
-          {
-            "id": 1,
-            "title": "Design Database Schema for Alerts",
-            "description": "Design the database schema for managing alerts, including tables for anomaly detections, alert rules, and triggered alerts.",
-            "dependencies": [],
-            "details": "Create ER diagrams for 'anomaly_detections', 'alert_rules', and 'alerts'. Define columns, data types, and relationships. Ensure scalability and future enhancements.",
-            "status": "done",
-            "testStrategy": "Review ER diagrams with team for accuracy and completeness."
-          },
-          {
-            "id": 2,
-            "title": "Implement Database Schema for Alerts",
-            "description": "Implement the designed database schema in the database system, including tables and relationships.",
-            "dependencies": [
-              1
-            ],
-            "details": "Use SQL to create tables 'anomaly_detections', 'alert_rules', and 'alerts'. Establish foreign key relationships and add indexes on timestamp and severity columns.",
-            "status": "done",
-            "testStrategy": "Run migrations and verify table creation. Insert sample data to test constraints and indexes."
-          }
-        ]
-      },
-      {
-        "id": 24,
-        "title": "Create Statistical Anomaly Detector Service",
-        "description": "Develop a service to detect statistical anomalies using Z-score, percentage change, missing data detection, and historical baseline comparison.",
-        "details": "Implement a microservice named 'AnomalyDetectorService' that processes incoming data streams to identify anomalies. Use Z-score calculations to detect outliers, percentage change to identify significant shifts, and track missing data occurrences. Develop algorithms to establish historical baselines for comparison. Integrate with existing data storage solutions to fetch historical data and store detected anomalies. Ensure the service can handle real-time data processing and batch processing for historical analysis. Implement configuration options for sensitivity and thresholds.",
-        "testStrategy": "Create unit tests for each detection method (Z-score, percentage change, missing data). Simulate data streams with known anomalies to verify detection accuracy. Test integration with the alert database schema to ensure anomalies are logged correctly. Validate performance under load with stress testing to ensure real-time processing capabilities. Conduct end-to-end testing with historical data to verify baseline comparisons.",
-        "status": "done",
-        "dependencies": [
-          1,
-          23
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 25,
-        "title": "Implement ML-Based Anomaly Detector with PyOD",
-        "description": "Develop an anomaly detection system using PyOD with Isolation Forest and Local Outlier Factor algorithms, integrating with the statistical detector.",
-        "details": "Utilize the PyOD library to implement an anomaly detection system. Focus on Isolation Forest and Local Outlier Factor algorithms for detecting anomalies in data streams. Train models per property to capture specific patterns. Integrate this ML-based detector with the existing statistical anomaly detector service (Task 24) to enhance detection capabilities. Ensure the system can handle real-time data processing and batch processing. Implement logging and monitoring to track model performance and anomaly detection rates.",
-        "testStrategy": "Develop unit tests for each algorithm to ensure they correctly identify anomalies. Simulate data streams with known anomalies to verify detection accuracy. Test integration with the statistical detector to ensure seamless operation and improved detection rates. Validate performance under load with stress testing to ensure the system can handle high data throughput.",
-        "status": "done",
-        "dependencies": [
-          24,
-          23
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 26,
-        "title": "Build Alert Rule Configuration System with CRUD API",
-        "description": "Develop a system to manage alert rules with a CRUD API, including rule evaluation, cooldown management, and priority handling.",
-        "details": "Implement a RESTful API to create, read, update, and delete alert rules. Use the existing 'alert_rules' table from Task 23 to store rule configurations. Develop a rule evaluation engine that processes incoming data against these rules to trigger alerts. Implement cooldown management to prevent alert spam by setting a minimum time interval between alerts for the same rule. Add functionality to handle different alert priorities and severities, ensuring that critical alerts are prioritized. Integrate with the anomaly detection services (Tasks 24 and 25) to trigger alerts based on detected anomalies. Ensure the system is scalable and can handle high volumes of data.",
-        "testStrategy": "Write unit tests for each CRUD operation to ensure correct database interactions. Develop integration tests to verify the rule evaluation engine triggers alerts correctly based on sample data. Test cooldown management by simulating rapid successive alerts and verifying that only one alert is triggered within the cooldown period. Validate priority handling by creating rules with different severities and ensuring they are processed in the correct order. Conduct load testing to ensure the system performs well under high data volumes.",
-        "status": "done",
-        "dependencies": [
-          23,
-          24,
-          25
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 27,
-        "title": "Create Multi-Channel Notification System",
-        "description": "Develop a system to send notifications via email, Slack, and in-app with delivery tracking and channel fallback.",
-        "details": "Implement a notification service that supports multiple channels: email, Slack, and in-app notifications. Use a modular design to allow easy addition of new channels. For email, integrate with an SMTP server or a service like SendGrid. For Slack, use webhooks to send messages to specified channels. Implement an in-app notification system using a database table to store notifications and a frontend component to display them. Ensure the system can track delivery status and implement a fallback mechanism to try alternative channels if the primary one fails. Use a priority system to determine the order of channel attempts. Consider security and data privacy, especially for email and Slack integrations.",
-        "testStrategy": "Write unit tests for each notification channel to ensure messages are sent correctly. Develop integration tests to verify the fallback mechanism works as expected when a channel fails. Test delivery tracking by simulating successful and failed deliveries. Verify in-app notifications are stored and displayed correctly. Conduct end-to-end tests to ensure the entire notification flow functions seamlessly across all channels.",
-        "status": "done",
-        "dependencies": [
-          23,
-          26
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 28,
-        "title": "Build Alert Dashboard Frontend",
-        "description": "Develop the frontend for the Alert Dashboard with features like alert list, real-time updates, workflows, filtering, and detail modals.",
-        "details": "Implement a React-based frontend for the Alert Dashboard. Create components for displaying a list of alerts with real-time updates using polling. Implement workflows for acknowledging and resolving alerts. Add filtering options by severity and status. Develop a modal to show detailed information about each alert, including anomaly data. Ensure the UI is responsive and accessible. Integrate with the backend APIs developed in Task 26 for alert rule configurations and Task 23 for alert data.",
-        "testStrategy": "Conduct unit tests for each React component to ensure correct rendering and functionality. Perform integration tests to verify real-time updates and workflows operate as expected. Test filtering functionality with various criteria. Validate the alert detail modal displays correct information. Conduct user acceptance testing to ensure the UI meets design and usability standards.",
-        "status": "done",
-        "dependencies": [
-          23,
-          26
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 29,
-        "title": "Create Historical Data Analyzer",
-        "description": "Develop a system to analyze 12-24 months of historical financial data, calculate statistical baselines, detect seasonal patterns, and identify anomalies.",
-        "details": "Implement a data processing pipeline that loads historical financial data from the database. Use statistical libraries to calculate baselines such as mean, standard deviation, and percentiles. Develop algorithms to detect seasonal patterns using time series analysis techniques. Implement anomaly detection by comparing current data against historical baselines, flagging significant deviations. Ensure the system can handle large datasets efficiently and provide a user-friendly interface for viewing results.",
-        "testStrategy": "Verify data loading and processing with sample datasets. Test statistical calculations for accuracy using known data points. Validate seasonal pattern detection with synthetic data exhibiting known patterns. Test anomaly detection by introducing controlled anomalies into the dataset and ensuring they are correctly identified. Conduct performance testing to ensure the system handles large datasets within acceptable time limits.",
-        "status": "done",
-        "dependencies": [
-          23
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 30,
-        "title": "Build Cross-Field Correlation Validator",
-        "description": "Develop a validator to check correlations between financial fields such as Revenue vs Expenses, Assets vs Liabilities, and more.",
-        "details": "Implement a service that validates financial data correlations. Use statistical methods to check Revenue vs Expenses correlation, ensuring they align with expected financial ratios. Validate that Assets and Liabilities balance according to accounting principles. Ensure Occupancy rates correlate with Rental Income, and Operating Expenses are reasonable compared to industry standards. Integrate with existing data processing pipelines and ensure the validator can handle large datasets efficiently. Provide detailed logging and error handling for discrepancies.",
-        "testStrategy": "Create unit tests with mock financial data to verify each correlation check. Use historical data to validate the accuracy of the correlation checks. Test edge cases where data might be missing or inconsistent. Ensure the validator logs errors and discrepancies correctly and handles large datasets without performance degradation.",
-        "status": "done",
-        "dependencies": [
-          1,
-          29
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 31,
-        "title": "Create Industry Benchmark Database",
-        "description": "Develop a JSON file and database to store industry benchmarks for multifamily, retail, and office sectors.",
-        "details": "Create a JSON file containing industry benchmarks such as multifamily OER (35-45%) and NOI (55-65%), retail sales per square foot ranges, and office rent and vacancy benchmarks. Design a database schema to store these benchmarks, ensuring it can handle updates and comparisons. Implement logic to validate incoming data against these benchmarks, highlighting discrepancies. Use SQLAlchemy to interact with the database and ensure data integrity. Consider scalability and future expansion of benchmark categories.",
-        "testStrategy": "Verify the JSON file structure and content accuracy. Test database schema creation and data insertion with sample benchmark data. Implement unit tests for the validation logic to ensure it correctly identifies discrepancies between incoming data and stored benchmarks. Validate the system's ability to handle updates and expansions of benchmark categories.",
-        "status": "done",
-        "dependencies": [
-          1,
-          2,
-          23
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 32,
-        "title": "Implement Cross-Validation Engine for Financial Documents",
-        "description": "Develop a cross-validation engine to ensure financial document consistency, including balance sheet, income statement, and cash flow checks.",
-        "details": "Create a CrossValidationEngine service that performs multiple consistency checks across financial documents. Implement validation for the balance sheet equation (Assets = Liabilities + Equity) using accounting principles. Develop checks for income statement calculations to ensure revenue, expenses, and net income align correctly. Implement cash flow reconciliation to verify that cash inflows and outflows match reported figures. Additionally, perform multi-document consistency checks to ensure data integrity across different financial statements. Integrate this engine with existing data processing pipelines to automatically validate documents as they are processed. Ensure the system can handle large datasets efficiently and provide detailed error reporting for any inconsistencies found.",
-        "testStrategy": "Develop unit tests for each validation rule to ensure they correctly identify inconsistencies. Use sample financial documents with known errors to verify detection accuracy. Test integration with existing data processing pipelines to ensure seamless operation. Validate performance under load with large datasets to ensure the engine operates efficiently. Ensure detailed error logs are generated for any validation failures, providing clear insights into the nature of the inconsistencies.",
-        "status": "done",
-        "dependencies": [
-          1,
-          23,
-          30
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 33,
-        "title": "Build Validation Dashboard Widget",
-        "description": "Develop a dashboard widget to display 5-layer validation results with a traffic light system, issue drill-down, and historical comparison charts.",
-        "details": "Implement a React-based widget for the dashboard that visualizes validation results using a traffic light system (green for pass, yellow for warning, red for fail). Integrate with the CrossValidationEngine from Task 32 to fetch validation results. Provide drill-down capabilities to view detailed issues for each validation layer. Use D3.js or Chart.js to create historical comparison charts, allowing users to compare current validation results with past data. Ensure the widget is responsive and integrates seamlessly with the existing dashboard framework.",
-        "testStrategy": "Conduct unit tests for each component to ensure correct rendering and functionality. Perform integration tests to verify data fetching from the CrossValidationEngine and correct display of validation results. Test the drill-down functionality to ensure detailed issue information is accessible. Validate historical comparison charts with sample data to ensure accuracy and responsiveness.",
-        "status": "done",
-        "dependencies": [
-          32,
-          28
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 34,
-        "title": "Add Enhanced Validation Rules",
-        "description": "Implement over 10 new validation rules with configurable thresholds, a UI for enabling/disabling rules, and history tracking for audits.",
-        "details": "Develop a module to add more than 10 new validation rules to the existing validation system. Each rule should have configurable thresholds that can be adjusted via a configuration file or admin interface. Implement a user interface that allows administrators to enable or disable specific validation rules. Integrate a logging mechanism to track changes to validation rules and their outcomes for audit purposes. Use existing frameworks and libraries where possible to ensure consistency with current systems. Ensure the new rules are compatible with the CrossValidationEngine developed in Task 32.",
-        "testStrategy": "Create unit tests for each new validation rule to ensure they function correctly under various conditions. Test the UI for enabling/disabling rules to ensure changes are reflected in the system. Verify that the configurable thresholds are applied correctly and can be updated without errors. Conduct integration tests with the CrossValidationEngine to ensure seamless operation. Validate the logging mechanism by checking that all changes and outcomes are recorded accurately for audit purposes.",
-        "status": "done",
-        "dependencies": [
-          32,
-          23
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 35,
-        "title": "Create Correction Tracking System",
-        "description": "Develop a system to log human corrections to extracted data, store them in a training-data bucket, track correction patterns, and calculate correction rates per engine and field.",
-        "details": "1. Design a database schema to log corrections, including fields for document ID, field name, original value, corrected value, correction timestamp, and user ID.\n2. Implement a service to capture corrections made by users in the UI and store them in the database.\n3. Develop a mechanism to aggregate corrections and store them in a training-data bucket for machine learning purposes.\n4. Create analytics to track correction patterns across documents and calculate correction rates per extraction engine and field.\n5. Integrate with existing metadata storage and extraction systems to ensure seamless data flow and consistency.",
-        "testStrategy": "1. Verify database schema creation and ensure all fields are correctly logged.\n2. Test the correction logging service with mock UI inputs to ensure accurate data capture.\n3. Validate the aggregation and storage of corrections in the training-data bucket.\n4. Run analytics tests to ensure correction patterns and rates are accurately calculated and reported.\n5. Perform end-to-end testing to confirm integration with existing systems and data consistency.",
-        "status": "done",
-        "dependencies": [
-          1,
-          2,
-          8
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 36,
-        "title": "Build Model Retraining Pipeline as Nightly Celery Task",
-        "description": "Develop a pipeline to retrain the LayoutLMv3 model nightly based on new corrections, validate improvements, and auto-deploy if performance increases.",
-        "details": "1. Set up a Celery task to run nightly, checking the Correction Tracking System for over 100 new corrections.\n2. Implement logic to fine-tune the LayoutLMv3 model using these corrections as additional training data.\n3. Validate the retrained model's performance, ensuring at least a 2% improvement in accuracy over the previous version.\n4. Use a versioning system to manage different model versions and ensure rollback capabilities.\n5. Automate deployment of the new model if it meets the improvement criteria, updating the production environment seamlessly.\n6. Ensure the pipeline logs all activities and results for audit and debugging purposes.",
-        "testStrategy": "1. Simulate over 100 corrections and verify the Celery task triggers the retraining process.\n2. Validate the fine-tuning process by checking model accuracy improvements using a test dataset.\n3. Test the versioning system by deploying multiple model versions and ensuring correct version tracking.\n4. Conduct end-to-end tests to ensure the pipeline correctly deploys improved models and logs all actions.\n5. Perform rollback tests to ensure previous model versions can be restored without issues.",
-        "status": "done",
-        "dependencies": [
-          35,
-          12,
-          11
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 37,
-        "title": "Implement Rule Suggestion Engine",
-        "description": "Develop a system to analyze correction patterns, identify repeated corrections, generate regex/template suggestions, and optionally create GitHub PRs for review.",
-        "details": "1. Design a service to track and analyze correction patterns from the Correction Tracking System (Task 35).\n2. Implement algorithms to identify repeated corrections and suggest regex or template improvements.\n3. Integrate with GitHub API to create pull requests for suggested changes, allowing for optional human review.\n4. Ensure the system can handle large datasets and provide real-time suggestions.\n5. Use existing logging and monitoring frameworks to track system performance and suggestions accuracy.",
-        "testStrategy": "1. Verify the system correctly identifies repeated corrections using historical correction data.\n2. Test regex/template suggestion accuracy with known correction patterns.\n3. Simulate GitHub PR creation and ensure suggestions are correctly formatted and submitted.\n4. Conduct performance testing to ensure the system handles large datasets efficiently.\n5. Validate logging and monitoring outputs for accuracy and completeness.",
-        "status": "done",
-        "dependencies": [
-          35,
-          16
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 38,
-        "title": "Create Performance Tracking Dashboard",
-        "description": "Develop a dashboard to track extraction accuracy, correction rate trends, model version comparison, and engine performance with visual charts.",
-        "details": "1. Design a user-friendly dashboard interface using React and D3.js for data visualization.\n2. Integrate with the existing database to fetch extraction accuracy data, correction rates, and model version performance metrics.\n3. Implement charts to display trends over time, such as line charts for accuracy and correction rates, and bar charts for model and engine comparisons.\n4. Ensure the dashboard updates in real-time or at regular intervals to reflect the latest data.\n5. Provide filtering options for users to view data by date range, document type, or specific extraction engines.\n6. Implement backend services to aggregate and serve the necessary data efficiently, ensuring scalability and performance.",
-        "testStrategy": "1. Verify the dashboard loads correctly and displays data accurately by comparing with known database entries.\n2. Test the responsiveness and interactivity of charts across different devices and screen sizes.\n3. Validate filtering functionality by applying various filters and ensuring the data updates accordingly.\n4. Conduct performance testing to ensure the dashboard handles large datasets without significant lag.\n5. Perform user acceptance testing to gather feedback on usability and make necessary adjustments.",
-        "status": "done",
-        "dependencies": [
-          1,
-          2,
-          8,
-          35
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 39,
-        "title": "Build A/B Testing Framework for Model Evaluation",
-        "description": "Develop a framework to conduct A/B testing on new models, comparing performance with existing models, and implement a gradual rollout and rollback mechanism.",
-        "details": "1. Design the A/B testing framework to evaluate new AI models on a subset of documents, comparing their performance against existing models.\n2. Implement a mechanism to randomly assign documents to either the control group (existing model) or the test group (new model).\n3. Develop performance metrics to evaluate model accuracy, speed, and reliability.\n4. Create a gradual rollout strategy, starting with a small percentage of documents and increasing based on performance metrics.\n5. Implement an automatic rollback feature that reverts to the previous model if the new model's performance degrades beyond a predefined threshold.\n6. Integrate with the existing performance tracking dashboard (Task 38) to visualize A/B test results and rollout status.",
-        "testStrategy": "1. Simulate A/B testing with a controlled set of documents and verify that documents are correctly assigned to control and test groups.\n2. Validate performance metrics by comparing results from the new and existing models.\n3. Test the gradual rollout mechanism by monitoring the percentage of documents processed by the new model.\n4. Simulate performance degradation and ensure the rollback mechanism triggers correctly.\n5. Verify integration with the performance tracking dashboard to ensure accurate display of A/B test results.",
-        "status": "done",
-        "dependencies": [
-          16,
-          38,
-          17
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 40,
-        "title": "Create Document Versioning System",
-        "description": "Develop a system to manage document versions, track version history, and provide API and UI for version management.",
-        "details": "1. **Database Schema**: Design tables to store document versions, including fields for version number, document ID, timestamp, and change description. Ensure relationships with existing document tables.\n2. **API Development**: Create RESTful endpoints for creating, retrieving, updating, and deleting document versions. Implement endpoints to compare versions and restore previous versions.\n3. **UI Implementation**: Develop a user interface to display version history, compare versions side-by-side, and restore versions. Use React for the frontend, ensuring responsive design.\n4. **Version Tracking**: Implement logic to automatically create new versions upon document edits, storing differences between versions.\n5. **Security and Access Control**: Ensure that version management respects user permissions and access controls.",
-        "testStrategy": "1. **Database Testing**: Verify schema creation and data integrity with sample version data.\n2. **API Testing**: Use Postman or similar tools to test all API endpoints for correct functionality and error handling.\n3. **UI Testing**: Conduct user testing to ensure the UI is intuitive and functions correctly across devices.\n4. **Version Comparison**: Test the accuracy of version comparisons and the ability to restore previous versions.\n5. **Security Testing**: Ensure that unauthorized users cannot access or modify document versions.",
-        "status": "done",
-        "dependencies": [
-          1,
-          2,
-          8
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 41,
-        "title": "Build Automated Backup System for PostgreSQL and MinIO",
-        "description": "Develop an automated backup system with daily PostgreSQL backups to MinIO, weekly MinIO backups to external storage, backup verification tests, a 30-day retention policy, and monitoring/alerts.",
-        "details": "1. **Daily PostgreSQL Backup to MinIO**: Implement a script or service to perform daily backups of PostgreSQL databases, storing them in MinIO. Use tools like `pg_dump` for database dumps and MinIO client (`mc`) for uploads.\n2. **Weekly MinIO Backup to External Storage**: Schedule a weekly task to back up MinIO data to an external storage solution (e.g., AWS S3, Google Cloud Storage). Ensure data integrity and security during transfer.\n3. **Backup Verification**: Develop a verification process to ensure backups are complete and restorable. This could involve checksum validation and periodic test restores.\n4. **Retention Policy**: Implement a mechanism to automatically delete backups older than 30 days to manage storage space.\n5. **Monitoring and Alerts**: Integrate with the existing notification system (Task 27) to send alerts for backup success/failure and storage capacity warnings. Use monitoring tools to track backup status and performance.",
-        "testStrategy": "1. **Backup Functionality Testing**: Verify that daily PostgreSQL backups are correctly stored in MinIO and that weekly MinIO backups are successfully transferred to external storage.\n2. **Verification Process Testing**: Conduct test restores from backups to ensure data integrity and completeness.\n3. **Retention Policy Testing**: Simulate the passage of time to ensure backups older than 30 days are automatically deleted.\n4. **Monitoring and Alerts Testing**: Trigger backup failures and storage capacity issues to test alert notifications and monitoring accuracy.",
-        "status": "done",
-        "dependencies": [
-          27
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 42,
-        "title": "Implement MinIO Lifecycle Policies for Storage Tiers",
-        "description": "Develop lifecycle policies in MinIO for automated data transitions between hot, warm, cold, and archive storage tiers.",
-        "details": "1. Analyze current storage usage patterns to define criteria for each storage tier: hot (<90 days), warm (90-365 days), cold (365-730 days), and archive (>730 days).\n2. Configure MinIO lifecycle policies to automate data transitions based on these criteria.\n3. Implement scripts or use MinIO's built-in tools to manage lifecycle rules, ensuring seamless data movement between tiers.\n4. Ensure policies are optimized for cost-effectiveness and performance, minimizing storage costs while maintaining data accessibility.\n5. Integrate monitoring and alerting to track policy execution and data transitions, using existing logging frameworks.\n6. Document the lifecycle policy configurations and provide guidelines for future adjustments based on changing data patterns.",
-        "testStrategy": "1. Simulate data with varying ages to test each lifecycle policy, ensuring data transitions occur as expected.\n2. Verify that data is correctly moved between storage tiers according to the defined timeframes.\n3. Monitor system performance and storage costs before and after policy implementation to ensure improvements.\n4. Test alerting mechanisms to confirm notifications are sent when transitions occur or if errors are detected.\n5. Conduct a review of the policy documentation to ensure clarity and completeness.",
-        "status": "done",
-        "dependencies": [
-          29,
-          24
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 43,
-        "title": "Create Disaster Recovery Procedures",
-        "description": "Develop disaster recovery procedures including restore scripts for PostgreSQL, MinIO, and Redis, a full system restore test, and comprehensive documentation.",
-        "details": "1. **PostgreSQL Restore Script**: Develop a script to restore PostgreSQL databases from MinIO backups. Use `pg_restore` for restoring database dumps. Ensure the script handles different database versions and configurations.\n\n2. **MinIO Restore Script**: Create a script to restore MinIO data from external storage. Use MinIO client (`mc`) for downloading and restoring data. Ensure data integrity checks are included.\n\n3. **Redis Restore**: Implement a procedure to restore Redis data from snapshots or backups. Consider using `redis-cli` for importing data and ensure compatibility with the current Redis configuration.\n\n4. **Full System Restore Test**: Design and execute a full system restore test to validate the recovery procedures. This should include restoring all components and verifying system functionality.\n\n5. **Documentation**: Write comprehensive documentation covering all recovery scenarios, including step-by-step guides for each restore process, troubleshooting tips, and contact information for support.",
-        "testStrategy": "1. **Script Testing**: Run each restore script in a controlled environment to verify functionality and data integrity.\n\n2. **Full System Restore Test**: Conduct a full system restore in a staging environment. Verify that all components are restored correctly and the system operates as expected.\n\n3. **Documentation Review**: Have team members review the documentation for clarity and completeness. Conduct a walkthrough to ensure all recovery steps are covered.",
-        "status": "done",
-        "dependencies": [
-          41
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 44,
-        "title": "Create RBAC Database Schema and Seed Data",
-        "description": "Design and implement a database schema for role-based access control (RBAC) with predefined roles and permissions.",
-        "details": "Create tables for 'roles', 'user_roles', 'permissions', and 'role_permissions'. Define columns for each table, ensuring proper foreign key relationships. Predefine roles such as Admin, Manager, Analyst, and Viewer, and assign appropriate permissions to each role. Implement a database migration script to create these tables and seed them with initial data. Ensure the schema supports scalability for future roles and permissions.",
-        "testStrategy": "Run the migration script to create the tables and verify their structure. Check the seeded data for correctness by querying the roles and permissions tables. Ensure foreign key constraints are enforced and test data integrity by attempting to insert invalid data. Validate that predefined roles have the correct permissions assigned.",
-        "status": "done",
-        "dependencies": [
-          1,
-          23
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 45,
-        "title": "Build Permission Checking System with Decorator and Function",
-        "description": "Develop a permission checking system using a decorator and function, applying it to sensitive API endpoints for enforcement.",
-        "details": "1. **Design the @require_permission Decorator**: Create a Python decorator that checks if a user has the necessary permissions before executing a function. This decorator should accept parameters for required permissions and handle unauthorized access gracefully.\n\n2. **Implement check_permission() Function**: Develop a function that verifies if a user has specific permissions. This function should query the RBAC database schema (from Task 44) to check user roles and permissions.\n\n3. **Integrate with API Endpoints**: Identify sensitive API endpoints and apply the @require_permission decorator to enforce permission checks. Ensure that all endpoints requiring permission are covered.\n\n4. **API-Level Permission Enforcement**: Implement middleware or hooks in the API framework to ensure that permission checks are consistently applied across all endpoints.\n\n5. **Logging and Monitoring**: Add logging for permission checks to track unauthorized access attempts and monitor system performance.",
-        "testStrategy": "1. **Unit Testing**: Write unit tests for the @require_permission decorator and check_permission() function to ensure they correctly enforce permissions.\n\n2. **Integration Testing**: Test API endpoints with various user roles to verify that permission checks are enforced and unauthorized access is blocked.\n\n3. **Security Testing**: Conduct penetration testing to ensure that the permission system is robust against common security threats.\n\n4. **Performance Testing**: Monitor the performance impact of permission checks on API response times and optimize as necessary.",
-        "status": "done",
-        "dependencies": [
-          44
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 46,
-        "title": "Implement Enhanced Audit Logging with Searchable UI",
-        "description": "Develop a comprehensive audit logging system that logs all permission checks, data access, and modifications, with a UI for filtering by user, action, and timestamp.",
-        "details": "1. Design a logging framework to capture all permission checks, data access events, and modifications across the application. Use a centralized logging service to aggregate logs.\n2. Implement a database schema to store audit logs, ensuring it supports efficient querying and indexing for performance.\n3. Develop a user interface using React to provide a searchable audit trail. Include filters for user, action type, and timestamp.\n4. Integrate with existing authentication and authorization systems to ensure accurate logging of user actions.\n5. Ensure compliance with data privacy regulations by implementing data anonymization where necessary.\n6. Use existing logging frameworks and libraries to maintain consistency with current systems.",
-        "testStrategy": "1. Verify that all permission checks, data access, and modifications are logged correctly by simulating various user actions and reviewing the logs.\n2. Test the UI for filtering capabilities, ensuring it accurately filters logs by user, action, and timestamp.\n3. Conduct performance testing on the logging system to ensure it handles high volumes of data efficiently.\n4. Validate data anonymization processes to ensure compliance with privacy regulations.\n5. Perform integration tests with existing authentication systems to verify accurate user action logging.",
-        "status": "done",
-        "dependencies": [
-          34,
-          24
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 47,
-        "title": "Create API Key Management System",
-        "description": "Develop a system to manage API keys, including generation, scoped permissions, key rotation, usage tracking, and revocation.",
-        "details": "Implement an API Key Management System with the following features: 1) API Key Generation: Create a secure method for generating unique API keys. 2) Scoped Permissions: Allow each key to have specific permissions, such as read, write, or admin access. 3) Key Rotation: Implement a mechanism to rotate keys periodically to enhance security. 4) Usage Tracking: Track API key usage statistics, including request counts and timestamps. 5) Revocation: Provide functionality to revoke keys immediately. Use a database to store keys and their metadata, ensuring secure storage and retrieval. Consider integrating with existing RBAC systems for permission management.",
-        "testStrategy": "1) Test API key generation for uniqueness and security. 2) Verify that scoped permissions are correctly enforced by attempting operations with different keys. 3) Simulate key rotation and ensure old keys are invalidated. 4) Track usage statistics and verify accuracy by comparing with logged requests. 5) Test key revocation by revoking a key and ensuring it can no longer be used.",
-        "status": "done",
-        "dependencies": [
-          44
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 48,
-        "title": "Create Public API Endpoints with Authentication and Rate Limiting",
-        "description": "Develop public API endpoints for document upload, property financials retrieval, and extraction details with API key authentication and rate limiting.",
-        "details": "Implement the following API endpoints: 1) POST /api/v1/public/documents/upload for uploading documents. 2) GET /api/v1/public/properties/{id}/financials to retrieve financial data for a specific property. 3) GET /api/v1/public/extractions/{id} to fetch extraction details. Use API key authentication to secure these endpoints, leveraging the API Key Management System (Task 47). Implement rate limiting to allow a maximum of 100 requests per hour per API key. Document the API using OpenAPI specifications to ensure clear and comprehensive API documentation. Consider edge cases such as invalid API keys, exceeding rate limits, and malformed requests.",
-        "testStrategy": "1) Verify each endpoint's functionality by making requests with valid and invalid API keys. 2) Test rate limiting by exceeding the 100 requests/hour limit and ensuring further requests are blocked. 3) Validate the OpenAPI documentation by generating client code and ensuring it matches the API behavior. 4) Conduct security tests to ensure API keys are required and properly validated for each request.",
-        "status": "done",
-        "dependencies": [
-          47
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 49,
-        "title": "Build Webhook System with POST /api/v1/webhooks/register Endpoint",
-        "description": "Develop a webhook system with event support, delivery tracking, retry logic, and signature verification.",
-        "details": "1. **Endpoint Development**: Implement the POST /api/v1/webhooks/register endpoint to allow clients to register webhooks. Store webhook URLs and associated event types in the database.\n\n2. **Event Support**: Ensure the system supports the following events: `extraction_complete`, `validation_failed`, and `alert_triggered`. Implement a mechanism to trigger webhooks when these events occur.\n\n3. **Delivery Tracking**: Develop a system to track the delivery status of each webhook, including timestamps and response codes. Store this information for auditing and debugging purposes.\n\n4. **Retry Logic**: Implement a retry mechanism that attempts to deliver webhooks up to 3 times in case of failure. Use exponential backoff for retry intervals.\n\n5. **Signature Verification**: Add a security layer by signing webhook payloads with a secret key. Implement verification logic on the client side to ensure payload integrity.\n\n6. **Integration with API Key Management**: Use the API Key Management System (Task 47) to authenticate webhook registration requests, ensuring only authorized clients can register webhooks.",
-        "testStrategy": "1. **Endpoint Testing**: Use tools like Postman to test the POST /api/v1/webhooks/register endpoint for correct registration and error handling.\n\n2. **Event Trigger Testing**: Simulate events (`extraction_complete`, `validation_failed`, `alert_triggered`) and verify that webhooks are triggered and delivered correctly.\n\n3. **Delivery Tracking Verification**: Check the database for accurate logging of delivery attempts, including timestamps and response codes.\n\n4. **Retry Logic Testing**: Simulate webhook delivery failures and verify that the retry mechanism works as expected, with correct intervals and a maximum of 3 attempts.\n\n5. **Signature Verification Testing**: Ensure that webhook payloads are correctly signed and that the client can verify the signature to confirm payload integrity.",
-        "status": "done",
-        "dependencies": [
-          27,
-          47
-        ],
-        "priority": "high",
-        "subtasks": []
-      },
-      {
-        "id": 50,
-        "title": "Implement QuickBooks Connector with OAuth 2.0 and Data Sync",
-        "description": "Develop a connector for QuickBooks using OAuth 2.0 for authentication, enabling export of financial data, chart of accounts mapping, and bi-directional sync.",
-        "details": "1. Set up OAuth 2.0 authentication to securely connect with QuickBooks API.\n2. Implement functionality to export financial data from the application to QuickBooks, ensuring data integrity and format compliance.\n3. Develop a mapping system for the chart of accounts to align application data with QuickBooks structure.\n4. Implement journal entry synchronization to ensure consistency between systems.\n5. Enable bi-directional sync to allow updates from QuickBooks to reflect in the application and vice versa.\n6. Ensure robust error handling and logging for all API interactions.\n7. Use existing logging frameworks to monitor sync operations and performance.",
-        "testStrategy": "1. Verify OAuth 2.0 authentication flow with QuickBooks API using test credentials.\n2. Test data export functionality with sample financial data, ensuring correct format and integrity.\n3. Validate chart of accounts mapping by comparing application data with QuickBooks entries.\n4. Simulate journal entry sync and verify consistency across both systems.\n5. Test bi-directional sync by making changes in QuickBooks and ensuring they reflect in the application, and vice versa.\n6. Conduct performance testing to ensure the connector handles expected data volumes efficiently.",
-        "status": "done",
-        "dependencies": [
-          32,
-          29
-        ],
-        "priority": "medium",
-        "subtasks": []
-      },
-      {
-        "id": 51,
-        "title": "Create Yardi Connector for Data Import",
-        "description": "Develop a connector to import data from Yardi Voyager using API authentication, data mapping, scheduled sync, and error handling.",
-        "details": "Implement a Yardi Connector service to interface with Yardi Voyager's API. Start by setting up API authentication using OAuth2. Define data mapping rules to transform Yardi data into the application's schema. Implement a scheduler to automate data sync at regular intervals. Incorporate robust error handling to manage integration failures, including logging and retry mechanisms. Ensure the connector can handle large data volumes efficiently and supports incremental updates.",
-        "testStrategy": "Verify API authentication by testing token retrieval and access. Test data mapping by importing sample data and checking for correct transformation. Simulate scheduled syncs and monitor for successful execution. Introduce errors to test error handling and logging. Validate performance with large datasets and ensure incremental updates work as expected.",
-        "status": "done",
-        "dependencies": [
-          1,
-          2,
-          8
-        ],
-        "priority": "medium",
+        "status": "pending",
         "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-09T22:58:04.673Z",
+      "updated": "2025-11-11T23:19:25.959Z",
       "description": "Tasks for master context"
     }
   }
