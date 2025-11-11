@@ -39,6 +39,25 @@ export interface ComparisonRecord {
   flags?: string[];
   priority?: number;
   severity?: string;
+  // Extended fields for rent roll reconciliation
+  rent_roll_fields?: {
+    tenant_code?: string;
+    lease_type?: string;
+    lease_start_date?: string;
+    lease_end_date?: string;
+    lease_term_months?: number;
+    tenancy_years?: number;
+    unit_area_sqft?: number;
+    monthly_rent_per_sqft?: number;
+    annual_rent?: number;
+    annual_rent_per_sqft?: number;
+    annual_recoveries_per_sf?: number;
+    annual_misc_per_sf?: number;
+    security_deposit?: number;
+    loc_amount?: number;
+    occupancy_status?: string;
+    lease_status?: string;
+  };
 }
 
 export interface ComparisonData {

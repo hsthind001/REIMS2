@@ -56,7 +56,7 @@ INSERT INTO extraction_templates (
             "liabilities": ["LIABILITIES", "TOTAL LIABILITIES"],
             "equity": ["CAPITAL", "EQUITY", "TOTAL CAPITAL"]
         },
-        "fuzzy_match_threshold": 80,
+        "fuzzy_match_threshold": 85,
         "confidence_weights": {
             "exact_account_match": 1.0,
             "fuzzy_account_match": 0.8,

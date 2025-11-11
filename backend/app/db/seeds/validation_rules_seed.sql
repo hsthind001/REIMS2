@@ -19,8 +19,30 @@ INSERT INTO validation_rules (rule_name, rule_description, document_type, rule_t
 ('income_statement_ytd_consistency', 'YTD amounts should be >= Period amounts', 'income_statement', 'range_check', 'ytd_amount >= period_amount', 'YTD amount is less than Period amount', 'warning', true),
 ('income_statement_no_negative_revenue', 'Revenue accounts should not be negative', 'income_statement', 'range_check', 'revenue >= 0', 'Revenue account has negative amount', 'warning', true);
 
--- Cash Flow Rules (3)
+-- Cash Flow Rules - Template v1.0 Compliant (14 rules)
 INSERT INTO validation_rules (rule_name, rule_description, document_type, rule_type, rule_formula, error_message, severity, is_active) VALUES
+-- Income Validations
+('cf_total_income_sum', 'Total Income equals sum of all income line items', 'cash_flow', 'balance_check', 'total_income = sum(income_items)', 'Total Income must equal sum of all income line items', 'error', true),
+('cf_base_rental_percentage', 'Base Rentals should be 70-100% of Total Income', 'cash_flow', 'range_check', '70 <= (base_rentals / total_income) * 100 <= 100', 'Base Rentals percentage is outside normal range (70-100%)', 'warning', true),
+
+-- Expense Validations
+('cf_total_expenses_sum', 'Total Expenses equals sum of Operating + Additional Expenses', 'cash_flow', 'balance_check', 'total_expenses = total_operating_expenses + total_additional_expenses', 'Total Expenses calculation mismatch', 'error', true),
+('cf_expense_subtotals', 'Operating Expenses subtotals should sum correctly', 'cash_flow', 'balance_check', 'operating_expenses = property + utility + contracted + rm + admin', 'Operating Expenses subtotals don''t sum correctly', 'warning', true),
+
+-- NOI Validations
+('cf_noi_calculation', 'NOI = Total Income - Total Expenses', 'cash_flow', 'balance_check', 'noi = total_income - total_expenses', 'Net Operating Income must equal Total Income - Total Expenses', 'error', true),
+('cf_noi_percentage', 'NOI should be 60-80% of Total Income', 'cash_flow', 'range_check', '60 <= (noi / total_income) * 100 <= 80', 'NOI percentage is outside normal range (60-80%)', 'warning', true),
+('cf_noi_positive', 'NOI should generally be positive', 'cash_flow', 'range_check', 'noi > 0', 'Net Operating Income is negative', 'warning', true),
+
+-- Net Income Validation
+('cf_net_income_calculation', 'Net Income = NOI - (Mortgage Interest + Depreciation + Amortization)', 'cash_flow', 'balance_check', 'net_income = noi - mortgage_interest - depreciation - amortization', 'Net Income calculation is incorrect', 'error', true),
+
+-- Cash Flow Validations
+('cf_cash_flow_calculation', 'Cash Flow = Net Income + Total Adjustments', 'cash_flow', 'balance_check', 'cash_flow = net_income + total_adjustments', 'Cash Flow calculation mismatch', 'error', true),
+('cf_cash_account_differences', 'Each cash account difference = ending - beginning', 'cash_flow', 'balance_check', 'difference = ending_balance - beginning_balance', 'Cash account reconciliation mismatch', 'error', true),
+('cf_total_cash_balance', 'Sum of cash account differences should equal Cash Flow', 'cash_flow', 'balance_check', 'sum(differences) = cash_flow', 'Total cash account differences don''t equal Cash Flow', 'error', true),
+
+-- Legacy Rules (kept for backward compatibility)
 ('cash_flow_categories_sum', 'Operating + Investing + Financing = Net Change in Cash', 'cash_flow', 'balance_check', 'operating + investing + financing = net_change', 'Cash flow categories don''t sum to net change', 'error', true),
 ('cash_flow_beginning_ending', 'Beginning Cash + Net Change = Ending Cash', 'cash_flow', 'balance_check', 'beginning_cash + net_change = ending_cash', 'Beginning + Net Change doesn''t equal Ending Cash', 'error', true),
 ('cash_flow_cross_check_balance_sheet', 'Ending Cash (CF) should match Cash (BS)', 'cash_flow', 'cross_statement_check', 'ending_cash_cf = cash_bs', 'Ending Cash on Cash Flow doesn''t match Cash on Balance Sheet', 'warning', true);

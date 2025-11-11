@@ -25,7 +25,17 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# Configure Session Middleware (for session-based authentication)
+# Configure CORS (add first, executes last)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configure Session Middleware (add second, executes first)
+# IMPORTANT: Must be added AFTER CORS middleware
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
@@ -33,15 +43,6 @@ app.add_middleware(
     max_age=86400 * 7,  # 7 days
     same_site="lax",
     https_only=False  # Set to True in production with HTTPS
-)
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 # Include routers

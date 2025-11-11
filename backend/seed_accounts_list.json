@@ -1,0 +1,2243 @@
+{
+  "metadata": {
+    "total_accounts": 143,
+    "source_files": [
+      "/home/gurpyar/Documents/R/REIMS2/backend/scripts/seed_balance_sheet_template_accounts.sql",
+      "/home/gurpyar/Documents/R/REIMS2/backend/scripts/seed_balance_sheet_template_accounts_part2.sql"
+    ]
+  },
+  "accounts": [
+    {
+      "account_code": "0101-0000",
+      "account_name": "Current Assets",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "header",
+      "parent_account_code": "0100-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0120-0000",
+      "account_name": "Cash on Hand",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 10,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0121-0000",
+      "account_name": "Cash - Savings",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 11,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0122-0000",
+      "account_name": "Cash - Operating",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 12,
+      "is_active": true,
+      "expected_sign": "either"
+    },
+    {
+      "account_code": "0123-0000",
+      "account_name": "Cash - Operating II",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 13,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0124-0000",
+      "account_name": "Cash - Operating III WF",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 14,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0125-0000",
+      "account_name": "Cash - Operating IV-PNC",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 15,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0126-0000",
+      "account_name": "Cash - Depository - PNC",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 16,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0127-0000",
+      "account_name": "Cash - Escrow - PNC",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "cash",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 17,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0199-0000",
+      "account_name": "Non-Cash (Adjustments)",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "adjustments",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 19,
+      "is_active": true,
+      "expected_sign": "either"
+    },
+    {
+      "account_code": "0210-0000",
+      "account_name": "Accounts Receivables - Trade",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "accounts_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 30,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0305-0000",
+      "account_name": "A/R Tenants",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "accounts_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 40,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0306-0000",
+      "account_name": "A/R - Allowance for Doubtful",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "accounts_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 41,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "0307-0000",
+      "account_name": "A/R Other",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "accounts_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 42,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0310-0000",
+      "account_name": "Title Escrow/Lender App",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "accounts_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 43,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0315-0000",
+      "account_name": "A/R Eastern Shore Plaza",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "intercompany_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 50,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0316-0000",
+      "account_name": "A/R Frayser Village",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "intercompany_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 51,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0317-0000",
+      "account_name": "A/R Hammond Aire LP",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "intercompany_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 52,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0318-0000",
+      "account_name": "A/R TCSH, LP",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "intercompany_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 53,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0319-0000",
+      "account_name": "A/R Wendover Commons LP",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "intercompany_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 54,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0320-0000",
+      "account_name": "A/R Oxford Exchange, LP",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "intercompany_receivable",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 55,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0347-0000",
+      "account_name": "Escrow - Other",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 80,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0499-9000",
+      "account_name": "Total Current Assets",
+      "account_type": "asset",
+      "category": "current_asset",
+      "subcategory": "total",
+      "parent_account_code": "0101-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": true,
+      "display_order": 99,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0500-0000",
+      "account_name": "Property & Equipment",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "header",
+      "parent_account_code": "0100-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 100,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0510-0000",
+      "account_name": "Land",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "land",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 110,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0610-0000",
+      "account_name": "Buildings",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "buildings",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 120,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0710-0000",
+      "account_name": "5 Year Improvements",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 130,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0715-0000",
+      "account_name": "7 Year - Signage",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 131,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0810-0000",
+      "account_name": "15 Year Improvements",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 140,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0815-0000",
+      "account_name": "30 Year - Roof",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 141,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0816-0000",
+      "account_name": "30 Year - HVAC",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 142,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0910-0000",
+      "account_name": "Other Improvements",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 150,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0912-0000",
+      "account_name": "PARKING-LOT",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 151,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0950-0000",
+      "account_name": "TI/Current Improvements",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 160,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "0955-0000",
+      "account_name": "White box / Spec Suites Major",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "improvements",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 161,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1061-0000",
+      "account_name": "Accum. Depr. - Buildings",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 170,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1071-0000",
+      "account_name": "Accum. Depr. 5 Year Impr.",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 171,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1081-0000",
+      "account_name": "Accum. Depr. 15 Yr Impr.",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 172,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1082-0000",
+      "account_name": "Accum. Depr.-15Yr-09Remodel",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 173,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1083-0000",
+      "account_name": "Accum. Depr.-Roof2008",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 174,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1084-0000",
+      "account_name": "Accum. Depr.-PL-2009",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 175,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1085-0000",
+      "account_name": "Accum. Amort 2016ParkingLot7yrs",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 176,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1086-0000",
+      "account_name": "Accum. Amort Roof 15 yrs 2016",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 177,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1087-0000",
+      "account_name": "Accum. Amort 2017 Parking Lot 7 yrs",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 178,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1088-0000",
+      "account_name": "Accum. Amort HVAC 30 yrs",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 179,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1091-0000",
+      "account_name": "Accum. Depr.-Other Imp.",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "accumulated_depreciation",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 180,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1099-0000",
+      "account_name": "Total Property & Equipment",
+      "account_type": "asset",
+      "category": "fixed_asset",
+      "subcategory": "total",
+      "parent_account_code": "0500-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": true,
+      "display_order": 199,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1200-0000",
+      "account_name": "Other Assets",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "header",
+      "parent_account_code": "0100-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 200,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1210-0000",
+      "account_name": "Deposits",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deposits",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 210,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1310-0000",
+      "account_name": "Escrow - Property Tax",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 220,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1320-0000",
+      "account_name": "Escrow - Insurance",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 221,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1330-0000",
+      "account_name": "Escrow - TI/LC",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 222,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1330-1000",
+      "account_name": "Escrow TI/LC Kroger",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 223,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1330-1001",
+      "account_name": "Escrow TI/LC SavALot",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 224,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1330-2000",
+      "account_name": "Escrow - TI/LC acct 2",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 225,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1340-0000",
+      "account_name": "Escrow - Replacement Reserves",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 226,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1341-0000",
+      "account_name": "Escrow-Insurance Loss Reserve",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 227,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1342-0000",
+      "account_name": "Escrow - Sweep Account",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "escrow",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 228,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1910-0000",
+      "account_name": "Organization Cost",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 240,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1911-0000",
+      "account_name": "Accum. Amortization Org. Cost",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 241,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1920-0000",
+      "account_name": "Loan Costs",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 242,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1922-0000",
+      "account_name": "Accum. Amortization Loan Costs",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 243,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1923-0000",
+      "account_name": "Accumulated Amortisation",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 244,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1924-0000",
+      "account_name": "Closing Costs",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 245,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1925-0000",
+      "account_name": "Loan Costs - Consolidated",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 246,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1950-0000",
+      "account_name": "External - Lease Commission",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 250,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1950-5000",
+      "account_name": "Internal - Lease Commission",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 251,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1952-0000",
+      "account_name": "Accum. Amort - TI/LC",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "deferred_costs",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 252,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "1995-0000",
+      "account_name": "Prepaid Insurance",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "prepaid",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 260,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1997-0000",
+      "account_name": "Prepaid Expenses",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "prepaid",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 261,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1997-1000",
+      "account_name": "1031 Intermediary Escrow",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "other",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 262,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1997-2000",
+      "account_name": "Sales Contract",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "other",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 263,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1997-3000",
+      "account_name": "Selling Cost",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "other",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 264,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1997-4000",
+      "account_name": "Other Receivables",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "other",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 265,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1997-5000",
+      "account_name": "Receivable from Nuveen-Fayette",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "other",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 266,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "1998-0000",
+      "account_name": "Total Other Assets",
+      "account_type": "asset",
+      "category": "other_asset",
+      "subcategory": "total",
+      "parent_account_code": "1200-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": true,
+      "display_order": 299,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2001-0000",
+      "account_name": "Current Liabilities",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "header",
+      "parent_account_code": "2000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1001,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2030-0000",
+      "account_name": "Accrued Expenses",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accrued",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1010,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2035-0000",
+      "account_name": "Due to Seller",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accrued",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1011,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2110-0000",
+      "account_name": "Accounts Payable Trade",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accounts_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1020,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2120-0000",
+      "account_name": "A/P Series RDF Investors LLC",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accounts_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1021,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2121-0000",
+      "account_name": "A/P Other",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accounts_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1022,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2131-0000",
+      "account_name": "A/P Com Realty (Do not Use)",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accounts_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1023,
+      "is_active": false,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2132-0000",
+      "account_name": "A/P 5Rivers CRE, LLC",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "accounts_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1024,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2135-0000",
+      "account_name": "A/P Frayser Village",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "intercompany_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1030,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2136-0000",
+      "account_name": "A/P Eastern Shore Plaza",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "intercompany_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1031,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2137-0000",
+      "account_name": "A/P TCSH, LLC",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "intercompany_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1032,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2138-0000",
+      "account_name": "A/P Oxford Exchange, LP",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "intercompany_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1033,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2139-0000",
+      "account_name": "A/P Wendover Commons LP",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "intercompany_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1034,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2140-0000",
+      "account_name": "A/P Hammond Aire LP",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "intercompany_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1035,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2139-0001",
+      "account_name": "Insurance Claim",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "other",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1045,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2197-0000",
+      "account_name": "Loans Payable 5Rivers",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "short_term_debt",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1050,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2410-0000",
+      "account_name": "Property Tax Payable",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "tax_payable",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1060,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2411-0000",
+      "account_name": "Current Portion of LTD",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "short_term_debt",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1061,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2510-0000",
+      "account_name": "Rent Received in Advance",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "deferred_revenue",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1070,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2515-0000",
+      "account_name": "A/P Tenant TI/LC Obligations",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "tenant_obligations",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1071,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2520-0000",
+      "account_name": "Deposit Refundable to Tenant",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "deposits",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1072,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2521-0000",
+      "account_name": "Construction Deposit Refundable",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "deposits",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1073,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2522-0000",
+      "account_name": "Deposit Clearing (System Use)",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "deposits",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1074,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2585-0000",
+      "account_name": "A/P Suspense",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "other",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1080,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2586-0000",
+      "account_name": "A/P 1031 Exchange",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "other",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1081,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2587-0000",
+      "account_name": "A/P Data Center Entity",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "other",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1082,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2590-0000",
+      "account_name": "Total Current Liabilities",
+      "account_type": "liability",
+      "category": "current_liability",
+      "subcategory": "total",
+      "parent_account_code": "2001-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": true,
+      "display_order": 1099,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2600-0000",
+      "account_name": "Long Term Liabilities",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "header",
+      "parent_account_code": "2000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1100,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2611-0000",
+      "account_name": "CIBC",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1110,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2611-1000",
+      "account_name": "CIBC-MEZZ",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mezzanine",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1111,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2612-0000",
+      "account_name": "KeyBank",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1112,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2613-0000",
+      "account_name": "KeyBank - Mezz",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mezzanine",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1113,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2613-5000",
+      "account_name": "The Azad Family Trust (TAFT)",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1114,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2612-1000",
+      "account_name": "NorthMarq Capital",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1115,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2614-0000",
+      "account_name": "RAIT Financial",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1116,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2615-0000",
+      "account_name": "Berkadia Comm. Mtg.",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1117,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2614-1000",
+      "account_name": "Wells Fargo",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1118,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2614-2000",
+      "account_name": "Wachovia Securities",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1119,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2616-0000",
+      "account_name": "MidLand Loan Services (PNC)",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1120,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2616-1000",
+      "account_name": "Standard Ins Co, an Oregon Corporation",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1121,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2617-0000",
+      "account_name": "Business Partners",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1122,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2618-0000",
+      "account_name": "Trawler Capital Management (MEZZ)",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mezzanine",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1123,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2619-0000",
+      "account_name": "WoodForest National Bank",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1124,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2620-0000",
+      "account_name": "StanCorp Mtg Investors, LLC (NMC)",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1125,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2621-0000",
+      "account_name": "Origin Bank",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "mortgage",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1126,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2650-0000",
+      "account_name": "Shareholders Loan Accounts",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1150,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2651-0000",
+      "account_name": "Loans from Stockholders",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1151,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2660-0000",
+      "account_name": "Hardam S Azad",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1160,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2661-0000",
+      "account_name": "Balwant Singh",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1161,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2662-0000",
+      "account_name": "Gurnaib S Sidhu",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1162,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2663-0000",
+      "account_name": "Scott Wallace",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1163,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2664-0000",
+      "account_name": "Kuldip S Bains",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1164,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2665-0000",
+      "account_name": "Anis Charnia",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1165,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2666-0000",
+      "account_name": "Baldev Singh",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1166,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2667-0000",
+      "account_name": "Mohinder S Sandhu",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1167,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2668-0000",
+      "account_name": "Harpreet Sandhu",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1168,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2669-0000",
+      "account_name": "Dr. Jaspaul S Azad",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1169,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2670-0000",
+      "account_name": "Dr. I M Azad",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1170,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2671-0000",
+      "account_name": "Gagan Bains",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "shareholder_loan",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 1171,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "2900-0000",
+      "account_name": "Total Long Term Liabilities",
+      "account_type": "liability",
+      "category": "long_term_liability",
+      "subcategory": "total",
+      "parent_account_code": "2600-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": true,
+      "display_order": 1199,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "3050-0000",
+      "account_name": "Common Stock",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "stock",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2010,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "3050-1000",
+      "account_name": "Partners Contribution",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "contribution",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2020,
+      "is_active": true,
+      "expected_sign": "positive"
+    },
+    {
+      "account_code": "3910-0000",
+      "account_name": "Beginning Equity",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "retained_earnings",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2030,
+      "is_active": true,
+      "expected_sign": "either"
+    },
+    {
+      "account_code": "3920-0000",
+      "account_name": "Partners Draw",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "draw",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2040,
+      "is_active": true,
+      "expected_sign": "either"
+    },
+    {
+      "account_code": "3990-0000",
+      "account_name": "Distribution",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "distribution",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2050,
+      "is_active": true,
+      "expected_sign": "negative"
+    },
+    {
+      "account_code": "3995-0000",
+      "account_name": "Current Period Earnings",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "net_income",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": false,
+      "display_order": 2060,
+      "is_active": true,
+      "expected_sign": "either"
+    },
+    {
+      "account_code": "3999-0000",
+      "account_name": "TOTAL CAPITAL",
+      "account_type": "equity",
+      "category": "equity",
+      "subcategory": "total",
+      "parent_account_code": "3000-0000",
+      "document_types": [
+        "balance_sheet"
+      ],
+      "is_calculated": true,
+      "display_order": 2099,
+      "is_active": true,
+      "expected_sign": "either"
+    }
+  ],
+  "statistics": {
+    "total": 143,
+    "by_type": {
+      "asset": 76,
+      "liability": 60,
+      "equity": 7
+    },
+    "by_category": {
+      "current_asset": 23,
+      "fixed_asset": 24,
+      "other_asset": 29,
+      "current_liability": 27,
+      "long_term_liability": 33,
+      "equity": 7
+    },
+    "by_section": {
+      "ASSETS": 76,
+      "LIABILITIES": 60,
+      "CAPITAL/EQUITY": 7
+    },
+    "by_subcategory": {
+      "header": 5,
+      "cash": 8,
+      "adjustments": 1,
+      "accounts_receivable": 5,
+      "intercompany_receivable": 6,
+      "escrow": 10,
+      "total": 6,
+      "land": 1,
+      "buildings": 1,
+      "improvements": 9,
+      "accumulated_depreciation": 11,
+      "deposits": 4,
+      "deferred_costs": 10,
+      "prepaid": 2,
+      "other": 9,
+      "accrued": 2,
+      "accounts_payable": 5,
+      "intercompany_payable": 6,
+      "short_term_debt": 2,
+      "tax_payable": 1,
+      "deferred_revenue": 1,
+      "tenant_obligations": 1,
+      "mortgage": 14,
+      "mezzanine": 3,
+      "shareholder_loan": 14,
+      "stock": 1,
+      "contribution": 1,
+      "retained_earnings": 1,
+      "draw": 1,
+      "distribution": 1,
+      "net_income": 1
+    },
+    "calculated_accounts": [
+      "0499-9000",
+      "1099-0000",
+      "1998-0000",
+      "2590-0000",
+      "2900-0000",
+      "3999-0000"
+    ],
+    "contra_accounts": [
+      "1061-0000",
+      "1071-0000",
+      "1081-0000",
+      "1082-0000",
+      "1083-0000",
+      "1084-0000",
+      "1085-0000",
+      "1086-0000",
+      "1087-0000",
+      "1088-0000",
+      "1091-0000",
+      "1911-0000",
+      "1922-0000",
+      "1923-0000",
+      "1952-0000"
+    ],
+    "critical_accounts": [
+      "0499-9000",
+      "1099-0000",
+      "1998-0000",
+      "2590-0000",
+      "2900-0000",
+      "3999-0000"
+    ]
+  }
+}

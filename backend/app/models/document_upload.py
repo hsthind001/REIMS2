@@ -51,6 +51,7 @@ class DocumentUpload(Base):
     field_metadata = relationship("ExtractionFieldMetadata", back_populates="document", cascade="all, delete-orphan")
     balance_sheet_data = relationship("BalanceSheetData", back_populates="upload", cascade="all, delete-orphan")
     income_statement_data = relationship("IncomeStatementData", back_populates="upload", cascade="all, delete-orphan")
+    income_statement_header = relationship("IncomeStatementHeader", back_populates="upload", uselist=False, cascade="all, delete-orphan")
     cash_flow_header = relationship("CashFlowHeader", back_populates="upload", uselist=False, cascade="all, delete-orphan")
     income_statement_header = relationship("IncomeStatementHeader", back_populates="upload", uselist=False, cascade="all, delete-orphan")
     cash_flow_data = relationship("CashFlowData", back_populates="upload", cascade="all, delete-orphan")

@@ -25,6 +25,16 @@ export default function Reconciliation() {
     loadProperties();
   }, []);
 
+  // Clear comparison data when selection criteria changes
+  useEffect(() => {
+    // Clear stale data when user changes document type, property, year, or month
+    if (comparisonData) {
+      setComparisonData(null);
+      setSelectedRecords(new Set());
+      setError(null);
+    }
+  }, [selectedDocType, selectedProperty, selectedYear, selectedMonth]);
+
   const loadProperties = async () => {
     try {
       const data = await propertyService.getAllProperties();
@@ -374,11 +384,33 @@ export default function Reconciliation() {
                               checked={selectedRecords.size === filteredRecords.length && filteredRecords.length > 0}
                             />
                           </th>
-                          <th>Account Code</th>
-                          <th>Account Name</th>
-                          <th style={{ textAlign: 'right' }}>PDF Value</th>
-                          <th style={{ textAlign: 'right' }}>DB Value</th>
-                          <th style={{ textAlign: 'right' }}>Difference</th>
+                          <th>{selectedDocType === 'rent_roll' ? 'Unit' : 'Account Code'}</th>
+                          <th>{selectedDocType === 'rent_roll' ? 'Tenant' : 'Account Name'}</th>
+                          {selectedDocType === 'rent_roll' ? (
+                            <>
+                              <th>Tenant ID</th>
+                              <th>Lease Type</th>
+                              <th style={{ textAlign: 'right' }}>Sq Ft</th>
+                              <th style={{ textAlign: 'right' }}>Monthly Rent</th>
+                              <th style={{ textAlign: 'right' }}>$/SF (Mo)</th>
+                              <th style={{ textAlign: 'right' }}>Annual Rent</th>
+                              <th style={{ textAlign: 'right' }}>$/SF (Yr)</th>
+                              <th>Lease Start</th>
+                              <th>Lease End</th>
+                              <th style={{ textAlign: 'right' }}>Term (Mo)</th>
+                              <th style={{ textAlign: 'right' }}>Tenancy (Yrs)</th>
+                              <th style={{ textAlign: 'right' }}>Security Dep</th>
+                              <th style={{ textAlign: 'right' }}>LOC</th>
+                              <th>Occupancy</th>
+                              <th>Status</th>
+                            </>
+                          ) : (
+                            <>
+                              <th style={{ textAlign: 'right' }}>PDF Value</th>
+                              <th style={{ textAlign: 'right' }}>DB Value</th>
+                              <th style={{ textAlign: 'right' }}>Difference</th>
+                            </>
+                          )}
                           <th>Status</th>
                           <th>Actions</th>
                         </tr>
@@ -400,15 +432,80 @@ export default function Reconciliation() {
                             </td>
                             <td style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{record.account_code}</td>
                             <td>{record.account_name}</td>
-                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-                              {record.pdf_value !== null ? record.pdf_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
-                            </td>
-                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-                              {record.db_value !== null ? record.db_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
-                            </td>
-                            <td style={{ textAlign: 'right', fontFamily: 'monospace', color: record.difference && record.difference > 0 ? '#ef4444' : undefined }}>
-                              {record.difference !== null ? record.difference.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
-                            </td>
+                            
+                            {selectedDocType === 'rent_roll' && record.rent_roll_fields ? (
+                              <>
+                                {/* Rent Roll: Extended columns with ALL fields */}
+                                <td style={{ fontSize: '0.75rem', color: '#6b7280' }}>{record.rent_roll_fields.tenant_code || '-'}</td>
+                                <td style={{ fontSize: '0.875rem' }}>{record.rent_roll_fields.lease_type || '-'}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.rent_roll_fields.unit_area_sqft !== null && record.rent_roll_fields.unit_area_sqft !== undefined ? record.rent_roll_fields.unit_area_sqft.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                                  {record.pdf_value !== null ? `$${record.pdf_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                                  {record.rent_roll_fields.monthly_rent_per_sqft !== null && record.rent_roll_fields.monthly_rent_per_sqft !== undefined ? `$${record.rent_roll_fields.monthly_rent_per_sqft.toFixed(2)}` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.rent_roll_fields.annual_rent !== null && record.rent_roll_fields.annual_rent !== undefined ? `$${record.rent_roll_fields.annual_rent.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                                  {record.rent_roll_fields.annual_rent_per_sqft !== null && record.rent_roll_fields.annual_rent_per_sqft !== undefined ? `$${record.rent_roll_fields.annual_rent_per_sqft.toFixed(2)}` : '-'}
+                                </td>
+                                <td style={{ fontSize: '0.875rem' }}>{record.rent_roll_fields.lease_start_date || '-'}</td>
+                                <td style={{ fontSize: '0.875rem' }}>{record.rent_roll_fields.lease_end_date || '-'}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: '#2563eb' }}>
+                                  {record.rent_roll_fields.lease_term_months || '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.rent_roll_fields.tenancy_years !== null && record.rent_roll_fields.tenancy_years !== undefined ? record.rent_roll_fields.tenancy_years.toFixed(1) : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.rent_roll_fields.security_deposit !== null && record.rent_roll_fields.security_deposit !== undefined ? `$${record.rent_roll_fields.security_deposit.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.rent_roll_fields.loc_amount !== null && record.rent_roll_fields.loc_amount !== undefined && record.rent_roll_fields.loc_amount > 0 ? `$${record.rent_roll_fields.loc_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                                </td>
+                                <td>
+                                  <span style={{ 
+                                    padding: '0.25rem 0.5rem', 
+                                    borderRadius: '0.25rem', 
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    background: record.rent_roll_fields.occupancy_status === 'occupied' ? '#d1fae5' : '#fee2e2',
+                                    color: record.rent_roll_fields.occupancy_status === 'occupied' ? '#065f46' : '#991b1b'
+                                  }}>
+                                    {record.rent_roll_fields.occupancy_status || 'unknown'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ 
+                                    fontSize: '0.75rem',
+                                    padding: '0.25rem 0.5rem',
+                                    borderRadius: '0.25rem',
+                                    background: record.rent_roll_fields.lease_status === 'active' ? '#e0f2fe' : '#fef3c7',
+                                    color: record.rent_roll_fields.lease_status === 'active' ? '#075985' : '#92400e'
+                                  }}>
+                                    {record.rent_roll_fields.lease_status || '-'}
+                                  </span>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                {/* Financial Statements: Standard amount comparison */}
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.pdf_value !== null ? record.pdf_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {record.db_value !== null ? record.db_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: record.difference && record.difference > 0 ? '#ef4444' : undefined }}>
+                                  {record.difference !== null ? record.difference.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                </td>
+                              </>
+                            )}
+                            
                             <td>
                               <span
                                 style={{

@@ -1,0 +1,31 @@
+{
+  "summary": {
+    "total_in_template": 14,
+    "total_in_seed": 1,
+    "matched": 0,
+    "in_template_only": 14,
+    "in_seed_only": 1,
+    "mismatches": 0
+  },
+  "matched_rules": [],
+  "in_template_only": [
+    "accounting_equation",
+    "all_required_sections_present",
+    "assets_total_validation",
+    "completeness_check",
+    "contra_accounts_negative",
+    "current_assets_total_validation",
+    "current_liabilities_total_validation",
+    "liabilities_total_validation",
+    "long_term_liabilities_total_validation",
+    "no_duplicate_accounts",
+    "other_assets_total_validation",
+    "property_equipment_total_validation",
+    "reasonable_amounts",
+    "required_totals_extracted"
+  ],
+  "in_seed_only": [
+    "balance_sheet_equation"
+  ],
+  "mismatches": []
+}

@@ -3,7 +3,7 @@ Document Upload Schemas for API Request/Response
 """
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 
 
@@ -240,32 +240,59 @@ class CashFlowDataItem(BaseModel):
 
 
 class RentRollDataItem(BaseModel):
-    """Rent roll line item"""
+    """Rent roll line item - Template v2.0 compliant with all 24+ fields"""
+    # Core identification (6)
+    property_name: Optional[str] = None
+    property_code: Optional[str] = None
+    report_date: Optional[date] = None
     unit_number: str
     tenant_name: str
-    tenant_code: Optional[str] = None
+    tenant_id: Optional[str] = None  # Previously tenant_code, now aligned with template
+    tenant_code: Optional[str] = None  # Keep for backward compatibility
+    
+    # Lease details (5)
     lease_type: Optional[str] = None
     lease_start_date: Optional[datetime] = None
     lease_end_date: Optional[datetime] = None
     lease_term_months: Optional[int] = None
+    tenancy_years: Optional[float] = None
+    
+    # Space (1)
     unit_area_sqft: Optional[float] = None
+    
+    # Base rent (4)
     monthly_rent: Optional[float] = None
     monthly_rent_per_sqft: Optional[float] = None
     annual_rent: Optional[float] = None
     annual_rent_per_sqft: Optional[float] = None
-    gross_rent: Optional[float] = None
+    
+    # Additional charges (2)
+    annual_recoveries_per_sf: Optional[float] = None
+    annual_misc_per_sf: Optional[float] = None
+    
+    # Security (2)
     security_deposit: Optional[float] = None
     loc_amount: Optional[float] = None
     
-    # Template v2.0 fields
-    tenancy_years: Optional[float] = None
-    annual_recoveries_per_sf: Optional[float] = None
-    annual_misc_per_sf: Optional[float] = None
+    # Legacy field
+    gross_rent: Optional[float] = None  # Kept for backward compatibility
+    
+    # Status flags (5)
+    is_vacant: bool = False
     is_gross_rent_row: bool = False
     parent_row_id: Optional[int] = None
+    occupancy_status: Optional[str] = None
+    lease_status: Optional[str] = None  # active, expired, month_to_month, future
     notes: Optional[str] = None
     
-    occupancy_status: str
+    # Validation tracking (5)
+    validation_score: Optional[float] = None
+    validation_flags_json: Optional[str] = None
+    critical_flag_count: int = 0
+    warning_flag_count: int = 0
+    info_flag_count: int = 0
+    
+    # Extraction metadata
     extraction_confidence: Optional[float] = None
     needs_review: bool = False
     

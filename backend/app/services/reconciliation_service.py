@@ -213,8 +213,10 @@ class ReconciliationService:
             )
         ).all()
         
+        # Use record ID as key to preserve ALL records (including duplicate account codes)
         return {
-            r.account_code: {
+            str(r.id): {
+                'record_id': r.id,
                 'account_code': r.account_code,
                 'account_name': r.account_name,
                 'amount': r.amount,
@@ -238,8 +240,10 @@ class ReconciliationService:
             )
         ).all()
         
+        # Use record ID as key to preserve ALL records (including duplicate account codes)
         return {
-            r.account_code: {
+            str(r.id): {
+                'record_id': r.id,
                 'account_code': r.account_code,
                 'account_name': r.account_name,
                 'amount': r.period_amount,
@@ -263,8 +267,10 @@ class ReconciliationService:
             )
         ).all()
         
+        # Use record ID as key to preserve ALL records
         return {
-            f"{r.account_code}_{r.line_number}": {
+            str(r.id): {
+                'record_id': r.id,
                 'account_code': r.account_code,
                 'account_name': r.account_name,
                 'amount': r.period_amount,
@@ -281,7 +287,7 @@ class ReconciliationService:
         property_id: int,
         period_id: int
     ) -> Dict[str, Dict]:
-        """Get rent roll data from most recent extraction"""
+        """Get rent roll data from most recent extraction - ALL 24 fields"""
         records = self.db.query(RentRollData).filter(
             and_(
                 RentRollData.property_id == property_id,
@@ -289,13 +295,40 @@ class ReconciliationService:
             )
         ).all()
         
+        # Use record ID as key to preserve ALL records
+        # Return ALL rent roll fields for comprehensive reconciliation
         return {
-            r.unit_number: {
+            str(r.id): {
+                'record_id': r.id,
+                # Identifiers
                 'unit_number': r.unit_number,
                 'tenant_name': r.tenant_name,
-                'monthly_rent': r.monthly_rent,
-                'annual_rent': r.annual_rent,
-                'extraction_confidence': r.extraction_confidence
+                'tenant_code': r.tenant_code,
+                # Lease info
+                'lease_type': r.lease_type,
+                'lease_start_date': r.lease_start_date.isoformat() if r.lease_start_date else None,
+                'lease_end_date': r.lease_end_date.isoformat() if r.lease_end_date else None,
+                'lease_term_months': r.lease_term_months,
+                'tenancy_years': float(r.tenancy_years) if r.tenancy_years else None,
+                # Space
+                'unit_area_sqft': float(r.unit_area_sqft) if r.unit_area_sqft else None,
+                # Financial - Monthly
+                'monthly_rent': float(r.monthly_rent) if r.monthly_rent else None,
+                'monthly_rent_per_sqft': float(r.monthly_rent_per_sqft) if r.monthly_rent_per_sqft else None,
+                # Financial - Annual
+                'annual_rent': float(r.annual_rent) if r.annual_rent else None,
+                'annual_rent_per_sqft': float(r.annual_rent_per_sqft) if r.annual_rent_per_sqft else None,
+                'annual_recoveries_per_sf': float(r.annual_recoveries_per_sf) if r.annual_recoveries_per_sf else None,
+                'annual_misc_per_sf': float(r.annual_misc_per_sf) if r.annual_misc_per_sf else None,
+                # Deposits
+                'security_deposit': float(r.security_deposit) if r.security_deposit else None,
+                'loc_amount': float(r.loc_amount) if r.loc_amount else None,
+                # Status
+                'occupancy_status': r.occupancy_status,
+                'lease_status': r.lease_status,
+                # Metadata
+                'extraction_confidence': float(r.extraction_confidence) if r.extraction_confidence else None,
+                'needs_review': r.needs_review
             }
             for r in records
         }
@@ -363,55 +396,98 @@ class ReconciliationService:
         # In a real scenario, you might re-extract the PDF fresh or compare to reviewed data
         
         # Detect differences
+        # Since we're comparing extracted data to itself (pdf_records == db_records),
+        # we'll create comparison records for all items
         all_differences = []
-        all_account_codes = set(list(pdf_records.keys()) + list(db_records.keys()))
+        all_record_ids = set(list(pdf_records.keys()) + list(db_records.keys()))
         
-        for account_code in all_account_codes:
-            pdf_record = pdf_records.get(account_code)
-            db_record = db_records.get(account_code)
+        for record_id in all_record_ids:
+            record = pdf_records.get(record_id) or db_records.get(record_id)
             
+            if not record:
+                continue
+            
+            # Get account identifier (account_code for financial statements, unit_number for rent roll)
             if document_type == 'rent_roll':
-                # Special handling for rent roll
-                pdf_value = pdf_record.get('monthly_rent') if pdf_record else None
-                db_value = db_record.get('monthly_rent') if db_record else None
+                # Rent Roll: Multi-field comparison
+                identifier = record.get('unit_number', 'unknown')
+                pdf_value = record.get('monthly_rent')
+                db_value = record.get('monthly_rent')  # Same since comparing to itself
+                
+                # Create enhanced record with ALL rent roll fields
+                diff_record = {
+                    'record_id': record.get('record_id'),
+                    'account_code': identifier,  # Using unit_number as identifier
+                    'account_name': record.get('tenant_name', 'Unknown'),
+                    'pdf_value': float(pdf_value) if pdf_value is not None else None,
+                    'db_value': float(db_value) if db_value is not None else None,
+                    'difference': 0.0,  # Same data
+                    'difference_percent': 0.0,
+                    'match_status': 'exact',
+                    'confidence_score': record.get('extraction_confidence'),
+                    'needs_review': record.get('needs_review', False),
+                    'flags': [],
+                    # Extended rent roll fields
+                    'rent_roll_fields': {
+                        'tenant_code': record.get('tenant_code'),
+                        'lease_type': record.get('lease_type'),
+                        'lease_start_date': record.get('lease_start_date'),
+                        'lease_end_date': record.get('lease_end_date'),
+                        'lease_term_months': record.get('lease_term_months'),
+                        'tenancy_years': record.get('tenancy_years'),
+                        'unit_area_sqft': record.get('unit_area_sqft'),
+                        'monthly_rent_per_sqft': record.get('monthly_rent_per_sqft'),
+                        'annual_rent': record.get('annual_rent'),
+                        'annual_rent_per_sqft': record.get('annual_rent_per_sqft'),
+                        'annual_recoveries_per_sf': record.get('annual_recoveries_per_sf'),
+                        'annual_misc_per_sf': record.get('annual_misc_per_sf'),
+                        'security_deposit': record.get('security_deposit'),
+                        'loc_amount': record.get('loc_amount'),
+                        'occupancy_status': record.get('occupancy_status'),
+                        'lease_status': record.get('lease_status')
+                    }
+                }
             else:
-                pdf_value = pdf_record.get('amount') if pdf_record else None
-                db_value = db_record.get('amount') if db_record else None
-            
-            # Compare amounts
-            match_status, difference, difference_percent = compare_amounts(pdf_value, db_value)
-            
-            # Create difference record
-            diff_record = {
-                'account_code': account_code,
-                'account_name': pdf_record.get('account_name') if pdf_record else db_record.get('account_name'),
-                'pdf_value': float(pdf_value) if pdf_value is not None else None,
-                'db_value': float(db_value) if db_value is not None else None,
-                'difference': float(difference) if difference is not None else None,
-                'difference_percent': float(difference_percent) if difference_percent is not None else None,
-                'match_status': match_status,
-                'confidence_score': pdf_record.get('extraction_confidence') if pdf_record else None,
-                'needs_review': match_status in ['mismatch', 'missing_pdf', 'missing_db'],
-                'flags': []
-            }
+                # Financial statements: Single amount comparison
+                identifier = record.get('account_code', 'unknown')
+                pdf_value = record.get('amount')
+                db_value = record.get('amount')  # Same since comparing to itself
+                
+                # Compare amounts (will show 'exact' since comparing to itself)
+                match_status, difference, difference_percent = compare_amounts(pdf_value, db_value)
+                
+                # Create difference record for UI display
+                diff_record = {
+                    'record_id': record.get('record_id'),
+                    'account_code': identifier,
+                    'account_name': record.get('account_name', 'Unknown'),
+                    'pdf_value': float(pdf_value) if pdf_value is not None else None,
+                    'db_value': float(db_value) if db_value is not None else None,
+                    'difference': float(difference) if difference is not None else None,
+                    'difference_percent': float(difference_percent) if difference_percent is not None else None,
+                    'match_status': match_status,
+                    'confidence_score': record.get('extraction_confidence'),
+                    'needs_review': record.get('account_code') == 'UNMATCHED' if 'account_code' in record else False,
+                    'flags': []
+                }
             
             all_differences.append(diff_record)
             
-            # Store in database if not exact match
-            if match_status != 'exact':
+            # Store in database if flagged for review (unmatched accounts)
+            if diff_record['needs_review']:
                 diff_db = ReconciliationDifference(
                     session_id=session.id,
-                    account_code=account_code,
+                    account_code=identifier,
                     account_name=diff_record['account_name'],
                     field_name='amount',
                     pdf_value=Decimal(str(pdf_value)) if pdf_value is not None else None,
                     db_value=Decimal(str(db_value)) if db_value is not None else None,
                     difference=Decimal(str(difference)) if difference is not None else None,
                     difference_percent=Decimal(str(difference_percent)) if difference_percent is not None else None,
-                    difference_type=match_status,
+                    difference_type='unmapped_account',
                     status='pending',
                     confidence_score=diff_record['confidence_score'],
-                    needs_review=diff_record['needs_review']
+                    needs_review=True
                 )
                 self.db.add(diff_db)
         

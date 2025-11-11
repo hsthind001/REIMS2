@@ -59,10 +59,9 @@ class BalanceSheetData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Unique constraint
-    __table_args__ = (
-        UniqueConstraint('property_id', 'period_id', 'account_code', name='uq_bs_property_period_account'),
-    )
+    # Note: No unique constraint needed since we use DELETE-and-REPLACE strategy
+    # Multiple line items can legitimately have the same account code
+    __table_args__ = ()
     
     # Relationships
     property = relationship("Property", back_populates="balance_sheet_data")

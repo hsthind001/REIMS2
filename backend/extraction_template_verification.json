@@ -1,0 +1,33 @@
+{
+  "template_structure": {
+    "status": "\u274c MISSING",
+    "details": [
+      "Template structure not found"
+    ]
+  },
+  "keywords": {
+    "status": "\u274c MISSING",
+    "details": [
+      "Keywords not found"
+    ]
+  },
+  "fuzzy_matching": {
+    "status": "\u274c NOT FOUND",
+    "details": [
+      "Could not find fuzzy matching threshold"
+    ]
+  },
+  "extraction_rules": {
+    "status": "\u274c MISSING",
+    "details": [
+      "Extraction rules not found"
+    ]
+  },
+  "summary": {
+    "overall_status": "\u274c CRITICAL ISSUES",
+    "template_structure": "\u274c MISSING",
+    "keywords": "\u274c MISSING",
+    "fuzzy_matching": "\u274c NOT FOUND",
+    "extraction_rules": "\u274c MISSING"
+  }
+}

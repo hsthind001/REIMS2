@@ -73,11 +73,16 @@ docker compose down -v
 
 ### PostgreSQL
 - **Container**: reims-postgres
-- **Port**: 5432
+- **Init Container**: reims-db-init (runs migrations & seeding)
+- **Port**: 5433 (external), 5432 (internal)
 - **User**: reims
 - **Password**: reims
 - **Database**: reims
-- **Volume**: postgres-data
+- **Volume**: postgres-data (persistent storage)
+- **Tables**: 13+ tables with 19 migrations
+- **Seeded Data**: 300+ chart of accounts, 30+ lenders
+- **Persistence**: ✅ All schema, tables, and data persist across restarts
+- **Documentation**: See [DATABASE_PERSISTENCE.md](DATABASE_PERSISTENCE.md)
 
 ### pgAdmin
 - **Container**: reims-pgadmin
@@ -93,13 +98,17 @@ docker compose down -v
 - **RedisInsight**: http://localhost:8001
 - **Volume**: redis-data
 
-### MinIO
+### MinIO (S3-Compatible Storage)
 - **Container**: reims-minio
+- **Init Container**: reims-minio-init (auto-creates buckets)
 - **Ports**: 9000 (API), 9001 (Console)
 - **Console**: http://localhost:9001
 - **Access Key**: minioadmin
 - **Secret Key**: minioadmin
-- **Volume**: minio-data
+- **Bucket**: reims (auto-created on startup)
+- **Volume**: minio-data (persistent storage)
+- **Persistence**: ✅ All files and buckets persist across restarts
+- **Documentation**: See [MINIO_PERSISTENCE.md](MINIO_PERSISTENCE.md)
 
 ### Backend (FastAPI)
 - **Container**: reims-backend

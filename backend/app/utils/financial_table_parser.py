@@ -869,13 +869,38 @@ class FinancialTableParser:
             
             # Check if this is a summary row
             row_text = ' '.join([str(cell) or '' for cell in row]).upper()
-            if 'OCCUPANCY' in row_text or 'TOTAL' in row_text or 'SUMMARY' in row_text:
+            if 'OCCUPANCY' in row_text or 'SUMMARY' in row_text:
                 break  # Reached summary section
+            # Allow rows with TOTAL if they have valid unit numbers
+            if 'TOTAL' in row_text and not any(cell and str(cell).strip() and not str(cell).strip().upper().startswith('TOTAL') for cell in row[:3]):
+                break
             
             record = self._parse_rent_roll_row(row, header_map, report_date, property_name, property_code)
             if record:
                 record['page'] = page_num
+                
+                # Add special unit detection
+                unit_number = record.get('unit_number')
+                if unit_number:
+                    special_type = self._detect_special_unit_type(unit_number)
+                    if special_type:
+                        notes = record.get('notes', '')
+                        record['notes'] = f"{notes}; Special unit type: {special_type}".strip('; ')
+                    
+                    # Detect multi-unit lease
+                    if self._is_multi_unit_lease(unit_number):
+                        notes = record.get('notes', '')
+                        record['notes'] = f"{notes}; Multi-unit lease".strip('; ')
+                
+                # Calculate lease status
+                if not record.get('is_gross_rent_row') and not record.get('is_vacant'):
+                    lease_status = self._calculate_lease_status(record, report_date)
+                    record['lease_status'] = lease_status
+                
                 line_items.append(record)
+        
+        # Link gross rent rows to parent rows
+        line_items = self._link_gross_rent_rows(line_items)
         
         return line_items
     
@@ -1512,6 +1537,129 @@ class FinancialTableParser:
                 continue
         
         return None
+    
+    def _extract_tenant_id(self, tenant_name_str: str) -> Tuple[str, Optional[str]]:
+        """
+        Extract tenant ID from tenant name
+        
+        Format: 'Tenant Name (t0000123)' -> ('Tenant Name', 't0000123')
+        
+        Returns:
+            Tuple[tenant_name, tenant_id]
+        """
+        if not tenant_name_str:
+            return (tenant_name_str, None)
+        
+        # Pattern: (t followed by digits)
+        match = re.match(r'(.+?)\s*\(t(\d+)\)', tenant_name_str)
+        if match:
+            tenant_name = match.group(1).strip()
+            tenant_id = f"t{match.group(2)}"
+            return (tenant_name, tenant_id)
+        
+        return (tenant_name_str, None)
+    
+    def _detect_special_unit_type(self, unit_number: str) -> Optional[str]:
+        """
+        Detect special unit types (ATM, LAND, COMMON, SIGN)
+        
+        Returns:
+            Special unit type or None
+        """
+        if not unit_number:
+            return None
+        
+        unit_upper = unit_number.upper()
+        
+        special_types = {
+            'ATM': 'ATM Location',
+            'LAND': 'Ground Lease',
+            'COMMON': 'Common Area',
+            'SIGN': 'Signage',
+            'PARKING': 'Parking Rights'
+        }
+        
+        for keyword, type_name in special_types.items():
+            if keyword in unit_upper:
+                return type_name
+        
+        return None
+    
+    def _is_multi_unit_lease(self, unit_number: str) -> bool:
+        """
+        Detect if this is a multi-unit lease
+        
+        Patterns: '009-A, 009-B' or '015, 016' or '009-A-009-B-009-C'
+        """
+        if not unit_number:
+            return False
+        
+        # Check for comma-separated units
+        if ',' in unit_number:
+            return True
+        
+        # Check for multiple hyphens (e.g., '009-A-009-B')
+        if unit_number.count('-') > 1:
+            # Make sure it's not just a single unit with hyphens like '009-A'
+            parts = unit_number.split('-')
+            # If more than 2 parts, it's likely multi-unit
+            if len(parts) > 2:
+                return True
+        
+        return False
+    
+    def _link_gross_rent_rows(self, line_items: List[Dict]) -> List[Dict]:
+        """
+        Link gross rent rows to their parent tenant rows
+        
+        Gross rent rows appear immediately after the parent tenant row
+        """
+        for i, item in enumerate(line_items):
+            if item.get('is_gross_rent_row') and i > 0:
+                # Link to previous non-gross-rent row
+                for j in range(i-1, -1, -1):
+                    if not line_items[j].get('is_gross_rent_row'):
+                        # Found parent row
+                        item['parent_row_id'] = j + 1  # 1-indexed
+                        break
+        
+        return line_items
+    
+    def _calculate_lease_status(self, record: Dict, report_date: str) -> str:
+        """
+        Determine lease status from dates
+        
+        Returns: 'active', 'expired', 'month_to_month', 'future'
+        """
+        if not report_date:
+            return 'active'
+        
+        lease_start = record.get('lease_start_date')
+        lease_end = record.get('lease_end_date')
+        
+        try:
+            report_dt = datetime.strptime(report_date, '%Y-%m-%d').date()
+            
+            # Future lease
+            if lease_start:
+                start_dt = datetime.strptime(lease_start, '%Y-%m-%d').date()
+                if start_dt > report_dt:
+                    return 'future'
+            
+            # Month-to-month (no end date)
+            if not lease_end:
+                return 'month_to_month'
+            
+            # Expired lease
+            end_dt = datetime.strptime(lease_end, '%Y-%m-%d').date()
+            if end_dt < report_dt:
+                return 'expired'
+            
+            # Active
+            return 'active'
+            
+        except (ValueError, TypeError):
+            return 'active'
     
     def _parse_amount(self, amount_str: str) -> Optional[Decimal]:
         """

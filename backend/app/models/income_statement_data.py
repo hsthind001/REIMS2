@@ -10,6 +10,7 @@ class IncomeStatementData(Base):
     __tablename__ = "income_statement_data"
 
     id = Column(Integer, primary_key=True, index=True)
+    header_id = Column(Integer, ForeignKey('income_statement_headers.id', ondelete='CASCADE'), nullable=True, index=True)
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
     period_id = Column(Integer, ForeignKey('financial_periods.id', ondelete='CASCADE'), nullable=False, index=True)
     upload_id = Column(Integer, ForeignKey('document_uploads.id', ondelete='SET NULL'))
@@ -66,12 +67,12 @@ class IncomeStatementData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Unique constraint
-    __table_args__ = (
-        UniqueConstraint('property_id', 'period_id', 'account_code', name='uq_is_property_period_account'),
-    )
+    # Note: No unique constraint needed since we use DELETE-and-REPLACE strategy
+    # Multiple line items can legitimately have the same account code
+    __table_args__ = ()
     
     # Relationships
+    header = relationship("IncomeStatementHeader", back_populates="line_items")
     property = relationship("Property", back_populates="income_statement_data")
     period = relationship("FinancialPeriod", back_populates="income_statement_data")
     upload = relationship("DocumentUpload", back_populates="income_statement_data")

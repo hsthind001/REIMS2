@@ -228,6 +228,191 @@ def seed_validation_rules(db: Session):
             "formula": "expense_ratio < 0.80",
             "error_msg": "Expense ratio exceeds 80% - may indicate issue",
             "severity": "warning"
+        },
+        # Rent Roll - Financial Validations (5 new rules)
+        {
+            "name": "rent_roll_annual_equals_monthly_times_12",
+            "description": "Annual rent must equal monthly rent × 12 (±2% tolerance)",
+            "doc_type": "rent_roll",
+            "rule_type": "balance_check",
+            "formula": "abs(annual_rent - (monthly_rent * 12)) / annual_rent <= 0.02",
+            "error_msg": "Annual rent does not equal monthly rent × 12 within tolerance",
+            "severity": "error"
+        },
+        {
+            "name": "rent_roll_monthly_per_sf_calc",
+            "description": "Monthly rent per SF = Monthly rent ÷ Area (±$0.05 tolerance)",
+            "doc_type": "rent_roll",
+            "rule_type": "balance_check",
+            "formula": "abs(monthly_rent_per_sqft - (monthly_rent / unit_area_sqft)) <= 0.05",
+            "error_msg": "Monthly rent per SF calculation is incorrect",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_annual_per_sf_calc",
+            "description": "Annual rent per SF = Annual rent ÷ Area",
+            "doc_type": "rent_roll",
+            "rule_type": "balance_check",
+            "formula": "abs(annual_rent_per_sqft - (annual_rent / unit_area_sqft)) <= 0.10",
+            "error_msg": "Annual rent per SF calculation is incorrect",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_non_negative_financials",
+            "description": "All financial fields must be >= 0",
+            "doc_type": "rent_roll",
+            "rule_type": "range_check",
+            "formula": "monthly_rent >= 0 AND annual_rent >= 0 AND security_deposit >= 0",
+            "error_msg": "Financial values must be non-negative",
+            "severity": "error"
+        },
+        {
+            "name": "rent_roll_security_deposit_range",
+            "description": "Security deposit typically 1-3 months rent",
+            "doc_type": "rent_roll",
+            "rule_type": "range_check",
+            "formula": "security_deposit BETWEEN (monthly_rent * 0.5) AND (monthly_rent * 4)",
+            "error_msg": "Security deposit outside typical range (0.5-4 months rent)",
+            "severity": "info"
+        },
+        # Rent Roll - Date Validations (3 new rules)
+        {
+            "name": "rent_roll_date_sequence",
+            "description": "Lease start date must be before end date",
+            "doc_type": "rent_roll",
+            "rule_type": "date_check",
+            "formula": "lease_start_date <= lease_end_date",
+            "error_msg": "Lease start date must be before or equal to end date",
+            "severity": "error"
+        },
+        {
+            "name": "rent_roll_term_calculation",
+            "description": "Term months approximately equals months between dates (±2 months)",
+            "doc_type": "rent_roll",
+            "rule_type": "calculation_check",
+            "formula": "abs(lease_term_months - months_between(lease_start_date, lease_end_date)) <= 2",
+            "error_msg": "Lease term months does not match date range",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_tenancy_calculation",
+            "description": "Tenancy years approximately equals years from start to report date (±0.5 years)",
+            "doc_type": "rent_roll",
+            "rule_type": "calculation_check",
+            "formula": "abs(tenancy_years - years_between(lease_start_date, report_date)) <= 0.5",
+            "error_msg": "Tenancy years does not match calculated value",
+            "severity": "info"
+        },
+        # Rent Roll - Area Validations (2 new rules)
+        {
+            "name": "rent_roll_area_range",
+            "description": "Unit area must be within reasonable range (0-100,000 SF)",
+            "doc_type": "rent_roll",
+            "rule_type": "range_check",
+            "formula": "unit_area_sqft >= 0 AND unit_area_sqft <= 100000",
+            "error_msg": "Unit area outside reasonable range (0-100,000 SF)",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_zero_area_detection",
+            "description": "Flag zero-area units (ATM, signage, parking)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "unit_area_sqft = 0",
+            "error_msg": "Zero-area unit detected (may be ATM, signage, or parking)",
+            "severity": "info"
+        },
+        # Rent Roll - Edge Case Detection (8 new rules)
+        {
+            "name": "rent_roll_expired_lease",
+            "description": "Flag expired leases (holdover tenants)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "lease_end_date < report_date AND occupancy_status = 'occupied'",
+            "error_msg": "Lease expired but tenant still occupying (possible holdover)",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_future_lease",
+            "description": "Flag future lease start dates",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "lease_start_date > report_date",
+            "error_msg": "Future lease start date detected",
+            "severity": "info"
+        },
+        {
+            "name": "rent_roll_mtm_lease",
+            "description": "Flag month-to-month leases (no end date)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "lease_end_date IS NULL AND occupancy_status = 'occupied'",
+            "error_msg": "Month-to-month lease detected (no end date)",
+            "severity": "info"
+        },
+        {
+            "name": "rent_roll_zero_rent",
+            "description": "Flag zero-rent units (expense-only or abatement)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "monthly_rent = 0 AND occupancy_status = 'occupied'",
+            "error_msg": "Zero rent detected (expense-only lease or rent abatement)",
+            "severity": "info"
+        },
+        {
+            "name": "rent_roll_short_term",
+            "description": "Flag short-term leases (< 12 months)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "lease_term_months < 12",
+            "error_msg": "Short-term lease detected (< 12 months)",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_long_term",
+            "description": "Flag very long-term leases (> 20 years / 240 months)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "lease_term_months > 240",
+            "error_msg": "Very long-term lease detected (> 20 years, may be ground lease)",
+            "severity": "info"
+        },
+        {
+            "name": "rent_roll_unusual_rent_per_sf",
+            "description": "Flag unusual rent per SF rates (< $0.50 or > $15.00)",
+            "doc_type": "rent_roll",
+            "rule_type": "range_check",
+            "formula": "monthly_rent_per_sqft < 0.50 OR monthly_rent_per_sqft > 15.00",
+            "error_msg": "Unusual rent per SF detected (outside $0.50-$15.00 range)",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_multi_unit",
+            "description": "Flag multi-unit leases (comma or multiple hyphens in unit number)",
+            "doc_type": "rent_roll",
+            "rule_type": "detection",
+            "formula": "unit_number LIKE '%,%' OR unit_number LIKE '%-%-%'",
+            "error_msg": "Multi-unit lease detected",
+            "severity": "info"
+        },
+        # Rent Roll - Special Row Validations (2 new rules)
+        {
+            "name": "rent_roll_gross_rent_linkage",
+            "description": "Gross rent rows must have parent_row_id",
+            "doc_type": "rent_roll",
+            "rule_type": "required_field",
+            "formula": "is_gross_rent_row = false OR parent_row_id IS NOT NULL",
+            "error_msg": "Gross rent row missing parent_row_id link",
+            "severity": "warning"
+        },
+        {
+            "name": "rent_roll_vacant_validation",
+            "description": "Vacant units should have area but no rent",
+            "doc_type": "rent_roll",
+            "rule_type": "validation",
+            "formula": "occupancy_status != 'vacant' OR (unit_area_sqft > 0 AND monthly_rent = 0)",
+            "error_msg": "Vacant unit validation failed (should have area, no rent)",
+            "severity": "warning"
         }
     ]
     
@@ -328,20 +513,78 @@ def seed_extraction_templates(db: Session):
             "doc_type": "rent_roll",
             "structure": {
                 "columns": [
-                    "unit_number", "tenant_name", "lease_start", "lease_end",
-                    "sqft", "monthly_rent", "annual_rent", "rent_per_sqft"
+                    # Core identification (6)
+                    "property_name", "property_code", "report_date",
+                    "unit_number", "tenant_name", "tenant_id",
+                    
+                    # Lease details (5)
+                    "lease_type", "lease_start_date", "lease_end_date",
+                    "lease_term_months", "tenancy_years",
+                    
+                    # Space (1)
+                    "unit_area_sqft",
+                    
+                    # Base rent (4)
+                    "monthly_rent", "monthly_rent_per_sqft",
+                    "annual_rent", "annual_rent_per_sqft",
+                    
+                    # Additional charges (2)
+                    "annual_recoveries_per_sf", "annual_misc_per_sf",
+                    
+                    # Security (2)
+                    "security_deposit", "loc_amount",
+                    
+                    # Status flags (5)
+                    "is_vacant", "is_gross_rent_row", "parent_row_id",
+                    "occupancy_status", "lease_status", "notes"
                 ],
-                "required_columns": ["unit_number", "tenant_name", "monthly_rent"],
-                "calculations": {
+                "required_columns": [
+                    "property_name", "property_code", "report_date",
+                    "unit_number", "unit_area_sqft", "is_vacant"
+                ],
+                "calculated_fields": {
                     "annual_rent": "monthly_rent * 12",
-                    "rent_per_sqft": "annual_rent / sqft"
+                    "monthly_rent_per_sqft": "monthly_rent / unit_area_sqft",
+                    "annual_rent_per_sqft": "annual_rent / unit_area_sqft",
+                    "tenancy_years": "years from lease_start_date to report_date"
+                },
+                "field_mappings": {
+                    "Unit(s)": "unit_number",
+                    "Lease": "tenant_name",
+                    "Lease Type": "lease_type",
+                    "Area": "unit_area_sqft",
+                    "Lease From": "lease_start_date",
+                    "Lease To": "lease_end_date",
+                    "Term": "lease_term_months",
+                    "Tenancy Years": "tenancy_years",
+                    "Monthly Rent": "monthly_rent",
+                    "Monthly Rent/Area": "monthly_rent_per_sqft",
+                    "Annual Rent": "annual_rent",
+                    "Annual Rent/Area": "annual_rent_per_sqft",
+                    "Annual Rec./Area": "annual_recoveries_per_sf",
+                    "Annual Misc/Area": "annual_misc_per_sf",
+                    "Security Deposit Received": "security_deposit",
+                    "LOC Amount/ Bank Guarantee": "loc_amount"
                 }
             },
-            "keywords": ["rent roll", "tenant", "lease", "unit", "expiration", "occupancy"],
+            "keywords": [
+                "rent roll", "tenant", "lease", "unit", "expiration", "occupancy",
+                "tenancy schedule", "tenant roster", "lease expiration", "occupancy report",
+                "rent schedule", "tenant list", "lease schedule"
+            ],
             "rules": {
                 "is_table": True,
                 "detect_headers": True,
-                "multi_page": True
+                "multi_page": True,
+                "handle_gross_rent_rows": True,
+                "detect_vacant_units": True,
+                "extract_tenant_ids": True,
+                "tenant_id_pattern": r'\(t(\d+)\)',
+                "parse_multi_unit_leases": True,
+                "detect_special_units": True,
+                "special_unit_keywords": ["ATM", "LAND", "COMMON", "SIGN"],
+                "validation_on_extract": True,
+                "extract_summary_section": True
             },
             "is_default": True
         }

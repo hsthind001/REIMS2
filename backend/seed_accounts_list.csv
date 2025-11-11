@@ -1,0 +1,144 @@
+account_code,account_name,account_type,category,subcategory,parent_account_code,document_types,is_calculated,display_order,is_active,expected_sign
+0101-0000,Current Assets,asset,current_asset,header,0100-0000,balance_sheet,False,2,True,positive
+0120-0000,Cash on Hand,asset,current_asset,cash,0101-0000,balance_sheet,False,10,True,positive
+0121-0000,Cash - Savings,asset,current_asset,cash,0101-0000,balance_sheet,False,11,True,positive
+0122-0000,Cash - Operating,asset,current_asset,cash,0101-0000,balance_sheet,False,12,True,either
+0123-0000,Cash - Operating II,asset,current_asset,cash,0101-0000,balance_sheet,False,13,True,positive
+0124-0000,Cash - Operating III WF,asset,current_asset,cash,0101-0000,balance_sheet,False,14,True,positive
+0125-0000,Cash - Operating IV-PNC,asset,current_asset,cash,0101-0000,balance_sheet,False,15,True,positive
+0126-0000,Cash - Depository - PNC,asset,current_asset,cash,0101-0000,balance_sheet,False,16,True,positive
+0127-0000,Cash - Escrow - PNC,asset,current_asset,cash,0101-0000,balance_sheet,False,17,True,positive
+0199-0000,Non-Cash (Adjustments),asset,current_asset,adjustments,0101-0000,balance_sheet,False,19,True,either
+0210-0000,Accounts Receivables - Trade,asset,current_asset,accounts_receivable,0101-0000,balance_sheet,False,30,True,positive
+0305-0000,A/R Tenants,asset,current_asset,accounts_receivable,0101-0000,balance_sheet,False,40,True,positive
+0306-0000,A/R - Allowance for Doubtful,asset,current_asset,accounts_receivable,0101-0000,balance_sheet,False,41,True,negative
+0307-0000,A/R Other,asset,current_asset,accounts_receivable,0101-0000,balance_sheet,False,42,True,positive
+0310-0000,Title Escrow/Lender App,asset,current_asset,accounts_receivable,0101-0000,balance_sheet,False,43,True,positive
+0315-0000,A/R Eastern Shore Plaza,asset,current_asset,intercompany_receivable,0101-0000,balance_sheet,False,50,True,positive
+0316-0000,A/R Frayser Village,asset,current_asset,intercompany_receivable,0101-0000,balance_sheet,False,51,True,positive
+0317-0000,A/R Hammond Aire LP,asset,current_asset,intercompany_receivable,0101-0000,balance_sheet,False,52,True,positive
+0318-0000,"A/R TCSH, LP",asset,current_asset,intercompany_receivable,0101-0000,balance_sheet,False,53,True,positive
+0319-0000,A/R Wendover Commons LP,asset,current_asset,intercompany_receivable,0101-0000,balance_sheet,False,54,True,positive
+0320-0000,"A/R Oxford Exchange, LP",asset,current_asset,intercompany_receivable,0101-0000,balance_sheet,False,55,True,positive
+0347-0000,Escrow - Other,asset,current_asset,escrow,0101-0000,balance_sheet,False,80,True,positive
+0499-9000,Total Current Assets,asset,current_asset,total,0101-0000,balance_sheet,True,99,True,positive
+0500-0000,Property & Equipment,asset,fixed_asset,header,0100-0000,balance_sheet,False,100,True,positive
+0510-0000,Land,asset,fixed_asset,land,0500-0000,balance_sheet,False,110,True,positive
+0610-0000,Buildings,asset,fixed_asset,buildings,0500-0000,balance_sheet,False,120,True,positive
+0710-0000,5 Year Improvements,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,130,True,positive
+0715-0000,7 Year - Signage,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,131,True,positive
+0810-0000,15 Year Improvements,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,140,True,positive
+0815-0000,30 Year - Roof,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,141,True,positive
+0816-0000,30 Year - HVAC,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,142,True,positive
+0910-0000,Other Improvements,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,150,True,positive
+0912-0000,PARKING-LOT,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,151,True,positive
+0950-0000,TI/Current Improvements,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,160,True,positive
+0955-0000,White box / Spec Suites Major,asset,fixed_asset,improvements,0500-0000,balance_sheet,False,161,True,positive
+1061-0000,Accum. Depr. - Buildings,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,170,True,negative
+1071-0000,Accum. Depr. 5 Year Impr.,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,171,True,negative
+1081-0000,Accum. Depr. 15 Yr Impr.,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,172,True,negative
+1082-0000,Accum. Depr.-15Yr-09Remodel,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,173,True,negative
+1083-0000,Accum. Depr.-Roof2008,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,174,True,negative
+1084-0000,Accum. Depr.-PL-2009,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,175,True,negative
+1085-0000,Accum. Amort 2016ParkingLot7yrs,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,176,True,negative
+1086-0000,Accum. Amort Roof 15 yrs 2016,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,177,True,negative
+1087-0000,Accum. Amort 2017 Parking Lot 7 yrs,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,178,True,negative
+1088-0000,Accum. Amort HVAC 30 yrs,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,179,True,negative
+1091-0000,Accum. Depr.-Other Imp.,asset,fixed_asset,accumulated_depreciation,0500-0000,balance_sheet,False,180,True,negative
+1099-0000,Total Property & Equipment,asset,fixed_asset,total,0500-0000,balance_sheet,True,199,True,positive
+1200-0000,Other Assets,asset,other_asset,header,0100-0000,balance_sheet,False,200,True,positive
+1210-0000,Deposits,asset,other_asset,deposits,1200-0000,balance_sheet,False,210,True,positive
+1310-0000,Escrow - Property Tax,asset,other_asset,escrow,1200-0000,balance_sheet,False,220,True,positive
+1320-0000,Escrow - Insurance,asset,other_asset,escrow,1200-0000,balance_sheet,False,221,True,positive
+1330-0000,Escrow - TI/LC,asset,other_asset,escrow,1200-0000,balance_sheet,False,222,True,positive
+1330-1000,Escrow TI/LC Kroger,asset,other_asset,escrow,1200-0000,balance_sheet,False,223,True,positive
+1330-1001,Escrow TI/LC SavALot,asset,other_asset,escrow,1200-0000,balance_sheet,False,224,True,positive
+1330-2000,Escrow - TI/LC acct 2,asset,other_asset,escrow,1200-0000,balance_sheet,False,225,True,positive
+1340-0000,Escrow - Replacement Reserves,asset,other_asset,escrow,1200-0000,balance_sheet,False,226,True,positive
+1341-0000,Escrow-Insurance Loss Reserve,asset,other_asset,escrow,1200-0000,balance_sheet,False,227,True,positive
+1342-0000,Escrow - Sweep Account,asset,other_asset,escrow,1200-0000,balance_sheet,False,228,True,positive
+1910-0000,Organization Cost,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,240,True,positive
+1911-0000,Accum. Amortization Org. Cost,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,241,True,negative
+1920-0000,Loan Costs,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,242,True,positive
+1922-0000,Accum. Amortization Loan Costs,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,243,True,negative
+1923-0000,Accumulated Amortisation,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,244,True,negative
+1924-0000,Closing Costs,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,245,True,positive
+1925-0000,Loan Costs - Consolidated,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,246,True,positive
+1950-0000,External - Lease Commission,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,250,True,positive
+1950-5000,Internal - Lease Commission,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,251,True,positive
+1952-0000,Accum. Amort - TI/LC,asset,other_asset,deferred_costs,1200-0000,balance_sheet,False,252,True,negative
+1995-0000,Prepaid Insurance,asset,other_asset,prepaid,1200-0000,balance_sheet,False,260,True,positive
+1997-0000,Prepaid Expenses,asset,other_asset,prepaid,1200-0000,balance_sheet,False,261,True,positive
+1997-1000,1031 Intermediary Escrow,asset,other_asset,other,1200-0000,balance_sheet,False,262,True,positive
+1997-2000,Sales Contract,asset,other_asset,other,1200-0000,balance_sheet,False,263,True,positive
+1997-3000,Selling Cost,asset,other_asset,other,1200-0000,balance_sheet,False,264,True,positive
+1997-4000,Other Receivables,asset,other_asset,other,1200-0000,balance_sheet,False,265,True,positive
+1997-5000,Receivable from Nuveen-Fayette,asset,other_asset,other,1200-0000,balance_sheet,False,266,True,positive
+1998-0000,Total Other Assets,asset,other_asset,total,1200-0000,balance_sheet,True,299,True,positive
+2001-0000,Current Liabilities,liability,current_liability,header,2000-0000,balance_sheet,False,1001,True,positive
+2030-0000,Accrued Expenses,liability,current_liability,accrued,2001-0000,balance_sheet,False,1010,True,positive
+2035-0000,Due to Seller,liability,current_liability,accrued,2001-0000,balance_sheet,False,1011,True,positive
+2110-0000,Accounts Payable Trade,liability,current_liability,accounts_payable,2001-0000,balance_sheet,False,1020,True,positive
+2120-0000,A/P Series RDF Investors LLC,liability,current_liability,accounts_payable,2001-0000,balance_sheet,False,1021,True,positive
+2121-0000,A/P Other,liability,current_liability,accounts_payable,2001-0000,balance_sheet,False,1022,True,positive
+2131-0000,A/P Com Realty (Do not Use),liability,current_liability,accounts_payable,2001-0000,balance_sheet,False,1023,False,positive
+2132-0000,"A/P 5Rivers CRE, LLC",liability,current_liability,accounts_payable,2001-0000,balance_sheet,False,1024,True,positive
+2135-0000,A/P Frayser Village,liability,current_liability,intercompany_payable,2001-0000,balance_sheet,False,1030,True,positive
+2136-0000,A/P Eastern Shore Plaza,liability,current_liability,intercompany_payable,2001-0000,balance_sheet,False,1031,True,positive
+2137-0000,"A/P TCSH, LLC",liability,current_liability,intercompany_payable,2001-0000,balance_sheet,False,1032,True,positive
+2138-0000,"A/P Oxford Exchange, LP",liability,current_liability,intercompany_payable,2001-0000,balance_sheet,False,1033,True,positive
+2139-0000,A/P Wendover Commons LP,liability,current_liability,intercompany_payable,2001-0000,balance_sheet,False,1034,True,positive
+2140-0000,A/P Hammond Aire LP,liability,current_liability,intercompany_payable,2001-0000,balance_sheet,False,1035,True,positive
+2139-0001,Insurance Claim,liability,current_liability,other,2001-0000,balance_sheet,False,1045,True,positive
+2197-0000,Loans Payable 5Rivers,liability,current_liability,short_term_debt,2001-0000,balance_sheet,False,1050,True,positive
+2410-0000,Property Tax Payable,liability,current_liability,tax_payable,2001-0000,balance_sheet,False,1060,True,positive
+2411-0000,Current Portion of LTD,liability,current_liability,short_term_debt,2001-0000,balance_sheet,False,1061,True,positive
+2510-0000,Rent Received in Advance,liability,current_liability,deferred_revenue,2001-0000,balance_sheet,False,1070,True,positive
+2515-0000,A/P Tenant TI/LC Obligations,liability,current_liability,tenant_obligations,2001-0000,balance_sheet,False,1071,True,positive
+2520-0000,Deposit Refundable to Tenant,liability,current_liability,deposits,2001-0000,balance_sheet,False,1072,True,positive
+2521-0000,Construction Deposit Refundable,liability,current_liability,deposits,2001-0000,balance_sheet,False,1073,True,positive
+2522-0000,Deposit Clearing (System Use),liability,current_liability,deposits,2001-0000,balance_sheet,False,1074,True,positive
+2585-0000,A/P Suspense,liability,current_liability,other,2001-0000,balance_sheet,False,1080,True,positive
+2586-0000,A/P 1031 Exchange,liability,current_liability,other,2001-0000,balance_sheet,False,1081,True,positive
+2587-0000,A/P Data Center Entity,liability,current_liability,other,2001-0000,balance_sheet,False,1082,True,positive
+2590-0000,Total Current Liabilities,liability,current_liability,total,2001-0000,balance_sheet,True,1099,True,positive
+2600-0000,Long Term Liabilities,liability,long_term_liability,header,2000-0000,balance_sheet,False,1100,True,positive
+2611-0000,CIBC,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1110,True,positive
+2611-1000,CIBC-MEZZ,liability,long_term_liability,mezzanine,2600-0000,balance_sheet,False,1111,True,positive
+2612-0000,KeyBank,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1112,True,positive
+2613-0000,KeyBank - Mezz,liability,long_term_liability,mezzanine,2600-0000,balance_sheet,False,1113,True,positive
+2613-5000,The Azad Family Trust (TAFT),liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1114,True,positive
+2612-1000,NorthMarq Capital,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1115,True,positive
+2614-0000,RAIT Financial,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1116,True,positive
+2615-0000,Berkadia Comm. Mtg.,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1117,True,positive
+2614-1000,Wells Fargo,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1118,True,positive
+2614-2000,Wachovia Securities,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1119,True,positive
+2616-0000,MidLand Loan Services (PNC),liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1120,True,positive
+2616-1000,"Standard Ins Co, an Oregon Corporation",liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1121,True,positive
+2617-0000,Business Partners,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1122,True,positive
+2618-0000,Trawler Capital Management (MEZZ),liability,long_term_liability,mezzanine,2600-0000,balance_sheet,False,1123,True,positive
+2619-0000,WoodForest National Bank,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1124,True,positive
+2620-0000,"StanCorp Mtg Investors, LLC (NMC)",liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1125,True,positive
+2621-0000,Origin Bank,liability,long_term_liability,mortgage,2600-0000,balance_sheet,False,1126,True,positive
+2650-0000,Shareholders Loan Accounts,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1150,True,positive
+2651-0000,Loans from Stockholders,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1151,True,positive
+2660-0000,Hardam S Azad,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1160,True,positive
+2661-0000,Balwant Singh,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1161,True,positive
+2662-0000,Gurnaib S Sidhu,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1162,True,positive
+2663-0000,Scott Wallace,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1163,True,positive
+2664-0000,Kuldip S Bains,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1164,True,positive
+2665-0000,Anis Charnia,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1165,True,positive
+2666-0000,Baldev Singh,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1166,True,positive
+2667-0000,Mohinder S Sandhu,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1167,True,positive
+2668-0000,Harpreet Sandhu,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1168,True,positive
+2669-0000,Dr. Jaspaul S Azad,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1169,True,positive
+2670-0000,Dr. I M Azad,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1170,True,positive
+2671-0000,Gagan Bains,liability,long_term_liability,shareholder_loan,2600-0000,balance_sheet,False,1171,True,positive
+2900-0000,Total Long Term Liabilities,liability,long_term_liability,total,2600-0000,balance_sheet,True,1199,True,positive
+3050-0000,Common Stock,equity,equity,stock,3000-0000,balance_sheet,False,2010,True,positive
+3050-1000,Partners Contribution,equity,equity,contribution,3000-0000,balance_sheet,False,2020,True,positive
+3910-0000,Beginning Equity,equity,equity,retained_earnings,3000-0000,balance_sheet,False,2030,True,either
+3920-0000,Partners Draw,equity,equity,draw,3000-0000,balance_sheet,False,2040,True,either
+3990-0000,Distribution,equity,equity,distribution,3000-0000,balance_sheet,False,2050,True,negative
+3995-0000,Current Period Earnings,equity,equity,net_income,3000-0000,balance_sheet,False,2060,True,either
+3999-0000,TOTAL CAPITAL,equity,equity,total,3000-0000,balance_sheet,True,2099,True,either

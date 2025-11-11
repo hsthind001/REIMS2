@@ -458,43 +458,66 @@ class ExtractionOrchestrator:
         if deleted_count > 0:
             print(f"🗑️  Deleted {deleted_count} existing balance sheet records for property {upload.property_id}, period {upload.period_id}")
         
-        # Deduplicate items by account_code ONLY (matches DB unique constraint)
-        # If same account appears multiple times, keep the one with highest confidence/amount
-        seen_accounts = {}
-        for item in items:
+        # Smart deduplication: Only deduplicate totals/subtotals, keep ALL detail lines
+        # This preserves granular data while preventing duplicate summary lines
+        seen_totals = {}  # Track totals/subtotals by account_code
+        detail_items = []  # Keep all detail lines
+        
+        for idx, item in enumerate(items):
+            # Get account info - use matched if available, original if not
             account_code = item.get("matched_account_code") or item.get("account_code", "")
+            account_name = item.get("matched_account_name") or item.get("account_name", "")
             
-            if not account_code:
-                continue  # Skip items without account code
+            # Add line_number for tracking
+            item['line_number'] = idx + 1
             
-            # If account already seen, keep the one with highest amount (likely the total)
-            if account_code in seen_accounts:
-                existing_item = seen_accounts[account_code]
-                existing_amount = abs(existing_item.get("amount", 0.0))
-                current_amount = abs(item.get("amount", 0.0))
-                
-                # Keep the item with larger amount (usually the total/final value)
-                if current_amount > existing_amount:
-                    seen_accounts[account_code] = item
+            # Skip only if we have absolutely no identifying information
+            if not account_name and not account_code:
+                continue
+            
+            is_subtotal = item.get("is_subtotal", False)
+            is_total = item.get("is_total", False)
+            
+            # If it's a total or subtotal, deduplicate by account_code
+            # (Only if we have a valid account_code to deduplicate on)
+            if (is_subtotal or is_total) and account_code:
+                if account_code in seen_totals:
+                    # Keep the one with highest amount (likely the correct total)
+                    existing_item = seen_totals[account_code]
+                    existing_amount = abs(existing_item.get("amount", 0.0))
+                    current_amount = abs(item.get("amount", 0.0))
+                    
+                    if current_amount > existing_amount:
+                        seen_totals[account_code] = item
+                else:
+                    seen_totals[account_code] = item
             else:
-                seen_accounts[account_code] = item
+                # It's a detail line - keep ALL detail lines (even unmatched)
+                detail_items.append(item)
         
-        deduplicated_items = list(seen_accounts.values())
+        # Combine detail items with deduplicated totals
+        deduplicated_items = detail_items + list(seen_totals.values())
         
-        # INSERT all new records
+        print(f"📊 Balance Sheet extraction: {len(items)} raw items → {len(detail_items)} detail lines + {len(seen_totals)} totals/subtotals = {len(deduplicated_items)} records")
+        
+        # INSERT all new records (including unmatched accounts for complete reconciliation)
         for item in deduplicated_items:
-            account_code = item.get("matched_account_code") or item.get("account_code", "")
+            account_code = item.get("matched_account_code") or item.get("account_code", "") or "UNMATCHED"
             account_name = item.get("matched_account_name") or item.get("account_name", "")
             amount = item.get("amount", 0.0)
             account_id = item.get("matched_account_id")
             item_confidence = item.get("confidence", confidence_score)
-            match_confidence = item.get("match_confidence", 100.0)
+            match_confidence = item.get("match_confidence", 0.0) if not account_id else item.get("match_confidence", 100.0)
             
-            if not account_name:
+            # Skip only if we have absolutely no identifying information
+            if not account_name and not account_code:
                 continue
             
             # Use average of extraction and match confidence
             final_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
+            
+            # Flag for review if unmatched or low confidence
+            needs_review = (final_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
             
             # Insert new entry (no longer check for existing since we deleted all)
             bs_data = BalanceSheetData(
@@ -506,7 +529,8 @@ class ExtractionOrchestrator:
                 account_name=account_name,
                 amount=Decimal(str(amount)),
                 extraction_confidence=Decimal(str(final_confidence)),
-                needs_review=final_confidence < 85.0 or account_id is None
+                match_confidence=Decimal(str(match_confidence)) if match_confidence else None,
+                needs_review=needs_review
             )
             self.db.add(bs_data)
             records_inserted += 1
@@ -612,57 +636,94 @@ class ExtractionOrchestrator:
         self.db.add(header)
         self.db.flush()  # Get header.id
         
-        # Step 4: Insert NEW line items with full categorization
-        for item in items:
-            account_code = item.get("account_code", "")
-            account_name = item.get("account_name", "")
+        # Step 4: Smart deduplication for income statement line items
+        # Only deduplicate totals/subtotals, keep ALL detail lines (even unmatched)
+        seen_totals = {}
+        detail_items = []
+        
+        for idx, item in enumerate(items):
+            # Get account info - use matched if available, original if not
+            account_code = item.get("matched_account_code") or item.get("account_code", "")
+            account_name = item.get("matched_account_name") or item.get("account_name", "")
             
-            if not account_name:
+            # Add line_number for tracking
+            if not item.get("line_number"):
+                item['line_number'] = idx + 1
+            
+            # Skip only if absolutely no info
+            if not account_name and not account_code:
                 continue
             
-            # Try to find matching account
-            account_id = None
-            if account_code:
-                account = self.db.query(ChartOfAccounts).filter(
-                    ChartOfAccounts.account_code == account_code
-                ).first()
-                account_id = account.id if account else None
+            is_subtotal = item.get("is_subtotal", False)
+            is_total = item.get("is_total", False)
             
-            # Insert new with all Template v1.0 fields (no longer check for existing)
-                is_data = IncomeStatementData(
-                    header_id=header.id,
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    account_id=account_id,
-                    account_code=account_code or "",
-                    account_name=account_name,
-                    period_amount=Decimal(str(item.get("period_amount", 0))),
-                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
-                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
-                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
-                    # Template v1.0: Header metadata
-                    period_type=header_data.get("period_type", "Monthly"),
-                    accounting_basis=header_data.get("accounting_basis"),
-                    report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
-                    page_number=item.get("page"),
-                    # Template v1.0: Hierarchical structure
-                    is_subtotal=item.get("is_subtotal", False),
-                    is_total=item.get("is_total", False),
-                    line_category=item.get("line_category"),
-                    line_subcategory=item.get("line_subcategory"),
-                    line_number=item.get("line_number"),
-                    account_level=item.get("account_level", 3),
-                    # Template v1.0: Classification
-                    is_below_the_line=item.get("is_below_the_line", False),
-                    # Template v1.0: Extraction quality
-                    extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
-                    match_confidence=Decimal(str(item.get("match_confidence", 0))) if item.get("match_confidence") else None,
-                    extraction_method=item.get("extraction_method", "table"),
-                    needs_review=item.get("confidence", confidence_score) < 85.0
-                )
-                self.db.add(is_data)
-                records_inserted += 1
+            # Deduplicate only totals/subtotals (and only if we have account_code)
+            if (is_subtotal or is_total) and account_code:
+                if account_code in seen_totals:
+                    existing_amount = abs(seen_totals[account_code].get("period_amount", 0.0))
+                    current_amount = abs(item.get("period_amount", 0.0))
+                    if current_amount > existing_amount:
+                        seen_totals[account_code] = item
+                else:
+                    seen_totals[account_code] = item
+            else:
+                # Keep ALL detail lines (even unmatched)
+                detail_items.append(item)
+        
+        deduplicated_items = detail_items + list(seen_totals.values())
+        print(f"📊 Income Statement extraction: {len(items)} raw items → {len(detail_items)} detail lines + {len(seen_totals)} totals/subtotals = {len(deduplicated_items)} records")
+        
+        # Step 5: Insert line items with full categorization (including unmatched)
+        for item in deduplicated_items:
+            account_code = item.get("account_code", "") or item.get("matched_account_code", "") or "UNMATCHED"
+            account_name = item.get("account_name", "") or item.get("matched_account_name", "")
+            account_id = item.get("matched_account_id")
+            match_confidence = item.get("match_confidence", 0.0) if not account_id else item.get("match_confidence", 100.0)
+            
+            # Skip only if completely no information
+            if not account_name and account_code == "UNMATCHED":
+                continue
+            
+            # Calculate confidence and review flag
+            item_confidence = item.get("confidence", confidence_score)
+            avg_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
+            needs_review = (avg_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
+            
+            # Insert new with all Template v1.0 fields
+            is_data = IncomeStatementData(
+                header_id=header.id,
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                account_id=account_id,
+                account_code=account_code or "",
+                account_name=account_name,
+                period_amount=Decimal(str(item.get("period_amount", 0))),
+                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                # Template v1.0: Header metadata
+                period_type=header_data.get("period_type", "Monthly"),
+                accounting_basis=header_data.get("accounting_basis"),
+                report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+                page_number=item.get("page"),
+                # Template v1.0: Hierarchical structure
+                is_subtotal=item.get("is_subtotal", False),
+                is_total=item.get("is_total", False),
+                line_category=item.get("line_category"),
+                line_subcategory=item.get("line_subcategory"),
+                line_number=item.get("line_number"),
+                account_level=item.get("account_level", 3),
+                # Template v1.0: Classification
+                is_below_the_line=item.get("is_below_the_line", False),
+                # Template v1.0: Extraction quality
+                extraction_confidence=Decimal(str(avg_confidence)),
+                match_confidence=Decimal(str(match_confidence)) if match_confidence else None,
+                extraction_method=item.get("extraction_method", "table"),
+                needs_review=needs_review
+            )
+            self.db.add(is_data)
+            records_inserted += 1
         
         self.db.commit()
         return records_inserted
@@ -897,47 +958,84 @@ class ExtractionOrchestrator:
         self.db.add(header)
         self.db.flush()  # Get header.id
         
-        # Step 4: Insert NEW line items with full categorization
-        for item in items:
-            account_code = item.get("account_code", "")
-            account_name = item.get("account_name", "")
+        # Step 4: Smart deduplication for cash flow line items
+        # Only deduplicate totals/subtotals, keep ALL detail lines (even unmatched)
+        seen_totals = {}
+        detail_items = []
+        
+        for idx, item in enumerate(items):
+            # Get account info - use matched if available, original if not
+            account_code = item.get("matched_account_code") or item.get("account_code", "")
+            account_name = item.get("matched_account_name") or item.get("account_name", "")
             
-            if not account_name:
+            # Add line_number for tracking
+            if not item.get("line_number"):
+                item['line_number'] = idx + 1
+            
+            # Skip only if absolutely no info
+            if not account_name and not account_code:
                 continue
             
-            # Try to find matching account
-            account_id = None
-            if account_code:
-                account = self.db.query(ChartOfAccounts).filter(
-                    ChartOfAccounts.account_code == account_code
-                ).first()
-                account_id = account.id if account else None
+            is_subtotal = item.get("is_subtotal", False)
+            is_total = item.get("is_total", False)
             
-            # Insert new (no longer check for existing)
-                cf_data = CashFlowData(
-                    header_id=header.id,
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    account_id=account_id,
-                    account_code=account_code or "",
-                    account_name=account_name,
-                    period_amount=Decimal(str(item.get("period_amount", 0))),
-                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
-                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
-                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
-                    line_section=item.get("line_section"),
-                    line_category=item.get("line_category"),
-                    line_subcategory=item.get("line_subcategory"),
-                    line_number=item.get("line_number"),
-                    is_subtotal=item.get("is_subtotal", False),
-                    is_total=item.get("is_total", False),
-                    page_number=item.get("page"),
-                    extraction_confidence=Decimal(str(item.get("confidence", confidence_score))),
-                    needs_review=item.get("confidence", confidence_score) < 85.0
-                )
-                self.db.add(cf_data)
-                records_inserted += 1
+            # Deduplicate only totals/subtotals (and only if we have account_code)
+            if (is_subtotal or is_total) and account_code:
+                if account_code in seen_totals:
+                    existing_amount = abs(seen_totals[account_code].get("period_amount", 0.0))
+                    current_amount = abs(item.get("period_amount", 0.0))
+                    if current_amount > existing_amount:
+                        seen_totals[account_code] = item
+                else:
+                    seen_totals[account_code] = item
+            else:
+                # Keep ALL detail lines (even unmatched)
+                detail_items.append(item)
+        
+        deduplicated_items = detail_items + list(seen_totals.values())
+        print(f"📊 Cash Flow extraction: {len(items)} raw items → {len(detail_items)} detail lines + {len(seen_totals)} totals/subtotals = {len(deduplicated_items)} records")
+        
+        # Step 5: Insert line items with full categorization (including unmatched)
+        for item in deduplicated_items:
+            account_code = item.get("account_code", "") or item.get("matched_account_code", "") or "UNMATCHED"
+            account_name = item.get("account_name", "") or item.get("matched_account_name", "")
+            account_id = item.get("matched_account_id")
+            match_confidence = item.get("match_confidence", 0.0) if not account_id else item.get("match_confidence", 100.0)
+            
+            # Skip only if completely no information
+            if not account_name and account_code == "UNMATCHED":
+                continue
+            
+            # Calculate confidence and review flag
+            item_confidence = item.get("confidence", confidence_score)
+            avg_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
+            needs_review = (avg_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
+            
+            # Insert new line item
+            cf_data = CashFlowData(
+                header_id=header.id,
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                account_id=account_id,
+                account_code=account_code or "",
+                account_name=account_name,
+                period_amount=Decimal(str(item.get("period_amount", 0))),
+                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                line_section=item.get("line_section"),
+                line_category=item.get("line_category"),
+                line_subcategory=item.get("line_subcategory"),
+                line_number=item.get("line_number"),
+                is_subtotal=item.get("is_subtotal", False),
+                is_total=item.get("is_total", False),
+                page_number=item.get("page"),
+                extraction_confidence=Decimal(str(avg_confidence)),
+                needs_review=needs_review
+            )
+            self.db.add(cf_data)
+            records_inserted += 1
         
         # Step 5: Insert NEW adjustments
         for adj in adjustments:
@@ -1232,57 +1330,51 @@ class ExtractionOrchestrator:
                 except:
                     return None
             
-            # Create new record (no longer check for existing)
-                rr_data = RentRollData(
-                    property_id=upload.property_id,
-                    period_id=upload.period_id,
-                    upload_id=upload.id,
-                    # Basic fields
-                    unit_number=unit_number,
-                    tenant_name=tenant_name,
-                    tenant_code=item.get("tenant_id"),
-                    lease_type=item.get("lease_type"),
-                    # Dates
-                    lease_start_date=to_date(item.get("lease_start_date")),
-                    lease_end_date=to_date(item.get("lease_end_date")),
-                    lease_term_months=item.get("lease_term_months"),
-                    # Area
-                    unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
-                    # Financials
-                    monthly_rent=to_decimal(item.get("monthly_rent")),
-                    monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
-                    annual_rent=to_decimal(item.get("annual_rent")),
-                    annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
-                    security_deposit=to_decimal(item.get("security_deposit")),
-                    loc_amount=to_decimal(item.get("loc_amount")),
-                    # Template v2.0 fields
-                    tenancy_years=to_decimal(item.get("tenancy_years")),
-                    annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
-                    annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
-                    is_gross_rent_row=is_gross_rent_row,
-                    parent_row_id=parent_row_id,
-                    notes=notes,
-                    # Status
-                    occupancy_status=occupancy_status,
-                    lease_status=lease_status,
-                    # Validation tracking
-                    validation_score=Decimal(str(record_score)),
-                    validation_flags_json=validation_flags_json,
-                    critical_flag_count=critical_count,
-                    warning_flag_count=warning_count,
-                    info_flag_count=info_count,
-                    # Extraction metadata
-                    extraction_confidence=Decimal(str(confidence_score)),
-                    needs_review=(critical_count > 0 or record_score < 99.0)
-                )
-                self.db.add(rr_data)
-                self.db.flush()  # Get the ID for parent_row_map
-                
-                # Store ID for gross rent row linking
-                if not is_gross_rent_row:
-                    parent_row_map[unit_number] = rr_data.id
-                
-                records_inserted += 1
+            # Create new record
+            rr_data = RentRollData(
+                property_id=upload.property_id,
+                period_id=upload.period_id,
+                upload_id=upload.id,
+                # Basic fields
+                unit_number=unit_number,
+                tenant_name=tenant_name,
+                tenant_code=item.get("tenant_id"),
+                lease_type=item.get("lease_type"),
+                # Dates
+                lease_start_date=to_date(item.get("lease_start_date")),
+                lease_end_date=to_date(item.get("lease_end_date")),
+                lease_term_months=item.get("lease_term_months"),
+                # Area
+                unit_area_sqft=to_decimal(item.get("unit_area_sqft")),
+                # Financials
+                monthly_rent=to_decimal(item.get("monthly_rent")),
+                monthly_rent_per_sqft=to_decimal(item.get("monthly_rent_per_sqft")),
+                annual_rent=to_decimal(item.get("annual_rent")),
+                annual_rent_per_sqft=to_decimal(item.get("annual_rent_per_sqft")),
+                security_deposit=to_decimal(item.get("security_deposit")),
+                loc_amount=to_decimal(item.get("loc_amount")),
+                # Template v2.0 fields
+                tenancy_years=to_decimal(item.get("tenancy_years")),
+                annual_recoveries_per_sf=to_decimal(item.get("annual_recoveries_per_sf")),
+                annual_misc_per_sf=to_decimal(item.get("annual_misc_per_sf")),
+                is_gross_rent_row=is_gross_rent_row,
+                parent_row_id=parent_row_id,
+                notes=notes,
+                # Status
+                occupancy_status=occupancy_status,
+                lease_status=lease_status,
+                # Extraction metadata
+                extraction_confidence=Decimal(str(confidence_score)),
+                needs_review=(critical_count > 0 or record_score < 99.0)
+            )
+            self.db.add(rr_data)
+            self.db.flush()  # Get the ID for parent_row_map
+            
+            # Store ID for gross rent row linking
+            if not is_gross_rent_row:
+                parent_row_map[unit_number] = rr_data.id
+            
+            records_inserted += 1
         
         self.db.commit()
         

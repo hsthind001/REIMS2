@@ -83,9 +83,20 @@ INSERT INTO chart_of_accounts (account_code, account_name, account_type, categor
 
 -- INCOME SECTION
 ('4000-0000', 'INCOME', 'income', 'header', NULL, NULL, ARRAY['income_statement', 'cash_flow'], true, 100, true),
+
+-- Base Rental Income (Template v1.0 - Cash Flow)
 ('4010-0000', 'Base Rentals', 'income', 'rental_income', 'base_rent', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 101, true),
+('4011-0000', 'Holdover Rent', 'income', 'rental_income', 'holdover_rent', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 101.1, true),
+('4012-0000', 'Free Rent', 'income', 'rental_income', 'free_rent', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 101.2, true),
+('4014-0000', 'Co-Tenancy Adjustment', 'income', 'rental_income', 'cotenancy', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 101.3, true),
+
+-- Other Income (Template v1.0 - Cash Flow)
 ('4013-0000', 'Management Fee Income', 'income', 'other_income', 'management_fees', '4000-0000', ARRAY['income_statement'], false, 102, true),
-('4018-0000', 'Interest Income', 'income', 'other_income', 'interest', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 102, true),
+('4015-0000', 'Late Fees', 'income', 'other_income', 'late_fees', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 102.1, true),
+('4016-0000', 'Parking Income', 'income', 'other_income', 'parking', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 102.2, true),
+('4018-0000', 'Interest Income', 'income', 'other_income', 'interest', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 102.3, true),
+
+-- Recovery Income (Template v1.0 - Cash Flow)
 ('4020-0000', 'Tax', 'income', 'reimbursements', 'tax_reimbursement', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 103, true),
 ('4030-0000', 'Insurance', 'income', 'reimbursements', 'insurance_reimbursement', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 104, true),
 ('4040-0000', 'CAM', 'income', 'reimbursements', 'cam_reimbursement', '4000-0000', ARRAY['income_statement', 'cash_flow'], false, 105, true),
@@ -152,19 +163,38 @@ INSERT INTO chart_of_accounts (account_code, account_name, account_type, categor
 
 -- Additional Operating Expenses
 ('6000-0000', 'Additional Operating Expenses', 'expense', 'operating_expense', NULL, '5000-0000', ARRAY['income_statement', 'cash_flow'], false, 300, true),
+
+-- Management Fees (Template v1.0 - Cash Flow)
 ('6010-0000', 'Off Site Management', 'expense', 'operating_expense', 'management', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 301, true),
+
+-- Professional Fees (Template v1.0 - Cash Flow)
 ('6020-0000', 'Professional Fees', 'expense', 'operating_expense', 'professional_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 302, true),
 ('6020-5000', 'Accounting Fee', 'expense', 'operating_expense', 'professional_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 303, true),
 ('6020-6000', 'Asset Management Fee', 'expense', 'operating_expense', 'professional_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 304, true),
 ('6020-7000', 'CMF-Construction Management Fee', 'expense', 'operating_expense', 'professional_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 305, true),
+
+-- Taxes & Fees (Template v1.0 - Cash Flow)
+('6021-0000', 'Franchise Tax', 'expense', 'operating_expense', 'tax_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 305.5, true),
+('6021-5000', 'Pass-Through Entity Tax', 'expense', 'operating_expense', 'tax_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 305.6, true),
 ('6022-0000', 'Legal Fees / SOS Fee', 'expense', 'operating_expense', 'professional_fees', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 306, true),
 ('6024-0000', 'Bank Charges', 'expense', 'operating_expense', 'banking', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 307, true),
+('6024-5000', 'Bank Control Fee', 'expense', 'operating_expense', 'banking', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 307.5, true),
+
+-- Leasing Costs (Template v1.0 - Cash Flow)
+('6030-0000', 'Leasing Commissions', 'expense', 'operating_expense', 'leasing', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 307.8, true),
+('6032-0000', 'Tenant Improvements', 'expense', 'operating_expense', 'leasing', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 307.9, true),
+
+-- Landlord Expenses (Template v1.0 - Cash Flow)
 ('6040-0000', 'LL - Expense', 'expense', 'operating_expense', 'landlord_expense', '6000-0000', ARRAY['income_statement', 'cash_flow'], false, 308, true),
-('6065-0000', 'LL-Site Map', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], false, 309, true),
+('6041-0000', 'LL - Repairs', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], false, 308.1, true),
+('6042-0000', 'LL - HVAC', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], false, 308.2, true),
+('6043-0000', 'LL - Vacant Space Utilities', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], false, 308.3, true),
+('6044-0000', 'LL - Tenant Allowance', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], false, 308.4, true),
+('6065-0000', 'LL - Site Map', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], false, 309, true),
 ('6069-0000', 'Total LL Expense', 'expense', 'operating_expense', 'landlord_expense', '6040-0000', ARRAY['income_statement', 'cash_flow'], true, 310, true),
 ('6190-0000', 'Total Additional Operating Expenses', 'expense', 'operating_expense', 'total', '6000-0000', ARRAY['income_statement', 'cash_flow'], true, 311, true),
 ('6199-0000', 'TOTAL EXPENSES', 'expense', 'total', 'total', '5000-0000', ARRAY['income_statement', 'cash_flow'], true, 312, true),
-('6299-0000', 'NET OPERATING INCOME', 'income', 'net_operating_income', 'noi', NULL, ARRAY['income_statement'], true, 313, true),
+('6299-0000', 'NET OPERATING INCOME', 'income', 'net_operating_income', 'noi', NULL, ARRAY['income_statement', 'cash_flow'], true, 313, true),
 
 -- Other Income/Expenses (Non-Operating)
 ('7000-0000', 'Other Income/Expenses', 'expense', 'non_operating', NULL, NULL, ARRAY['income_statement'], false, 400, true),

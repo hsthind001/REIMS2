@@ -125,11 +125,33 @@ services:
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - reims-network
+
+  # MinIO Bucket Initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: reims-minio-init
+    restart: "no"  # Only runs once
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - reims-network
+    entrypoint: >
+      /bin/sh -c "
+      echo '🔄 MinIO Init: Configuring client...';
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      echo '🪣 MinIO Init: Creating bucket if not exists...';
+      /usr/bin/mc mb --ignore-existing myminio/reims;
+      echo '🔓 MinIO Init: Setting bucket policy to public (download)...';
+      /usr/bin/mc anonymous set download myminio/reims;
+      echo '✅ MinIO Init: Bucket ready and persistent!';
+      echo 'Bucket location: /data/reims (persisted in minio-data volume)';
+      "
 
   # Backend - FastAPI Application
   backend:
@@ -185,12 +207,14 @@ services:
     depends_on:
       db-init:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
     networks:
       - reims-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -221,9 +245,13 @@ services:
     depends_on:
       db-init:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
       backend:
         condition: service_started

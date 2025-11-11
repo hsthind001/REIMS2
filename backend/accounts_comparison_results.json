@@ -1,0 +1,430 @@
+{
+  "summary": {
+    "total_in_template": 63,
+    "total_in_seed": 143,
+    "matched": 59,
+    "in_template_only": 4,
+    "in_seed_only": 84,
+    "mismatched_properties": 33
+  },
+  "matched_accounts": [
+    "0122-0000",
+    "0123-0000",
+    "0125-0000",
+    "0210-0000",
+    "0305-0000",
+    "0306-0000",
+    "0347-0000",
+    "0499-9000",
+    "0510-0000",
+    "0610-0000",
+    "0710-0000",
+    "0810-0000",
+    "0815-0000",
+    "0816-0000",
+    "0910-0000",
+    "0912-0000",
+    "0950-0000",
+    "1061-0000",
+    "1071-0000",
+    "1081-0000",
+    "1082-0000",
+    "1091-0000",
+    "1099-0000",
+    "1210-0000",
+    "1310-0000",
+    "1320-0000",
+    "1330-0000",
+    "1340-0000",
+    "1920-0000",
+    "1922-0000",
+    "1950-0000",
+    "1950-5000",
+    "1952-0000",
+    "1995-0000",
+    "1998-0000",
+    "2030-0000",
+    "2110-0000",
+    "2120-0000",
+    "2121-0000",
+    "2132-0000",
+    "2139-0000",
+    "2197-0000",
+    "2410-0000",
+    "2510-0000",
+    "2515-0000",
+    "2520-0000",
+    "2521-0000",
+    "2585-0000",
+    "2590-0000",
+    "2612-0000",
+    "2614-0000",
+    "2616-0000",
+    "2618-0000",
+    "2900-0000",
+    "3050-0000",
+    "3910-0000",
+    "3990-0000",
+    "3995-0000",
+    "3999-0000"
+  ],
+  "in_template_only": [
+    "0100-0000",
+    "1999-0000",
+    "2999-0000",
+    "3999-9000"
+  ],
+  "in_seed_only": [
+    "0101-0000",
+    "0120-0000",
+    "0121-0000",
+    "0124-0000",
+    "0126-0000",
+    "0127-0000",
+    "0199-0000",
+    "0307-0000",
+    "0310-0000",
+    "0315-0000",
+    "0316-0000",
+    "0317-0000",
+    "0318-0000",
+    "0319-0000",
+    "0320-0000",
+    "0500-0000",
+    "0715-0000",
+    "0955-0000",
+    "1083-0000",
+    "1084-0000",
+    "1085-0000",
+    "1086-0000",
+    "1087-0000",
+    "1088-0000",
+    "1200-0000",
+    "1330-1000",
+    "1330-1001",
+    "1330-2000",
+    "1341-0000",
+    "1342-0000",
+    "1910-0000",
+    "1911-0000",
+    "1923-0000",
+    "1924-0000",
+    "1925-0000",
+    "1997-0000",
+    "1997-1000",
+    "1997-2000",
+    "1997-3000",
+    "1997-4000",
+    "1997-5000",
+    "2001-0000",
+    "2035-0000",
+    "2131-0000",
+    "2135-0000",
+    "2136-0000",
+    "2137-0000",
+    "2138-0000",
+    "2139-0001",
+    "2140-0000",
+    "2411-0000",
+    "2522-0000",
+    "2586-0000",
+    "2587-0000",
+    "2600-0000",
+    "2611-0000",
+    "2611-1000",
+    "2612-1000",
+    "2613-0000",
+    "2613-5000",
+    "2614-1000",
+    "2614-2000",
+    "2615-0000",
+    "2616-1000",
+    "2617-0000",
+    "2619-0000",
+    "2620-0000",
+    "2621-0000",
+    "2650-0000",
+    "2651-0000",
+    "2660-0000",
+    "2661-0000",
+    "2662-0000",
+    "2663-0000",
+    "2664-0000",
+    "2665-0000",
+    "2666-0000",
+    "2667-0000",
+    "2668-0000",
+    "2669-0000",
+    "2670-0000",
+    "2671-0000",
+    "3050-1000",
+    "3920-0000"
+  ],
+  "mismatches": [
+    {
+      "account_code": "3050-0000",
+      "template_name": "Partners? Contributions?",
+      "seed_name": "Common Stock",
+      "issues": [
+        "Name mismatch: 'Partners? Contributions?' vs 'Common Stock'"
+      ]
+    },
+    {
+      "account_code": "0210-0000",
+      "template_name": "Accounts Receivable.*Trade",
+      "seed_name": "Accounts Receivables - Trade",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0122-0000",
+      "template_name": "Cash.*Operating",
+      "seed_name": "Cash - Operating",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1210-0000",
+      "template_name": "Deposits",
+      "seed_name": "Deposits",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0305-0000",
+      "template_name": "A/R Tenants?",
+      "seed_name": "A/R Tenants",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0125-0000",
+      "template_name": "Cash.*Operating.*PNC",
+      "seed_name": "Cash - Operating IV-PNC",
+      "issues": [
+        "Name mismatch: 'Cash.*Operating.*PNC' vs 'Cash - Operating IV-PNC'",
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1310-0000",
+      "template_name": "Escrow.*Property Tax",
+      "seed_name": "Escrow - Property Tax",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0710-0000",
+      "template_name": "5 Year Improvements?",
+      "seed_name": "5 Year Improvements",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1330-0000",
+      "template_name": "Escrow.*TI/LC",
+      "seed_name": "Escrow - TI/LC",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1950-5000",
+      "template_name": "Internal.*Lease Commission",
+      "seed_name": "Internal - Lease Commission",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0347-0000",
+      "template_name": "Escrow.*Other",
+      "seed_name": "Escrow - Other",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0123-0000",
+      "template_name": "Cash.*Operating II",
+      "seed_name": "Cash - Operating II",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "2616-0000",
+      "template_name": "MidLand Loan Services.*PNC",
+      "seed_name": "MidLand Loan Services (PNC)",
+      "issues": [
+        "Name mismatch: 'MidLand Loan Services.*PNC' vs 'MidLand Loan Services (PNC)'"
+      ]
+    },
+    {
+      "account_code": "0510-0000",
+      "template_name": "Land",
+      "seed_name": "Land",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0610-0000",
+      "template_name": "Buildings",
+      "seed_name": "Buildings",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1320-0000",
+      "template_name": "Escrow.*Insurance",
+      "seed_name": "Escrow - Insurance",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1340-0000",
+      "template_name": "Escrow.*Replacement Reserves?",
+      "seed_name": "Escrow - Replacement Reserves",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1081-0000",
+      "template_name": "Accum\\\\.? Depr\\\\..*15 Year",
+      "seed_name": "Accum. Depr. 15 Yr Impr.",
+      "issues": [
+        "Name mismatch: 'Accum\\\\.? Depr\\\\..*15 Year' vs 'Accum. Depr. 15 Yr Impr.'"
+      ]
+    },
+    {
+      "account_code": "1082-0000",
+      "template_name": "Accum\\\\.? Depr\\\\..*Roof",
+      "seed_name": "Accum. Depr.-15Yr-09Remodel",
+      "issues": [
+        "Name mismatch: 'Accum\\\\.? Depr\\\\..*Roof' vs 'Accum. Depr.-15Yr-09Remodel'"
+      ]
+    },
+    {
+      "account_code": "1099-0000",
+      "template_name": "Total Property & Equipment",
+      "seed_name": "Total Property & Equipment",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "2614-0000",
+      "template_name": "Wells Fargo",
+      "seed_name": "RAIT Financial",
+      "issues": [
+        "Name mismatch: 'Wells Fargo' vs 'RAIT Financial'"
+      ]
+    },
+    {
+      "account_code": "2612-0000",
+      "template_name": "NorthMarq Capital",
+      "seed_name": "KeyBank",
+      "issues": [
+        "Name mismatch: 'NorthMarq Capital' vs 'KeyBank'"
+      ]
+    },
+    {
+      "account_code": "0912-0000",
+      "template_name": "PARKING[- ]LOT",
+      "seed_name": "PARKING-LOT",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0499-9000",
+      "template_name": "Total Current Assets",
+      "seed_name": "Total Current Assets",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0950-0000",
+      "template_name": "TI/Current Improvements?",
+      "seed_name": "TI/Current Improvements",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "1920-0000",
+      "template_name": "Loan Costs?",
+      "seed_name": "Loan Costs",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0910-0000",
+      "template_name": "Other Improvements?",
+      "seed_name": "Other Improvements",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "2139-0000",
+      "template_name": "Insurance Claim",
+      "seed_name": "A/P Wendover Commons LP",
+      "issues": [
+        "Name mismatch: 'Insurance Claim' vs 'A/P Wendover Commons LP'"
+      ]
+    },
+    {
+      "account_code": "1950-0000",
+      "template_name": "External.*Lease Commission",
+      "seed_name": "External - Lease Commission",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0810-0000",
+      "template_name": "15 Year Improvements?",
+      "seed_name": "15 Year Improvements",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0306-0000",
+      "template_name": "A/R Other",
+      "seed_name": "A/R - Allowance for Doubtful",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0816-0000",
+      "template_name": "30 Year.*HVAC",
+      "seed_name": "30 Year - HVAC",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    },
+    {
+      "account_code": "0815-0000",
+      "template_name": "30 Year.*Roof",
+      "seed_name": "30 Year - Roof",
+      "issues": [
+        "Template marks as contra account but seed name doesn't indicate it"
+      ]
+    }
+  ]
+}

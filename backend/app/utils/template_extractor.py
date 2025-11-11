@@ -126,7 +126,7 @@ class TemplateExtractor:
             for variation in account_variations:
                 similarity = fuzz.ratio(variation, line_lower)
                 
-                if similarity > 80:  # 80% similarity threshold
+                if similarity > 85:  # 85% similarity threshold (Template v1.0 requirement)
                     # Extract monetary value from this line
                     value = self._extract_monetary_value(line)
                     

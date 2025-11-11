@@ -558,6 +558,219 @@ class TestRentRollExtraction:
             assert is_special or unit in ['0D0', '0G0']  # Internal codes
 
 
+class TestRentRollHelperMethods:
+    """Test the new helper methods in FinancialTableParser"""
+    
+    def test_extract_tenant_id_method(self):
+        """Test _extract_tenant_id helper method"""
+        from app.utils.financial_table_parser import FinancialTableParser
+        
+        parser = FinancialTableParser()
+        
+        # Test with tenant ID
+        name, tid = parser._extract_tenant_id("CEJR Health Services, LLC (t0000490)")
+        assert name == "CEJR Health Services, LLC"
+        assert tid == "t0000490"
+        
+        # Test without tenant ID
+        name, tid = parser._extract_tenant_id("Petsmart, Inc.")
+        assert name == "Petsmart, Inc."
+        assert tid is None
+        
+        # Test with empty string
+        name, tid = parser._extract_tenant_id("")
+        assert name == ""
+        assert tid is None
+    
+    def test_detect_special_unit_type(self):
+        """Test _detect_special_unit_type helper method"""
+        from app.utils.financial_table_parser import FinancialTableParser
+        
+        parser = FinancialTableParser()
+        
+        # Test ATM
+        result = parser._detect_special_unit_type("Z-ATM")
+        assert result == "ATM Location"
+        
+        # Test LAND
+        result = parser._detect_special_unit_type("LAND")
+        assert result == "Ground Lease"
+        
+        # Test COMMON
+        result = parser._detect_special_unit_type("COMMON")
+        assert result == "Common Area"
+        
+        # Test SIGN
+        result = parser._detect_special_unit_type("Z-SIGN")
+        assert result == "Signage"
+        
+        # Test normal unit
+        result = parser._detect_special_unit_type("001")
+        assert result is None
+    
+    def test_is_multi_unit_lease(self):
+        """Test _is_multi_unit_lease helper method"""
+        from app.utils.financial_table_parser import FinancialTableParser
+        
+        parser = FinancialTableParser()
+        
+        # Test comma-separated units
+        assert parser._is_multi_unit_lease("009-A, 009-B, 009-C") == True
+        assert parser._is_multi_unit_lease("015, 016") == True
+        
+        # Test single unit with hyphen
+        assert parser._is_multi_unit_lease("009-A") == False
+        
+        # Test single unit
+        assert parser._is_multi_unit_lease("001") == False
+        
+        # Test multiple hyphens
+        assert parser._is_multi_unit_lease("009-A-009-B-009-C") == True
+    
+    def test_calculate_lease_status(self):
+        """Test _calculate_lease_status helper method"""
+        from app.utils.financial_table_parser import FinancialTableParser
+        
+        parser = FinancialTableParser()
+        
+        # Test active lease
+        record = {
+            'lease_start_date': '2020-01-01',
+            'lease_end_date': '2026-12-31'
+        }
+        status = parser._calculate_lease_status(record, '2025-04-30')
+        assert status == 'active'
+        
+        # Test expired lease
+        record = {
+            'lease_start_date': '2020-01-01',
+            'lease_end_date': '2024-12-31'
+        }
+        status = parser._calculate_lease_status(record, '2025-04-30')
+        assert status == 'expired'
+        
+        # Test month-to-month (no end date)
+        record = {
+            'lease_start_date': '2020-01-01',
+            'lease_end_date': None
+        }
+        status = parser._calculate_lease_status(record, '2025-04-30')
+        assert status == 'month_to_month'
+        
+        # Test future lease
+        record = {
+            'lease_start_date': '2026-01-01',
+            'lease_end_date': '2030-12-31'
+        }
+        status = parser._calculate_lease_status(record, '2025-04-30')
+        assert status == 'future'
+    
+    def test_link_gross_rent_rows(self):
+        """Test _link_gross_rent_rows helper method"""
+        from app.utils.financial_table_parser import FinancialTableParser
+        
+        parser = FinancialTableParser()
+        
+        # Test linking gross rent row to parent
+        line_items = [
+            {'unit_number': '001', 'tenant_name': 'Tenant A', 'is_gross_rent_row': False},
+            {'unit_number': '001', 'tenant_name': 'Gross Rent', 'is_gross_rent_row': True},
+            {'unit_number': '002', 'tenant_name': 'Tenant B', 'is_gross_rent_row': False},
+            {'unit_number': '002', 'tenant_name': 'Gross Rent', 'is_gross_rent_row': True},
+        ]
+        
+        result = parser._link_gross_rent_rows(line_items)
+        
+        # Check that gross rent rows are linked
+        assert result[1].get('parent_row_id') == 1  # First gross rent links to first tenant
+        assert result[3].get('parent_row_id') == 3  # Second gross rent links to second tenant
+        
+        # Check that non-gross rows don't have parent_row_id
+        assert 'parent_row_id' not in result[0] or result[0].get('parent_row_id') is None
+        assert 'parent_row_id' not in result[2] or result[2].get('parent_row_id') is None
+
+
+class TestRentRollV2Fields:
+    """Test extraction of all Template v2.0 fields"""
+    
+    def test_all_24_fields_present_in_schema(self):
+        """Verify RentRollDataItem schema has all 24 fields"""
+        from app.schemas.document import RentRollDataItem
+        
+        # Get all field names from the schema
+        fields = RentRollDataItem.__fields__.keys()
+        
+        # Core fields (6)
+        assert 'property_name' in fields
+        assert 'property_code' in fields
+        assert 'report_date' in fields
+        assert 'unit_number' in fields
+        assert 'tenant_name' in fields
+        assert 'tenant_id' in fields
+        
+        # Lease details (5)
+        assert 'lease_type' in fields
+        assert 'lease_start_date' in fields
+        assert 'lease_end_date' in fields
+        assert 'lease_term_months' in fields
+        assert 'tenancy_years' in fields
+        
+        # Space (1)
+        assert 'unit_area_sqft' in fields
+        
+        # Base rent (4)
+        assert 'monthly_rent' in fields
+        assert 'monthly_rent_per_sqft' in fields
+        assert 'annual_rent' in fields
+        assert 'annual_rent_per_sqft' in fields
+        
+        # Additional charges (2)
+        assert 'annual_recoveries_per_sf' in fields
+        assert 'annual_misc_per_sf' in fields
+        
+        # Security (2)
+        assert 'security_deposit' in fields
+        assert 'loc_amount' in fields
+        
+        # Status flags (5)
+        assert 'is_vacant' in fields
+        assert 'is_gross_rent_row' in fields
+        assert 'parent_row_id' in fields
+        assert 'occupancy_status' in fields
+        assert 'lease_status' in fields
+        assert 'notes' in fields
+        
+        # Validation tracking (5)
+        assert 'validation_score' in fields
+        assert 'validation_flags_json' in fields
+        assert 'critical_flag_count' in fields
+        assert 'warning_flag_count' in fields
+        assert 'info_flag_count' in fields
+    
+    def test_database_model_has_all_fields(self):
+        """Verify RentRollData model has all v2.0 fields"""
+        from app.models.rent_roll_data import RentRollData
+        
+        # Check that all v2.0 fields exist as columns
+        columns = [c.name for c in RentRollData.__table__.columns]
+        
+        # v2.0 specific fields
+        assert 'tenancy_years' in columns
+        assert 'annual_recoveries_per_sf' in columns
+        assert 'annual_misc_per_sf' in columns
+        assert 'is_gross_rent_row' in columns
+        assert 'parent_row_id' in columns
+        assert 'notes' in columns
+        assert 'lease_status' in columns
+        
+        # Validation tracking fields
+        assert 'validation_score' in columns
+        assert 'validation_flags_json' in columns
+        assert 'critical_flag_count' in columns
+        assert 'warning_flag_count' in columns
+        assert 'info_flag_count' in columns
+
+
 # Integration test would go here but requires actual PDF files
 # Skipping for now as we have real-world validation from re-extraction
 

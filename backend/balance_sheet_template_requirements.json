@@ -1,0 +1,955 @@
+{
+  "metadata": {
+    "template_version": "1.0",
+    "template_name": "Balance Sheet Extraction Template for REIMS2",
+    "status": "Production-Ready",
+    "source_file": "/home/gurpyar/Documents/R/Balance Sheet Extraction Template/balance_sheet_extraction_template.md"
+  },
+  "header_fields": {
+    "property_name": {
+      "required": true,
+      "confidence_threshold": 90,
+      "patterns": [
+        "^(.+?)\\s+\\(\\w+\\)",
+        "^Property:\\s*(.+)$"
+      ]
+    },
+    "report_period": {
+      "required": true,
+      "confidence_threshold": 95,
+      "patterns": [
+        "Period\\s*=\\s*(\\w+\\s+\\d{4})",
+        "As of\\s+([A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4})",
+        "(\\d{1,2}[-/]\\d{1,2}[-/]\\d{2,4})"
+      ]
+    },
+    "accounting_method": {
+      "required": false,
+      "confidence_threshold": 80,
+      "patterns": [
+        "Book\\s*=\\s*(\\w+)"
+      ]
+    },
+    "report_date": {
+      "required": false,
+      "patterns": [
+        "(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\\s+([A-Za-z]+\\s+\\d{1,2},\\s+\\d{4})",
+        "\\d{1,2}:\\d{2}\\s+(AM|PM)"
+      ]
+    }
+  },
+  "accounts": [
+    {
+      "account_code": "0100-0000",
+      "name": "ASSETS",
+      "type": "header",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0122-0000",
+      "name": "Cash.*Operating",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0123-0000",
+      "name": "Cash.*Operating II",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0125-0000",
+      "name": "Cash.*Operating.*PNC",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0210-0000",
+      "name": "Accounts Receivable.*Trade",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0305-0000",
+      "name": "A/R Tenants?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0306-0000",
+      "name": "A/R Other",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0347-0000",
+      "name": "Escrow.*Other",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0499-9000",
+      "name": "Total Current Assets",
+      "type": "calculated_total",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0510-0000",
+      "name": "Land",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0610-0000",
+      "name": "Buildings",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0710-0000",
+      "name": "5 Year Improvements?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0810-0000",
+      "name": "15 Year Improvements?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0815-0000",
+      "name": "30 Year.*Roof",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0816-0000",
+      "name": "30 Year.*HVAC",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0910-0000",
+      "name": "Other Improvements?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0912-0000",
+      "name": "PARKING[- ]LOT",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "0950-0000",
+      "name": "TI/Current Improvements?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1061-0000",
+      "name": "Accum\\\\.? Depr\\\\..*Buildings?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1071-0000",
+      "name": "Accum\\\\.? Depr\\\\..*5 Year",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1081-0000",
+      "name": "Accum\\\\.? Depr\\\\..*15 Year",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1082-0000",
+      "name": "Accum\\\\.? Depr\\\\..*Roof",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1091-0000",
+      "name": "Accum\\\\.? Depr\\\\..*Other",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1099-0000",
+      "name": "Total Property & Equipment",
+      "type": "calculated_total",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1210-0000",
+      "name": "Deposits",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1310-0000",
+      "name": "Escrow.*Property Tax",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1320-0000",
+      "name": "Escrow.*Insurance",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1330-0000",
+      "name": "Escrow.*TI/LC",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1340-0000",
+      "name": "Escrow.*Replacement Reserves?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1920-0000",
+      "name": "Loan Costs?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1922-0000",
+      "name": "Accum\\\\.? Amortization Loan Costs?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1950-0000",
+      "name": "External.*Lease Commission",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1950-5000",
+      "name": "Internal.*Lease Commission",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1952-0000",
+      "name": "Accum\\\\.? Amort.*TI/LC",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1995-0000",
+      "name": "Prepaid Insurance",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1998-0000",
+      "name": "Total Other Assets",
+      "type": "calculated_total",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2030-0000",
+      "name": "Accrued Expenses?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2110-0000",
+      "name": "Accounts Payable.*Trade",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2120-0000",
+      "name": "A/P.*Series RDF",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2121-0000",
+      "name": "A/P Other",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2132-0000",
+      "name": "A/P.*5Rivers",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2139-0000",
+      "name": "Insurance Claim",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2197-0000",
+      "name": "Loans Payable.*5Rivers",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2410-0000",
+      "name": "Property Tax Payable",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2510-0000",
+      "name": "Rent Received in Advance",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2515-0000",
+      "name": "A/P Tenant TI/LC",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2520-0000",
+      "name": "Deposit Refundable",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2521-0000",
+      "name": "Construction Deposit",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2585-0000",
+      "name": "A/P Suspense",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2590-0000",
+      "name": "Total Current Liabilities",
+      "type": "calculated_total",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2612-0000",
+      "name": "NorthMarq Capital",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2614-0000",
+      "name": "Wells Fargo",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2616-0000",
+      "name": "MidLand Loan Services.*PNC",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2618-0000",
+      "name": "Trawler Capital",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2900-0000",
+      "name": "Total Long Term Liabilities",
+      "type": "calculated_total",
+      "required": true,
+      "critical": true,
+      "allow_negative": false,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "3050-0000",
+      "name": "Partners? Contributions?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "3910-0000",
+      "name": "Beginning Equity",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "3990-0000",
+      "name": "Distributions?",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "3995-0000",
+      "name": "Current Period Earnings",
+      "type": "detail",
+      "required": true,
+      "critical": true,
+      "allow_negative": true,
+      "is_contra_account": false,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "1999-0000",
+      "name": "TOTAL ASSETS",
+      "type": "calculated_total",
+      "section": "ASSETS",
+      "required": true,
+      "critical": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "2999-0000",
+      "name": "TOTAL LIABILITIES",
+      "type": "calculated_total",
+      "section": "LIABILITIES",
+      "required": true,
+      "critical": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "3999-0000",
+      "name": "TOTAL CAPITAL",
+      "type": "calculated_total",
+      "section": "CAPITAL",
+      "required": true,
+      "critical": true,
+      "data_type": "decimal(15,2)"
+    },
+    {
+      "account_code": "3999-9000",
+      "name": "TOTAL LIABILITIES & CAPITAL",
+      "type": "section_total",
+      "section": "GRAND_TOTAL",
+      "required": true,
+      "critical": true,
+      "data_type": "decimal(15,2)"
+    }
+  ],
+  "validation_rules": [
+    {
+      "name": "accounting_equation",
+      "rule": "total_assets = total_liabilities + total_capital",
+      "severity": "critical",
+      "tolerance": 0.01,
+      "description": "Assets must equal Liabilities + Equity",
+      "source": "template_section:fundamental_equation"
+    },
+    {
+      "name": "current_assets_total_validation",
+      "rule": "sum(detail_line_items) = total_current_assets",
+      "severity": "high",
+      "tolerance": 0.01,
+      "section": "current_assets",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "property_equipment_total_validation",
+      "rule": "sum(detail_line_items) = total_property_equipment",
+      "severity": "high",
+      "tolerance": 0.01,
+      "section": "property_equipment",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "other_assets_total_validation",
+      "rule": "sum(detail_line_items) = total_other_assets",
+      "severity": "high",
+      "tolerance": 0.01,
+      "section": "other_assets",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "assets_total_validation",
+      "rule": "total_current_assets + total_property_equipment + total_other_assets = total_assets",
+      "severity": "critical",
+      "tolerance": 0.01,
+      "section": "assets",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "current_liabilities_total_validation",
+      "rule": "sum(detail_line_items) = total_current_liabilities",
+      "severity": "high",
+      "tolerance": 0.01,
+      "section": "current_liabilities",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "long_term_liabilities_total_validation",
+      "rule": "sum(detail_line_items) = total_long_term_liabilities",
+      "severity": "high",
+      "tolerance": 0.01,
+      "section": "long_term_liabilities",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "liabilities_total_validation",
+      "rule": "total_current_liabilities + total_long_term_liabilities = total_liabilities",
+      "severity": "critical",
+      "tolerance": 0.01,
+      "section": "liabilities",
+      "source": "template_section:section_totals"
+    },
+    {
+      "name": "all_required_sections_present",
+      "check_data": [
+        "assets",
+        "liabilities",
+        "capital"
+      ],
+      "severity": "critical",
+      "source": "template_section:quality_checks"
+    },
+    {
+      "name": "required_totals_extracted",
+      "check_data": [
+        "1999-0000",
+        "2999-0000",
+        "3999-0000",
+        "3999-9000"
+      ],
+      "severity": "critical",
+      "source": "template_section:quality_checks"
+    },
+    {
+      "name": "no_duplicate_accounts",
+      "check_data": "unique(property_id, period_id, account_code)",
+      "severity": "high",
+      "source": "template_section:quality_checks"
+    },
+    {
+      "name": "reasonable_amounts",
+      "check_data": "total_assets > 0 AND total_liabilities >= 0",
+      "severity": "medium",
+      "source": "template_section:quality_checks"
+    },
+    {
+      "name": "contra_accounts_negative",
+      "check_data": "amount <= 0 for contra accounts",
+      "severity": "medium",
+      "source": "template_section:quality_checks"
+    },
+    {
+      "name": "completeness_check",
+      "min_line_items": 20,
+      "expected_line_items": "50-100",
+      "critical_accounts": [
+        "0510-0000",
+        "0610-0000",
+        "1999-0000",
+        "2999-0000",
+        "3999-0000"
+      ],
+      "severity": "critical",
+      "source": "template_section:completeness"
+    }
+  ],
+  "confidence_scoring": {
+    "per_field_factors": {
+      "extraction_method": {
+        "exact_code_match": 100,
+        "ocr_with_validation": 95,
+        "fuzzy_match": "70-90",
+        "keyword_match": "60-75",
+        "manual_entry": 100
+      },
+      "amount_clarity": {
+        "clear_digits": 100,
+        "slight_ocr_noise": "85-95",
+        "significant_ocr_noise": "60-80",
+        "barely_readable": "30-50"
+      },
+      "position_context": {
+        "expected_section": 100,
+        "unexpected_section": 70,
+        "ambiguous_location": 50
+      },
+      "validation_result": {
+        "passes_all_validations": 100,
+        "minor_warning": 85,
+        "validation_failed": 40
+      }
+    },
+    "document_level": {
+      "formula": "avg(line_item_confidences) * 0.4 + validation_pass_rate * 0.3 + completeness_score * 0.2 + accounting_equation_valid * 0.1",
+      "thresholds": {
+        "excellent": ">=95",
+        "good": "90-94",
+        "acceptable": "80-89",
+        "needs_review": "70-79",
+        "poor": "<70"
+      },
+      "threshold_for_auto_approve": 90,
+      "threshold_for_review": 75,
+      "threshold_for_rejection": 50
+    }
+  },
+  "review_flags": [
+    {
+      "flag": "low_confidence_extraction",
+      "trigger": "line_item.confidence < 85",
+      "severity": "medium",
+      "message": "Low confidence in extracted amount"
+    },
+    {
+      "flag": "unmatched_account",
+      "trigger": "account_code not in chart_of_accounts",
+      "severity": "high",
+      "message": "Account code not found in chart of accounts",
+      "suggested_action": "map_to_existing_or_create_new"
+    },
+    {
+      "flag": "validation_failure",
+      "trigger": "validation_result = false",
+      "severity": "high",
+      "message": "Failed validation"
+    },
+    {
+      "flag": "unusual_amount",
+      "trigger": "abs(current_amount - prior_period_amount) > prior_period_amount * 0.5 AND abs(change) > 10000",
+      "severity": "medium",
+      "message": "Significant change from prior period"
+    },
+    {
+      "flag": "negative_where_positive_expected",
+      "trigger": "account.expected_sign = 'positive' AND amount < 0 AND account.is_contra_account = false",
+      "severity": "medium",
+      "message": "Unexpected negative amount"
+    },
+    {
+      "flag": "missing_critical_account",
+      "trigger": "critical_account not extracted",
+      "severity": "critical",
+      "message": "Required account missing"
+    },
+    {
+      "flag": "balance_sheet_not_balanced",
+      "trigger": "abs(total_assets - (total_liabilities + total_capital)) > 0.01",
+      "severity": "critical",
+      "message": "Balance sheet does not balance",
+      "blocking": true
+    }
+  ],
+  "extraction_rules": {
+    "line_item_patterns": {
+      "standard": {
+        "pattern": "^(\\d{4}-\\d{4})\\s+([A-Za-z0-9 /\\-\\.\\(\\)&,]+?)\\s+([-]?[\\d,]+\\.\\d{2})$",
+        "groups": [
+          "account_code",
+          "account_name",
+          "amount"
+        ],
+        "confidence": 95
+      },
+      "no_code": {
+        "pattern": "^([A-Za-z0-9 /\\-\\.\\(\\)&,]+?)\\s{2,}([-]?[\\d,]+\\.\\d{2})$",
+        "groups": [
+          "account_name",
+          "amount"
+        ],
+        "confidence": 75,
+        "action": "fuzzy_match_to_chart_of_accounts"
+      },
+      "total_line": {
+        "pattern": "^(Total|TOTAL)\\s+([A-Za-z &]+?)\\s+([-]?[\\d,]+\\.\\d{2})$",
+        "groups": [
+          "prefix",
+          "section_name",
+          "amount"
+        ],
+        "confidence": 90,
+        "is_calculated": true
+      }
+    },
+    "account_mapping": {
+      "strategy": "exact_match_preferred",
+      "exact_code_match": {
+        "confidence": 100,
+        "action": "direct_insert"
+      },
+      "fuzzy_name_match": {
+        "confidence_range": "70-95",
+        "threshold": 85,
+        "algorithm": "levenshtein_distance",
+        "action": "map_to_closest_match",
+        "flag_if_below": 85
+      },
+      "keyword_match": {
+        "confidence_range": "60-80",
+        "action": "map_with_review_flag"
+      },
+      "no_match": {
+        "confidence": 0,
+        "action": "create_unmatched_item_entry",
+        "flag_for_review": true
+      }
+    },
+    "fuzzy_matching_threshold": 85
+  },
+  "keywords": {
+    "required_keywords": [
+      "Balance Sheet",
+      "Statement of Financial Position",
+      "Assets",
+      "Liabilities",
+      "Capital",
+      "Equity",
+      "Net Worth"
+    ],
+    "supporting_keywords": [
+      "Current Balance",
+      "TOTAL ASSETS",
+      "TOTAL LIABILITIES",
+      "Property & Equipment",
+      "Current Assets",
+      "Long Term"
+    ]
+  },
+  "data_types": {
+    "amount": "decimal(15,2)",
+    "account_code": "varchar(50)",
+    "account_name": "varchar(255)",
+    "confidence_score": "decimal(5,2)"
+  }
+}

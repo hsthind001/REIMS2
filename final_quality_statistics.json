@@ -1,0 +1,78 @@
+{
+    "2025": {
+        "balance_sheet": {},
+        "income_statement": {},
+        "cash_flow": {},
+        "rent_roll": {
+            "total_units": 65,
+            "occupied_units": 54,
+            "vacant_units": 11,
+            "occupancy_rate": 83.08,
+            "avg_extraction_confidence": 99.0,
+            "avg_validation_score": 99.0,
+            "total_critical_flags": 0,
+            "total_warning_flags": 0,
+            "needs_review_count": 0
+        }
+    },
+    "2024": {
+        "balance_sheet": {
+            "total_records": 227,
+            "matched_records": 223,
+            "unmatched_records": 4,
+            "match_rate": 98.24,
+            "avg_extraction_confidence": 90.18,
+            "avg_match_confidence": 0,
+            "needs_review_count": 5
+        },
+        "income_statement": {
+            "total_records": 140,
+            "matched_records": 140,
+            "unmatched_records": 0,
+            "match_rate": 100.0,
+            "avg_extraction_confidence": 90.0,
+            "avg_match_confidence": 100.0,
+            "needs_review_count": 0
+        },
+        "cash_flow": {
+            "total_records": 1458,
+            "matched_records": 782,
+            "unmatched_records": 676,
+            "match_rate": 53.64,
+            "avg_extraction_confidence": 68.2,
+            "avg_match_confidence": 60.04,
+            "needs_review_count": 1126
+        },
+        "rent_roll": {}
+    },
+    "2023": {
+        "balance_sheet": {
+            "total_records": 190,
+            "matched_records": 186,
+            "unmatched_records": 4,
+            "match_rate": 97.89,
+            "avg_extraction_confidence": 93.95,
+            "avg_match_confidence": 0,
+            "needs_review_count": 4
+        },
+        "income_statement": {
+            "total_records": 330,
+            "matched_records": 330,
+            "unmatched_records": 0,
+            "match_rate": 100.0,
+            "avg_extraction_confidence": 90.0,
+            "avg_match_confidence": 100.0,
+            "needs_review_count": 0
+        },
+        "cash_flow": {
+            "total_records": 1446,
+            "matched_records": 684,
+            "unmatched_records": 762,
+            "match_rate": 47.3,
+            "avg_extraction_confidence": 61.02,
+            "avg_match_confidence": 61.02,
+            "needs_review_count": 802
+        },
+        "rent_roll": {}
+    }
+}
