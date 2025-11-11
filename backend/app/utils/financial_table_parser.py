@@ -1372,12 +1372,23 @@ class FinancialTableParser:
             return record
         
         # Extract tenant name and ID
-        tenant_match = re.match(r'(.+?)\s*\(t(\d+)\)', tenant)
+        # Normalize the tenant string: replace newlines and multiple spaces with single space
+        # This handles PDFs where cell content is split across multiple lines
+        tenant_normalized = ' '.join(tenant.split())
+        
+        # Robust pattern to handle various PDF formats:
+        # - Regular parentheses () or full-width （）
+        # - Optional 't' or 'T' prefix before ID
+        # - Extra spaces inside parentheses
+        # - Case-insensitive matching
+        tenant_match = re.match(r'(.+?)\s*[\(\uFF08]\s*([tT]?)(\d+)\s*[\)\uFF09]', tenant_normalized, re.IGNORECASE)
         if tenant_match:
             record['tenant_name'] = tenant_match.group(1).strip()
-            record['tenant_id'] = f"t{tenant_match.group(2)}"
+            # Preserve 't' prefix if present, or add it if missing for consistency
+            prefix = tenant_match.group(2).lower() if tenant_match.group(2) else 't'
+            record['tenant_id'] = f"{prefix}{tenant_match.group(3)}"
         else:
-            record['tenant_name'] = tenant
+            record['tenant_name'] = tenant_normalized
         
         # Extract lease type
         lease_type = get_cell('lease_type')
@@ -1543,6 +1554,14 @@ class FinancialTableParser:
         Extract tenant ID from tenant name
         
         Format: 'Tenant Name (t0000123)' -> ('Tenant Name', 't0000123')
+        Also handles: 'Tenant Name (0000123)' -> ('Tenant Name', 't0000123')
+        
+        Robust pattern handles:
+        - Regular parentheses () or full-width （）
+        - Optional 't' or 'T' prefix before ID
+        - Extra spaces inside parentheses
+        - Case-insensitive matching
+        - Newlines and multiple spaces (normalized to single space)
         
         Returns:
             Tuple[tenant_name, tenant_id]
@@ -1550,14 +1569,20 @@ class FinancialTableParser:
         if not tenant_name_str:
             return (tenant_name_str, None)
         
-        # Pattern: (t followed by digits)
-        match = re.match(r'(.+?)\s*\(t(\d+)\)', tenant_name_str)
+        # Normalize: replace newlines and multiple spaces with single space
+        # This handles PDFs where cell content is split across multiple lines
+        tenant_normalized = ' '.join(tenant_name_str.split())
+        
+        # Robust pattern for various PDF formats
+        match = re.match(r'(.+?)\s*[\(\uFF08]\s*([tT]?)(\d+)\s*[\)\uFF09]', tenant_normalized, re.IGNORECASE)
         if match:
             tenant_name = match.group(1).strip()
-            tenant_id = f"t{match.group(2)}"
+            # Preserve 't' prefix if present, or add it if missing for consistency
+            prefix = match.group(2).lower() if match.group(2) else 't'
+            tenant_id = f"{prefix}{match.group(3)}"
             return (tenant_name, tenant_id)
         
-        return (tenant_name_str, None)
+        return (tenant_normalized, None)
     
     def _detect_special_unit_type(self, unit_number: str) -> Optional[str]:
         """
