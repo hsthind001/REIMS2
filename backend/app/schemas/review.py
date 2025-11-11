@@ -17,6 +17,7 @@ class ReviewQueueItem(BaseModel):
     property_name: str
     period_year: int
     period_month: int
+    file_name: Optional[str] = None
     account_code: Optional[str] = None
     account_name: Optional[str] = None
     unit_number: Optional[str] = None

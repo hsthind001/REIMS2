@@ -17,6 +17,7 @@ from app.models.rent_roll_data import RentRollData
 from app.models.audit_trail import AuditTrail
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
+from app.models.document_upload import DocumentUpload
 
 
 # Map table names to SQLAlchemy models
@@ -80,11 +81,14 @@ class ReviewService:
                 Property.property_code,
                 Property.property_name,
                 FinancialPeriod.period_year,
-                FinancialPeriod.period_month
+                FinancialPeriod.period_month,
+                DocumentUpload.file_name
             ).join(
                 Property, model.property_id == Property.id
             ).join(
                 FinancialPeriod, model.period_id == FinancialPeriod.id
+            ).join(
+                DocumentUpload, model.upload_id == DocumentUpload.id
             ).filter(
                 model.needs_review == True
             )
@@ -108,7 +112,7 @@ class ReviewService:
             results = query.all()
             total_count += len(results)
             
-            for record, prop_code, prop_name, year, month in results:
+            for record, prop_code, prop_name, year, month, file_name in results:
                 # Get primary key field
                 mapper = inspect(model)
                 pk_field = mapper.primary_key[0].name
@@ -122,6 +126,7 @@ class ReviewService:
                     "property_name": prop_name,
                     "period_year": year,
                     "period_month": month,
+                    "file_name": file_name,
                     "account_code": getattr(record, "account_code", None),
                     "account_name": getattr(record, "account_name", None),
                     "unit_number": getattr(record, "unit_number", None),

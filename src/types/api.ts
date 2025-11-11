@@ -204,16 +204,22 @@ export interface FinancialMetrics {
 // ===== Review Queue =====
 
 export interface ReviewQueueItem {
-  id: number;
+  record_id: number;
   table_name: string;
   property_code: string;
   property_name: string;
   period_year: number;
   period_month: number;
+  file_name?: string;
   account_code?: string;
   account_name?: string;
+  amount?: number;
+  period_amount?: number;
+  monthly_rent?: number;
   extraction_confidence: number;
-  needs_review_reason?: string;
+  needs_review: boolean;
+  reviewed: boolean;
+  created_at: string;
 }
 
 // ===== Chart of Accounts =====

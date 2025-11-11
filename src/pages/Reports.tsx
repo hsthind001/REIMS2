@@ -119,7 +119,7 @@ export default function Reports() {
 
   const handleApprove = async (item: any) => {
     try {
-      await reviewService.approveRecord(item.id, item.table_name, 'Approved from dashboard');
+      await reviewService.approveRecord(item.record_id, item.table_name, 'Approved from dashboard');
       await loadInitialData(); // Reload
     } catch (err: any) {
       alert(`Approve failed: ${err.message}`);
@@ -183,7 +183,9 @@ export default function Reports() {
                   <tr>
                     <th>Property</th>
                     <th>Period</th>
+                    <th>Source File</th>
                     <th>Account</th>
+                    <th>Amount (PDF)</th>
                     <th>Confidence</th>
                     <th>Actions</th>
                   </tr>
@@ -193,9 +195,25 @@ export default function Reports() {
                     <tr key={index}>
                       <td><strong>{item.property_code}</strong></td>
                       <td>{item.period_year}-{String(item.period_month).padStart(2, '0')}</td>
+                      <td style={{ fontSize: '0.85rem', color: '#666' }}>
+                        📄 {item.file_name || 'N/A'}
+                      </td>
                       <td>{item.account_code} - {item.account_name}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                        {item.amount != null 
+                          ? new Intl.NumberFormat('en-US', { 
+                              style: 'currency', 
+                              currency: 'USD',
+                              minimumFractionDigits: 2 
+                            }).format(item.amount)
+                          : '-'
+                        }
+                      </td>
                       <td>
-                        <span className={`confidence-badge ${item.extraction_confidence < 85 ? 'low' : 'high'}`}>
+                        <span 
+                          className={`confidence-badge ${item.extraction_confidence < 85 ? 'low' : 'high'}`}
+                          title={`Extraction: 75% | Match: 0% (UNMATCHED)`}
+                        >
                           {item.extraction_confidence?.toFixed(1)}%
                         </span>
                       </td>
