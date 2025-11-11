@@ -27,6 +27,7 @@ class ReviewQueueItem(BaseModel):
     extraction_confidence: Optional[float] = None
     needs_review: bool
     reviewed: bool
+    needs_review_reason: Optional[str] = None
     created_at: datetime
     
     class Config:

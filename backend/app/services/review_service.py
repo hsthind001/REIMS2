@@ -144,6 +144,9 @@ class ReviewService:
                 if hasattr(record, "monthly_rent"):
                     item["monthly_rent"] = float(record.monthly_rent) if record.monthly_rent else None
                 
+                # Generate human-readable review reason
+                item["needs_review_reason"] = self._generate_review_reason(record)
+                
                 review_items.append(item)
         
         # Apply pagination
@@ -393,6 +396,43 @@ class ReviewService:
             "metrics_count": metrics_count,
             "affected_categories": metrics_to_calc
         }
+    
+    def _generate_review_reason(self, record: Any) -> str:
+        """
+        Generate a human-readable explanation for why a record needs review
+        
+        Args:
+            record: The financial data record
+        
+        Returns:
+            Clear, actionable one-line description
+        """
+        account_code = getattr(record, "account_code", None)
+        account_name = getattr(record, "account_name", None)
+        extraction_conf = float(record.extraction_confidence) if record.extraction_confidence else 0.0
+        account_id = getattr(record, "account_id", None)
+        
+        # Check for UNMATCHED accounts (most common issue)
+        if account_code == "UNMATCHED" or account_id is None:
+            if account_name:
+                return f"Account '{account_name}' not found in Chart of Accounts - needs manual mapping or creation"
+            else:
+                return "Account not matched - missing account name or code"
+        
+        # Check for low extraction confidence
+        if extraction_conf < 75:
+            return f"Low PDF extraction quality ({extraction_conf:.0f}%) - manual verification recommended"
+        
+        # Check for moderate extraction confidence
+        if extraction_conf < 85:
+            return f"Moderate extraction confidence ({extraction_conf:.0f}%) - please verify amounts and account details"
+        
+        # Check for low match confidence (matched but uncertain)
+        if extraction_conf < 95:
+            return "Account matched with moderate confidence - verify mapping is correct"
+        
+        # Default (shouldn't usually reach here if needs_review is True)
+        return "Flagged for review - please verify all details are correct"
     
     def get_record_details(
         self,

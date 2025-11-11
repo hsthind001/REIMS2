@@ -187,6 +187,7 @@ export default function Reports() {
                     <th>Account</th>
                     <th>Amount (PDF)</th>
                     <th>Confidence</th>
+                    <th style={{ minWidth: '300px' }}>Reason for Review</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -216,6 +217,9 @@ export default function Reports() {
                         >
                           {item.extraction_confidence?.toFixed(1)}%
                         </span>
+                      </td>
+                      <td style={{ fontSize: '0.9rem', color: '#444', lineHeight: '1.4' }}>
+                        {item.needs_review_reason || 'Flagged for review'}
                       </td>
                       <td>
                         <button 

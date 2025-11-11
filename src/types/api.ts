@@ -219,6 +219,7 @@ export interface ReviewQueueItem {
   extraction_confidence: number;
   needs_review: boolean;
   reviewed: boolean;
+  needs_review_reason?: string;
   created_at: string;
 }
 
