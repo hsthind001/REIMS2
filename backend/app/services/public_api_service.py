@@ -4,7 +4,7 @@ External API authentication, rate limiting, and integration management.
 
 Sprint 8: API & External Integrations
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import secrets
