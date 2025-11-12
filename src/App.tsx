@@ -8,8 +8,12 @@ import Properties from './pages/Properties'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
 import Reconciliation from './pages/Reconciliation'
+import Alerts from './pages/Alerts'
+import AnomalyDashboard from './pages/AnomalyDashboard'
+import PerformanceMonitoring from './pages/PerformanceMonitoring'
+import UserManagement from './pages/UserManagement'
 
-type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -37,6 +41,14 @@ function AppContent() {
         return <Reports />
       case 'reconciliation':
         return <Reconciliation />
+      case 'alerts':
+        return <Alerts />
+      case 'anomalies':
+        return <AnomalyDashboard />
+      case 'performance':
+        return <PerformanceMonitoring />
+      case 'users':
+        return <UserManagement />
       default:
         return <Dashboard />
     }
@@ -130,6 +142,34 @@ function AppContent() {
             >
               <span className="nav-icon">🔄</span>
               {sidebarOpen && <span className="nav-text">Reconciliation</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'alerts' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('alerts')}
+            >
+              <span className="nav-icon">🔔</span>
+              {sidebarOpen && <span className="nav-text">Alerts</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'anomalies' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('anomalies')}
+            >
+              <span className="nav-icon">⚠️</span>
+              {sidebarOpen && <span className="nav-text">Anomalies</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'performance' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('performance')}
+            >
+              <span className="nav-icon">📈</span>
+              {sidebarOpen && <span className="nav-text">Performance</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'users' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('users')}
+            >
+              <span className="nav-icon">👥</span>
+              {sidebarOpen && <span className="nav-text">Users</span>}
             </button>
           </nav>
         </aside>

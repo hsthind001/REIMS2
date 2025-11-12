@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -63,6 +63,10 @@ app.include_router(review.router, prefix=settings.API_V1_STR, tags=["review"])
 app.include_router(reports.router, prefix=settings.API_V1_STR, tags=["reports"])
 app.include_router(exports.router, prefix=settings.API_V1_STR, tags=["exports"])
 app.include_router(reconciliation.router, prefix=settings.API_V1_STR, tags=["reconciliation"])
+app.include_router(anomalies.router, prefix=settings.API_V1_STR + "/anomalies", tags=["anomalies"])
+app.include_router(alerts.router, prefix=settings.API_V1_STR + "/alerts", tags=["alerts"])
+app.include_router(rbac.router, prefix=settings.API_V1_STR + "/rbac", tags=["rbac"])
+app.include_router(public_api.router, prefix=settings.API_V1_STR + "/public", tags=["public-api"])
 
 
 @app.get("/")

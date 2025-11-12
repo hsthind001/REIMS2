@@ -1416,5 +1416,13 @@
       "updated": "2025-11-11T23:49:57.317Z",
       "description": "Tasks for sprint8 context"
     }
+  },
+  "production-polish": {
+    "tasks": [],
+    "metadata": {
+      "created": "2025-11-12T00:01:59.553Z",
+      "updated": "2025-11-12T00:01:59.553Z",
+      "description": "Final 20-25% to reach 100% production-ready: migrations, endpoints, dashboards, tests, config"
+    }
   }
 }
