@@ -73,6 +73,9 @@ class ReportsService:
         # Convert to dict
         row_dict = dict(result._mapping)
         
+        # Debug: Check if we have the new fields
+        print(f"DEBUG: total_cash_position={row_dict.get('total_cash_position')}, debt_to_assets_ratio={row_dict.get('debt_to_assets_ratio')}")
+        
         # Organize into logical sections
         summary = {
             "property": {
@@ -94,6 +97,11 @@ class ReportsService:
                 "total_equity": self._to_float(row_dict.get("total_equity")),
                 "current_ratio": self._to_float(row_dict.get("current_ratio")),
                 "debt_to_equity_ratio": self._to_float(row_dict.get("debt_to_equity_ratio")),
+                "debt_to_assets_ratio": self._to_float(row_dict.get("debt_to_assets_ratio")),
+                "ltv_ratio": self._to_float(row_dict.get("ltv_ratio")),
+                "cash_position": self._to_float(row_dict.get("total_cash_position")),
+                "operating_cash": self._to_float(row_dict.get("operating_cash")),
+                "restricted_cash": self._to_float(row_dict.get("restricted_cash")),
             },
             "income_statement": {
                 "total_revenue": self._to_float(row_dict.get("total_revenue")),
@@ -108,6 +116,7 @@ class ReportsService:
                 "investing_cash_flow": self._to_float(row_dict.get("investing_cash_flow")),
                 "financing_cash_flow": self._to_float(row_dict.get("financing_cash_flow")),
                 "net_cash_flow": self._to_float(row_dict.get("net_cash_flow")),
+                "beginning_cash_balance": self._to_float(row_dict.get("beginning_cash_balance")),
                 "ending_cash_balance": self._to_float(row_dict.get("ending_cash_balance")),
             },
             "rent_roll": {

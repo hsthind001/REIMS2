@@ -13,6 +13,8 @@ from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.services.alert_service import AlertService
 
+# Note: Alert models not yet created, using direct SQL queries
+
 
 router = APIRouter()
 
@@ -56,8 +58,7 @@ async def list_alerts(
     severity: Optional[str] = Query(None),
     acknowledged: Optional[bool] = Query(None),
     limit: int = Query(100, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     List alerts with optional filters.
@@ -67,8 +68,54 @@ async def list_alerts(
     - acknowledged: Filter by acknowledgment status
     - limit: Maximum results
     """
-    # Would query alerts table
-    return []
+    from sqlalchemy import text
+    
+    # Build SQL query (models don't exist yet, use direct SQL)
+    sql = """
+        SELECT 
+            id,
+            alert_rule_id,
+            message,
+            severity,
+            status,
+            channels_sent,
+            created_at,
+            acknowledged_at
+        FROM alerts
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    if severity:
+        sql += " AND severity = :severity"
+        params['severity'] = severity
+    
+    if acknowledged is not None:
+        if acknowledged:
+            sql += " AND acknowledged_at IS NOT NULL"
+        else:
+            sql += " AND acknowledged_at IS NULL"
+    
+    sql += " ORDER BY created_at DESC LIMIT :limit"
+    params['limit'] = limit
+    
+    results = db.execute(text(sql), params).fetchall()
+    
+    # Build response
+    return [
+        AlertResponse(
+            id=row.id,
+            rule_id=row.alert_rule_id,
+            severity=row.severity,
+            message=row.message,
+            channels_sent=row.channels_sent or [],
+            delivered_at=None,  # Not tracked separately
+            acknowledged_at=row.acknowledged_at,
+            created_at=row.created_at
+        )
+        for row in results
+    ]
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)

@@ -144,7 +144,9 @@ class DocumentService:
             }
         
         # Check year mismatch
-        if detected_year and detected_year != period_year and period_confidence >= 50:
+        # SKIP for rent_roll: contains future lease dates that interfere with "As of Date" detection
+        if (document_type != "rent_roll" and 
+            detected_year and detected_year != period_year and period_confidence >= 50):
             print(f"⚠️  Year mismatch detected!")
             print(f"   Selected: {period_year} | Detected: {detected_year} (confidence: {period_confidence}%)")
             

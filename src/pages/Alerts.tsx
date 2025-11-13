@@ -26,10 +26,21 @@ export default function Alerts() {
 
   const fetchAlerts = async () => {
     try {
-      const response = await fetch(`/api/v1/alerts?severity=${filter}`);
+      // Build URL with optional severity filter
+      let url = `http://localhost:8000/api/v1/alerts/`;
+      if (filter && filter !== 'all') {
+        url += `?severity=${filter}`;
+      }
+      
+      const response = await fetch(url, {
+        credentials: 'include'  // Include session cookie
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setAlerts(data);
+      } else {
+        console.error('Failed to fetch alerts:', response.status);
       }
     } catch (error) {
       console.error('Error fetching alerts:', error);

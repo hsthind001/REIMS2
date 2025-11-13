@@ -125,10 +125,12 @@ const Documents = () => {
       }
       
     } catch (error: any) {
-      const errorType = error.response?.data?.detail?.error
-      const detail = error.response?.data?.detail
+      // Handle API errors from our custom ApiClient
+      const errorType = error.detail?.detail?.error || error.response?.data?.detail?.error
+      const detail = error.detail?.detail || error.response?.data?.detail
+      const status = error.status || error.response?.status
       
-      if (error.response?.status === 400 && errorType) {
+      if (status === 400 && errorType) {
         // Handle property mismatch
         if (errorType === 'property_mismatch') {
           alert(
@@ -202,22 +204,28 @@ const Documents = () => {
       } else {
         // General error
         let errorMsg = 'Unknown error'
-        if (error.response?.data?.detail) {
+        
+        // Try to extract error message from various possible locations
+        const detailObj = error.detail?.detail || error.response?.data?.detail || error.detail
+        
+        if (detailObj) {
           // If detail is a string, use it directly
-          if (typeof error.response.data.detail === 'string') {
-            errorMsg = error.response.data.detail
+          if (typeof detailObj === 'string') {
+            errorMsg = detailObj
           } 
           // If detail is an object, try to get message
-          else if (error.response.data.detail.message) {
-            errorMsg = error.response.data.detail.message
-          }
-          // Otherwise show generic message
-          else {
-            errorMsg = JSON.stringify(error.response.data.detail)
+          else if (typeof detailObj === 'object') {
+            if (detailObj.message) {
+              errorMsg = detailObj.message
+            } else {
+              // Stringify the object for debugging
+              errorMsg = JSON.stringify(detailObj, null, 2)
+            }
           }
         } else if (error.message) {
           errorMsg = error.message
         }
+        
         alert(`❌ Upload failed: ${errorMsg}`)
       }
     } finally {

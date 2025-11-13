@@ -26,7 +26,10 @@ export default function AnomalyDashboard() {
 
   const fetchAnomalies = async () => {
     try {
-      const response = await fetch('/api/v1/anomalies');
+      const response = await fetch('http://localhost:8000/api/v1/anomalies/', {
+        credentials: 'include'  // Include session cookie
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setAnomalies(data);
@@ -41,6 +44,8 @@ export default function AnomalyDashboard() {
           type,
           count
         })));
+      } else {
+        console.error('Failed to fetch anomalies:', response.status);
       }
     } catch (error) {
       console.error('Error fetching anomalies:', error);

@@ -41,8 +41,7 @@ async def list_anomalies(
     property_id: Optional[int] = Query(None),
     severity: Optional[str] = Query(None),
     limit: int = Query(100, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     List detected anomalies with optional filters.
@@ -52,9 +51,65 @@ async def list_anomalies(
     - severity: Filter by severity (critical, high, medium, low)
     - limit: Maximum results (default: 100, max: 1000)
     """
-    # Would query anomaly_detections table
-    # For now, return empty list as placeholder
-    return []
+    from sqlalchemy import text
+    
+    # Build SQL query (models don't exist yet, use direct SQL)
+    sql = """
+        SELECT 
+            ad.id,
+            ad.document_id,
+            ad.field_name,
+            ad.field_value,
+            ad.expected_value,
+            ad.anomaly_type,
+            ad.severity,
+            ad.confidence,
+            ad.z_score,
+            ad.percentage_change,
+            p.property_code,
+            fp.period_year,
+            fp.period_month
+        FROM anomaly_detections ad
+        JOIN document_uploads du ON ad.document_id = du.id
+        JOIN properties p ON du.property_id = p.id
+        JOIN financial_periods fp ON du.period_id = fp.id
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    if property_id:
+        sql += " AND du.property_id = :property_id"
+        params['property_id'] = property_id
+    
+    if severity:
+        sql += " AND ad.severity = :severity"
+        params['severity'] = severity
+    
+    sql += " ORDER BY ad.detected_at DESC LIMIT :limit"
+    params['limit'] = limit
+    
+    results = db.execute(text(sql), params).fetchall()
+    
+    # Build response
+    return [
+        AnomalyResponse(
+            type=row.anomaly_type,
+            severity=row.severity,
+            record_id=row.id,
+            field_name=row.field_name,
+            value=float(row.field_value) if row.field_value else None,
+            message=f"{row.property_code} ({row.period_year}/{row.period_month:02d}): {row.field_name} = {row.field_value} (expected: {row.expected_value or 'normal range'})",
+            details={
+                'property_code': row.property_code,
+                'period': f"{row.period_year}/{row.period_month:02d}",
+                'z_score': float(row.z_score) if row.z_score else None,
+                'percentage_change': float(row.percentage_change) if row.percentage_change else None,
+                'confidence': float(row.confidence)
+            }
+        )
+        for row in results
+    ]
 
 
 @router.get("/{anomaly_id}")

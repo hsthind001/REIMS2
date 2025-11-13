@@ -220,6 +220,7 @@ async def list_uploads(
     extraction_status: Optional[ExtractionStatusEnum] = Query(None, description="Filter by extraction status"),
     period_year: Optional[int] = Query(None, description="Filter by period year"),
     period_month: Optional[int] = Query(None, description="Filter by period month"),
+    is_active: Optional[bool] = Query(True, description="Filter by active status (default: True, only current versions)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
     db: Session = Depends(get_db)
@@ -232,13 +233,14 @@ async def list_uploads(
     - document_type: Filter by document type
     - extraction_status: Filter by extraction status
     - period_year/period_month: Filter by financial period
+    - is_active: Filter by active status (default: True, shows only current versions)
     
     **Pagination:**
     - skip: Number of records to skip
     - limit: Maximum records to return (max 500)
     
     **Returns:**
-    - Paginated list of document uploads with metadata
+    - Paginated list of document uploads with metadata (only active versions by default)
     """
     try:
         # Build query with joins
@@ -271,6 +273,10 @@ async def list_uploads(
         
         if period_month:
             query = query.filter(FinancialPeriod.period_month == period_month)
+        
+        # Filter by active status (default: only show current versions)
+        if is_active is not None:
+            query = query.filter(DocumentUpload.is_active == is_active)
         
         # Get total count
         total = query.count()

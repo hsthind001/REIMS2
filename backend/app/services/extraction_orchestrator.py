@@ -1017,6 +1017,9 @@ class ExtractionOrchestrator:
             avg_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
             needs_review = (avg_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
             
+            # Determine cash flow category based on account code and line section
+            cash_flow_category = self._determine_cash_flow_category(account_code, item.get("line_section"))
+            
             # Insert new line item
             cf_data = CashFlowData(
                 header_id=header.id,
@@ -1030,6 +1033,7 @@ class ExtractionOrchestrator:
                 ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
                 period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
                 ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                cash_flow_category=cash_flow_category,  # NEW: Set category
                 line_section=item.get("line_section"),
                 line_category=item.get("line_category"),
                 line_subcategory=item.get("line_subcategory"),
@@ -1748,4 +1752,58 @@ class ExtractionOrchestrator:
                 "error": f"Metadata capture error: {str(e)}",
                 "metadata_saved": False
             }
+    
+    def _determine_cash_flow_category(self, account_code: str, line_section: str) -> str:
+        """
+        Determine cash flow category (operating/investing/financing) based on account code
+        
+        Mapping:
+        - 4000-4999: Income → Operating
+        - 5000-5999: Operating Expenses → Operating
+        - 6000-6999: Additional Expenses → Operating
+        - 7000-7999: Other (Interest, Depreciation) → Financing/Investing
+        - 1000-1999: Assets → Investing
+        - 2000-2999: Liabilities → Financing
+        - 3000-3999: Equity → Financing
+        """
+        if not account_code or account_code == "UNMATCHED":
+            # Fallback to line_section
+            if line_section in ['INCOME', 'OPERATING_EXPENSE', 'ADDITIONAL_EXPENSE']:
+                return 'operating'
+            elif line_section == 'ADJUSTMENTS':
+                return 'financing'
+            return None
+        
+        # Parse first digit of account code
+        try:
+            first_digit = int(account_code[0])
+            
+            # Revenue (4xxx) → Operating
+            if first_digit == 4:
+                return 'operating'
+            
+            # Expenses (5xxx, 6xxx) → Operating
+            elif first_digit in [5, 6]:
+                return 'operating'
+            
+            # Other expenses (7xxx) - Interest/Depreciation
+            elif first_digit == 7:
+                if 'interest' in account_code.lower() or '7010' in account_code:
+                    return 'financing'
+                else:
+                    return 'operating'  # Depreciation is non-cash, but part of operating
+            
+            # Assets (1xxx) → Investing
+            elif first_digit == 1:
+                return 'investing'
+            
+            # Liabilities & Equity (2xxx, 3xxx) → Financing
+            elif first_digit in [2, 3]:
+                return 'financing'
+            
+            else:
+                return 'operating'  # Default
+                
+        except (ValueError, IndexError):
+            return 'operating'  # Default fallback
 

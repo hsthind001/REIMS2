@@ -31,6 +31,11 @@ class BalanceSheetMetrics(BaseModel):
     total_equity: Optional[float] = None
     current_ratio: Optional[float] = None
     debt_to_equity_ratio: Optional[float] = None
+    debt_to_assets_ratio: Optional[float] = None
+    ltv_ratio: Optional[float] = None
+    cash_position: Optional[float] = None
+    operating_cash: Optional[float] = None
+    restricted_cash: Optional[float] = None
 
 
 class IncomeStatementMetrics(BaseModel):
@@ -49,6 +54,7 @@ class CashFlowMetrics(BaseModel):
     investing_cash_flow: Optional[float] = None
     financing_cash_flow: Optional[float] = None
     net_cash_flow: Optional[float] = None
+    beginning_cash_balance: Optional[float] = None
     ending_cash_balance: Optional[float] = None
 
 

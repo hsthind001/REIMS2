@@ -426,38 +426,19 @@ class MetricsService:
         from app.models.cash_flow_header import CashFlowHeader
         from app.models.cash_account_reconciliation import CashAccountReconciliation
         
-        # Get header with all calculated metrics
-        header = self.db.query(CashFlowHeader).filter(
-            CashFlowHeader.property_id == property_id,
-            CashFlowHeader.period_id == period_id
-        ).first()
-        
-        if header:
-            # Use template v1.0 header data
-            return {
-                "total_income": header.total_income,
-                "total_expenses": header.total_expenses,
-                "net_operating_income": header.net_operating_income,
-                "noi_percentage": header.noi_percentage,
-                "mortgage_interest": header.mortgage_interest,
-                "depreciation": header.depreciation,
-                "amortization": header.amortization,
-                "net_income": header.net_income,
-                "net_income_percentage": header.net_income_percentage,
-                "total_adjustments": header.total_adjustments,
-                "cash_flow": header.cash_flow,
-                "cash_flow_percentage": header.cash_flow_percentage,
-                "beginning_cash_balance": header.beginning_cash_balance,
-                "ending_cash_balance": header.ending_cash_balance,
-            }
-        
-        # Fallback: Legacy calculation using line items (for backwards compatibility)
+        # Calculate cash flow activities from categorized line items
         operating_cf = self._sum_cash_flow_by_category(property_id, period_id, 'operating')
         investing_cf = self._sum_cash_flow_by_category(property_id, period_id, 'investing')
         financing_cf = self._sum_cash_flow_by_category(property_id, period_id, 'financing')
         
         # Net cash flow
         net_cf = (operating_cf or Decimal('0')) + (investing_cf or Decimal('0')) + (financing_cf or Decimal('0'))
+        
+        # Get header for additional data (if exists)
+        header = self.db.query(CashFlowHeader).filter(
+            CashFlowHeader.property_id == property_id,
+            CashFlowHeader.period_id == period_id
+        ).first()
         
         # Try to get cash balances from reconciliation records
         total_cash_row = self.db.query(CashAccountReconciliation).filter(
@@ -466,8 +447,8 @@ class MetricsService:
             CashAccountReconciliation.is_total_row == True
         ).first()
         
-        beginning_cash = total_cash_row.beginning_balance if total_cash_row else None
-        ending_cash = total_cash_row.ending_balance if total_cash_row else None
+        beginning_cash = total_cash_row.beginning_balance if total_cash_row else (header.beginning_cash_balance if header else None)
+        ending_cash = total_cash_row.ending_balance if total_cash_row else (header.ending_cash_balance if header else None)
         
         return {
             "operating_cash_flow": operating_cf,
