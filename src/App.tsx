@@ -22,8 +22,13 @@ import BulkImport from './pages/BulkImport'
 import ExitStrategyAnalysis from './pages/ExitStrategyAnalysis'
 import FinancialDataViewer from './pages/FinancialDataViewer'
 import ReviewQueue from './pages/ReviewQueue'
+import QualityDashboard from './pages/QualityDashboard'
+import ChartOfAccounts from './pages/ChartOfAccounts'
+import RolesPermissions from './pages/RolesPermissions'
+import SystemTasks from './pages/SystemTasks'
+import ValidationRules from './pages/ValidationRules'
 
-type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'property-intel' | 'tenant-optimizer' | 'nlq' | 'risk' | 'variance' | 'doc-summary' | 'bulk-import' | 'exit-strategy' | 'financial-data' | 'review-queue' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'property-intel' | 'tenant-optimizer' | 'nlq' | 'risk' | 'variance' | 'doc-summary' | 'bulk-import' | 'exit-strategy' | 'financial-data' | 'review-queue' | 'quality' | 'chart-of-accounts' | 'roles-permissions' | 'system-tasks' | 'validation-rules' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -79,6 +84,16 @@ function AppContent() {
         return <FinancialDataViewer />
       case 'review-queue':
         return <ReviewQueue />
+      case 'quality':
+        return <QualityDashboard />
+      case 'chart-of-accounts':
+        return <ChartOfAccounts />
+      case 'roles-permissions':
+        return <RolesPermissions />
+      case 'system-tasks':
+        return <SystemTasks />
+      case 'validation-rules':
+        return <ValidationRules />
       default:
         return <Dashboard />
     }
@@ -243,6 +258,13 @@ function AppContent() {
               {sidebarOpen && <span className="nav-text">Financial Data</span>}
             </button>
             <button
+              className={`nav-item ${currentPage === 'chart-of-accounts' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('chart-of-accounts')}
+            >
+              <span className="nav-icon">📋</span>
+              {sidebarOpen && <span className="nav-text">Chart of Accounts</span>}
+            </button>
+            <button
               className={`nav-item ${currentPage === 'variance' ? 'active' : ''}`}
               onClick={() => setCurrentPage('variance')}
             >
@@ -267,6 +289,13 @@ function AppContent() {
               {sidebarOpen && <span className="nav-text">Risk Management</span>}
             </button>
             <button
+              className={`nav-item ${currentPage === 'validation-rules' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('validation-rules')}
+            >
+              <span className="nav-icon">✔️</span>
+              {sidebarOpen && <span className="nav-text">Validation Rules</span>}
+            </button>
+            <button
               className={`nav-item ${currentPage === 'review-queue' ? 'active' : ''}`}
               onClick={() => setCurrentPage('review-queue')}
             >
@@ -282,6 +311,30 @@ function AppContent() {
             >
               <span className="nav-icon">📂</span>
               {sidebarOpen && <span className="nav-text">Bulk Import</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'quality' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('quality')}
+            >
+              <span className="nav-icon">📊</span>
+              {sidebarOpen && <span className="nav-text">Quality Dashboard</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'system-tasks' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('system-tasks')}
+            >
+              <span className="nav-icon">⚙️</span>
+              {sidebarOpen && <span className="nav-text">System Tasks</span>}
+            </button>
+
+            {sidebarOpen && <div className="nav-divider">Settings</div>}
+
+            <button
+              className={`nav-item ${currentPage === 'roles-permissions' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('roles-permissions')}
+            >
+              <span className="nav-icon">🔐</span>
+              {sidebarOpen && <span className="nav-text">Roles & Permissions</span>}
             </button>
           </nav>
         </aside>

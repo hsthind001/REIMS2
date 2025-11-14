@@ -3,6 +3,8 @@ import { propertyService } from '../lib/property';
 import { documentService } from '../lib/document';
 import type { Property, DocumentUpload } from '../types/api';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
 export default function Dashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [documents, setDocuments] = useState<DocumentUpload[]>([]);
@@ -12,6 +14,7 @@ export default function Dashboard() {
     pendingReviews: 0,
     completedExtractions: 0,
   });
+  const [qualityScore, setQualityScore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,6 +40,17 @@ export default function Dashboard() {
         pendingReviews: 0, // Would come from review queue
         completedExtractions: docs.filter((d: DocumentUpload) => d.extraction_status === 'completed').length
       });
+
+      // Load quality score
+      try {
+        const qualityRes = await fetch(`${API_BASE_URL}/quality/score`, { credentials: 'include' });
+        if (qualityRes.ok) {
+          const qualityData = await qualityRes.json();
+          setQualityScore(qualityData.overall_score || null);
+        }
+      } catch (err) {
+        console.error('Failed to load quality score:', err);
+      }
     } catch (err) {
       console.error('Failed to load dashboard', err);
     } finally {
@@ -101,6 +115,19 @@ export default function Dashboard() {
             <div className="stat-content">
               <div className="stat-value">{stats.pendingReviews}</div>
               <div className="stat-label">Pending Reviews</div>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-icon" style={{ background: '#e3f2fd' }}>📊</div>
+            <div className="stat-content">
+              <div className="stat-value">
+                {qualityScore !== null ? `${qualityScore}/100` : 'N/A'}
+              </div>
+              <div className="stat-label">Data Quality Score</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                {qualityScore !== null && qualityScore >= 95 ? '✅ Excellent' : qualityScore !== null && qualityScore >= 90 ? '🟢 Good' : qualityScore !== null && qualityScore >= 80 ? '🟡 Fair' : qualityScore !== null ? '🔴 Needs Attention' : ''}
+              </div>
             </div>
           </div>
         </div>
