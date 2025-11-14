@@ -48,7 +48,16 @@ class Property(Base):
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     rent_roll_data = relationship("RentRollData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     financial_metrics = relationship("FinancialMetrics", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    
+
+    # Next-level AI features relationships
+    research_data = relationship("PropertyResearch", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    tenant_recommendations = relationship("TenantRecommendation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    tenant_history = relationship("TenantPerformanceHistory", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+
+    # Risk management relationships
+    committee_alerts = relationship("CommitteeAlert", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    workflow_locks = relationship("WorkflowLock", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"
     

@@ -24,6 +24,21 @@ from app.models.reconciliation_session import ReconciliationSession
 from app.models.reconciliation_difference import ReconciliationDifference
 from app.models.reconciliation_resolution import ReconciliationResolution
 
+# Next-level AI features models
+from app.models.property_research import PropertyResearch
+from app.models.tenant_recommendation import TenantRecommendation
+from app.models.extraction_correction import ExtractionCorrection
+from app.models.nlq_query import NLQQuery
+from app.models.report_audit import ReportAudit
+from app.models.tenant_performance_history import TenantPerformanceHistory
+
+# Risk management models
+from app.models.committee_alert import CommitteeAlert
+from app.models.workflow_lock import WorkflowLock
+
+# Budget and forecast models
+from app.models.budget import Budget, Forecast
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -48,6 +63,18 @@ __all__ = [
     "ExtractionTemplate",
     "ReconciliationSession",
     "ReconciliationDifference",
-    "ReconciliationResolution"
+    "ReconciliationResolution",
+    # Next-level AI features
+    "PropertyResearch",
+    "TenantRecommendation",
+    "ExtractionCorrection",
+    "NLQQuery",
+    "ReportAudit",
+    "TenantPerformanceHistory",
+    # Risk management
+    "CommitteeAlert",
+    "WorkflowLock",
+    # Budget and forecast
+    "Budget",
+    "Forecast",
 ]
-
