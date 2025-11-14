@@ -36,6 +36,9 @@ from app.models.tenant_performance_history import TenantPerformanceHistory
 from app.models.committee_alert import CommitteeAlert
 from app.models.workflow_lock import WorkflowLock
 
+# Budget and forecast models
+from app.models.budget import Budget, Forecast
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -71,4 +74,7 @@ __all__ = [
     # Risk management
     "CommitteeAlert",
     "WorkflowLock",
+    # Budget and forecast
+    "Budget",
+    "Forecast",
 ]
