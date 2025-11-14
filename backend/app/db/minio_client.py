@@ -196,6 +196,6 @@ def get_file_info(
         return None
 
 
-# Initialize default bucket on startup
-ensure_bucket_exists()
+# Initialize default bucket on startup (disabled for testing without MinIO)
+# ensure_bucket_exists()
 

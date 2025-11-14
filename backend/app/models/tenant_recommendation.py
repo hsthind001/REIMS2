@@ -30,7 +30,7 @@ class TenantRecommendation(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     # Relationships
-    property = relationship("Property", back_populates="tenant_recommendations")
+    property_obj = relationship("Property", back_populates="tenant_recommendations")
 
     def __repr__(self):
         return f"<TenantRecommendation(id={self.id}, property_id={self.property_id}, unit={self.unit_identifier})>"

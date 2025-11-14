@@ -1,0 +1,16 @@
+{
+  "summary": {
+    "total": 68,
+    "passed": 67,
+    "failed": 1,
+    "skipped": 0,
+    "pass_rate": 98.52941176470588
+  },
+  "errors": [
+    {
+      "category": "Code Quality",
+      "test": "TODO comments",
+      "message": "Found 15 TODO comments"
+    }
+  ]
+}

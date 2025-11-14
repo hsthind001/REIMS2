@@ -39,7 +39,7 @@ class TenantPerformanceHistory(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     # Relationships
-    property = relationship("Property", back_populates="tenant_history")
+    property_obj = relationship("Property", back_populates="tenant_history")
 
     def __repr__(self):
         return f"<TenantPerformanceHistory(id={self.id}, tenant='{self.tenant_name}', score={self.performance_score})>"
