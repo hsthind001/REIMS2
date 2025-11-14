@@ -19,8 +19,11 @@ import RiskManagement from './pages/RiskManagement'
 import VarianceAnalysis from './pages/VarianceAnalysis'
 import DocumentSummarization from './pages/DocumentSummarization'
 import BulkImport from './pages/BulkImport'
+import ExitStrategyAnalysis from './pages/ExitStrategyAnalysis'
+import FinancialDataViewer from './pages/FinancialDataViewer'
+import ReviewQueue from './pages/ReviewQueue'
 
-type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'property-intel' | 'tenant-optimizer' | 'nlq' | 'risk' | 'variance' | 'doc-summary' | 'bulk-import' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'property-intel' | 'tenant-optimizer' | 'nlq' | 'risk' | 'variance' | 'doc-summary' | 'bulk-import' | 'exit-strategy' | 'financial-data' | 'review-queue' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -70,6 +73,12 @@ function AppContent() {
         return <DocumentSummarization />
       case 'bulk-import':
         return <BulkImport />
+      case 'exit-strategy':
+        return <ExitStrategyAnalysis />
+      case 'financial-data':
+        return <FinancialDataViewer />
+      case 'review-queue':
+        return <ReviewQueue />
       default:
         return <Dashboard />
     }
@@ -224,7 +233,31 @@ function AppContent() {
               {sidebarOpen && <span className="nav-text">Doc Summary</span>}
             </button>
 
-            {sidebarOpen && <div className="nav-divider">Risk & Analytics</div>}
+            {sidebarOpen && <div className="nav-divider">Financial Analysis</div>}
+
+            <button
+              className={`nav-item ${currentPage === 'financial-data' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('financial-data')}
+            >
+              <span className="nav-icon">💹</span>
+              {sidebarOpen && <span className="nav-text">Financial Data</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'variance' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('variance')}
+            >
+              <span className="nav-icon">📊</span>
+              {sidebarOpen && <span className="nav-text">Variance Analysis</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'exit-strategy' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('exit-strategy')}
+            >
+              <span className="nav-icon">🎯</span>
+              {sidebarOpen && <span className="nav-text">Exit Strategy</span>}
+            </button>
+
+            {sidebarOpen && <div className="nav-divider">Risk & Compliance</div>}
 
             <button
               className={`nav-item ${currentPage === 'risk' ? 'active' : ''}`}
@@ -234,11 +267,11 @@ function AppContent() {
               {sidebarOpen && <span className="nav-text">Risk Management</span>}
             </button>
             <button
-              className={`nav-item ${currentPage === 'variance' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('variance')}
+              className={`nav-item ${currentPage === 'review-queue' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('review-queue')}
             >
-              <span className="nav-icon">📊</span>
-              {sidebarOpen && <span className="nav-text">Variance Analysis</span>}
+              <span className="nav-icon">✅</span>
+              {sidebarOpen && <span className="nav-text">Review Queue</span>}
             </button>
 
             {sidebarOpen && <div className="nav-divider">Data Management</div>}
