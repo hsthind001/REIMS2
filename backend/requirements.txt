@@ -97,3 +97,37 @@ joblib==1.4.2
 passlib[bcrypt]==1.7.4
 PyJWT==2.10.1
 slowapi==0.1.9
+
+# Next-Level Features Dependencies (November 2025)
+
+# AI/LLM for Multi-Agent System & NLQ
+openai==1.54.0
+anthropic==0.39.0
+
+# Vector Database for RAG
+chromadb==0.4.22
+# Alternative: pinecone-client==3.0.0
+
+# NLP & Embeddings
+sentence-transformers==2.5.1
+langchain==0.1.9
+langchain-openai==0.0.5
+langchain-anthropic==0.1.1
+
+# Image Processing for PDF Quality Enhancement
+scikit-image==0.24.0
+
+# Report Generation
+jinja2==3.1.4
+markdown==3.7
+weasyprint==62.3
+python-docx==1.1.2
+
+# Machine Learning for Tenant Recommendations
+xgboost==2.0.3
+lightgbm==4.3.0
+scikit-learn==1.5.1
+
+# Additional utilities
+beautifulsoup4==4.12.3
+lxml==5.3.0
