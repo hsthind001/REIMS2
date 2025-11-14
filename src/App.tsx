@@ -12,8 +12,15 @@ import Alerts from './pages/Alerts'
 import AnomalyDashboard from './pages/AnomalyDashboard'
 import PerformanceMonitoring from './pages/PerformanceMonitoring'
 import UserManagement from './pages/UserManagement'
+import PropertyIntelligence from './pages/PropertyIntelligence'
+import TenantOptimizer from './pages/TenantOptimizer'
+import NaturalLanguageQuery from './pages/NaturalLanguageQuery'
+import RiskManagement from './pages/RiskManagement'
+import VarianceAnalysis from './pages/VarianceAnalysis'
+import DocumentSummarization from './pages/DocumentSummarization'
+import BulkImport from './pages/BulkImport'
 
-type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'property-intel' | 'tenant-optimizer' | 'nlq' | 'risk' | 'variance' | 'doc-summary' | 'bulk-import' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -49,6 +56,20 @@ function AppContent() {
         return <PerformanceMonitoring />
       case 'users':
         return <UserManagement />
+      case 'property-intel':
+        return <PropertyIntelligence />
+      case 'tenant-optimizer':
+        return <TenantOptimizer />
+      case 'nlq':
+        return <NaturalLanguageQuery />
+      case 'risk':
+        return <RiskManagement />
+      case 'variance':
+        return <VarianceAnalysis />
+      case 'doc-summary':
+        return <DocumentSummarization />
+      case 'bulk-import':
+        return <BulkImport />
       default:
         return <Dashboard />
     }
@@ -170,6 +191,64 @@ function AppContent() {
             >
               <span className="nav-icon">👥</span>
               {sidebarOpen && <span className="nav-text">Users</span>}
+            </button>
+
+            {sidebarOpen && <div className="nav-divider">AI & Intelligence</div>}
+
+            <button
+              className={`nav-item ${currentPage === 'property-intel' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('property-intel')}
+            >
+              <span className="nav-icon">🔍</span>
+              {sidebarOpen && <span className="nav-text">Property Intel</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'tenant-optimizer' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('tenant-optimizer')}
+            >
+              <span className="nav-icon">🎯</span>
+              {sidebarOpen && <span className="nav-text">Tenant Optimizer</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'nlq' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('nlq')}
+            >
+              <span className="nav-icon">💬</span>
+              {sidebarOpen && <span className="nav-text">Ask AI</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'doc-summary' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('doc-summary')}
+            >
+              <span className="nav-icon">📄</span>
+              {sidebarOpen && <span className="nav-text">Doc Summary</span>}
+            </button>
+
+            {sidebarOpen && <div className="nav-divider">Risk & Analytics</div>}
+
+            <button
+              className={`nav-item ${currentPage === 'risk' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('risk')}
+            >
+              <span className="nav-icon">🛡️</span>
+              {sidebarOpen && <span className="nav-text">Risk Management</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'variance' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('variance')}
+            >
+              <span className="nav-icon">📊</span>
+              {sidebarOpen && <span className="nav-text">Variance Analysis</span>}
+            </button>
+
+            {sidebarOpen && <div className="nav-divider">Data Management</div>}
+
+            <button
+              className={`nav-item ${currentPage === 'bulk-import' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('bulk-import')}
+            >
+              <span className="nav-icon">📂</span>
+              {sidebarOpen && <span className="nav-text">Bulk Import</span>}
             </button>
           </nav>
         </aside>
