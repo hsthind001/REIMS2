@@ -45,6 +45,7 @@ class ExtractionFieldMetadata(Base):
     # Relationships
     document = relationship("DocumentUpload", back_populates="field_metadata")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+    corrections = relationship("ExtractionCorrection", back_populates="field_metadata", cascade="all, delete-orphan")
     
     # Helper Methods
     @property

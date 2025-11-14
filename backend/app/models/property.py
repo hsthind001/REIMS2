@@ -50,9 +50,9 @@ class Property(Base):
     financial_metrics = relationship("FinancialMetrics", back_populates="property", cascade="all, delete-orphan", lazy="noload")
 
     # Next-level AI features relationships
-    research_data = relationship("PropertyResearch", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    tenant_recommendations = relationship("TenantRecommendation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    tenant_history = relationship("TenantPerformanceHistory", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    research_data = relationship("PropertyResearch", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
+    tenant_recommendations = relationship("TenantRecommendation", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
+    tenant_history = relationship("TenantPerformanceHistory", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
 
     # Risk management relationships
     committee_alerts = relationship("CommitteeAlert", back_populates="property", cascade="all, delete-orphan", lazy="noload")

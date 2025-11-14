@@ -4,7 +4,7 @@ Natural Language Query Model - Query log and cache
 from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, Numeric, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from app.db.base_class import Base
+from app.db.database import Base
 
 
 class NLQQuery(Base):

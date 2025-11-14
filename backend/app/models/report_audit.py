@@ -4,7 +4,7 @@ Report Audit Model - M3 Auditor results
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Boolean, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from app.db.base_class import Base
+from app.db.database import Base
 
 
 class ReportAudit(Base):

@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.
 revision = '20251114_next_level_features'
-down_revision = None  # Update this to latest migration
+down_revision = '20251114_003'
 branch_labels = None
 depends_on = None
 

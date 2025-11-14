@@ -1,7 +1,7 @@
 """Add Cash Flow Template v1.0 tables
 
 Revision ID: 20251107_1400
-Revises: 20251107_1213
+Revises: cf002std0002
 Create Date: 2025-11-07 14:00:00
 
 Creates the missing Cash Flow Template v1.0 tables:
@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20251107_1400'
-down_revision = '20251107_1213'
+down_revision = 'cf002std0002'
 branch_labels = None
 depends_on = None
 

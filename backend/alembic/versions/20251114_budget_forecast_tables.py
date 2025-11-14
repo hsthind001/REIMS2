@@ -11,18 +11,21 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = '20251114_002'
-down_revision = '20251114_001'
+down_revision = '852cf3e0750d'
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
-    # Create BudgetStatus enum
+    # Create BudgetStatus enum (only if it doesn't exist)
+    conn = op.get_bind()
+    result = conn.execute(sa.text("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'budgetstatus')")).scalar()
+    if not result:
+        conn.execute(sa.text("CREATE TYPE budgetstatus AS ENUM ('DRAFT', 'APPROVED', 'ACTIVE', 'REVISED', 'ARCHIVED')"))
     budget_status = postgresql.ENUM(
         'DRAFT', 'APPROVED', 'ACTIVE', 'REVISED', 'ARCHIVED',
         name='budgetstatus'
     )
-    budget_status.create(op.get_bind())
 
     # Create budgets table
     op.create_table(
