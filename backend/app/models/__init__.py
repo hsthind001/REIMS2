@@ -32,6 +32,10 @@ from app.models.nlq_query import NLQQuery
 from app.models.report_audit import ReportAudit
 from app.models.tenant_performance_history import TenantPerformanceHistory
 
+# Risk management models
+from app.models.committee_alert import CommitteeAlert
+from app.models.workflow_lock import WorkflowLock
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -64,4 +68,7 @@ __all__ = [
     "NLQQuery",
     "ReportAudit",
     "TenantPerformanceHistory",
+    # Risk management
+    "CommitteeAlert",
+    "WorkflowLock",
 ]

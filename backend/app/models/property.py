@@ -54,6 +54,10 @@ class Property(Base):
     tenant_recommendations = relationship("TenantRecommendation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     tenant_history = relationship("TenantPerformanceHistory", back_populates="property", cascade="all, delete-orphan", lazy="noload")
 
+    # Risk management relationships
+    committee_alerts = relationship("CommitteeAlert", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    workflow_locks = relationship("WorkflowLock", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"
     
