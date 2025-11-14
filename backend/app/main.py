@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -81,6 +81,9 @@ app.include_router(variance_analysis.router, prefix=settings.API_V1_STR, tags=["
 
 # Data import
 app.include_router(bulk_import.router, prefix=settings.API_V1_STR, tags=["bulk-import"])
+
+# Document summarization
+app.include_router(document_summary.router, prefix=settings.API_V1_STR, tags=["document-summary"])
 
 
 @app.get("/")

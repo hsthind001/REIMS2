@@ -49,7 +49,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
+
+    # LLM API Settings
+    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
+    LLM_PROVIDER: str = "openai"  # "openai" or "anthropic"
+    LLM_MODEL: str = "gpt-4"  # gpt-4, gpt-3.5-turbo, claude-3-opus-20240229
+    LLM_TEMPERATURE: float = 0.3  # Lower temperature for factual summarization
+    LLM_MAX_TOKENS: int = 4000
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -39,6 +39,9 @@ from app.models.workflow_lock import WorkflowLock
 # Budget and forecast models
 from app.models.budget import Budget, Forecast
 
+# Document summarization models
+from app.models.document_summary import DocumentSummary
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -77,4 +80,6 @@ __all__ = [
     # Budget and forecast
     "Budget",
     "Forecast",
+    # Document summarization
+    "DocumentSummary",
 ]
