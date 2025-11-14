@@ -17,11 +17,34 @@ import logging
 
 from app.utils.engines.pymupdf_engine import PyMuPDFEngine
 from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
-from app.utils.engines.camelot_engine import CamelotEngine
-from app.utils.engines.ocr_engine import OCREngine
-from app.utils.engines.easyocr_engine import EasyOCREngine
-from app.utils.engines.layoutlm_engine import LayoutLMEngine
 from app.utils.engines.base_extractor import ExtractionResult
+
+# Optional engines with heavy dependencies - import gracefully
+try:
+    from app.utils.engines.camelot_engine import CamelotEngine
+    CAMELOT_AVAILABLE = True
+except ImportError:
+    CAMELOT_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("Camelot engine not available - install camelot-py for table extraction")
+
+try:
+    from app.utils.engines.ocr_engine import OCREngine
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
+try:
+    from app.utils.engines.easyocr_engine import EasyOCREngine
+    EASYOCR_AVAILABLE = True
+except ImportError:
+    EASYOCR_AVAILABLE = False
+
+try:
+    from app.utils.engines.layoutlm_engine import LayoutLMEngine
+    LAYOUTLM_AVAILABLE = True
+except ImportError:
+    LAYOUTLM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +131,23 @@ class EnhancedEnsembleEngine:
     STRONG_CONSENSUS_BONUS = 0.20  # +20% if 5+ engines agree
 
     def __init__(self):
-        """Initialize all extraction engines"""
+        """Initialize all available extraction engines"""
         self.engines = {
             'PyMuPDFEngine': PyMuPDFEngine(),
             'PDFPlumberEngine': PDFPlumberEngine(),
-            'CamelotEngine': CamelotEngine(),
-            'OCREngine': OCREngine(),
-            'EasyOCREngine': EasyOCREngine(),
-            'LayoutLMEngine': LayoutLMEngine(),
         }
+
+        # Add optional engines if available
+        if CAMELOT_AVAILABLE:
+            self.engines['CamelotEngine'] = CamelotEngine()
+        if OCR_AVAILABLE:
+            self.engines['OCREngine'] = OCREngine()
+        if EASYOCR_AVAILABLE:
+            self.engines['EasyOCREngine'] = EasyOCREngine()
+        if LAYOUTLM_AVAILABLE:
+            self.engines['LayoutLMEngine'] = LayoutLMEngine()
+
+        logger.info(f"Ensemble Engine initialized with {len(self.engines)} engines: {list(self.engines.keys())}")
 
     def extract_with_ensemble(
         self,

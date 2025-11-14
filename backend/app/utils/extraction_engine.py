@@ -1,15 +1,43 @@
 from typing import Dict, List, Optional
+import logging
 from app.utils.engines.pymupdf_engine import PyMuPDFEngine
 from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
-from app.utils.engines.camelot_engine import CamelotEngine
-from app.utils.engines.ocr_engine import OCREngine
-from app.utils.engines.layoutlm_engine import LayoutLMEngine
-from app.utils.engines.easyocr_engine import EasyOCREngine
 from app.utils.engines.base_extractor import ExtractionResult
 from app.utils.pdf_classifier import PDFClassifier, DocumentType
 from app.utils.quality_validator import QualityValidator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+
+# Optional engines with heavy dependencies - import gracefully
+logger = logging.getLogger(__name__)
+
+try:
+    from app.utils.engines.camelot_engine import CamelotEngine
+    CAMELOT_AVAILABLE = True
+except ImportError:
+    CAMELOT_AVAILABLE = False
+    logger.warning("Camelot engine not available")
+
+try:
+    from app.utils.engines.ocr_engine import OCREngine
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    logger.warning("OCR engine not available")
+
+try:
+    from app.utils.engines.layoutlm_engine import LayoutLMEngine
+    LAYOUTLM_AVAILABLE = True
+except ImportError:
+    LAYOUTLM_AVAILABLE = False
+    logger.warning("LayoutLM engine not available")
+
+try:
+    from app.utils.engines.easyocr_engine import EasyOCREngine
+    EASYOCR_AVAILABLE = True
+except ImportError:
+    EASYOCR_AVAILABLE = False
+    logger.warning("EasyOCR engine not available")
 
 
 class MultiEngineExtractor:
@@ -21,17 +49,31 @@ class MultiEngineExtractor:
     """
     
     def __init__(self):
-        # Initialize engines
+        # Initialize core engines (always available)
         self.pymupdf = PyMuPDFEngine()
         self.pdfplumber = PDFPlumberEngine()
-        self.camelot = CamelotEngine()
-        self.ocr = OCREngine()
-        self.layoutlm = LayoutLMEngine()  # NEW Sprint 2
-        self.easyocr = EasyOCREngine()    # NEW Sprint 2
-        
+
+        # Initialize optional engines if available
+        self.camelot = CamelotEngine() if CAMELOT_AVAILABLE else None
+        self.ocr = OCREngine() if OCR_AVAILABLE else None
+        self.layoutlm = LayoutLMEngine() if LAYOUTLM_AVAILABLE else None
+        self.easyocr = EasyOCREngine() if EASYOCR_AVAILABLE else None
+
         # Initialize utilities
         self.classifier = PDFClassifier()
         self.validator = QualityValidator()
+
+        # Log available engines
+        available_engines = ['PyMuPDF', 'PDFPlumber']
+        if self.camelot:
+            available_engines.append('Camelot')
+        if self.ocr:
+            available_engines.append('OCR')
+        if self.layoutlm:
+            available_engines.append('LayoutLM')
+        if self.easyocr:
+            available_engines.append('EasyOCR')
+        logger.info(f"MultiEngineExtractor initialized with {len(available_engines)} engines: {available_engines}")
     
     def detect_property_name(self, pdf_data: bytes, available_properties: list) -> Dict:
         """
