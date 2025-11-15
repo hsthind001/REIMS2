@@ -48,7 +48,7 @@ services:
       - -c
       - |
         echo '🔄 DB Init Container: Creating base tables...';
-        cd /app && python3 -c "from app.db.database import engine, Base; from app.models import user, property, document_upload, financial_period, chart_of_accounts, validation_rule, extraction_template, extraction_log, audit_trail, balance_sheet_data, income_statement_data, cash_flow_data, rent_roll_data, validation_result, financial_metric, reconciliation_session, reconciliation_difference, reconciliation_resolution; Base.metadata.create_all(bind=engine); print('✅ Base tables created')";
+        cd /app && python3 -c "from app.db.database import engine, Base; from app.models import user, property, document_upload, financial_period, chart_of_accounts, validation_rule, extraction_template, extraction_log, audit_trail, balance_sheet_data, income_statement_data, cash_flow_data, rent_roll_data, validation_result, financial_metrics, reconciliation_session, reconciliation_difference, reconciliation_resolution; Base.metadata.create_all(bind=engine); print('✅ Base tables created')";
         echo '🔄 DB Init Container: Running migrations...';
         cd /app && alembic upgrade head;
         echo '🌱 DB Init Container: Seeding database...';

@@ -1,0 +1,212 @@
+{
+  "timestamp": "2025-11-14T11:31:07.147743",
+  "summary": {
+    "total": 45,
+    "passed": 5,
+    "failed": 40,
+    "skipped": 0,
+    "pass_rate": 11.11111111111111
+  },
+  "errors": [
+    {
+      "category": "API Imports",
+      "test": "Documents API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Reports API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Document Summary API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Statistical Anomalies API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Variance Analysis API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Bulk Import API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Risk Alerts API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Workflow Locks API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Property Research API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "Tenant Recommendations API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "API Imports",
+      "test": "NLQ API",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "PDF Extraction Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Financial Data Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Validation Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Document Summarization Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Statistical Anomaly Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Variance Analysis Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Bulk Import Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "DSCR Monitoring Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "LTV Monitoring Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Cap Rate Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Exit Strategy Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Workflow Lock Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Property Research Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "Tenant Recommendation Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Imports",
+      "test": "NLQ Service",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Functions",
+      "test": "Exit Strategy - Hold Calculation",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Functions",
+      "test": "Cap Rate Calculation",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Functions",
+      "test": "DSCR Calculation",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Service Functions",
+      "test": "LTV Calculation",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Statistical",
+      "test": "Z-Score Outlier Detection",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Statistical",
+      "test": "CUSUM Shift Detection",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Variance",
+      "test": "Variance Calculation",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Variance",
+      "test": "Tolerance Check (Within)",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Variance",
+      "test": "Tolerance Check (Outside)",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "NLQ",
+      "test": "Query: 'Show all properties'",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "NLQ",
+      "test": "Query: 'Total NOI for 2024'",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "NLQ",
+      "test": "Query: 'Properties with DSCR below 1.25'",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Doc Summary",
+      "test": "M1/M2/M3 Pattern Implementation",
+      "message": "No module named 'langdetect'"
+    },
+    {
+      "category": "Bulk Import",
+      "test": "CSV Validation Function",
+      "message": "No module named 'langdetect'"
+    }
+  ]
+}

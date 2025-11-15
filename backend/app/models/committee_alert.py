@@ -96,7 +96,7 @@ class CommitteeAlert(Base):
     dismissal_reason = Column(Text, nullable=True)
 
     # Additional metadata
-    metadata = Column(JSONB, nullable=True)  # Store alert-specific data
+    alert_metadata = Column(JSONB, nullable=True)  # Store alert-specific data
 
     # Related data (for traceability)
     related_metric = Column(String(100), nullable=True)  # e.g., "DSCR", "Occupancy Rate"
@@ -142,7 +142,7 @@ class CommitteeAlert(Base):
             "dismissed_by": self.dismissed_by,
             "resolution_notes": self.resolution_notes,
             "dismissal_reason": self.dismissal_reason,
-            "metadata": self.metadata,
+            "alert_metadata": self.alert_metadata,
             "related_metric": self.related_metric,
             "br_id": self.br_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,

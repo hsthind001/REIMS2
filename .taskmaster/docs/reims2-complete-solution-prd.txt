@@ -1,0 +1,426 @@
+# REIMS2 Complete Solution - Product Requirements Document
+**Version:** 2.0
+**Date:** November 15, 2025
+**Status:** Approved for Implementation
+
+---
+
+## Executive Summary
+
+Transform REIMS2 into a world-class Real Estate Investment Monitoring System that:
+- Consolidates 26 fragmented pages into 5 strategic, world-class pages
+- Incorporates best features from ARGUS (Altus Group), Yardi Systems, MRI Software, and Trepp
+- Leverages Generative AI, AI Agents, and Agentic AI for competitive advantage
+- Ensures 100% coverage of all REIMS business requirements (BR-001 through BR-014)
+- Uses open-source, low-cost, low-maintenance solutions
+
+---
+
+## Vision & Context
+
+Singh World Foundation must safeguard its CMBS-financed, strip-mall portfolio as it nears Year-10 maturity. The Real Estate Investment Monitoring System (REIMS) will:
+- Ingest financial data from PDF, CSV, and Excel with ≥99% accuracy
+- Deliver automated risk alerts and enforce committee-grade governance
+- Enable executives to make refinance or sale decisions with confidence
+- Provide AI-powered insights for competitive advantage
+
+---
+
+## Business Requirements Coverage
+
+### BR-001: Multi-Format Ingestion
+- Auto-ingest PDF, CSV, and Excel financial packages monthly
+- Bulk-load three years of backlog
+- Normalize all layouts into unified schema
+- Support automated ingestion from any document format
+
+### BR-002: Field-Level Confidence
+- Compute and store confidence score (0-1) for every extracted value
+- Scores < 0.99 mark field for remediation and halt downstream calculations
+- Display confidence scores in UI
+
+### BR-003: Risk Alerts & Workflow Locks
+- Pause property workflow when DSCR < 1.25 or occupancy breaches thresholds
+- Create committee_alerts record
+- Notify Finance or Occupancy Sub-Committee
+- Unlock requires committee approval recorded in workflow_locks
+
+### BR-004: Exit-Strategy Intelligence
+- Calculate cap-rate trends, interest-rate impact, and IRR
+- Support hold/refinance/sale scenarios
+- Persist results with recommendation confidence ≥ 0.70
+
+### BR-005: Adaptive Parsing Accuracy
+- Combined rule-based, table, OCR/ML fallbacks
+- Deliver ≥99% field-level extraction accuracy
+- Support all document formats and layouts
+
+### BR-006: Security & Compliance
+- Encrypt data at rest and in transit (AWS KMS prod, Keychain dev)
+- Protect APIs with JWT/OAuth2 and RBAC (Supervisor/Analyst/Viewer)
+- Log all actions in audit_log with BR ID linkage
+
+### BR-007: Traceability & Audit
+- Provide end-to-end lineage (file/cell → parsed field → analytics → alert → dashboard)
+- Export audit bundles on demand for lenders or regulators
+
+### BR-008: Dynamic Tolerance Management & Statistical Anomaly Detection
+- API-editable tolerances for every metric
+- Nightly batch job flags z-score ≥ 2.0 anomalies and CUSUM trend shifts
+- Configurable sensitivity per property class
+
+### BR-009: Property Cost Management
+- Track client information
+- Track insurance costs
+- Track mortgage costs
+- Track initial buying costs
+- Track utility costs
+- Track any other property-related costs
+
+### BR-010: Square Footage & Unit Management
+- Total square foot rental space for each shopping mall
+- Square footage for each store in the shopping mall
+- Track number of stores/units in each shopping mall/commercial property
+
+### BR-011: Occupancy Management
+- Track occupied stores/units
+- Track available for rent stores/units
+- Display occupancy status in UI
+
+### BR-012: Agentic AI and Generative AI
+- Use Agentic AI and Generative AI for competitive advantage
+- Geo-locational factors analysis (employment rate, new businesses, government developments, demographics)
+- Political change impact analysis on property values
+- Use current value/sales price of nearby commercial properties for insights
+- AI-powered tenant recommendations based on square footage, location, and existing tenants
+- Natural language query interface using whole REIMS data + internet data
+
+### BR-013: Non-Functional Requirements
+- User-friendly and easy-to-use frontend interface
+- Open source, low build cost, low maintenance cost, low operation cost
+- Best features from ARGUS, Yardi, MRI Software, and Trepp
+- Automated ingestion from any doc format (PDF/Excel/CSV)
+- AI-based anomaly detection (Z-score, CUSUM)
+- Gen-AI for lease & OM summarization
+- Workflow locks tied to governance (committee approval)
+
+### BR-014: Internal Gen-AI Summarization and AI Agents
+- Integrate GPT-OSS model service for real-time lease documents and OM summarization
+- AI-generated summaries with confidence scores ≥ 0.70
+- Clearly mark machine-generated content
+- Support blue-green deployment
+- Maintain p95 response times < 800ms under 10 concurrent requests
+
+---
+
+## Frontend Redesign Requirements
+
+### Current State
+- 26 fragmented pages with corporate gray UI
+- All functionality exists but poor UX
+- Scattered information across multiple pages
+
+### Target State
+- 5 strategic, world-class pages
+- Colorful UI (Financial Times + Bloomberg Terminal + Notion style)
+- < 2 seconds to critical insight
+- Mobile-first responsive design
+- 100% feature parity (no functionality lost)
+
+### The 5 Strategic Pages
+
+#### Page 1: Command Center (/dashboard)
+**Consolidates:** Dashboard, Alerts, AnomalyDashboard, PerformanceMonitoring, RiskManagement (5→1)
+- Portfolio Health Score hero section (gradient background)
+- Key Metrics Cards (4 large cards with sparklines)
+- Critical Alerts section (red glow borders, pulse animations)
+- Portfolio Performance Grid (interactive table with sparklines)
+- AI Insights Widget (purple accent, animated typing)
+- Quick Actions floating button
+- Property addition functionality (Add Property button)
+- File upload functionality (Upload Document button)
+
+#### Page 2: Portfolio Hub (/portfolio)
+**Consolidates:** Properties, PropertyIntelligence, TenantOptimizer, Documents (4→1)
+- Master-detail layout (30% left panel, 70% right panel)
+- Color-coded property cards (red/amber/green based on status)
+- Property details tabs (Overview, Financials, Market Intel, Tenants, Docs)
+- Market intelligence visualizations (purple AI section)
+- Tenant matching engine UI (green tint for high scores)
+- Square footage and unit management
+- Occupancy tracking (occupied/available stores)
+- Property cost tracking (insurance, mortgage, utilities, etc.)
+
+#### Page 3: Financial Command (/financial)
+**Consolidates:** FinancialDataViewer, ChartOfAccounts, VarianceAnalysis, ExitStrategyAnalysis, Reports, Reconciliation, NaturalLanguageQuery, DocumentSummarization (8→1)
+- AI Financial Assistant hero (blue gradient)
+- Financial statements carousel
+- Variance analysis heatmap (color-coded cells)
+- Exit strategy comparison cards (purple glow for recommended)
+- AI chat interface (purple left border)
+- Chart of accounts tree view
+- Reconciliation dashboard
+- **All Financial Metrics Required:**
+  - Property-Level: NOI, Gross Revenue, Operating Expenses, Cash-on-Cash Return, Cap Rate (Current & Initial), DSCR, LTV, Debt Yield, Occupancy Rate, Revenue per Square Foot, Expense Ratio
+  - Portfolio-Level: Total Portfolio Value, Portfolio NOI, Average Occupancy, Portfolio IRR, Average DSCR, Average LTV, Average Cap Rate, Total Gross Revenue, Total Operating Expenses
+  - Investment Performance: IRR, NPV, Equity Multiple, Total Return, Cash Distributions, Unrealized Gain/Loss
+  - Variance Metrics: Budget vs Actual (Revenue, Expenses, NOI), Period-over-Period Growth, Year-over-Year Growth
+
+#### Page 4: Data Control Center (/operations)
+**Consolidates:** QualityDashboard, ValidationRules, BulkImport, ReviewQueue, SystemTasks, Documents (6→1)
+- Data Quality Score hero (green gradient for excellent)
+- Quality breakdown donut charts (3 charts side-by-side)
+- Real-time task monitoring (blue tint, pulse animations)
+- Validation rules manager
+- Bulk import interface (PDF/CSV/Excel)
+- Review queue workflow
+- File upload functionality for all document types
+
+#### Page 5: Admin Hub (/settings)
+**Consolidates:** UserManagement, RolesPermissions, Login/Register (3→1)
+- User management interface (role-based color coding)
+- RBAC matrix view (green checkmarks, red X)
+- Settings panel
+- Audit log viewer
+
+---
+
+## Design System Requirements
+
+### Color Strategy
+- **Primary Colors:** Success Green (#10B981), Info Blue (#3B82F6), Warning Amber (#F59E0B), Danger Red (#EF4444), Premium Purple (#8B5CF6)
+- **Semantic Colors:** Profit Green (#059669), Loss Red (#DC2626), Metric Blue (#0284C7), Asset Navy (#1E40AF), Equity Indigo (#4F46E5)
+- **UI Colors:** Background (#F9FAFB), Surface (#FFFFFF), Border (#E5E7EB), Text Primary (#111827), Text Secondary (#6B7280)
+- **Gradients:** Hero, Success Glow, Warning Glow, Danger Glow
+
+### Component Library
+- Buttons (Primary, Success, Danger, Premium variants with gradients)
+- Cards (Default, Status-coded borders, Glow effects)
+- Data Visualizations (Sparklines, Progress bars, Donut charts)
+- Typography (H1: 32px bold, H2: 24px semi-bold, Body: 14px regular)
+- Icons (Lucide Icons, 20px default, animated variants)
+
+### Responsive Breakpoints
+- Desktop: 1280px+ (full 3-column grid)
+- Laptop: 1024px+ (2-column grid)
+- Tablet: 768px+ (single column, larger touch targets)
+- Mobile: <768px (stack everything, hide non-critical)
+
+---
+
+## AI & ML Requirements
+
+### Agentic AI Features
+- Multi-agent system for document processing (M1/M2/M3 agents)
+- Autonomous decision-making for data quality remediation
+- Self-healing extraction pipeline
+
+### Generative AI Features
+- Natural Language Query (NLQ) engine for plain English questions
+- Document summarization (lease documents, OM)
+- AI-powered insights and recommendations
+- Geo-locational analysis (employment, demographics, government developments)
+- Political change impact analysis
+- Property value analysis using nearby sales data
+- Tenant recommendation engine based on location, square footage, existing tenants
+
+### AI Integration Requirements
+- Use GPT-OSS or open-source LLM (Llama, Mistral, etc.)
+- Maintain p95 response times < 800ms
+- Support blue-green deployment
+- Confidence scores ≥ 0.70 for all AI outputs
+- Clearly mark machine-generated content
+
+---
+
+## Technical Requirements
+
+### Open Source Stack
+- **Frontend:** React + TypeScript + Tailwind CSS + Vite
+- **Backend:** Python + FastAPI + SQLAlchemy
+- **Database:** PostgreSQL
+- **Storage:** MinIO (S3-compatible)
+- **Task Queue:** Celery + Redis
+- **AI/ML:** LangChain, Ollama (or GPT-OSS), scikit-learn
+- **Monitoring:** Prometheus + Grafana (optional)
+
+### Performance Requirements
+- Page load time: < 1 second
+- Time to Portfolio Health: < 3 seconds (from login)
+- Clicks to Critical Data: < 2 clicks average
+- Mobile Performance Score: > 90 (Lighthouse)
+- API availability: ≥ 99.9%
+
+### Security Requirements
+- Encryption at rest and in transit
+- JWT/OAuth2 authentication
+- RBAC with Supervisor/Analyst/Viewer roles
+- Audit logging for all actions
+- SOX & GAAP compliance
+- CMBS loan covenant monitoring
+
+---
+
+## Success Metrics
+
+### Quantitative KPIs
+- Parsing Coverage: ≥ 99% fields auto-extracted per batch
+- Critical Alert Latency: < 5 minutes from document upload to committee notification
+- Security Incidents: 0 Critical/High findings
+- Workflow Uptime: ≥ 99.9% API availability
+- Exit-Scenario Accuracy: ≤ 3% variance between modeled and actual outcomes
+- Page Reduction: 26 pages → 5 pages (81% reduction)
+- Feature Parity: 100% (no functionality lost)
+
+### Qualitative Metrics
+- CEO Satisfaction: 9+/10
+- Visual Appeal: "Best-in-class financial software"
+- Ease of Use: "Intuitive, no training needed"
+- Brand Perception: "Premium, trustworthy, modern"
+
+---
+
+## Implementation Phases
+
+### Phase 1: Design System Setup (Week 1)
+- Install Tailwind CSS + Headless UI
+- Create color palette variables
+- Build component library (20 core components)
+- Set up Lucide Icons
+- Create gradient utilities
+
+### Phase 2: Command Center (Week 2-3)
+- Build hero section with portfolio health score
+- Implement key metrics cards with animations
+- Create critical alerts section with real-time updates
+- Build interactive portfolio grid with sparklines
+- Add AI insights widget with purple theming
+- Implement floating action button
+- Add property addition functionality
+- Add file upload functionality
+
+### Phase 3: Portfolio Hub (Week 4-5)
+- Build master-detail layout
+- Create color-coded property cards
+- Implement property details tabs
+- Integrate market intelligence visualizations
+- Add tenant matching engine UI
+- Build documents section
+- Add square footage and unit management
+- Add occupancy tracking
+- Add property cost tracking
+
+### Phase 4: Financial Command (Week 6-7)
+- Create financial statements carousel
+- Build variance analysis heatmap
+- Implement exit strategy comparison cards
+- Add AI chat interface with purple theming
+- Build chart of accounts tree view
+- Create reconciliation dashboard
+- Ensure all financial metrics are displayed
+
+### Phase 5: Data Control Center (Week 8)
+- Implement quality score widgets with donut charts
+- Build real-time task monitoring
+- Create validation rules manager
+- Add bulk import interface (PDF/CSV/Excel)
+- Build review queue workflow
+
+### Phase 6: Admin Hub (Week 9)
+- Create user management interface
+- Build RBAC matrix view
+- Implement settings panel
+- Add audit log viewer
+
+### Phase 7: AI/ML Integration (Week 10)
+- Integrate Agentic AI for document processing
+- Implement Generative AI for NLQ and summarization
+- Add geo-locational analysis features
+- Implement political change impact analysis
+- Build tenant recommendation engine
+- Integrate property value analysis
+
+### Phase 8: Polish & Testing (Week 11-12)
+- Performance optimization (lazy loading, code splitting)
+- Accessibility audit (WCAG 2.1 AA)
+- Cross-browser testing
+- Mobile responsive testing
+- User acceptance testing with CEO
+- Integration testing for all BR requirements
+
+---
+
+## Deliverables
+
+### Small Deliverables (Agile Approach)
+1. Design system foundation
+2. Command Center MVP
+3. Portfolio Hub MVP
+4. Financial Command MVP
+5. Data Control Center MVP
+6. Admin Hub MVP
+7. AI/ML integration MVP
+8. Full feature consolidation
+9. Performance optimization
+10. Final testing and deployment
+
+---
+
+## Open Source Solutions
+
+### AI/ML Stack
+- **LLM:** Ollama (local) or GPT-OSS (cloud)
+- **LangChain:** Agent orchestration
+- **scikit-learn:** Statistical anomaly detection (Z-score, CUSUM)
+- **Pandas/NumPy:** Data processing
+
+### Infrastructure
+- **Docker:** Containerization
+- **PostgreSQL:** Database
+- **MinIO:** Object storage
+- **Redis:** Caching and task queue
+- **Celery:** Background tasks
+
+### Frontend
+- **React:** UI framework
+- **TypeScript:** Type safety
+- **Tailwind CSS:** Styling
+- **Vite:** Build tool
+- **Lucide Icons:** Icon library
+- **Recharts:** Data visualization
+
+---
+
+## Risk Mitigation
+
+- **Feature Loss Risk:** Maintain 100% API coverage, test all existing functionality
+- **Performance Risk:** Implement lazy loading, code splitting, optimize bundle size
+- **User Adoption Risk:** Gradual rollout, user training, feedback loops
+- **Timeline Risk:** Phased implementation, MVP first, iterative improvements
+- **AI Integration Risk:** Start with simple use cases, gradually increase complexity
+- **Cost Risk:** Use open-source solutions, optimize resource usage
+
+---
+
+## Dependencies
+
+- Tailwind CSS installation
+- Headless UI component library
+- Lucide Icons package
+- Chart library (Recharts for sparklines, donut charts)
+- Animation library (Framer Motion for transitions, pulse effects)
+- LangChain for AI agent orchestration
+- Ollama or GPT-OSS for LLM
+- scikit-learn for anomaly detection
+
+---
+
+## Notes
+
+- All specifications are detailed in `CEO_FRONTEND_REDESIGN_2025.md`
+- Complete API mappings in `FINAL_FRONTEND_SPECIFICATION.md`
+- Current 26 pages must be preserved during transition (feature parity)
+- Design system must be established before page consolidation
+- AI features should be integrated incrementally
+- All BR requirements must be verified after implementation
+

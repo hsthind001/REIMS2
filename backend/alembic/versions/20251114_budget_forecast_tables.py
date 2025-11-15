@@ -1,7 +1,7 @@
 """Budget and Forecast tables
 
 Revision ID: 20251114_002
-Revises: 20251114_001
+Revises: 20251114_next_level_features
 Create Date: 2025-11-14 12:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = '20251114_002'
-down_revision = '20251114_001'
+down_revision = '20251114_next_level_features'
 branch_labels = None
 depends_on = None
 

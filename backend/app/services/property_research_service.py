@@ -155,7 +155,8 @@ class PropertyResearchService:
         historical_research = self.db.query(PropertyResearch)\
             .filter(PropertyResearch.property_id == property_id)\
             .order_by(PropertyResearch.research_date.desc())\
-            .limit(years * 4)\ .all()  # Assuming quarterly research
+            .limit(years * 4)\
+            .all()  # Assuming quarterly research
 
         if not historical_research:
             return {

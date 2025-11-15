@@ -3,27 +3,13 @@ import './App.css'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { LoginForm } from './components/LoginForm'
 import { RegisterForm } from './components/RegisterForm'
-import Dashboard from './pages/Dashboard'
-import Properties from './pages/Properties'
-import Documents from './pages/Documents'
-import Reports from './pages/Reports'
-import Reconciliation from './pages/Reconciliation'
-import Alerts from './pages/Alerts'
-import AnomalyDashboard from './pages/AnomalyDashboard'
-import PerformanceMonitoring from './pages/PerformanceMonitoring'
-import UserManagement from './pages/UserManagement'
-import PropertyIntelligence from './pages/PropertyIntelligence'
-import TenantOptimizer from './pages/TenantOptimizer'
-import NaturalLanguageQuery from './pages/NaturalLanguageQuery'
-import RiskManagement from './pages/RiskManagement'
-import VarianceAnalysis from './pages/VarianceAnalysis'
-import DocumentSummarization from './pages/DocumentSummarization'
-import BulkImport from './pages/BulkImport'
-import ExitStrategyAnalysis from './pages/ExitStrategyAnalysis'
-import FinancialDataViewer from './pages/FinancialDataViewer'
-import ReviewQueue from './pages/ReviewQueue'
+import CommandCenter from './pages/CommandCenter'
+import PortfolioHub from './pages/PortfolioHub'
+import FinancialCommand from './pages/FinancialCommand'
+import DataControlCenter from './pages/DataControlCenter'
+import AdminHub from './pages/AdminHub'
 
-type Page = 'dashboard' | 'properties' | 'documents' | 'reports' | 'reconciliation' | 'alerts' | 'anomalies' | 'performance' | 'users' | 'property-intel' | 'tenant-optimizer' | 'nlq' | 'risk' | 'variance' | 'doc-summary' | 'bulk-import' | 'exit-strategy' | 'financial-data' | 'review-queue' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -39,48 +25,20 @@ function AppContent() {
       return <LoginForm />
     }
 
-    // Show app pages if authenticated
+    // Show app pages if authenticated - Only 5 Strategic Pages
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard />
+        return <CommandCenter />
       case 'properties':
-        return <Properties />
-      case 'documents':
-        return <Documents />
+        return <PortfolioHub />
       case 'reports':
-        return <Reports />
-      case 'reconciliation':
-        return <Reconciliation />
-      case 'alerts':
-        return <Alerts />
-      case 'anomalies':
-        return <AnomalyDashboard />
-      case 'performance':
-        return <PerformanceMonitoring />
+        return <FinancialCommand />
+      case 'operations':
+        return <DataControlCenter />
       case 'users':
-        return <UserManagement />
-      case 'property-intel':
-        return <PropertyIntelligence />
-      case 'tenant-optimizer':
-        return <TenantOptimizer />
-      case 'nlq':
-        return <NaturalLanguageQuery />
-      case 'risk':
-        return <RiskManagement />
-      case 'variance':
-        return <VarianceAnalysis />
-      case 'doc-summary':
-        return <DocumentSummarization />
-      case 'bulk-import':
-        return <BulkImport />
-      case 'exit-strategy':
-        return <ExitStrategyAnalysis />
-      case 'financial-data':
-        return <FinancialDataViewer />
-      case 'review-queue':
-        return <ReviewQueue />
+        return <AdminHub />
       default:
-        return <Dashboard />
+        return <CommandCenter />
     }
   }
 
@@ -135,7 +93,7 @@ function AppContent() {
       </header>
 
       <div className="main-container">
-        {/* Sidebar */}
+        {/* Sidebar - 5 Strategic Pages Only */}
         <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
           <nav className="nav-menu">
             <button
@@ -143,145 +101,35 @@ function AppContent() {
               onClick={() => setCurrentPage('dashboard')}
             >
               <span className="nav-icon">📊</span>
-              {sidebarOpen && <span className="nav-text">Dashboard</span>}
+              {sidebarOpen && <span className="nav-text">Command Center</span>}
             </button>
             <button
               className={`nav-item ${currentPage === 'properties' ? 'active' : ''}`}
               onClick={() => setCurrentPage('properties')}
             >
               <span className="nav-icon">🏢</span>
-              {sidebarOpen && <span className="nav-text">Properties</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'documents' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('documents')}
-            >
-              <span className="nav-icon">📄</span>
-              {sidebarOpen && <span className="nav-text">Documents</span>}
+              {sidebarOpen && <span className="nav-text">Portfolio Hub</span>}
             </button>
             <button
               className={`nav-item ${currentPage === 'reports' ? 'active' : ''}`}
               onClick={() => setCurrentPage('reports')}
             >
-              <span className="nav-icon">📈</span>
-              {sidebarOpen && <span className="nav-text">Reports</span>}
+              <span className="nav-icon">💰</span>
+              {sidebarOpen && <span className="nav-text">Financial Command</span>}
             </button>
             <button
-              className={`nav-item ${currentPage === 'reconciliation' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('reconciliation')}
+              className={`nav-item ${currentPage === 'operations' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('operations')}
             >
-              <span className="nav-icon">🔄</span>
-              {sidebarOpen && <span className="nav-text">Reconciliation</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'alerts' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('alerts')}
-            >
-              <span className="nav-icon">🔔</span>
-              {sidebarOpen && <span className="nav-text">Alerts</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'anomalies' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('anomalies')}
-            >
-              <span className="nav-icon">⚠️</span>
-              {sidebarOpen && <span className="nav-text">Anomalies</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'performance' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('performance')}
-            >
-              <span className="nav-icon">📈</span>
-              {sidebarOpen && <span className="nav-text">Performance</span>}
+              <span className="nav-icon">🔧</span>
+              {sidebarOpen && <span className="nav-text">Data Control Center</span>}
             </button>
             <button
               className={`nav-item ${currentPage === 'users' ? 'active' : ''}`}
               onClick={() => setCurrentPage('users')}
             >
-              <span className="nav-icon">👥</span>
-              {sidebarOpen && <span className="nav-text">Users</span>}
-            </button>
-
-            {sidebarOpen && <div className="nav-divider">AI & Intelligence</div>}
-
-            <button
-              className={`nav-item ${currentPage === 'property-intel' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('property-intel')}
-            >
-              <span className="nav-icon">🔍</span>
-              {sidebarOpen && <span className="nav-text">Property Intel</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'tenant-optimizer' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('tenant-optimizer')}
-            >
-              <span className="nav-icon">🎯</span>
-              {sidebarOpen && <span className="nav-text">Tenant Optimizer</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'nlq' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('nlq')}
-            >
-              <span className="nav-icon">💬</span>
-              {sidebarOpen && <span className="nav-text">Ask AI</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'doc-summary' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('doc-summary')}
-            >
-              <span className="nav-icon">📄</span>
-              {sidebarOpen && <span className="nav-text">Doc Summary</span>}
-            </button>
-
-            {sidebarOpen && <div className="nav-divider">Financial Analysis</div>}
-
-            <button
-              className={`nav-item ${currentPage === 'financial-data' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('financial-data')}
-            >
-              <span className="nav-icon">💹</span>
-              {sidebarOpen && <span className="nav-text">Financial Data</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'variance' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('variance')}
-            >
-              <span className="nav-icon">📊</span>
-              {sidebarOpen && <span className="nav-text">Variance Analysis</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'exit-strategy' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('exit-strategy')}
-            >
-              <span className="nav-icon">🎯</span>
-              {sidebarOpen && <span className="nav-text">Exit Strategy</span>}
-            </button>
-
-            {sidebarOpen && <div className="nav-divider">Risk & Compliance</div>}
-
-            <button
-              className={`nav-item ${currentPage === 'risk' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('risk')}
-            >
-              <span className="nav-icon">🛡️</span>
-              {sidebarOpen && <span className="nav-text">Risk Management</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'review-queue' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('review-queue')}
-            >
-              <span className="nav-icon">✅</span>
-              {sidebarOpen && <span className="nav-text">Review Queue</span>}
-            </button>
-
-            {sidebarOpen && <div className="nav-divider">Data Management</div>}
-
-            <button
-              className={`nav-item ${currentPage === 'bulk-import' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('bulk-import')}
-            >
-              <span className="nav-icon">📂</span>
-              {sidebarOpen && <span className="nav-text">Bulk Import</span>}
+              <span className="nav-icon">⚙️</span>
+              {sidebarOpen && <span className="nav-text">Admin Hub</span>}
             </button>
           </nav>
         </aside>

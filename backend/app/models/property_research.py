@@ -38,7 +38,7 @@ class PropertyResearch(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    property = relationship("Property", back_populates="research_data")
+    property_obj = relationship("Property", back_populates="research_data")
 
     def __repr__(self):
         return f"<PropertyResearch(id={self.id}, property_id={self.property_id}, date={self.research_date})>"
