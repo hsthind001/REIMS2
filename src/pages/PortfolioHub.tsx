@@ -39,6 +39,8 @@ interface PropertyCosts {
   mortgage: number;
   utilities: number;
   initialBuying: number;
+  maintenance: number;
+  taxes: number;
   other: number;
   total: number;
 }
@@ -169,19 +171,66 @@ export default function PortfolioHub() {
   };
 
   const loadPropertyDetails = async (propertyId: number) => {
+    // Clear previous data immediately when switching properties
+    setMetrics(null);
+    setCosts(null);
+    setUnitInfo(null);
+    
     try {
-      // Load metrics
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
-        credentials: 'include'
-      });
-      const metricsData = metricsRes.ok ? await metricsRes.json() : [];
-      const propertyMetric = metricsData.find((m: any) => m.property_id === propertyId);
+      // Get property code for matching
+      const currentProperty = properties.find(p => p.id === propertyId);
+      if (!currentProperty) {
+        console.error('Property not found:', propertyId);
+        return;
+      }
+
+      // Try to get metrics from the map first (already loaded for list display)
+      const propertyMetricFromMap = propertyMetricsMap.get(propertyId);
+      
+      // Try to load period-specific metrics first, then fall back to summary
+      let propertyMetric: any = null;
+      let periodSpecificMetrics: any = null;
+      
+      try {
+        // Try period-specific endpoint first
+        const periodRes = await fetch(`${API_BASE_URL}/metrics/${currentProperty.property_code}/${selectedYear}/${selectedMonth}`, {
+          credentials: 'include'
+        });
+        if (periodRes.ok) {
+          periodSpecificMetrics = await periodRes.json();
+          console.log(`Period-specific metrics for ${currentProperty.property_code} ${selectedYear}-${selectedMonth}:`, periodSpecificMetrics);
+          propertyMetric = {
+            property_code: periodSpecificMetrics.property_code,
+            total_assets: periodSpecificMetrics.total_assets,
+            net_income: periodSpecificMetrics.net_income,
+            occupancy_rate: periodSpecificMetrics.occupancy_rate,
+            total_expenses: periodSpecificMetrics.total_expenses,
+            total_units: periodSpecificMetrics.total_units,
+            occupied_units: periodSpecificMetrics.occupied_units,
+            total_leasable_sqft: periodSpecificMetrics.total_leasable_sqft
+          };
+        } else {
+          console.warn(`No period-specific data for ${currentProperty.property_code} ${selectedYear}-${selectedMonth}, using summary`);
+        }
+      } catch (periodErr) {
+        console.warn('Failed to load period-specific metrics, using summary:', periodErr);
+      }
+      
+      // Fall back to summary if period-specific not available
+      if (!propertyMetric) {
+        const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+          credentials: 'include'
+        });
+        const metricsData = metricsRes.ok ? await metricsRes.json() : [];
+        // Match by property_code since API returns property_code, not property_id
+        propertyMetric = metricsData.find((m: any) => m.property_code === currentProperty.property_code) || propertyMetricFromMap;
+      }
       
       if (propertyMetric) {
-        // Calculate DSCR from real data (NOI / estimated debt service)
-        let dscr = 1.25; // Fallback
-        let ltv = 52.8; // Fallback
-        let capRate = 4.22; // Fallback
+        // Calculate DSCR from real data only - no fallbacks
+        let dscr: number | null = null;
+        let ltv: number | null = null;
+        let capRate: number | null = null;
 
         try {
           const [ltvRes, capRateRes] = await Promise.all([
@@ -191,9 +240,9 @@ export default function PortfolioHub() {
 
           if (ltvRes.ok) {
             const ltvData = await ltvRes.json();
-            ltv = ltvData.ltv || 52.8;
+            ltv = ltvData.ltv || null;
 
-            // Calculate DSCR: NOI / (Loan Amount * 0.08)
+            // Calculate DSCR: NOI / (Loan Amount * 0.08) - only if we have real data
             const loanAmount = ltvData.loan_amount || 0;
             const annualDebtService = loanAmount * 0.08;
             if (annualDebtService > 0 && propertyMetric.net_income) {
@@ -203,15 +252,18 @@ export default function PortfolioHub() {
 
           if (capRateRes.ok) {
             const capRateData = await capRateRes.json();
-            capRate = capRateData.cap_rate || 4.22;
+            capRate = capRateData.cap_rate || null;
           }
         } catch (apiErr) {
           console.error('Failed to fetch LTV/Cap Rate:', apiErr);
         }
 
-        const status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
+        // Calculate status only if we have real DSCR data
+        const status = dscr !== null 
+          ? (dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good')
+          : 'warning';
 
-        // Fetch real historical trends from API
+        // Fetch real historical trends from API - only real data
         let noiTrend: number[] = [];
         let occupancyTrend: number[] = [];
         try {
@@ -227,106 +279,244 @@ export default function PortfolioHub() {
           console.error('Failed to load historical trends:', histErr);
         }
 
+        // Use period-specific data if available, otherwise use summary
+        const metricsValue = periodSpecificMetrics?.total_assets || propertyMetric?.total_assets || 0;
+        const metricsNoi = periodSpecificMetrics?.net_income || propertyMetric?.net_income || 0;
+        const metricsOccupancy = periodSpecificMetrics?.occupancy_rate || propertyMetric?.occupancy_rate || 0;
+        
         setMetrics({
-          value: propertyMetric.total_assets || 0,
-          noi: propertyMetric.net_income || 0,
-          dscr,
-          ltv,
-          occupancy: propertyMetric.occupancy_rate || 0,
-          capRate,
+          value: metricsValue,
+          noi: metricsNoi,
+          dscr: dscr || 0,
+          ltv: ltv || 0,
+          occupancy: metricsOccupancy,
+          capRate: capRate || 0,
           status,
           trends: {
             noi: noiTrend,
             occupancy: occupancyTrend
           }
         });
-      }
-
-      // Load costs from API
-      try {
-        const costsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/costs`, {
-          credentials: 'include'
-        });
-        if (costsRes.ok) {
-          const costsData = await costsRes.json();
-          setCosts({
-            insurance: costsData.costs.insurance || 0,
-            mortgage: costsData.costs.mortgage || 0,
-            utilities: costsData.costs.utilities || 0,
-            initialBuying: 0, // Not tracked in current API
-            maintenance: costsData.costs.maintenance || 0,
-            taxes: costsData.costs.taxes || 0,
-            other: costsData.costs.other || 0,
-            total: costsData.total_costs || 0
+      } else {
+        // No metrics found for this property - show zeros only
+        console.log('No metrics found for property:', currentProperty.property_code);
+        // Only use data from map if it exists, otherwise show zeros
+        if (propertyMetricFromMap) {
+          setMetrics({
+            value: propertyMetricFromMap.total_assets || 0,
+            noi: propertyMetricFromMap.net_income || 0,
+            dscr: 0, // No fallback
+            ltv: 0, // No fallback
+            occupancy: propertyMetricFromMap.occupancy_rate || 0,
+            capRate: 0, // No fallback
+            status: 'warning',
+            trends: {
+              noi: [],
+              occupancy: []
+            }
           });
         } else {
-          // Fallback to mock data
-          setCosts({
-            insurance: 245000,
-            mortgage: 710000,
-            utilities: 350000,
-            initialBuying: 18000000,
-            other: 255000,
-            total: 19560000
+          setMetrics({
+            value: 0,
+            noi: 0,
+            dscr: 0,
+            ltv: 0,
+            occupancy: 0,
+            capRate: 0,
+            status: 'warning',
+            trends: {
+              noi: [],
+              occupancy: []
+            }
           });
         }
-      } catch (costsErr) {
-        console.error('Failed to fetch property costs:', costsErr);
-        // Fallback to mock data
+      }
+
+      // Load costs - use period-specific data if available, otherwise try costs endpoint
+      if (periodSpecificMetrics?.total_expenses !== null && periodSpecificMetrics?.total_expenses !== undefined) {
+        // Use period-specific expense data
+        const totalExpenses = periodSpecificMetrics.total_expenses || 0;
+        // Calculate cost breakdown from total_expenses (same logic as backend)
+        const costsData = {
+          insurance: Math.round(totalExpenses * 0.15),
+          mortgage: Math.round(totalExpenses * 0.45),
+          utilities: Math.round(totalExpenses * 0.20),
+          maintenance: Math.round(totalExpenses * 0.10),
+          taxes: Math.round(totalExpenses * 0.08),
+          other: Math.round(totalExpenses * 0.02),
+          total: Math.round(totalExpenses)
+        };
+        
+        console.log('Using period-specific expense data:', costsData);
         setCosts({
-          insurance: 245000,
-          mortgage: 710000,
-          utilities: 350000,
-          initialBuying: 18000000,
-          other: 255000,
-          total: 19560000
+          insurance: costsData.insurance || 0,
+          mortgage: costsData.mortgage || 0,
+          utilities: costsData.utilities || 0,
+          initialBuying: periodSpecificMetrics?.total_assets || 0,
+          maintenance: costsData.maintenance || 0,
+          taxes: costsData.taxes || 0,
+          other: costsData.other || 0,
+          total: costsData.total || 0
         });
-      }
-
-      // Load unit info from API
-      try {
-        const unitsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/units?limit=20`, {
-          credentials: 'include'
-        });
-        if (unitsRes.ok) {
-          const unitsData = await unitsRes.json();
-          setUnitInfo({
-            totalUnits: unitsData.totalUnits,
-            occupiedUnits: unitsData.occupiedUnits,
-            availableUnits: unitsData.availableUnits,
-            totalSqft: unitsData.totalSqft,
-            units: unitsData.units
+      } else {
+        // Fall back to costs endpoint (gets latest period)
+        try {
+          const costsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/costs`, {
+            credentials: 'include'
           });
-        } else {
-          // Fallback to mock data
-          setUnitInfo({
-            totalUnits: 160,
-            occupiedUnits: 146,
-            availableUnits: 14,
-            totalSqft: 200000,
-            units: Array.from({ length: 20 }, (_, i) => ({
-              unitNumber: `${i + 1}01`,
-              sqft: 1250,
-              status: i < 18 ? 'occupied' : 'available',
-              tenant: i < 18 ? `Tenant ${i + 1}` : undefined
-            }))
+          if (costsRes.ok) {
+            const costsData = await costsRes.json();
+            console.log('Costs API response for property', propertyId, ':', costsData);
+            // Check if there's actual cost data (not all zeros)
+            if (costsData.total_costs > 0 && costsData.costs) {
+              setCosts({
+                insurance: costsData.costs.insurance || 0,
+                mortgage: costsData.costs.mortgage || 0,
+                utilities: costsData.costs.utilities || 0,
+                initialBuying: propertyMetric?.total_assets || 0,
+                maintenance: costsData.costs.maintenance || 0,
+                taxes: costsData.costs.taxes || 0,
+                other: costsData.costs.other || 0,
+                total: costsData.total_costs || 0
+              });
+            } else {
+              // No cost data from detailed endpoint
+              console.warn('Costs API returned zero or missing data for property', propertyId, costsData);
+              const totalFromSummary = propertyMetric?.total_assets || 0;
+              setCosts({
+                insurance: 0,
+                mortgage: 0,
+                utilities: 0,
+                initialBuying: totalFromSummary,
+                maintenance: 0,
+                taxes: 0,
+                other: 0,
+                total: totalFromSummary
+              });
+            }
+          } else if (costsRes.status === 404) {
+            // No detailed cost data
+            console.warn(`Costs API 404 for property ${propertyId} - using summary data`);
+            const totalFromSummary = propertyMetric?.total_assets || 0;
+            setCosts({
+              insurance: 0,
+              mortgage: 0,
+              utilities: 0,
+              initialBuying: totalFromSummary,
+              maintenance: 0,
+              taxes: 0,
+              other: 0,
+              total: totalFromSummary
+            });
+          } else {
+            // Other API error
+            const errorText = await costsRes.text();
+            console.error(`Costs API error for property ${propertyId}: ${costsRes.status} ${costsRes.statusText}`, errorText);
+            const totalFromSummary = propertyMetric?.total_assets || 0;
+            setCosts({
+              insurance: 0,
+              mortgage: 0,
+              utilities: 0,
+              initialBuying: totalFromSummary,
+              maintenance: 0,
+              taxes: 0,
+              other: 0,
+              total: totalFromSummary
+            });
+          }
+        } catch (costsErr) {
+          console.error('Failed to fetch property costs:', costsErr);
+          const totalFromSummary = propertyMetric?.total_assets || 0;
+          setCosts({
+            insurance: 0,
+            mortgage: 0,
+            utilities: 0,
+            initialBuying: totalFromSummary,
+            maintenance: 0,
+            taxes: 0,
+            other: 0,
+            total: totalFromSummary
           });
         }
-      } catch (unitsErr) {
-        console.error('Failed to fetch unit details:', unitsErr);
-        // Fallback to mock data
+      }
+
+      // Load unit info - use period-specific data if available, otherwise try units endpoint
+      if (periodSpecificMetrics?.total_units !== null && periodSpecificMetrics?.total_units !== undefined) {
+        // Use period-specific unit data
+        const totalUnits = periodSpecificMetrics.total_units || 0;
+        const occupiedUnits = periodSpecificMetrics.occupied_units || 0;
+        const totalSqft = periodSpecificMetrics.total_leasable_sqft || 0;
+        const availableUnits = totalUnits - occupiedUnits;
+        
+        console.log('Using period-specific unit data:', { totalUnits, occupiedUnits, availableUnits, totalSqft });
         setUnitInfo({
-          totalUnits: 160,
-          occupiedUnits: 146,
-          availableUnits: 14,
-          totalSqft: 200000,
-          units: Array.from({ length: 20 }, (_, i) => ({
-            unitNumber: `${i + 1}01`,
-            sqft: 1250,
-            status: i < 18 ? 'occupied' : 'available',
-            tenant: i < 18 ? `Tenant ${i + 1}` : undefined
-          }))
+          totalUnits,
+          occupiedUnits,
+          availableUnits,
+          totalSqft,
+          units: [] // Individual unit details would need separate query
         });
+      } else {
+        // Fall back to units endpoint (gets latest period)
+        try {
+          const unitsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/units?limit=20`, {
+            credentials: 'include'
+          });
+          if (unitsRes.ok) {
+            const unitsData = await unitsRes.json();
+            console.log('Units API response for property', propertyId, ':', unitsData);
+            // Check if data exists (not just 0s from empty database)
+            if (unitsData.totalUnits > 0 || unitsData.units.length > 0) {
+              setUnitInfo({
+                totalUnits: unitsData.totalUnits,
+                occupiedUnits: unitsData.occupiedUnits,
+                availableUnits: unitsData.availableUnits,
+                totalSqft: unitsData.totalSqft,
+                units: unitsData.units
+              });
+            } else {
+              // No unit data from detailed endpoint
+              console.warn('Units API returned zero data for property', propertyId, unitsData);
+              setUnitInfo({
+                totalUnits: 0,
+                occupiedUnits: 0,
+                availableUnits: 0,
+                totalSqft: 0,
+                units: []
+              });
+            }
+          } else if (unitsRes.status === 404) {
+            // No detailed unit data
+            console.warn(`Units API 404 for property ${propertyId} - no unit data available`);
+            setUnitInfo({
+              totalUnits: 0,
+              occupiedUnits: 0,
+              availableUnits: 0,
+              totalSqft: 0,
+              units: []
+            });
+          } else {
+            // Other API error
+            const errorText = await unitsRes.text();
+            console.error(`Units API error for property ${propertyId}: ${unitsRes.status} ${unitsRes.statusText}`, errorText);
+            setUnitInfo({
+              totalUnits: 0,
+              occupiedUnits: 0,
+              availableUnits: 0,
+              totalSqft: 0,
+              units: []
+            });
+          }
+        } catch (unitsErr) {
+          console.error('Failed to fetch unit details:', unitsErr);
+          setUnitInfo({
+            totalUnits: 0,
+            occupiedUnits: 0,
+            availableUnits: 0,
+            totalSqft: 0,
+            units: []
+          });
+        }
       }
 
       // Load market intelligence
@@ -354,73 +544,80 @@ export default function PortfolioHub() {
       }
       
       // Always set market intelligence data (with fallback if API fails)
+      // Get property for property_code
+      const currentProperty = properties.find(p => p.id === propertyId);
+      
       // Get property metrics for comparison
       const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
         credentials: 'include'
       });
       const metricsData = metricsRes.ok ? await metricsRes.json() : [];
-      const propertyMetric = metricsData.find((m: any) => m.property_id === propertyId);
+      // Match by property_code since API returns property_code, not property_id
+      const propertyMetric = currentProperty ? metricsData.find((m: any) => m.property_code === currentProperty.property_code) : null;
       
-      // Fetch real cap rate from API
-      let yourCapRate = 4.22; // Fallback
+      // Fetch real cap rate from API - only real data
+      let yourCapRate: number | null = null;
       try {
         const capRateRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, {
           credentials: 'include'
         });
         if (capRateRes.ok) {
           const capRateData = await capRateRes.json();
-          yourCapRate = capRateData.cap_rate;
+          yourCapRate = capRateData.cap_rate || null;
         }
       } catch (capErr) {
         console.error('Failed to fetch cap rate for market intel:', capErr);
       }
       
-      setMarketIntel({
-        locationScore: research?.location_score || 8.2,
-        marketCapRate: research?.market_cap_rate || 4.5,
-        yourCapRate: yourCapRate,
-        rentGrowth: research?.rent_growth || 3.2,
-        yourRentGrowth: propertyMetric?.rent_growth_yoy || 2.1,
-        demographics: {
-          population: research?.demographics?.population || 285000,
-          medianIncome: research?.demographics?.median_income || 95000,
-          employmentType: research?.demographics?.employment_type || '85% Professional'
-        },
-        comparables: research?.comparables || [
-          { name: 'City Center Plaza', distance: 1.2, capRate: 4.8, occupancy: 94 },
-          { name: 'Metro Business Park', distance: 1.8, capRate: 4.3, occupancy: 89 },
-          { name: 'Downtown Office Complex', distance: 0.8, capRate: 4.6, occupancy: 92 }
-        ],
-        aiInsights: research?.key_findings || research?.insights || [
-          'Property underpriced by ~5%',
-          'Lagging market rent growth - opportunity to raise',
-          'Strong demographic profile supports premium pricing',
-          'Location benefits from proximity to major transit hub'
-        ]
-      });
+      // Only set market intelligence if we have real data
+      if (research) {
+        setMarketIntel({
+          locationScore: research.location_score || 0,
+          marketCapRate: research.market_cap_rate || 0,
+          yourCapRate: yourCapRate || 0,
+          rentGrowth: research.rent_growth || 0,
+          yourRentGrowth: propertyMetric?.rent_growth_yoy || 0,
+          demographics: {
+            population: research.demographics?.population || 0,
+            medianIncome: research.demographics?.median_income || 0,
+            employmentType: research.demographics?.employment_type || ''
+          },
+          comparables: research.comparables || [],
+          aiInsights: research.key_findings || research.insights || []
+        });
+      } else {
+        // No data - set to zeros/empty
+        setMarketIntel({
+          locationScore: 0,
+          marketCapRate: 0,
+          yourCapRate: yourCapRate || 0,
+          rentGrowth: 0,
+          yourRentGrowth: propertyMetric?.rent_growth_yoy || 0,
+          demographics: {
+            population: 0,
+            medianIncome: 0,
+            employmentType: ''
+          },
+          comparables: [],
+          aiInsights: []
+        });
+      }
     } catch (err) {
       console.error('Failed to load market intelligence:', err);
-      // Set default data even on error
+      // Set to zeros/empty on error - no mock data
       setMarketIntel({
-        locationScore: 8.2,
-        marketCapRate: 4.5,
-        yourCapRate: 4.22,
-        rentGrowth: 3.2,
-        yourRentGrowth: 2.1,
+        locationScore: 0,
+        marketCapRate: 0,
+        yourCapRate: 0,
+        rentGrowth: 0,
+        yourRentGrowth: 0,
         demographics: {
-          population: 285000,
-          medianIncome: 95000,
-          employmentType: '85% Professional'
+          population: 0,
+          medianIncome: 0,
+          employmentType: ''
         },
-        comparables: [
-          { name: 'City Center Plaza', distance: 1.2, capRate: 4.8, occupancy: 94 },
-          { name: 'Metro Business Park', distance: 1.8, capRate: 4.3, occupancy: 89 }
-        ],
-        aiInsights: [
-          'Property underpriced by ~5%',
-          'Lagging market rent growth - opportunity to raise',
-          'Strong demographic profile supports premium pricing'
-        ]
+        comparables: [],
+        aiInsights: []
       });
     } finally {
       setLoadingMarketIntel(false);
@@ -435,23 +632,25 @@ export default function PortfolioHub() {
       if (res.ok) {
         const data = await res.json();
         const recommendations = data.recommendations || [];
+        // Only map real data - no fallbacks
         setTenantMatches(recommendations.map((r: any) => ({
-          tenantName: r.tenant_name || 'TechCorp Solutions',
-          matchScore: r.confidence_score || 94,
-          creditScore: 780,
-          industry: 'Technology Services',
-          desiredSqft: { min: 2400, max: 2600 },
-          estimatedRent: 6250,
-          confidence: r.confidence_score || 94,
-          reasons: [
-            'Industry growth 12% YoY in this MSA',
-            'Credit profile indicates financial stability',
-            'Lease term aligns with your refinancing timeline'
-          ]
+          tenantName: r.tenant_name || '',
+          matchScore: r.confidence_score || 0,
+          creditScore: r.credit_score || 0,
+          industry: r.industry || '',
+          desiredSqft: r.desired_sqft || { min: 0, max: 0 },
+          estimatedRent: r.estimated_rent || 0,
+          confidence: r.confidence_score || 0,
+          reasons: r.reasons || []
         })));
+      } else {
+        // No data - set empty array
+        setTenantMatches([]);
       }
     } catch (err) {
       console.error('Failed to load tenant matches:', err);
+      // Set empty array on error - no mock data
+      setTenantMatches([]);
     }
   };
 
@@ -719,7 +918,16 @@ export default function PortfolioHub() {
             <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto">
               {sortedProperties.map((property) => {
                 const isSelected = selectedProperty?.id === property.id;
-                const status = metrics?.status || 'good';
+                // Get this property's metrics from the map
+                const propertyMetric = propertyMetricsMap.get(property.id);
+                // Use selected property's detailed metrics if this is the selected property, otherwise use summary metrics
+                const displayMetrics = isSelected && metrics ? metrics : null;
+                const displayValue = displayMetrics?.value || propertyMetric?.total_assets || 0;
+                const displayNoi = displayMetrics?.noi || propertyMetric?.net_income || 0;
+                const displayOccupancy = displayMetrics?.occupancy || propertyMetric?.occupancy_rate || 0;
+                const displayDscr = displayMetrics?.dscr || null;
+                // Determine status: use selected property's status if selected, otherwise default to 'good'
+                const status = displayMetrics?.status || (displayOccupancy > 90 ? 'good' : displayOccupancy > 70 ? 'warning' : 'critical');
                 const variant = getStatusVariant(status) as any;
 
                 return (
@@ -745,31 +953,35 @@ export default function PortfolioHub() {
                       {status === 'good' && <span className="text-success">🟢</span>}
                     </div>
                     
-                    {metrics && (
+                    {(displayMetrics || propertyMetric) && (
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Value:</span>
-                          <span className="font-medium">${(metrics.value / 1000000).toFixed(1)}M</span>
+                          <span className="font-medium">${(displayValue / 1000000).toFixed(1)}M</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-text-secondary">NOI:</span>
-                          <span className="font-medium">${(metrics.noi / 1000).toFixed(0)}K</span>
+                          <span className="font-medium">${(displayNoi / 1000).toFixed(0)}K</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-text-secondary">DSCR:</span>
-                          <span className="font-medium">{metrics.dscr.toFixed(2)}</span>
-                        </div>
+                        {displayDscr !== null && (
+                          <div className="flex justify-between">
+                            <span className="text-text-secondary">DSCR:</span>
+                            <span className="font-medium">{displayDscr.toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="mt-2 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-info rounded-full"
-                            style={{ width: `${metrics.occupancy}%` }}
+                            style={{ width: `${Math.min(displayOccupancy, 100)}%` }}
                           />
                         </div>
-                        <div className="text-xs text-text-secondary text-center">
-                          {metrics.trends.noi.slice(-12).map((_, i) => (
-                            <span key={i} className="inline-block w-1 h-3 bg-info rounded-t mx-0.5" />
-                          ))}
-                        </div>
+                        {displayMetrics?.trends?.noi && displayMetrics.trends.noi.length > 0 && (
+                          <div className="text-xs text-text-secondary text-center">
+                            {displayMetrics.trends.noi.slice(-12).map((_, i) => (
+                              <span key={i} className="inline-block w-1 h-3 bg-info rounded-t mx-0.5" />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </Card>
@@ -825,6 +1037,39 @@ export default function PortfolioHub() {
                 {/* Tab Content */}
                 {activeTab === 'overview' && (
                   <div className="space-y-6">
+                    {/* Period Selector */}
+                    <Card className="p-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-medium text-text-secondary">View Period</h3>
+                        <div className="flex gap-2">
+                          <select
+                            value={selectedYear}
+                            onChange={(e) => {
+                              setSelectedYear(Number(e.target.value));
+                            }}
+                            className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info text-sm"
+                          >
+                            {[2023, 2024, 2025, 2026, 2027].map(year => (
+                              <option key={year} value={year}>{year}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={selectedMonth}
+                            onChange={(e) => {
+                              setSelectedMonth(Number(e.target.value));
+                            }}
+                            className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info text-sm"
+                          >
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                              <option key={month} value={month}>
+                                {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </Card>
+
                     {/* Key Metrics */}
                     <Card className="p-6">
                       <h3 className="text-lg font-semibold mb-4">Key Metrics</h3>
@@ -1508,20 +1753,24 @@ export default function PortfolioHub() {
                     <p className="text-text-secondary">{availableDocuments.length} Documents</p>
                     <div className="mt-4 space-y-2">
                       {availableDocuments.length > 0 ? (
-                        availableDocuments.map((doc, index) => (
-                          <div key={doc.id || index} className="flex items-center gap-2 p-3 bg-background rounded-lg">
-                            <FileText className="w-5 h-5 text-info" />
-                            <div className="flex-1">
-                              <div className="font-medium">{doc.original_filename}</div>
+                        availableDocuments.map((doc, index) => {
+                          // The API response may have enriched fields, but TypeScript type doesn't include them
+                          const docAny = doc as any;
+                          return (
+                            <div key={doc.id || index} className="flex items-center gap-2 p-3 bg-background rounded-lg">
+                              <FileText className="w-5 h-5 text-info" />
+                              <div className="flex-1">
+                                <div className="font-medium">{doc.file_name}</div>
+                                <div className="text-sm text-text-secondary">
+                                  {doc.document_type} - {docAny.period_year || 'N/A'}/{docAny.period_month || 'N/A'}
+                                </div>
+                              </div>
                               <div className="text-sm text-text-secondary">
-                                {doc.document_type} - {doc.period_year}/{doc.period_month}
+                                {new Date(doc.upload_date).toLocaleDateString()}
                               </div>
                             </div>
-                            <div className="text-sm text-text-secondary">
-                              {new Date(doc.uploaded_at).toLocaleDateString()}
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="text-center py-8 text-text-secondary">
                           No documents uploaded yet. Click "Upload Document" to get started.
