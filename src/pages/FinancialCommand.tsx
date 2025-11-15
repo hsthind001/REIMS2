@@ -18,7 +18,10 @@ import {
 import { Card, Button, ProgressBar } from '../components/design-system';
 import { propertyService } from '../lib/property';
 import { reportsService } from '../lib/reports';
-import type { Property } from '../types/api';
+import { documentService } from '../lib/document';
+import { financialDataService } from '../lib/financial_data';
+import type { Property, DocumentUpload as DocumentUploadType } from '../types/api';
+import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -71,6 +74,13 @@ export default function FinancialCommand() {
   const [exitScenarios, setExitScenarios] = useState<ExitScenario[]>([]);
   const [financialMetrics, setFinancialMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showFullFinancialData, setShowFullFinancialData] = useState(false);
+  const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
+  const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
+  const [loadingFinancialData, setLoadingFinancialData] = useState(false);
+  const [selectedStatementType, setSelectedStatementType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow' | null>(null);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
 
   useEffect(() => {
     loadInitialData();
@@ -79,8 +89,9 @@ export default function FinancialCommand() {
   useEffect(() => {
     if (selectedProperty) {
       loadFinancialData(selectedProperty.id);
+      loadAvailableDocuments(selectedProperty.property_code);
     }
-  }, [selectedProperty]);
+  }, [selectedProperty]); // Removed period dependencies - load all documents
 
   const loadInitialData = async () => {
     try {
@@ -199,6 +210,179 @@ export default function FinancialCommand() {
     if (variance > 5) return '🟡';
     if (variance < -5) return '🟢';
     return '⚪';
+  };
+
+  const loadAvailableDocuments = async (propertyCode: string) => {
+    if (!propertyCode) return;
+    
+    try {
+      // Load all documents for the property (without period filter) to show what's available
+      const docs = await documentService.getDocuments({
+        property_code: propertyCode,
+        limit: 100  // Get more documents to show all available periods
+      });
+      setAvailableDocuments(docs.items || []);
+      
+      // If we have documents, try to find one matching the selected period
+      // If found, use it; otherwise, use the most recent document's period
+      if (docs.items && docs.items.length > 0) {
+        const periodMatch = docs.items.find(d => {
+          // We need to check the period from the document's period_id
+          // For now, just use the first available document's period
+          return true;
+        });
+        
+        // If no documents match the selected period, suggest the most recent period
+        const periodDocs = docs.items.filter(d => 
+          d.document_type === 'income_statement' || 
+          d.document_type === 'balance_sheet' || 
+          d.document_type === 'cash_flow'
+        );
+        
+        if (periodDocs.length > 0 && !periodDocs.some(d => {
+          // We can't check period directly, so we'll just use what we have
+          return true;
+        })) {
+          // Documents exist but may be for different period - that's OK, we'll show them
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+    }
+  };
+
+  const loadFullFinancialData = async (documentType: 'income_statement' | 'balance_sheet' | 'cash_flow') => {
+    if (!selectedProperty) return;
+    
+    setLoadingFinancialData(true);
+    setFinancialData(null);
+    
+    try {
+      console.log('Loading financial data for:', {
+        documentType,
+        propertyCode: selectedProperty.property_code,
+        availableDocumentsCount: availableDocuments.length,
+        availableDocs: availableDocuments.map(d => ({
+          id: d.id,
+          type: d.document_type,
+          status: d.extraction_status
+        }))
+      });
+
+      // First, try to find in availableDocuments - use the most recent completed one
+      const matchingDocs = availableDocuments.filter(d => d.document_type === documentType);
+      console.log('Matching documents for', documentType, ':', matchingDocs.map(d => ({ id: d.id, status: d.extraction_status })));
+      
+      let doc: DocumentUploadType | undefined;
+      
+      // Prioritize completed documents, use most recent (highest ID)
+      const completed = matchingDocs.filter(d => d.extraction_status === 'completed');
+      if (completed.length > 0) {
+        doc = completed.sort((a, b) => (b.id || 0) - (a.id || 0))[0]; // Most recent first
+      } else if (matchingDocs.length > 0) {
+        // Fall back to any matching document, most recent first
+        doc = matchingDocs.sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+      }
+      
+      // If still no doc in availableDocuments, reload from API
+      if (!doc) {
+        console.log('Document not found in availableDocuments, querying API...');
+        const allDocs = await documentService.getDocuments({
+          property_code: selectedProperty.property_code,
+          document_type: documentType,
+          limit: 10
+        });
+        console.log('API returned documents:', allDocs.items?.map(d => ({
+          id: d.id,
+          type: d.document_type,
+          status: d.extraction_status
+        })));
+        doc = allDocs.items?.find(d => d.extraction_status === 'completed') || allDocs.items?.[0];
+        
+        // Update availableDocuments if we found something
+        if (doc && allDocs.items) {
+          setAvailableDocuments(prev => {
+            const existing = prev.map(d => d.id);
+            const newDocs = allDocs.items.filter(d => !existing.includes(d.id));
+            return [...prev, ...newDocs];
+          });
+        }
+      }
+      
+      console.log('Selected document:', doc ? {
+        id: doc.id,
+        type: doc.document_type,
+        status: doc.extraction_status
+      } : 'NONE FOUND');
+
+      if (doc && doc.id) {
+        // Get summary to know total count
+        const summary = await financialDataService.getSummary(doc.id);
+        
+        // Load ALL items
+        const data = await financialDataService.getFinancialData(doc.id, {
+          limit: Math.max(summary.total_items || 10000, 10000),
+          skip: 0
+        });
+        
+        // If paginated, load remaining pages
+        if (data.total_items > data.items.length) {
+          const allItems = [...data.items];
+          let skip = data.items.length;
+          
+          while (allItems.length < data.total_items) {
+            const nextPage = await financialDataService.getFinancialData(doc.id, {
+              limit: 1000,
+              skip: skip
+            });
+            
+            allItems.push(...nextPage.items);
+            skip += nextPage.items.length;
+            
+            if (nextPage.items.length === 0) break;
+          }
+          
+          setFinancialData({
+            ...data,
+            items: allItems,
+            limit: allItems.length
+          });
+        } else {
+          setFinancialData(data);
+        }
+      } else {
+        setFinancialData(null);
+      }
+    } catch (err) {
+      console.error('Failed to load full financial data:', err);
+      setFinancialData(null);
+    } finally {
+      setLoadingFinancialData(false);
+    }
+  };
+
+  const handleViewFullFinancialData = async () => {
+    setShowFullFinancialData(true);
+    
+    // Ensure documents are loaded
+    if (selectedProperty && availableDocuments.length === 0) {
+      await loadAvailableDocuments(selectedProperty.property_code);
+    }
+    
+    // Auto-select first available document type
+    if (availableDocuments.length > 0) {
+      const firstDoc = availableDocuments.find(d => 
+        (d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow') &&
+        d.extraction_status === 'completed'
+      ) || availableDocuments.find(d => 
+        d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow'
+      );
+      
+      if (firstDoc && (firstDoc.document_type === 'income_statement' || firstDoc.document_type === 'balance_sheet' || firstDoc.document_type === 'cash_flow')) {
+        setSelectedStatementType(firstDoc.document_type);
+        loadFullFinancialData(firstDoc.document_type);
+      }
+    }
   };
 
   return (
@@ -347,10 +531,231 @@ export default function FinancialCommand() {
                   <div className="text-sm text-text-secondary mt-2">Net CF: $3.04M</div>
                 </Card>
               </div>
-              <Button variant="primary" onClick={() => window.location.hash = 'financial-data'}>
-                View Full Financial Data
-              </Button>
+              <div className="flex gap-4 items-center">
+                <div className="flex gap-2">
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => {
+                      setSelectedYear(Number(e.target.value));
+                      if (selectedProperty) {
+                        loadAvailableDocuments(selectedProperty.property_code);
+                      }
+                    }}
+                    className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                  >
+                    {[2023, 2024, 2025, 2026].map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      setSelectedMonth(Number(e.target.value));
+                      if (selectedProperty) {
+                        loadAvailableDocuments(selectedProperty.property_code);
+                      }
+                    }}
+                    className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                      <option key={month} value={month}>
+                        {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button variant="primary" onClick={handleViewFullFinancialData}>
+                  View Full Financial Data
+                </Button>
+              </div>
             </Card>
+
+            {/* Full Financial Data Modal */}
+            {showFullFinancialData && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowFullFinancialData(false)}>
+                <div className="bg-surface rounded-xl p-6 max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-2xl font-bold">Complete Financial Data</h2>
+                    <button className="text-text-secondary hover:text-text-primary text-2xl" onClick={() => setShowFullFinancialData(false)}>×</button>
+                  </div>
+
+                  {/* Statement Type Selector */}
+                  <div className="flex gap-2 mb-4 flex-wrap">
+                    {(['income_statement', 'balance_sheet', 'cash_flow'] as const).map((type) => {
+                      const docs = availableDocuments.filter(d => d.document_type === type);
+                      const doc = docs.find(d => d.extraction_status === 'completed') || docs[0];
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => {
+                            setSelectedStatementType(type);
+                            loadFullFinancialData(type);
+                          }}
+                          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                            selectedStatementType === type
+                              ? 'bg-info text-white'
+                              : doc
+                              ? 'bg-background border border-border hover:bg-background'
+                              : 'bg-background border border-border opacity-50 cursor-not-allowed'
+                          }`}
+                          disabled={!doc}
+                          title={doc ? `${doc.extraction_status} - Upload ID: ${doc.id}` : 'No document available'}
+                        >
+                          {type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          {doc && (
+                            <span className="ml-2 text-xs">
+                              ({doc.extraction_status})
+                              {docs.length > 1 && ` - ${docs.length} available`}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Available Documents Info */}
+                  {availableDocuments.length > 0 && (
+                    <div className="mb-4 p-3 bg-info-light/20 rounded-lg">
+                      <div className="text-sm font-medium mb-2">Available Documents:</div>
+                      <div className="text-xs text-text-secondary space-y-1">
+                        {availableDocuments
+                          .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow')
+                          .map((doc, i) => (
+                            <div key={i}>
+                              {doc.document_type.replace('_', ' ')} - {doc.extraction_status} (ID: {doc.id})
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Financial Data Display */}
+                  {loadingFinancialData ? (
+                    <div className="text-center py-8">
+                      <div className="text-text-secondary">Loading complete financial document data...</div>
+                      <div className="text-xs text-text-tertiary mt-2">Fetching all line items with zero data loss</div>
+                    </div>
+                  ) : financialData && financialData.items && financialData.items.length > 0 ? (
+                    <Card className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold">
+                            {financialData.document_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} - Complete Line Items
+                          </h3>
+                          <p className="text-sm text-text-secondary mt-1">
+                            Showing all {financialData.items.length} of {financialData.total_items} extracted line items
+                          </p>
+                        </div>
+                        <div className="text-sm text-text-secondary">
+                          {financialData.property_code} • {financialData.period_year}/{String(financialData.period_month).padStart(2, '0')}
+                        </div>
+                      </div>
+                      
+                      <div className="overflow-x-auto max-h-[500px] overflow-y-auto border border-border rounded-lg">
+                        <table className="w-full">
+                          <thead className="sticky top-0 bg-surface z-10 border-b-2 border-border">
+                            <tr>
+                              <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Line</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Account Code</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Account Name</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold bg-surface">Amount</th>
+                              <th className="text-center py-3 px-4 text-sm font-semibold bg-surface">Confidence</th>
+                              <th className="text-center py-3 px-4 text-sm font-semibold bg-surface">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {financialData.items.map((item: FinancialDataItem) => (
+                              <tr 
+                                key={item.id} 
+                                className={`border-b border-border hover:bg-background ${
+                                  item.is_total ? 'font-bold bg-info-light/10' : 
+                                  item.is_subtotal ? 'font-semibold bg-background' : ''
+                                }`}
+                              >
+                                <td className="py-2 px-4 text-sm text-text-secondary">
+                                  {item.line_number || '-'}
+                                </td>
+                                <td className="py-2 px-4">
+                                  <span className="font-mono font-medium">{item.account_code}</span>
+                                </td>
+                                <td className="py-2 px-4">
+                                  <div className="flex items-center gap-2">
+                                    {item.account_name}
+                                    {item.is_total && (
+                                      <span className="px-2 py-0.5 bg-info text-white rounded text-xs">
+                                        TOTAL
+                                      </span>
+                                    )}
+                                    {item.is_subtotal && (
+                                      <span className="px-2 py-0.5 bg-premium text-white rounded text-xs">
+                                        SUBTOTAL
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono">
+                                  {item.amounts.amount !== undefined && item.amounts.amount !== null
+                                    ? `$${item.amounts.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    : item.amounts.period_amount !== undefined && item.amounts.period_amount !== null
+                                    ? `$${item.amounts.period_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    : item.amounts.ytd_amount !== undefined && item.amounts.ytd_amount !== null
+                                    ? `YTD: $${item.amounts.ytd_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    : '-'}
+                                </td>
+                                <td className="py-2 px-4 text-center">
+                                  <div className="text-xs">
+                                    <div className="font-medium">
+                                      E: {item.extraction_confidence.toFixed(0)}%
+                                    </div>
+                                    <div className="text-text-secondary">
+                                      M: {item.match_confidence?.toFixed(0) || 0}%
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-4 text-center">
+                                  {item.severity === 'critical' && <span className="text-danger">🔴</span>}
+                                  {item.severity === 'warning' && <span className="text-warning">🟡</span>}
+                                  {item.severity === 'excellent' && <span className="text-success">🟢</span>}
+                                  {item.needs_review && (
+                                    <span className="ml-2 text-xs text-warning">Review</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Card>
+                  ) : (
+                    <Card className="p-8 text-center">
+                      <div className="text-text-secondary mb-4">
+                        {selectedStatementType 
+                          ? `No ${selectedStatementType.replace('_', ' ')} document found.`
+                          : 'Please select a statement type above.'
+                        }
+                      </div>
+                      {availableDocuments.length > 0 && (
+                        <div className="text-xs text-text-tertiary mb-4">
+                          <div className="font-medium mb-2">Available documents for this property:</div>
+                          <div className="space-y-1">
+                            {availableDocuments
+                              .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow')
+                              .map((doc, i) => (
+                                <div key={i} className="text-left">
+                                  • {doc.document_type.replace('_', ' ')} - Status: {doc.extraction_status} (ID: {doc.id})
+                                </div>
+                              ))}
+                          </div>
+                          <div className="mt-3 text-text-secondary">
+                            Note: Documents may be for different periods. The year/month selector is for reference only.
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* All 31 Financial KPIs */}
             {financialMetrics && (
