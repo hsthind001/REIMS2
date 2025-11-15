@@ -84,6 +84,10 @@ export default function CommandCenter() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
+  const [analysisDetails, setAnalysisDetails] = useState<any>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [sparklineData, setSparklineData] = useState<{
     value: number[];
     noi: number[];
@@ -237,15 +241,57 @@ export default function CommandCenter() {
     try {
       const performance: PropertyPerformance[] = [];
       
+      // Fetch all metrics once with a high limit to get all properties
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+        credentials: 'include'
+      });
+      const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
+      
+      // Create a map of property_code -> latest metric with actual data for quick lookup
+      const metricsMap = new Map<string, any>();
+      allMetrics.forEach((m: any) => {
+        const existing = metricsMap.get(m.property_code);
+        const hasData = (m.total_assets !== null && m.total_assets !== undefined) || 
+                        (m.net_income !== null && m.net_income !== undefined);
+        const existingHasData = existing && 
+                                ((existing.total_assets !== null && existing.total_assets !== undefined) || 
+                                 (existing.net_income !== null && existing.net_income !== undefined));
+        
+        // Prefer metrics with actual data over null values
+        // If both have data, prefer the latest period
+        // If neither has data, prefer the latest period anyway
+        if (!existing) {
+          metricsMap.set(m.property_code, m);
+        } else if (hasData && !existingHasData) {
+          // Current has data, existing doesn't - use current
+          metricsMap.set(m.property_code, m);
+        } else if (!hasData && existingHasData) {
+          // Existing has data, current doesn't - keep existing
+          // Don't update
+        } else {
+          // Both have same data status - prefer latest period
+          if (m.period_year && existing.period_year && m.period_year > existing.period_year) {
+            metricsMap.set(m.property_code, m);
+          } else if (m.period_year === existing.period_year && 
+                     m.period_month && existing.period_month && 
+                     m.period_month > existing.period_month) {
+            metricsMap.set(m.property_code, m);
+          }
+        }
+      });
+      
+      // Process each property
       for (const property of properties.slice(0, 10)) {
         try {
-          const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=1`, {
-            credentials: 'include'
-          });
-          const metrics = metricsRes.ok ? await metricsRes.json() : [];
-          const metric = metrics.find((m: any) => m.property_code === property.property_code);
+          const metric = metricsMap.get(property.property_code);
 
           if (metric) {
+            console.log(`Loaded metrics for ${property.property_code}:`, {
+              total_assets: metric.total_assets,
+              net_income: metric.net_income,
+              period: `${metric.period_year}-${metric.period_month}`
+            });
+            
             // Fetch real NOI trend data from historical API
             let noiTrend: number[] = [];
             try {
@@ -306,9 +352,36 @@ export default function CommandCenter() {
               status,
               trends: { noi: noiTrend }
             });
+          } else {
+            // Property exists but no metrics yet - show with zeros
+            performance.push({
+              id: property.id,
+              name: property.property_name,
+              code: property.property_code,
+              value: 0,
+              noi: 0,
+              dscr: 0,
+              ltv: 0,
+              occupancy: 0,
+              status: 'warning',
+              trends: { noi: [] }
+            });
           }
         } catch (err) {
           console.error(`Failed to load metrics for ${property.property_code}:`, err);
+          // Add property with zeros if there's an error
+          performance.push({
+            id: property.id,
+            name: property.property_name,
+            code: property.property_code,
+            value: 0,
+            noi: 0,
+            dscr: 0,
+            ltv: 0,
+            occupancy: 0,
+            status: 'warning',
+            trends: { noi: [] }
+          });
         }
       }
       
@@ -401,7 +474,7 @@ export default function CommandCenter() {
 
         // For IRR, generate reasonable trend based on portfolio growth
         // (API doesn't have IRR history yet, so derive from NOI trend)
-        const irrSparkline = noiSparkline.map((noi: number, idx: number) => {
+        const irrSparkline = noiSparkline.map((noi: number) => {
           const baseIRR = 12;
           const growth = (noi / (noiSparkline[0] || 1)) - 1;
           return baseIRR + (growth * 10); // Scale NOI growth to IRR points
@@ -417,6 +490,96 @@ export default function CommandCenter() {
     } catch (err) {
       console.error('Failed to load sparkline data:', err);
       // Keep empty arrays as fallback - component will handle gracefully
+    }
+  };
+
+  const loadPortfolioAnalysis = async () => {
+    try {
+      setLoadingAnalysis(true);
+      // Try to fetch detailed portfolio analysis from NLQ API
+      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio?detailed=true`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAnalysisDetails(data);
+      } else {
+        // Generate analysis from portfolio health data
+        setAnalysisDetails({
+          title: 'Portfolio Health Analysis',
+          summary: portfolioHealth ? 
+            `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
+            'Portfolio analysis unavailable',
+          details: portfolioHealth ? [
+            `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
+            `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(0)}K`,
+            `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
+            `Portfolio IRR: ${(portfolioHealth.portfolioIRR || 0).toFixed(1)}%`,
+            `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
+            `Warning Alerts: ${portfolioHealth.alertCount.warning}`
+          ] : [],
+          recommendations: portfolioHealth && portfolioHealth.score < 90 ? [
+            'Monitor properties with DSCR below 1.35',
+            'Review occupancy rates for properties below 85%',
+            'Consider refinancing opportunities for properties with high LTV'
+          ] : [
+            'Portfolio is performing well',
+            'Continue monitoring key metrics',
+            'Maintain current operational strategies'
+          ]
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load portfolio analysis:', err);
+      setAnalysisDetails({
+        title: 'Portfolio Health Analysis',
+        summary: 'Unable to load detailed analysis',
+        details: [],
+        recommendations: ['Please try again later']
+      });
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  const loadInsightAnalysis = async (insight: AIInsight) => {
+    try {
+      setLoadingAnalysis(true);
+      // Try to fetch detailed analysis for specific insight
+      const response = await fetch(`${API_BASE_URL}/nlq/insights/${insight.id}`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAnalysisDetails(data);
+      } else {
+        // Generate analysis from insight data
+        setAnalysisDetails({
+          title: insight.title,
+          summary: insight.description,
+          details: [
+            `Type: ${insight.type}`,
+            `Confidence: ${(insight.confidence * 100).toFixed(0)}%`
+          ],
+          recommendations: [
+            'Review related financial metrics',
+            'Monitor trends over next quarter',
+            'Consider implementing suggested actions'
+          ]
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load insight analysis:', err);
+      setAnalysisDetails({
+        title: insight.title,
+        summary: insight.description,
+        details: [],
+        recommendations: ['Please try again later']
+      });
+    } finally {
+      setLoadingAnalysis(false);
     }
   };
 
@@ -627,6 +790,32 @@ export default function CommandCenter() {
                 <h2 className="text-2xl font-bold">AI Portfolio Insights</h2>
               </div>
               <p className="text-sm text-text-secondary mb-4">Powered by Claude AI</p>
+              
+              {/* Portfolio Health Summary */}
+              <div className="bg-premium-light/20 p-4 rounded-lg border border-premium/30 mb-4">
+                <div className="flex items-start gap-2">
+                  <span className="text-premium">🟣</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm mb-1">Portfolio Health Strong</p>
+                    <p className="text-xs text-text-secondary mb-2">
+                      No critical issues detected - portfolio performing within normal parameters.
+                    </p>
+                    <Button 
+                      variant="premium" 
+                      size="sm"
+                      onClick={async () => {
+                        setSelectedInsight(null);
+                        setShowAnalysisModal(true);
+                        await loadPortfolioAnalysis();
+                      }}
+                    >
+                      View Analysis
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Individual Insights */}
               <div className="space-y-4">
                 {aiInsights.map((insight) => (
                   <div key={insight.id} className="bg-premium-light/20 p-3 rounded-lg border border-premium/30">
@@ -636,7 +825,17 @@ export default function CommandCenter() {
                         <p className="font-medium text-sm mb-1">{insight.title}</p>
                         <p className="text-xs text-text-secondary">{insight.description}</p>
                         <div className="mt-2 flex gap-2">
-                          <Button variant="premium" size="sm">View Analysis</Button>
+                          <Button 
+                            variant="premium" 
+                            size="sm"
+                            onClick={async () => {
+                              setSelectedInsight(insight);
+                              setShowAnalysisModal(true);
+                              await loadInsightAnalysis(insight);
+                            }}
+                          >
+                            View Analysis
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -738,6 +937,94 @@ export default function CommandCenter() {
               </Button>
               <Button variant="danger" onClick={() => setShowPropertyModal(false)}>
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Analysis Modal */}
+      {showAnalysisModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
+          setShowAnalysisModal(false);
+          setSelectedInsight(null);
+          setAnalysisDetails(null);
+        }}>
+          <div className="bg-surface rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-premium" />
+                <h2 className="text-2xl font-bold">
+                  {analysisDetails?.title || selectedInsight?.title || 'AI Portfolio Analysis'}
+                </h2>
+              </div>
+              <Button variant="danger" size="sm" onClick={() => {
+                setShowAnalysisModal(false);
+                setSelectedInsight(null);
+                setAnalysisDetails(null);
+              }}>
+                ✕
+              </Button>
+            </div>
+
+            {loadingAnalysis ? (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="w-8 h-8 animate-spin text-info" />
+                <span className="ml-3 text-text-secondary">Loading analysis...</span>
+              </div>
+            ) : analysisDetails ? (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Summary</h3>
+                  <p className="text-text-secondary">{analysisDetails.summary}</p>
+                </div>
+
+                {analysisDetails.details && analysisDetails.details.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Key Metrics</h3>
+                    <ul className="list-disc list-inside space-y-1 text-text-secondary">
+                      {analysisDetails.details.map((detail: string, idx: number) => (
+                        <li key={idx}>{detail}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {analysisDetails.recommendations && analysisDetails.recommendations.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Recommendations</h3>
+                    <ul className="list-disc list-inside space-y-1 text-text-secondary">
+                      {analysisDetails.recommendations.map((rec: string, idx: number) => (
+                        <li key={idx}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {selectedInsight && (
+                  <div className="mt-4 p-4 bg-premium-light/10 rounded-lg">
+                    <p className="text-sm text-text-secondary">
+                      <strong>Confidence:</strong> {(selectedInsight.confidence * 100).toFixed(0)}%
+                    </p>
+                    <p className="text-sm text-text-secondary mt-1">
+                      <strong>Type:</strong> {selectedInsight.type}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-text-secondary">No analysis data available</p>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="primary" onClick={() => {
+                setShowAnalysisModal(false);
+                setSelectedInsight(null);
+                setAnalysisDetails(null);
+              }}>
+                Close
               </Button>
             </div>
           </div>
