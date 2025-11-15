@@ -85,19 +85,19 @@ export default function DataControlCenter() {
   const loadData = async () => {
     try {
       // Load quality score
-      const qualityRes = await fetch(`${API_BASE_URL}/quality/score`, {
+      const qualityRes = await fetch(`${API_BASE_URL}/quality/summary`, {
         credentials: 'include'
       });
       if (qualityRes.ok) {
         const quality = await qualityRes.json();
         setQualityScore({
-          overallScore: quality.overall_score || 96,
-          status: quality.overall_score >= 95 ? 'excellent' : quality.overall_score >= 90 ? 'good' : quality.overall_score >= 80 ? 'fair' : 'poor',
+          overallScore: quality.overall_avg_confidence || 96,
+          status: (quality.overall_avg_confidence || 96) >= 95 ? 'excellent' : (quality.overall_avg_confidence || 96) >= 90 ? 'good' : (quality.overall_avg_confidence || 96) >= 80 ? 'fair' : 'poor',
           extraction: {
-            accuracy: quality.extraction_accuracy || 98.5,
-            confidence: quality.field_confidence_avg || 97.2,
-            failureRate: quality.failed_extractions || 1.5,
-            documentsProcessed: 1247
+            accuracy: quality.overall_match_rate || 98.5,
+            confidence: quality.overall_avg_confidence || 97.2,
+            failureRate: 100 - (quality.overall_match_rate || 98.5),
+            documentsProcessed: quality.total_documents || 0
           },
           validation: {
             passRate: quality.validation_pass_rate || 99.2,

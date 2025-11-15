@@ -81,6 +81,10 @@ export default function FinancialCommand() {
   const [selectedStatementType, setSelectedStatementType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow' | null>(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [kpiDscr, setKpiDscr] = useState<number>(1.25);
+  const [kpiLtv, setKpiLtv] = useState<number>(52.8);
+  const [kpiCapRate, setKpiCapRate] = useState<number>(4.22);
+  const [kpiIrr, setKpiIrr] = useState<number>(14.2);
 
   useEffect(() => {
     loadInitialData();
@@ -136,6 +140,39 @@ export default function FinancialCommand() {
         const metrics = await metricsRes.json();
         const propertyMetric = metrics.find((m: any) => m.property_id === propertyId);
         setFinancialMetrics(propertyMetric);
+
+        // Fetch KPI metrics for the selected property
+        try {
+          const [ltvRes, capRateRes, irrRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/metrics/${propertyId}/ltv`, { credentials: 'include' }),
+            fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, { credentials: 'include' }),
+            fetch(`${API_BASE_URL}/exit-strategy/portfolio-irr`, { credentials: 'include' })
+          ]);
+
+          if (ltvRes.ok) {
+            const ltvData = await ltvRes.json();
+            setKpiLtv(ltvData.ltv || 52.8);
+
+            // Calculate DSCR from LTV data
+            const loanAmount = ltvData.loan_amount || 0;
+            const annualDebtService = loanAmount * 0.08;
+            if (annualDebtService > 0 && propertyMetric?.net_income) {
+              setKpiDscr(propertyMetric.net_income / annualDebtService);
+            }
+          }
+
+          if (capRateRes.ok) {
+            const capRateData = await capRateRes.json();
+            setKpiCapRate(capRateData.cap_rate || 4.22);
+          }
+
+          if (irrRes.ok) {
+            const irrData = await irrRes.json();
+            setKpiIrr(irrData.irr || 14.2);
+          }
+        } catch (kpiErr) {
+          console.error('Failed to fetch KPI metrics:', kpiErr);
+        }
       }
     } catch (err) {
       console.error('Failed to load financial data:', err);
@@ -517,18 +554,30 @@ export default function FinancialCommand() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <Card variant="success" className="p-4 cursor-pointer hover:scale-105 transition-transform">
                   <div className="text-sm text-text-secondary mb-1">Income Statement</div>
-                  <div className="text-2xl font-bold">Q3 2025</div>
-                  <div className="text-sm text-text-secondary mt-2">Revenue: $11.2M</div>
+                  <div className="text-2xl font-bold">
+                    Q{Math.floor((selectedMonth - 1) / 3) + 1} {selectedYear}
+                  </div>
+                  <div className="text-sm text-text-secondary mt-2">
+                    Revenue: ${((financialMetrics?.total_revenue || 0) / 1000000).toFixed(1)}M
+                  </div>
                 </Card>
                 <Card variant="info" className="p-4 cursor-pointer hover:scale-105 transition-transform">
                   <div className="text-sm text-text-secondary mb-1">Balance Sheet</div>
-                  <div className="text-2xl font-bold">Q3 2025</div>
-                  <div className="text-sm text-text-secondary mt-2">Assets: $18.5M</div>
+                  <div className="text-2xl font-bold">
+                    Q{Math.floor((selectedMonth - 1) / 3) + 1} {selectedYear}
+                  </div>
+                  <div className="text-sm text-text-secondary mt-2">
+                    Assets: ${((financialMetrics?.total_assets || 0) / 1000000).toFixed(1)}M
+                  </div>
                 </Card>
                 <Card variant="primary" className="p-4 cursor-pointer hover:scale-105 transition-transform">
                   <div className="text-sm text-text-secondary mb-1">Cash Flow</div>
-                  <div className="text-2xl font-bold">Q3 2025</div>
-                  <div className="text-sm text-text-secondary mt-2">Net CF: $3.04M</div>
+                  <div className="text-2xl font-bold">
+                    Q{Math.floor((selectedMonth - 1) / 3) + 1} {selectedYear}
+                  </div>
+                  <div className="text-sm text-text-secondary mt-2">
+                    Net CF: ${((financialMetrics?.net_cash_flow || 0) / 1000000).toFixed(2)}M
+                  </div>
                 </Card>
               </div>
               <div className="flex gap-4 items-center">
@@ -768,15 +817,15 @@ export default function FinancialCommand() {
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">DSCR</div>
-                    <div className="text-lg font-bold">1.07</div>
+                    <div className="text-lg font-bold">{kpiDscr.toFixed(2)}</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">LTV</div>
-                    <div className="text-lg font-bold">52.8%</div>
+                    <div className="text-lg font-bold">{kpiLtv.toFixed(1)}%</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">Cap Rate</div>
-                    <div className="text-lg font-bold">4.22%</div>
+                    <div className="text-lg font-bold">{kpiCapRate.toFixed(2)}%</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">Occupancy</div>
@@ -792,7 +841,7 @@ export default function FinancialCommand() {
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">IRR</div>
-                    <div className="text-lg font-bold">14.2%</div>
+                    <div className="text-lg font-bold">{kpiIrr.toFixed(1)}%</div>
                   </div>
                 </div>
               </Card>

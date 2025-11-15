@@ -107,10 +107,12 @@ export default function PortfolioHub() {
   const [financialStatements, setFinancialStatements] = useState<any>(null);
   const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow'>('income');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [propertyMetricsMap, setPropertyMetricsMap] = useState<Map<number, any>>(new Map());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingDocumentData, setLoadingDocumentData] = useState(false);
+  const [tenantMix, setTenantMix] = useState<any[]>([]);
 
   useEffect(() => {
     loadProperties();
@@ -120,6 +122,7 @@ export default function PortfolioHub() {
     if (selectedProperty) {
       loadPropertyDetails(selectedProperty.id);
       loadFinancialStatements(selectedProperty.property_code);
+      loadTenantMix(selectedProperty.id);
     }
   }, [selectedProperty, selectedYear, selectedMonth]);
 
@@ -131,10 +134,37 @@ export default function PortfolioHub() {
       if (data.length > 0 && !selectedProperty) {
         setSelectedProperty(data[0]);
       }
+
+      // Load metrics for all properties for sorting
+      loadAllPropertyMetrics(data);
     } catch (err) {
       console.error('Failed to load properties:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAllPropertyMetrics = async (props: Property[]) => {
+    try {
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+        credentials: 'include'
+      });
+      if (metricsRes.ok) {
+        const metricsData = await metricsRes.json();
+        const metricsMap = new Map();
+
+        // Create a map of property_id -> metrics for easy lookup
+        for (const metric of metricsData) {
+          const prop = props.find(p => p.property_code === metric.property_code);
+          if (prop) {
+            metricsMap.set(prop.id, metric);
+          }
+        }
+
+        setPropertyMetricsMap(metricsMap);
+      }
+    } catch (err) {
+      console.error('Failed to load property metrics for sorting:', err);
     }
   };
 
@@ -148,47 +178,156 @@ export default function PortfolioHub() {
       const propertyMetric = metricsData.find((m: any) => m.property_id === propertyId);
       
       if (propertyMetric) {
-        const dscr = 1.0 + Math.random() * 0.3;
+        // Calculate DSCR from real data (NOI / estimated debt service)
+        let dscr = 1.25; // Fallback
+        let ltv = 52.8; // Fallback
+        let capRate = 4.22; // Fallback
+
+        try {
+          const [ltvRes, capRateRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/metrics/${propertyId}/ltv`, { credentials: 'include' }),
+            fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, { credentials: 'include' })
+          ]);
+
+          if (ltvRes.ok) {
+            const ltvData = await ltvRes.json();
+            ltv = ltvData.ltv || 52.8;
+
+            // Calculate DSCR: NOI / (Loan Amount * 0.08)
+            const loanAmount = ltvData.loan_amount || 0;
+            const annualDebtService = loanAmount * 0.08;
+            if (annualDebtService > 0 && propertyMetric.net_income) {
+              dscr = propertyMetric.net_income / annualDebtService;
+            }
+          }
+
+          if (capRateRes.ok) {
+            const capRateData = await capRateRes.json();
+            capRate = capRateData.cap_rate || 4.22;
+          }
+        } catch (apiErr) {
+          console.error('Failed to fetch LTV/Cap Rate:', apiErr);
+        }
+
         const status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
-        
+
+        // Fetch real historical trends from API
+        let noiTrend: number[] = [];
+        let occupancyTrend: number[] = [];
+        try {
+          const histRes = await fetch(`${API_BASE_URL}/metrics/historical?property_id=${propertyId}&months=12`, {
+            credentials: 'include'
+          });
+          if (histRes.ok) {
+            const histData = await histRes.json();
+            noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
+            occupancyTrend = histData.data?.occupancy || [];
+          }
+        } catch (histErr) {
+          console.error('Failed to load historical trends:', histErr);
+        }
+
         setMetrics({
           value: propertyMetric.total_assets || 0,
           noi: propertyMetric.net_income || 0,
           dscr,
-          ltv: 52.8,
+          ltv,
           occupancy: propertyMetric.occupancy_rate || 0,
-          capRate: 4.22,
+          capRate,
           status,
           trends: {
-            noi: Array.from({ length: 12 }, () => (propertyMetric.net_income || 0) * (0.9 + Math.random() * 0.2)),
-            occupancy: Array.from({ length: 12 }, () => (propertyMetric.occupancy_rate || 0) * (0.95 + Math.random() * 0.1))
+            noi: noiTrend,
+            occupancy: occupancyTrend
           }
         });
       }
 
-      // Load costs (mock for now - would come from property costs API)
-      setCosts({
-        insurance: 245000,
-        mortgage: 710000,
-        utilities: 350000,
-        initialBuying: 18000000,
-        other: 255000,
-        total: 19560000
-      });
+      // Load costs from API
+      try {
+        const costsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/costs`, {
+          credentials: 'include'
+        });
+        if (costsRes.ok) {
+          const costsData = await costsRes.json();
+          setCosts({
+            insurance: costsData.costs.insurance || 0,
+            mortgage: costsData.costs.mortgage || 0,
+            utilities: costsData.costs.utilities || 0,
+            initialBuying: 0, // Not tracked in current API
+            maintenance: costsData.costs.maintenance || 0,
+            taxes: costsData.costs.taxes || 0,
+            other: costsData.costs.other || 0,
+            total: costsData.total_costs || 0
+          });
+        } else {
+          // Fallback to mock data
+          setCosts({
+            insurance: 245000,
+            mortgage: 710000,
+            utilities: 350000,
+            initialBuying: 18000000,
+            other: 255000,
+            total: 19560000
+          });
+        }
+      } catch (costsErr) {
+        console.error('Failed to fetch property costs:', costsErr);
+        // Fallback to mock data
+        setCosts({
+          insurance: 245000,
+          mortgage: 710000,
+          utilities: 350000,
+          initialBuying: 18000000,
+          other: 255000,
+          total: 19560000
+        });
+      }
 
-      // Load unit info (mock - would come from rent roll API)
-      setUnitInfo({
-        totalUnits: 160,
-        occupiedUnits: 146,
-        availableUnits: 14,
-        totalSqft: 200000,
-        units: Array.from({ length: 20 }, (_, i) => ({
-          unitNumber: `${i + 1}01`,
-          sqft: 1250,
-          status: i < 18 ? 'occupied' : 'available',
-          tenant: i < 18 ? `Tenant ${i + 1}` : undefined
-        }))
-      });
+      // Load unit info from API
+      try {
+        const unitsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/units?limit=20`, {
+          credentials: 'include'
+        });
+        if (unitsRes.ok) {
+          const unitsData = await unitsRes.json();
+          setUnitInfo({
+            totalUnits: unitsData.totalUnits,
+            occupiedUnits: unitsData.occupiedUnits,
+            availableUnits: unitsData.availableUnits,
+            totalSqft: unitsData.totalSqft,
+            units: unitsData.units
+          });
+        } else {
+          // Fallback to mock data
+          setUnitInfo({
+            totalUnits: 160,
+            occupiedUnits: 146,
+            availableUnits: 14,
+            totalSqft: 200000,
+            units: Array.from({ length: 20 }, (_, i) => ({
+              unitNumber: `${i + 1}01`,
+              sqft: 1250,
+              status: i < 18 ? 'occupied' : 'available',
+              tenant: i < 18 ? `Tenant ${i + 1}` : undefined
+            }))
+          });
+        }
+      } catch (unitsErr) {
+        console.error('Failed to fetch unit details:', unitsErr);
+        // Fallback to mock data
+        setUnitInfo({
+          totalUnits: 160,
+          occupiedUnits: 146,
+          availableUnits: 14,
+          totalSqft: 200000,
+          units: Array.from({ length: 20 }, (_, i) => ({
+            unitNumber: `${i + 1}01`,
+            sqft: 1250,
+            status: i < 18 ? 'occupied' : 'available',
+            tenant: i < 18 ? `Tenant ${i + 1}` : undefined
+          }))
+        });
+      }
 
       // Load market intelligence
       await loadMarketIntelligence(propertyId);
@@ -203,14 +342,15 @@ export default function PortfolioHub() {
   const loadMarketIntelligence = async (propertyId: number) => {
     setLoadingMarketIntel(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/property-research/properties/${propertyId}`, {
+      // Use the correct market intelligence endpoint
+      const res = await fetch(`${API_BASE_URL}/properties/${propertyId}/market-intelligence`, {
         credentials: 'include'
       });
-      
+
       let research = null;
       if (res.ok) {
         const data = await res.json();
-        research = data.research?.[0] || data;
+        research = data;  // Data is directly in the response
       }
       
       // Always set market intelligence data (with fallback if API fails)
@@ -221,10 +361,19 @@ export default function PortfolioHub() {
       const metricsData = metricsRes.ok ? await metricsRes.json() : [];
       const propertyMetric = metricsData.find((m: any) => m.property_id === propertyId);
       
-      // Calculate cap rate from metrics if available
-      const yourCapRate = propertyMetric && propertyMetric.net_operating_income && propertyMetric.property_value
-        ? (propertyMetric.net_operating_income / propertyMetric.property_value) * 100
-        : 4.22;
+      // Fetch real cap rate from API
+      let yourCapRate = 4.22; // Fallback
+      try {
+        const capRateRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, {
+          credentials: 'include'
+        });
+        if (capRateRes.ok) {
+          const capRateData = await capRateRes.json();
+          yourCapRate = capRateData.cap_rate;
+        }
+      } catch (capErr) {
+        console.error('Failed to fetch cap rate for market intel:', capErr);
+      }
       
       setMarketIntel({
         locationScore: research?.location_score || 8.2,
@@ -303,6 +452,24 @@ export default function PortfolioHub() {
       }
     } catch (err) {
       console.error('Failed to load tenant matches:', err);
+    }
+  };
+
+  const loadTenantMix = async (propertyId: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/metrics/${propertyId}/tenant-mix`, {
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTenantMix(data.tenantMix || []);
+      } else {
+        // Fallback to empty array
+        setTenantMix([]);
+      }
+    } catch (err) {
+      console.error('Failed to load tenant mix:', err);
+      setTenantMix([]);
     }
   };
 
@@ -481,9 +648,25 @@ export default function PortfolioHub() {
     p.property_code.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const sortedProperties = [...filteredProperties].sort(() => {
-    // Mock sorting - would use actual metrics
-    return sortBy === 'noi' ? 0 : 0;
+  const sortedProperties = [...filteredProperties].sort((a, b) => {
+    const aMetrics = propertyMetricsMap.get(a.id);
+    const bMetrics = propertyMetricsMap.get(b.id);
+
+    if (sortBy === 'noi') {
+      const aNoi = aMetrics?.net_income || 0;
+      const bNoi = bMetrics?.net_income || 0;
+      return bNoi - aNoi; // Descending
+    } else if (sortBy === 'risk') {
+      // Lower DSCR = higher risk, so sort ascending
+      const aRisk = aMetrics?.dscr || 999;
+      const bRisk = bMetrics?.dscr || 999;
+      return aRisk - bRisk;
+    } else if (sortBy === 'value') {
+      const aValue = aMetrics?.total_assets || 0;
+      const bValue = bMetrics?.total_assets || 0;
+      return bValue - aValue; // Descending
+    }
+    return 0;
   });
 
   return (
@@ -656,7 +839,16 @@ export default function PortfolioHub() {
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Hold Period</div>
-                          <div className="text-xl font-bold">34 mo</div>
+                          <div className="text-xl font-bold">
+                            {selectedProperty?.acquisition_date ?
+                              (() => {
+                                const acqDate = new Date(selectedProperty.acquisition_date);
+                                const now = new Date();
+                                const months = (now.getFullYear() - acqDate.getFullYear()) * 12 + (now.getMonth() - acqDate.getMonth());
+                                return `${months} mo`;
+                              })()
+                              : 'N/A'}
+                          </div>
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Cap Rate</div>
@@ -1224,27 +1416,23 @@ export default function PortfolioHub() {
                               </tr>
                             </thead>
                             <tbody>
-                              <tr>
-                                <td className="py-2 px-4">Office (A)</td>
-                                <td className="text-right py-2 px-4">80</td>
-                                <td className="text-right py-2 px-4">120,000</td>
-                                <td className="text-right py-2 px-4">$96,000</td>
-                                <td className="py-2 px-4">Various</td>
-                              </tr>
-                              <tr>
-                                <td className="py-2 px-4">Office (B)</td>
-                                <td className="text-right py-2 px-4">50</td>
-                                <td className="text-right py-2 px-4">62,500</td>
-                                <td className="text-right py-2 px-4">$50,000</td>
-                                <td className="py-2 px-4">Various</td>
-                              </tr>
-                              <tr>
-                                <td className="py-2 px-4">Retail</td>
-                                <td className="text-right py-2 px-4">20</td>
-                                <td className="text-right py-2 px-4">30,000</td>
-                                <td className="text-right py-2 px-4">$30,000</td>
-                                <td className="py-2 px-4">Various</td>
-                              </tr>
+                              {tenantMix.length > 0 ? (
+                                tenantMix.map((mix, index) => (
+                                  <tr key={index} className="border-b border-border/50 last:border-0">
+                                    <td className="py-2 px-4">{mix.tenantType}</td>
+                                    <td className="text-right py-2 px-4">{mix.unitCount}</td>
+                                    <td className="text-right py-2 px-4">{mix.totalSqft.toLocaleString()}</td>
+                                    <td className="text-right py-2 px-4">${(mix.totalRevenue / 12).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                    <td className="py-2 px-4">{mix.occupancyPct.toFixed(0)}% occupied</td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={5} className="py-8 text-center text-text-secondary">
+                                    No tenant mix data available
+                                  </td>
+                                </tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -1317,20 +1505,28 @@ export default function PortfolioHub() {
                         Upload Document
                       </Button>
                     </div>
-                    <p className="text-text-secondary">28 Documents</p>
+                    <p className="text-text-secondary">{availableDocuments.length} Documents</p>
                     <div className="mt-4 space-y-2">
-                      <div className="flex items-center gap-2 p-3 bg-background rounded-lg">
-                        <FileText className="w-5 h-5 text-info" />
-                        <span>Q3 2025 Income Statement</span>
-                      </div>
-                      <div className="flex items-center gap-2 p-3 bg-background rounded-lg">
-                        <FileText className="w-5 h-5 text-info" />
-                        <span>Q3 2025 Balance Sheet</span>
-                      </div>
-                      <div className="flex items-center gap-2 p-3 bg-background rounded-lg">
-                        <FileText className="w-5 h-5 text-info" />
-                        <span>Q3 2025 Cash Flow</span>
-                      </div>
+                      {availableDocuments.length > 0 ? (
+                        availableDocuments.map((doc, index) => (
+                          <div key={doc.id || index} className="flex items-center gap-2 p-3 bg-background rounded-lg">
+                            <FileText className="w-5 h-5 text-info" />
+                            <div className="flex-1">
+                              <div className="font-medium">{doc.original_filename}</div>
+                              <div className="text-sm text-text-secondary">
+                                {doc.document_type} - {doc.period_year}/{doc.period_month}
+                              </div>
+                            </div>
+                            <div className="text-sm text-text-secondary">
+                              {new Date(doc.uploaded_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-text-secondary">
+                          No documents uploaded yet. Click "Upload Document" to get started.
+                        </div>
+                      )}
                     </div>
                   </Card>
                 )}
