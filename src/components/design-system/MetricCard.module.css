@@ -1,0 +1,71 @@
+.metricCard {
+  /* Inherits from Card */
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.iconContainer {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.icon {
+  font-size: 1.5rem;
+}
+
+.title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.value {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.change {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+.changeUp {
+  color: var(--success-color);
+}
+
+.changeDown {
+  color: var(--danger-color);
+}
+
+.changeNeutral {
+  color: var(--text-secondary);
+}
+
+.sparkline {
+  height: 2rem;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.125rem;
+  margin-top: var(--spacing-sm);
+}
+
+.sparklineBar {
+  flex: 1;
+  background-color: var(--info-color);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  min-height: 5%;
+}
+
