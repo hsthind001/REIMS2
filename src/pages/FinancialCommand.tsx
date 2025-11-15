@@ -20,6 +20,7 @@ import { propertyService } from '../lib/property';
 import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
+import { reconciliationService, type ReconciliationSession, type ComparisonData } from '../lib/reconciliation';
 import type { Property, DocumentUpload as DocumentUploadType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
 
@@ -85,6 +86,14 @@ export default function FinancialCommand() {
   const [kpiLtv, setKpiLtv] = useState<number>(52.8);
   const [kpiCapRate, setKpiCapRate] = useState<number>(4.22);
   const [kpiIrr, setKpiIrr] = useState<number>(14.2);
+  
+  // Reconciliation state
+  const [reconciliationSessions, setReconciliationSessions] = useState<ReconciliationSession[]>([]);
+  const [reconciliationLoading, setReconciliationLoading] = useState(false);
+  const [reconciliationYear, setReconciliationYear] = useState<number>(new Date().getFullYear());
+  const [reconciliationMonth, setReconciliationMonth] = useState<number>(new Date().getMonth() + 1);
+  const [reconciliationDocType, setReconciliationDocType] = useState<string>('balance_sheet');
+  const [activeReconciliation, setActiveReconciliation] = useState<ComparisonData | null>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -94,6 +103,7 @@ export default function FinancialCommand() {
     if (selectedProperty) {
       loadFinancialData(selectedProperty.id);
       loadAvailableDocuments(selectedProperty.property_code);
+      loadReconciliationSessions(selectedProperty.property_code);
     }
   }, [selectedProperty]); // Removed period dependencies - load all documents
 
@@ -247,6 +257,39 @@ export default function FinancialCommand() {
     if (variance > 5) return '🟡';
     if (variance < -5) return '🟢';
     return '⚪';
+  };
+
+  const loadReconciliationSessions = async (propertyCode: string) => {
+    try {
+      setReconciliationLoading(true);
+      const result = await reconciliationService.getSessions(propertyCode, 20);
+      setReconciliationSessions(result.sessions || []);
+    } catch (err) {
+      console.error('Failed to load reconciliation sessions:', err);
+      setReconciliationSessions([]);
+    } finally {
+      setReconciliationLoading(false);
+    }
+  };
+
+  const handleStartReconciliation = async () => {
+    if (!selectedProperty) return;
+    
+    try {
+      setReconciliationLoading(true);
+      const comparisonData = await reconciliationService.getComparison(
+        selectedProperty.property_code,
+        reconciliationYear,
+        reconciliationMonth,
+        reconciliationDocType
+      );
+      setActiveReconciliation(comparisonData);
+    } catch (err: any) {
+      console.error('Failed to start reconciliation:', err);
+      alert(err.response?.data?.detail || 'Failed to start reconciliation. Please ensure the document exists and has been extracted.');
+    } finally {
+      setReconciliationLoading(false);
+    }
   };
 
   const loadAvailableDocuments = async (propertyCode: string) => {
@@ -1028,12 +1071,329 @@ export default function FinancialCommand() {
         )}
 
         {activeTab === 'reconciliation' && (
-          <Card className="p-6">
-            <h2 className="text-2xl font-bold mb-4">Reconciliation</h2>
-            <Button variant="primary" onClick={() => window.location.hash = 'reconciliation'}>
-              View Full Reconciliation
-            </Button>
-          </Card>
+          <div className="space-y-6">
+            {/* Header with Explanation */}
+            <Card className="p-6">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold mb-2">📊 Financial Reconciliation</h2>
+                <p className="text-gray-600 mb-4">
+                  Reconciliation compares your original PDF documents with the data extracted into our database. 
+                  This ensures 100% accuracy by identifying any discrepancies between the source document and stored data.
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-blue-900 mb-2">🔍 How It Works:</h3>
+                  <ul className="list-disc list-inside text-sm text-blue-800 space-y-1">
+                    <li>Select a property, year, month, and document type</li>
+                    <li>System compares the PDF file with database records line-by-line</li>
+                    <li>View differences side-by-side and resolve discrepancies</li>
+                    <li>Maintain complete audit trail of all corrections</li>
+                  </ul>
+                </div>
+              </div>
+            </Card>
+
+            {/* Selection Panel */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Select Document to Reconcile</h3>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Property</label>
+                  <select
+                    value={selectedProperty?.property_code || ''}
+                    onChange={(e) => {
+                      const prop = properties.find(p => p.property_code === e.target.value);
+                      setSelectedProperty(prop || null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    disabled={reconciliationLoading}
+                  >
+                    <option value="">Select property...</option>
+                    {properties.map((p) => (
+                      <option key={p.id} value={p.property_code}>
+                        {p.property_code} - {p.property_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                  <input
+                    type="number"
+                    value={reconciliationYear}
+                    onChange={(e) => setReconciliationYear(parseInt(e.target.value))}
+                    min="2020"
+                    max="2030"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    disabled={reconciliationLoading}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                  <select
+                    value={reconciliationMonth}
+                    onChange={(e) => setReconciliationMonth(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    disabled={reconciliationLoading}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                      <option key={month} value={month}>
+                        {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Type</label>
+                  <select
+                    value={reconciliationDocType}
+                    onChange={(e) => setReconciliationDocType(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    disabled={reconciliationLoading}
+                  >
+                    <option value="balance_sheet">📊 Balance Sheet</option>
+                    <option value="income_statement">💰 Income Statement</option>
+                    <option value="cash_flow">💵 Cash Flow</option>
+                    <option value="rent_roll">🏠 Rent Roll</option>
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <Button
+                    variant="primary"
+                    onClick={handleStartReconciliation}
+                    disabled={reconciliationLoading || !selectedProperty}
+                    className="w-full"
+                  >
+                    {reconciliationLoading ? 'Loading...' : 'Start Reconciliation'}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+
+            {/* Active Reconciliation Display */}
+            {activeReconciliation && (
+              <Card className="p-6">
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">🔄 Active Reconciliation</h3>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <div>
+                          <strong>Property:</strong> {activeReconciliation.property.name} ({activeReconciliation.property.code})
+                        </div>
+                        <div>
+                          <strong>Period:</strong> {new Date(2000, activeReconciliation.period.month - 1).toLocaleString('default', { month: 'long' })} {activeReconciliation.period.year}
+                        </div>
+                        <div>
+                          <strong>Document:</strong> {activeReconciliation.document_type.replace('_', ' ').toUpperCase()}
+                        </div>
+                        <div>
+                          <strong>File:</strong> {availableDocuments.find(d => 
+                            d.property_id === activeReconciliation.property.id &&
+                            d.document_type === activeReconciliation.document_type &&
+                            d.period_year === activeReconciliation.period.year &&
+                            d.period_month === activeReconciliation.period.month
+                          )?.file_name || 'Original PDF Document'}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        window.location.hash = 'reconciliation';
+                        window.location.reload();
+                      }}
+                    >
+                      View Full Reconciliation
+                    </Button>
+                  </div>
+
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-4 gap-4 mb-4">
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <div className="text-2xl font-bold">{activeReconciliation.comparison.total_records}</div>
+                      <div className="text-sm text-gray-600">Total Records</div>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <div className="text-2xl font-bold text-green-700">{activeReconciliation.comparison.matches}</div>
+                      <div className="text-sm text-gray-600">Matches</div>
+                    </div>
+                    <div className="bg-red-50 p-4 rounded-lg">
+                      <div className="text-2xl font-bold text-red-700">{activeReconciliation.comparison.differences}</div>
+                      <div className="text-sm text-gray-600">Differences</div>
+                    </div>
+                    <div className="bg-yellow-50 p-4 rounded-lg">
+                      <div className="text-2xl font-bold text-yellow-700">
+                        {activeReconciliation.comparison.total_records > 0
+                          ? Math.round((activeReconciliation.comparison.matches / activeReconciliation.comparison.total_records) * 100)
+                          : 0}%
+                      </div>
+                      <div className="text-sm text-gray-600">Match Rate</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>📋 What's Being Compared:</strong> The system is comparing the original PDF file "{availableDocuments.find(d => 
+                        d.property_id === activeReconciliation.property.id &&
+                        d.document_type === activeReconciliation.document_type &&
+                        d.period_year === activeReconciliation.period.year &&
+                        d.period_month === activeReconciliation.period.month
+                      )?.file_name || 'PDF Document'}" from {new Date(2000, activeReconciliation.period.month - 1).toLocaleString('default', { month: 'long' })} {activeReconciliation.period.year} 
+                      with the data extracted and stored in the database. Each line item is checked for accuracy.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Recent Reconciliation Sessions */}
+            {reconciliationSessions.length > 0 && (
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Recent Reconciliation Sessions</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Property</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Match Rate</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {reconciliationSessions.map((session) => (
+                        <tr key={session.id}>
+                          <td className="px-4 py-3 text-sm">
+                            {session.started_at ? new Date(session.started_at).toLocaleDateString() : 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium">{session.property_name}</td>
+                          <td className="px-4 py-3 text-sm">
+                            {new Date(2000, session.period_month - 1).toLocaleString('default', { month: 'short' })} {session.period_year}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {session.document_type.replace('_', ' ').toUpperCase()}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              session.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {session.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {session.summary?.match_rate ? `${Math.round(session.summary.match_rate)}%` : 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                setReconciliationYear(session.period_year);
+                                setReconciliationMonth(session.period_month);
+                                setReconciliationDocType(session.document_type);
+                                if (selectedProperty?.property_code !== session.property_code) {
+                                  const prop = properties.find(p => p.property_code === session.property_code);
+                                  setSelectedProperty(prop || null);
+                                }
+                                handleStartReconciliation();
+                              }}
+                            >
+                              View
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {/* Available Documents for Reconciliation */}
+            {selectedProperty && availableDocuments.length > 0 && (
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">📁 Available Documents for Reconciliation</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  These are the documents that have been uploaded and extracted. Select one above to start reconciliation.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Month</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {availableDocuments
+                        .filter(d => d.extraction_status === 'completed')
+                        .map((doc) => (
+                          <tr key={doc.id}>
+                            <td className="px-4 py-3 text-sm font-medium">{doc.file_name}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {doc.document_type?.replace('_', ' ').toUpperCase() || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-sm">{doc.period_year || 'N/A'}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {doc.period_month ? new Date(2000, doc.period_month - 1).toLocaleString('default', { month: 'long' }) : 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                Ready
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  if (doc.period_year) setReconciliationYear(doc.period_year);
+                                  if (doc.period_month) setReconciliationMonth(doc.period_month);
+                                  if (doc.document_type) setReconciliationDocType(doc.document_type);
+                                  handleStartReconciliation();
+                                }}
+                              >
+                                Reconcile
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {/* Empty State */}
+            {!activeReconciliation && reconciliationSessions.length === 0 && !reconciliationLoading && (
+              <Card className="p-6">
+                <div className="text-center py-8">
+                  <p className="text-gray-600 mb-4">
+                    No reconciliation sessions found. Start a new reconciliation by selecting a property, period, and document type above.
+                  </p>
+                  <Button
+                    variant="primary"
+                    onClick={() => window.location.hash = 'reconciliation'}
+                  >
+                    Open Full Reconciliation Page
+                  </Button>
+                </div>
+              </Card>
+            )}
+          </div>
         )}
       </div>
     </div>

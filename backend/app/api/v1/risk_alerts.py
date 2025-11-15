@@ -13,7 +13,7 @@ import logging
 from app.db.database import get_db
 from app.services.dscr_monitoring_service import DSCRMonitoringService
 from app.services.committee_notification_service import CommitteeNotificationService
-from app.models.committee_alert import CommitteeAlert, AlertType, AlertStatus, CommitteeType
+from app.models.committee_alert import CommitteeAlert, AlertType, AlertStatus, AlertSeverity, CommitteeType
 from app.models.property import Property
 
 router = APIRouter(prefix="/risk-alerts", tags=["risk_alerts"])
@@ -340,24 +340,140 @@ def get_property_alerts(
 ):
     """
     Get all alerts for a specific property
+    Queries both the alerts table and committee_alerts table
     """
+    from sqlalchemy import text
+    
     property = db.query(Property).filter(Property.id == property_id).first()
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
-    query = db.query(CommitteeAlert).filter(CommitteeAlert.property_id == property_id)
-
+    # Query alerts table (the main alerts system)
+    sql = """
+        SELECT 
+            a.id,
+            a.alert_rule_id,
+            a.anomaly_detection_id,
+            a.document_id,
+            a.message,
+            a.severity,
+            a.status,
+            a.created_at,
+            a.acknowledged_at,
+            a.acknowledged_by,
+            a.resolved_at,
+            a.resolved_by,
+            du.file_name,
+            du.document_type,
+            ar.rule_name,
+            ar.field_name,
+            ar.threshold_value
+        FROM alerts a
+        JOIN document_uploads du ON a.document_id = du.id
+        LEFT JOIN alert_rules ar ON a.alert_rule_id = ar.id
+        WHERE du.property_id = :property_id
+    """
+    
+    params = {'property_id': property_id}
+    
     if status:
-        query = query.filter(CommitteeAlert.status == status)
-
-    alerts = query.order_by(CommitteeAlert.triggered_at.desc()).all()
-
+        sql += " AND a.status = :status"
+        params['status'] = status
+    
+    sql += " ORDER BY a.created_at DESC"
+    
+    results = db.execute(text(sql), params).fetchall()
+    
+    # Convert to dict format matching frontend expectations
+    alerts_list = []
+    for row in results:
+        # Extract alert type from message or rule name
+        alert_type = row.rule_name or 'threshold_breach'
+        if 'occupancy' in row.message.lower():
+            alert_type = 'occupancy_warning'
+        elif 'debt' in row.message.lower() or 'equity' in row.message.lower():
+            alert_type = 'covenant_violation'
+        elif 'current ratio' in row.message.lower() or 'liquidity' in row.message.lower():
+            alert_type = 'financial_threshold'
+        
+        # Extract threshold and actual values from message
+        threshold_value = float(row.threshold_value) if row.threshold_value else None
+        actual_value = None
+        
+        # Try to extract actual value from message (e.g., "84.00%" or "0.24" or "469.86")
+        import re
+        # Look for patterns like "is 84.00%" or "is 0.24" or "ratio is 469.86"
+        # Match number after "is " or "ratio is " or similar patterns
+        value_patterns = [
+            r'is\s+(\d+\.?\d*)',  # "is 84.00" or "is 0.24"
+            r'rate\s+is\s+(\d+\.?\d*)',  # "rate is 84.00"
+            r'ratio\s+is\s+(\d+\.?\d*)',  # "ratio is 469.86"
+        ]
+        
+        for pattern in value_patterns:
+            match = re.search(pattern, row.message, re.IGNORECASE)
+            if match:
+                try:
+                    actual_value = float(match.group(1))
+                    break
+                except:
+                    pass
+        
+        # Fallback: if no pattern match, try to find the first significant number
+        if actual_value is None:
+            numbers = re.findall(r'\d+\.?\d+', row.message)  # Match numbers with decimals
+            if numbers:
+                try:
+                    # Use the first number that's not the threshold
+                    for num_str in numbers:
+                        num = float(num_str)
+                        if threshold_value and abs(num - threshold_value) > 0.1:  # Not the threshold
+                            actual_value = num
+                            break
+                        elif not threshold_value:
+                            actual_value = num
+                            break
+                except:
+                    pass
+        
+        alerts_list.append({
+            "id": row.id,
+            "property_id": property_id,
+            "alert_type": alert_type,
+            "severity": row.severity,
+            "status": row.status or "active",
+            "title": row.message.split(':')[0] if ':' in row.message else row.message[:50],
+            "description": row.message,
+            "threshold_value": threshold_value,
+            "actual_value": actual_value,
+            "threshold_unit": "ratio" if "ratio" in row.message.lower() else "percentage" if "%" in row.message else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
+            "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+            "acknowledged_by": row.acknowledged_by,
+            "resolved_by": row.resolved_by,
+            "document_id": row.document_id,
+            "file_name": row.file_name,
+            "document_type": row.document_type,
+            "field_name": row.field_name
+        })
+    
+    # Also query committee_alerts for completeness
+    committee_alerts = db.query(CommitteeAlert).filter(CommitteeAlert.property_id == property_id)
+    if status:
+        committee_alerts = committee_alerts.filter(CommitteeAlert.status == status)
+    committee_alerts = committee_alerts.order_by(CommitteeAlert.triggered_at.desc()).all()
+    
+    # Add committee alerts to the list
+    for alert in committee_alerts:
+        alerts_list.append(alert.to_dict())
+    
     return {
         "success": True,
         "property_id": property_id,
         "property_name": property.property_name,
-        "alerts": [alert.to_dict() for alert in alerts],
-        "total": len(alerts)
+        "alerts": alerts_list,
+        "total": len(alerts_list)
     }
 
 
@@ -365,17 +481,54 @@ def get_property_alerts(
 def get_alert_dashboard_summary(db: Session = Depends(get_db)):
     """
     Get summary statistics for alerts dashboard
+    Queries both alerts table and committee_alerts table
     """
-    total_alerts = db.query(CommitteeAlert).count()
-    active_alerts = db.query(CommitteeAlert).filter(
+    from sqlalchemy import text
+    
+    # Query alerts table (main alerts system)
+    alerts_sql = """
+        SELECT 
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE status = 'active') as active,
+            COUNT(*) FILTER (WHERE status = 'active' AND severity IN ('critical', 'urgent')) as critical
+        FROM alerts a
+        JOIN document_uploads du ON a.document_id = du.id
+    """
+    alerts_stats = db.execute(text(alerts_sql)).fetchone()
+    
+    # Query committee_alerts
+    total_committee_alerts = db.query(CommitteeAlert).count()
+    active_committee_alerts = db.query(CommitteeAlert).filter(
         CommitteeAlert.status == AlertStatus.ACTIVE
     ).count()
-    critical_alerts = db.query(CommitteeAlert).filter(
+    critical_committee_alerts = db.query(CommitteeAlert).filter(
         CommitteeAlert.status == AlertStatus.ACTIVE,
-        CommitteeAlert.severity.in_(['CRITICAL', 'URGENT'])
+        CommitteeAlert.severity.in_([AlertSeverity.CRITICAL, AlertSeverity.URGENT])
+    ).count()
+    
+    # Combine counts
+    total_alerts = (alerts_stats.total or 0) + total_committee_alerts
+    active_alerts = (alerts_stats.active or 0) + active_committee_alerts
+    critical_alerts = (alerts_stats.critical or 0) + critical_committee_alerts
+    
+    # Count properties with good DSCR (properties with DSCR >= 1.2)
+    properties_with_good_dscr_sql = """
+        SELECT COUNT(DISTINCT p.id)
+        FROM properties p
+        JOIN financial_periods fp ON p.id = fp.property_id
+        JOIN financial_metrics fm ON fp.id = fm.period_id
+        WHERE fm.dscr >= 1.2
+        AND p.status = 'active'
+    """
+    good_dscr_count = db.execute(text(properties_with_good_dscr_sql)).scalar() or 0
+    
+    # Count active workflow locks
+    from app.models.workflow_lock import WorkflowLock, LockStatus
+    active_locks = db.query(WorkflowLock).filter(
+        WorkflowLock.status == LockStatus.ACTIVE
     ).count()
 
-    # Alerts by committee
+    # Alerts by committee (from committee_alerts only)
     alerts_by_committee = {}
     for committee in CommitteeType:
         count = db.query(CommitteeAlert).filter(
@@ -397,10 +550,16 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
 
     return {
         "success": True,
+        "total_critical_alerts": critical_alerts,
+        "total_active_alerts": active_alerts,
+        "total_active_locks": active_locks,
+        "properties_with_good_dscr": good_dscr_count,
         "summary": {
             "total_alerts": total_alerts,
             "active_alerts": active_alerts,
             "critical_alerts": critical_alerts,
+            "active_locks": active_locks,
+            "properties_with_good_dscr": good_dscr_count,
             "alerts_by_committee": alerts_by_committee,
             "alerts_by_type": alerts_by_type,
         }
