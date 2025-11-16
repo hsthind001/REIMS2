@@ -227,40 +227,40 @@ class ExtractionOrchestrator:
             # ==================== END DATA INSERTION & QUALITY ASSURANCE ====================
             
             # Step 7: CAPTURE FIELD-LEVEL CONFIDENCE METADATA (NEW SPRINT 1 FEATURE!)
+            # NOTE: Metadata capture is now NON-CRITICAL to prevent worker crashes
+            # Data is already saved, so we won't rollback if metadata fails
             print(f"🎯 Sprint 1 Feature: Capturing field-level confidence metadata...")
-            
-            # Prepare inserted records for metadata capture
-            # Note: parse_result should contain the inserted records by table
-            inserted_records = parse_result.get("inserted_records", {})
-            
-            metadata_result = self._capture_and_save_metadata(
-                upload_id=upload_id,
-                pdf_data=pdf_data,
-                inserted_records=inserted_records
-            )
-            
-            if not metadata_result.get("success"):
-                # ROLLBACK: Metadata save failed - rollback entire extraction
-                print(f"❌ Metadata save failed - rolling back entire extraction!")
-                self.db.rollback()
-                
-                upload = self.db.query(DocumentUpload).filter(
-                    DocumentUpload.id == upload_id
-                ).first()
-                
-                if upload:
-                    upload.extraction_status = "failed_metadata"
-                    upload.extraction_completed_at = datetime.now()
-                    upload.notes = f"Metadata capture failed: {metadata_result.get('error', 'Unknown error')}"
-                    self.db.commit()
-                
-                return {
-                    "success": False,
-                    "error": f"Metadata save failed: {metadata_result.get('error')}",
-                    "rolled_back": True
-                }
-            
-            print(f"✅ Metadata capture completed successfully!")
+
+            metadata_result = {"success": True, "skipped": True}
+
+            try:
+                # Prepare inserted records for metadata capture
+                # Note: parse_result should contain the inserted records by table
+                inserted_records = parse_result.get("inserted_records", {})
+
+                metadata_result = self._capture_and_save_metadata(
+                    upload_id=upload_id,
+                    pdf_data=pdf_data,
+                    inserted_records=inserted_records
+                )
+
+                if not metadata_result.get("success"):
+                    # CHANGED: Metadata failure is now NON-CRITICAL
+                    # We log the error but don't rollback the successful data insertion
+                    print(f"⚠️  Metadata save failed (non-critical): {metadata_result.get('error', 'Unknown error')}")
+                    print(f"✅ Data extraction completed successfully despite metadata failure")
+
+                    # Add note about metadata failure but don't fail the extraction
+                    upload.notes = (upload.notes or "") + f"\nMetadata capture skipped: {metadata_result.get('error', 'Unknown error')[:100]}"
+                else:
+                    print(f"✅ Metadata capture completed successfully!")
+
+            except Exception as metadata_error:
+                # Catch any exceptions during metadata capture to prevent worker crashes
+                print(f"⚠️  Metadata capture exception (non-critical): {str(metadata_error)}")
+                print(f"✅ Data extraction completed successfully despite metadata exception")
+                upload.notes = (upload.notes or "") + f"\nMetadata capture skipped: {str(metadata_error)[:100]}"
+                metadata_result = {"success": False, "error": str(metadata_error), "skipped_due_to_exception": True}
             
             # Step 8: Update upload status to completed
             upload.extraction_status = "completed"
@@ -1686,11 +1686,13 @@ class ExtractionOrchestrator:
         """
         try:
             print(f"📊 Capturing field-level confidence metadata...")
-            
-            # Step 1: Run all extraction engines to get ExtractionResults
+
+            # Step 1: Run ONLY top 3 engines to prevent memory exhaustion
+            # CHANGED: Previously ran all 6 engines causing worker crashes
+            # Now using only PyMuPDF, PDFPlumber, and Camelot (lightweight engines)
             extraction_results = self.extraction_engine.extract_with_confidence(
                 pdf_data=pdf_data,
-                run_all_engines=True
+                run_all_engines=False  # CHANGED: Use only the best engine
             )
             
             if not extraction_results or len(extraction_results) == 0:
