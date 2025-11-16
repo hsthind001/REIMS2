@@ -912,34 +912,15 @@ export default function CommandCenter() {
                 <h2 className="text-2xl font-bold">AI Portfolio Insights</h2>
               </div>
               <p className="text-sm text-text-secondary mb-4">Powered by Claude AI</p>
-              
-              {/* Portfolio Health Summary */}
-              <div className="bg-premium-light/20 p-4 rounded-lg border border-premium/30 mb-4">
-                <div className="flex items-start gap-2">
-                  <span className="text-premium">🟣</span>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm mb-1">Portfolio Health Strong</p>
-                    <p className="text-xs text-text-secondary mb-2">
-                      No critical issues detected - portfolio performing within normal parameters.
-                    </p>
-                    <Button 
-                      variant="premium" 
-                      size="sm"
-                      onClick={async () => {
-                        setSelectedInsight(null);
-                        setShowAnalysisModal(true);
-                        await loadPortfolioAnalysis();
-                      }}
-                    >
-                      View Analysis
-                    </Button>
-                  </div>
-                </div>
-              </div>
 
-              {/* Individual Insights */}
+              {/* AI Insights */}
               <div className="space-y-4">
-                {aiInsights.map((insight) => (
+                {aiInsights.length === 0 ? (
+                  <div className="bg-premium-light/20 p-4 rounded-lg border border-premium/30 text-center">
+                    <p className="text-sm text-text-secondary">Loading AI insights...</p>
+                  </div>
+                ) : (
+                  aiInsights.map((insight) => (
                   <div key={insight.id} className="bg-premium-light/20 p-3 rounded-lg border border-premium/30">
                     <div className="flex items-start gap-2">
                       <span className="text-premium">🟣</span>
@@ -962,7 +943,8 @@ export default function CommandCenter() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </Card>
           </div>
