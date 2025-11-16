@@ -48,10 +48,11 @@ class ReconciliationService:
         period_year: int,
         period_month: int,
         document_type: str,
-        user_id: int
+        user_id: int,
+        reuse_existing: bool = True
     ) -> Optional[ReconciliationSession]:
         """
-        Start a new reconciliation session
+        Start a new reconciliation session or reuse existing one
         
         Args:
             property_code: Property code
@@ -59,6 +60,7 @@ class ReconciliationService:
             period_month: Financial month
             document_type: Type of document (balance_sheet, income_statement, etc.)
             user_id: User initiating reconciliation
+            reuse_existing: If True, reuse existing in_progress session instead of creating new one
             
         Returns:
             ReconciliationSession object or None
@@ -82,7 +84,22 @@ class ReconciliationService:
         if not period:
             return None
         
-        # Create session
+        # Check for existing in_progress session if reuse_existing is True
+        if reuse_existing:
+            existing_session = self.db.query(ReconciliationSession).filter(
+                and_(
+                    ReconciliationSession.property_id == property_obj.id,
+                    ReconciliationSession.period_id == period.id,
+                    ReconciliationSession.document_type == document_type,
+                    ReconciliationSession.status == 'in_progress'
+                )
+            ).order_by(ReconciliationSession.started_at.desc()).first()
+            
+            if existing_session:
+                # Return existing session instead of creating new one
+                return existing_session
+        
+        # Create new session
         session = ReconciliationSession(
             property_id=property_obj.id,
             period_id=period.id,
@@ -389,11 +406,17 @@ class ReconciliationService:
             return {'error': 'Failed to start reconciliation session'}
         
         # Get PDF and DB data
+        # PDF data = original extraction from the PDF document
+        # DB data = current state in database (may have been corrected/reviewed)
         pdf_records = self.get_pdf_data(property_obj.id, period.id, document_type)
         db_records = self.get_database_data(property_obj.id, period.id, document_type)
         
-        # For simplicity, treat them as the same for now (since we're comparing extraction to itself)
-        # In a real scenario, you might re-extract the PDF fresh or compare to reviewed data
+        # Check if document exists
+        if not pdf_records and not db_records:
+            return {'error': f'Document not found. The {document_type.replace("_", " ")} document for {property_code} for {period_year}-{period_month:02d} has not been uploaded yet. Please upload the document first.'}
+        
+        # Note: Currently both use the same source (extracted data), but in future,
+        # db_records could represent reviewed/corrected data that differs from original extraction
         
         # Detect differences
         # Since we're comparing extracted data to itself (pdf_records == db_records),

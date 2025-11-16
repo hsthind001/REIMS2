@@ -88,6 +88,7 @@ export default function CommandCenter() {
   const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
   const [analysisDetails, setAnalysisDetails] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
   const [sparklineData, setSparklineData] = useState<{
     value: number[];
     noi: number[];
@@ -107,6 +108,15 @@ export default function CommandCenter() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    // Reload portfolio health and sparklines when property filter changes
+    if (properties.length > 0) {
+      loadPortfolioHealth(properties);
+      loadSparklineData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPropertyFilter]);
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -115,8 +125,11 @@ export default function CommandCenter() {
       const propertiesData = await propertyService.getAllProperties();
       setProperties(propertiesData);
 
-      // Load portfolio health
+      // Load portfolio health (will use selectedPropertyFilter from state)
       await loadPortfolioHealth(propertiesData);
+      
+      // Reload sparklines when data changes
+      await loadSparklineData();
 
       // Load critical alerts
       await loadCriticalAlerts();
@@ -140,9 +153,14 @@ export default function CommandCenter() {
   const loadPortfolioHealth = async (_properties: Property[]) => {
     try {
       // Calculate portfolio health from properties and metrics
-      const metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
+      let metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
         credentials: 'include'
       }).then(r => r.ok ? r.json() : []);
+
+      // Filter by selected property if not "all"
+      if (selectedPropertyFilter !== 'all') {
+        metricsSummary = metricsSummary.filter((m: any) => m.property_code === selectedPropertyFilter);
+      }
 
       let totalValue = 0;
       let totalNOI = 0;
@@ -151,10 +169,32 @@ export default function CommandCenter() {
       let criticalAlerts = 0;
       let warningAlerts = 0;
 
+      // Use only latest period per property (API now filters, but double-check)
+      const propertyMap = new Map<string, any>();
       metricsSummary.forEach((m: any) => {
+        const existing = propertyMap.get(m.property_code);
+        if (!existing) {
+          propertyMap.set(m.property_code, m);
+        } else {
+          // Prefer later period if duplicate
+          if (m.period_year > existing.period_year || 
+              (m.period_year === existing.period_year && m.period_month > existing.period_month)) {
+            propertyMap.set(m.property_code, m);
+          }
+        }
+      });
+
+      // Sum values from unique properties only
+      propertyMap.forEach((m: any) => {
         if (m.total_assets) totalValue += m.total_assets;
-        if (m.net_income) totalNOI += m.net_income;
-        if (m.occupancy_rate) {
+        // Use NOI (Net Operating Income) instead of net_income for portfolio NOI
+        if (m.net_operating_income !== null && m.net_operating_income !== undefined) {
+          totalNOI += m.net_operating_income;
+        } else if (m.net_income !== null && m.net_income !== undefined) {
+          // Fallback to net_income if NOI not available
+          totalNOI += m.net_income;
+        }
+        if (m.occupancy_rate !== null && m.occupancy_rate !== undefined) {
           totalOccupancy += m.occupancy_rate;
           occupancyCount++;
         }
@@ -162,18 +202,24 @@ export default function CommandCenter() {
 
       const avgOccupancy = occupancyCount > 0 ? totalOccupancy / occupancyCount : 0;
 
-      // Fetch Portfolio IRR from API
+      // Fetch Portfolio IRR from API (only for "all" - single property IRR not available)
       let portfolioIRR = 14.2; // Fallback
-      try {
-        const irrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-irr`, {
-          credentials: 'include'
-        });
-        if (irrResponse.ok) {
-          const irrData = await irrResponse.json();
-          portfolioIRR = irrData.irr;
+      if (selectedPropertyFilter === 'all') {
+        try {
+          const irrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-irr`, {
+            credentials: 'include'
+          });
+          if (irrResponse.ok) {
+            const irrData = await irrResponse.json();
+            portfolioIRR = irrData.irr;
+          }
+        } catch (irrErr) {
+          console.error('Failed to fetch portfolio IRR:', irrErr);
         }
-      } catch (irrErr) {
-        console.error('Failed to fetch portfolio IRR:', irrErr);
+      } else {
+        // For single property, use a placeholder or calculate from NOI
+        // TODO: Calculate property-specific IRR when available
+        portfolioIRR = 14.2; // Placeholder
       }
 
       // Calculate health score (0-100)
@@ -458,8 +504,18 @@ export default function CommandCenter() {
 
   const loadSparklineData = async () => {
     try {
-      // Fetch 12 months of historical data for portfolio sparklines
-      const response = await fetch(`${API_BASE_URL}/metrics/historical?months=12`, {
+      // Determine if we need property-specific or portfolio-wide data
+      let url = `${API_BASE_URL}/metrics/historical?months=12`;
+      if (selectedPropertyFilter !== 'all') {
+        // Find property ID for the selected property
+        const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
+        if (selectedProp) {
+          url += `&property_id=${selectedProp.id}`;
+        }
+      }
+      
+      // Fetch 12 months of historical data for sparklines
+      const response = await fetch(url, {
         credentials: 'include'
       });
 
@@ -612,7 +668,12 @@ export default function CommandCenter() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-4xl font-bold mb-2">🏢 Portfolio Health Score</h1>
+              <h1 className="text-4xl font-bold mb-2">
+                {selectedPropertyFilter === 'all' 
+                  ? '🏢 Portfolio Health Score' 
+                  : `🏢 ${properties.find(p => p.property_code === selectedPropertyFilter)?.property_name || 'Property'} Health Score`
+                }
+              </h1>
               <p className="text-white/80">Last Updated: {portfolioHealth?.lastUpdated.toLocaleTimeString() || 'Just now'}</p>
             </div>
             <div className="text-right">
@@ -629,10 +690,37 @@ export default function CommandCenter() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Property Filter */}
+        <Card className="p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+              Filter by Property:
+            </label>
+            <select
+              value={selectedPropertyFilter}
+              onChange={(e) => setSelectedPropertyFilter(e.target.value)}
+              className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">📊 All Properties (Portfolio Overview)</option>
+              {properties.map((property) => (
+                <option key={property.id} value={property.property_code}>
+                  {property.property_code} - {property.property_name}
+                </option>
+              ))}
+            </select>
+            <div className="text-sm text-gray-600">
+              {selectedPropertyFilter === 'all' 
+                ? `Showing metrics for ${properties.length} properties`
+                : `Showing metrics for selected property`
+              }
+            </div>
+          </div>
+        </Card>
+
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <MetricCard
-            title="Total Portfolio Value"
+            title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
             value={portfolioHealth?.totalValue || 0}
             change={5.2}
             trend="up"
@@ -641,7 +729,7 @@ export default function CommandCenter() {
             sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
           />
           <MetricCard
-            title="Portfolio NOI"
+            title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
             value={portfolioHealth?.totalNOI || 0}
             change={3.8}
             trend="up"
@@ -650,7 +738,7 @@ export default function CommandCenter() {
             sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
           />
           <MetricCard
-            title="Average Occupancy"
+            title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
             value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
             change={-1.2}
             trend="down"
@@ -659,7 +747,7 @@ export default function CommandCenter() {
             sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
           />
           <MetricCard
-            title="Portfolio IRR"
+            title={selectedPropertyFilter === 'all' ? "Portfolio IRR" : "Property IRR"}
             value={`${portfolioHealth?.portfolioIRR || 0}%`}
             change={2.1}
             trend="up"

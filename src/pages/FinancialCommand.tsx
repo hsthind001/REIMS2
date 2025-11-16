@@ -286,7 +286,16 @@ export default function FinancialCommand() {
       setActiveReconciliation(comparisonData);
     } catch (err: any) {
       console.error('Failed to start reconciliation:', err);
-      alert(err.response?.data?.detail || 'Failed to start reconciliation. Please ensure the document exists and has been extracted.');
+      const errorMessage = err.response?.data?.detail || err.message || 'Unable to start reconciliation';
+      
+      // Check if it's a document not found error
+      if (errorMessage.toLowerCase().includes('not found') || 
+          errorMessage.toLowerCase().includes('document') ||
+          errorMessage.toLowerCase().includes('period not found')) {
+        alert(`📄 Document Not Available\n\nThe document for ${selectedProperty?.property_name} (${reconciliationDocType.replace('_', ' ').toUpperCase()}) for ${new Date(2000, reconciliationMonth - 1).toLocaleString('default', { month: 'long' })} ${reconciliationYear} has not been uploaded yet.\n\nPlease upload the document first to proceed with reconciliation.`);
+      } else {
+        alert(`⚠️ ${errorMessage}\n\nPlease try again or contact support if the issue persists.`);
+      }
     } finally {
       setReconciliationLoading(false);
     }
@@ -1072,23 +1081,10 @@ export default function FinancialCommand() {
 
         {activeTab === 'reconciliation' && (
           <div className="space-y-6">
-            {/* Header with Explanation */}
+            {/* Header */}
             <Card className="p-6">
               <div className="mb-4">
                 <h2 className="text-2xl font-bold mb-2">📊 Financial Reconciliation</h2>
-                <p className="text-gray-600 mb-4">
-                  Reconciliation compares your original PDF documents with the data extracted into our database. 
-                  This ensures 100% accuracy by identifying any discrepancies between the source document and stored data.
-                </p>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-blue-900 mb-2">🔍 How It Works:</h3>
-                  <ul className="list-disc list-inside text-sm text-blue-800 space-y-1">
-                    <li>Select a property, year, month, and document type</li>
-                    <li>System compares the PDF file with database records line-by-line</li>
-                    <li>View differences side-by-side and resolve discrepancies</li>
-                    <li>Maintain complete audit trail of all corrections</li>
-                  </ul>
-                </div>
               </div>
             </Card>
 
@@ -1175,11 +1171,12 @@ export default function FinancialCommand() {
 
             {/* Active Reconciliation Display */}
             {activeReconciliation && (
-              <Card className="p-6">
-                <div className="mb-4">
+              <div className="space-y-6">
+                {/* Header and Summary */}
+                <Card className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-semibold mb-2">🔄 Active Reconciliation</h3>
+                      <h3 className="text-lg font-semibold mb-2">🔄 Reconciliation Results</h3>
                       <div className="text-sm text-gray-600 space-y-1">
                         <div>
                           <strong>Property:</strong> {activeReconciliation.property.name} ({activeReconciliation.property.code})
@@ -1191,7 +1188,7 @@ export default function FinancialCommand() {
                           <strong>Document:</strong> {activeReconciliation.document_type.replace('_', ' ').toUpperCase()}
                         </div>
                         <div>
-                          <strong>File:</strong> {availableDocuments.find(d => 
+                          <strong>PDF File:</strong> {availableDocuments.find(d => 
                             d.property_id === activeReconciliation.property.id &&
                             d.document_type === activeReconciliation.document_type &&
                             d.period_year === activeReconciliation.period.year &&
@@ -1200,15 +1197,6 @@ export default function FinancialCommand() {
                         </div>
                       </div>
                     </div>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        window.location.hash = 'reconciliation';
-                        window.location.reload();
-                      }}
-                    >
-                      View Full Reconciliation
-                    </Button>
                   </div>
 
                   {/* Summary Stats */}
@@ -1234,148 +1222,120 @@ export default function FinancialCommand() {
                       <div className="text-sm text-gray-600">Match Rate</div>
                     </div>
                   </div>
+                </Card>
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm text-blue-800">
-                      <strong>📋 What's Being Compared:</strong> The system is comparing the original PDF file "{availableDocuments.find(d => 
-                        d.property_id === activeReconciliation.property.id &&
-                        d.document_type === activeReconciliation.document_type &&
-                        d.period_year === activeReconciliation.period.year &&
-                        d.period_month === activeReconciliation.period.month
-                      )?.file_name || 'PDF Document'}" from {new Date(2000, activeReconciliation.period.month - 1).toLocaleString('default', { month: 'long' })} {activeReconciliation.period.year} 
-                      with the data extracted and stored in the database. Each line item is checked for accuracy.
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Recent Reconciliation Sessions */}
-            {reconciliationSessions.length > 0 && (
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Recent Reconciliation Sessions</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Property</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Match Rate</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {reconciliationSessions.map((session) => (
-                        <tr key={session.id}>
-                          <td className="px-4 py-3 text-sm">
-                            {session.started_at ? new Date(session.started_at).toLocaleDateString() : 'N/A'}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-medium">{session.property_name}</td>
-                          <td className="px-4 py-3 text-sm">
-                            {new Date(2000, session.period_month - 1).toLocaleString('default', { month: 'short' })} {session.period_year}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {session.document_type.replace('_', ' ').toUpperCase()}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              session.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              session.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {session.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {session.summary?.match_rate ? `${Math.round(session.summary.match_rate)}%` : 'N/A'}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setReconciliationYear(session.period_year);
-                                setReconciliationMonth(session.period_month);
-                                setReconciliationDocType(session.document_type);
-                                if (selectedProperty?.property_code !== session.property_code) {
-                                  const prop = properties.find(p => p.property_code === session.property_code);
-                                  setSelectedProperty(prop || null);
-                                }
-                                handleStartReconciliation();
-                              }}
-                            >
-                              View
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            )}
-
-            {/* Available Documents for Reconciliation */}
-            {selectedProperty && availableDocuments.length > 0 && (
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">📁 Available Documents for Reconciliation</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  These are the documents that have been uploaded and extracted. Select one above to start reconciliation.
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Name</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Month</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {availableDocuments
-                        .filter(d => d.extraction_status === 'completed')
-                        .map((doc) => (
-                          <tr key={doc.id}>
-                            <td className="px-4 py-3 text-sm font-medium">{doc.file_name}</td>
-                            <td className="px-4 py-3 text-sm">
-                              {doc.document_type?.replace('_', ' ').toUpperCase() || 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 text-sm">{doc.period_year || 'N/A'}</td>
-                            <td className="px-4 py-3 text-sm">
-                              {doc.period_month ? new Date(2000, doc.period_month - 1).toLocaleString('default', { month: 'long' }) : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 text-sm">
-                              <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                                Ready
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm">
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                  if (doc.period_year) setReconciliationYear(doc.period_year);
-                                  if (doc.period_month) setReconciliationMonth(doc.period_month);
-                                  if (doc.document_type) setReconciliationDocType(doc.document_type);
-                                  handleStartReconciliation();
-                                }}
-                              >
-                                Reconcile
-                              </Button>
-                            </td>
+                {/* Comparison Table */}
+                {activeReconciliation.comparison.records && activeReconciliation.comparison.records.length > 0 && (
+                  <Card className="p-6">
+                    <div className="mb-4">
+                      <h3 className="text-lg font-semibold mb-2">📊 Detailed Comparison Table</h3>
+                      <p className="text-sm text-gray-600">
+                        Compare the values from the PDF file with the data stored in the database. 
+                        <span className="inline-block ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded">Green rows</span> indicate exact matches, 
+                        <span className="inline-block ml-2 px-2 py-1 bg-red-100 text-red-800 text-xs rounded">Red rows</span> indicate differences.
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                          <tr>
+                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Account Code</th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Account Name</th>
+                            <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">PDF Value</th>
+                            <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Database Value</th>
+                            <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Difference</th>
+                            <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Difference %</th>
+                            <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Status</th>
                           </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {activeReconciliation.comparison.records.map((record, index) => {
+                            const isMatch = record.match_status === 'exact' || record.match_status === 'tolerance';
+                            const hasDifference = record.match_status === 'mismatch' || (record.difference !== null && record.difference !== 0 && record.match_status !== 'exact');
+                            
+                            return (
+                              <tr 
+                                key={index} 
+                                className={`transition-colors duration-150 ${
+                                  hasDifference ? 'bg-red-50 hover:bg-red-100' : 
+                                  isMatch ? 'bg-green-50 hover:bg-green-100' : 
+                                  'hover:bg-gray-50'
+                                }`}
+                              >
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900 border-r border-gray-100">
+                                  {record.account_code || 'N/A'}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-700 border-r border-gray-100">
+                                  {record.account_name || 'N/A'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900 border-r border-gray-100">
+                                  {record.pdf_value !== null && record.pdf_value !== undefined 
+                                    ? new Intl.NumberFormat('en-US', {
+                                        style: 'currency',
+                                        currency: 'USD',
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                      }).format(record.pdf_value)
+                                    : <span className="text-gray-400 italic">N/A</span>}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900 border-r border-gray-100">
+                                  {record.db_value !== null && record.db_value !== undefined 
+                                    ? new Intl.NumberFormat('en-US', {
+                                        style: 'currency',
+                                        currency: 'USD',
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                      }).format(record.db_value)
+                                    : <span className="text-gray-400 italic">N/A</span>}
+                                </td>
+                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-semibold border-r border-gray-100 ${
+                                  hasDifference ? 'text-red-700' : 'text-gray-700'
+                                }`}>
+                                  {record.difference !== null && record.difference !== undefined && record.difference !== 0
+                                    ? new Intl.NumberFormat('en-US', {
+                                        style: 'currency',
+                                        currency: 'USD',
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                      }).format(Math.abs(record.difference))
+                                    : <span className="text-gray-400">—</span>}
+                                </td>
+                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-right border-r border-gray-100 ${
+                                  hasDifference ? 'text-red-700 font-semibold' : 'text-gray-600'
+                                }`}>
+                                  {record.difference_percent !== null && record.difference_percent !== undefined && record.difference_percent !== 0
+                                    ? `${record.difference_percent.toFixed(2)}%`
+                                    : <span className="text-gray-400">—</span>}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                                    record.match_status === 'exact' ? 'bg-green-100 text-green-800 border border-green-200' :
+                                    record.match_status === 'tolerance' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+                                    record.match_status === 'mismatch' ? 'bg-red-100 text-red-800 border border-red-200' :
+                                    record.match_status === 'missing_pdf' ? 'bg-orange-100 text-orange-800 border border-orange-200' :
+                                    record.match_status === 'missing_db' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                                    'bg-gray-100 text-gray-800 border border-gray-200'
+                                  }`}>
+                                    {record.match_status === 'exact' ? '✅ Exact Match' :
+                                     record.match_status === 'tolerance' ? '⚠️ Within Tolerance' :
+                                     record.match_status === 'mismatch' ? '❌ Mismatch' :
+                                     record.match_status === 'missing_pdf' ? '📄 Missing in PDF' :
+                                     record.match_status === 'missing_db' ? '💾 Missing in DB' :
+                                     record.match_status || 'Unknown'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
+              </div>
             )}
+
+
 
             {/* Empty State */}
             {!activeReconciliation && reconciliationSessions.length === 0 && !reconciliationLoading && (

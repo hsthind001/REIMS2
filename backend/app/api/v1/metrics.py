@@ -114,6 +114,7 @@ class MetricsSummaryItem(BaseModel):
     total_assets: Optional[float] = None
     total_revenue: Optional[float] = None
     net_income: Optional[float] = None
+    net_operating_income: Optional[float] = None  # NOI for portfolio calculations
     occupancy_rate: Optional[float] = None
     
     class Config:
@@ -320,13 +321,18 @@ async def get_metrics_summary(
     - limit: Maximum records to return (max 500)
     """
     try:
-        # Get latest metrics for each property
-        query = db.query(
+        # Get most recent period data for each metric type per property
+        # Different document types may have different most recent periods
+        from sqlalchemy import func
+        
+        # Get all metrics for all properties, ordered by most recent period first
+        all_metrics = db.query(
             FinancialMetrics,
             Property.property_code,
             Property.property_name,
             FinancialPeriod.period_year,
-            FinancialPeriod.period_month
+            FinancialPeriod.period_month,
+            FinancialPeriod.id.label('period_id')
         ).join(
             Property, FinancialMetrics.property_id == Property.id
         ).join(
@@ -335,24 +341,80 @@ async def get_metrics_summary(
             Property.property_code,
             FinancialPeriod.period_year.desc(),
             FinancialPeriod.period_month.desc()
-        ).offset(skip).limit(limit)
+        ).all()
         
-        results = query.all()
+        # Group by property and merge most recent data from each metric type
+        property_data = {}
+        for metrics, prop_code, prop_name, year, month, period_id in all_metrics:
+            if prop_code not in property_data:
+                property_data[prop_code] = {
+                    'property_name': prop_name,
+                    'period_year': year,
+                    'period_month': month,
+                    'total_assets': metrics.total_assets,
+                    'total_revenue': metrics.total_revenue,
+                    'net_income': metrics.net_income,
+                    'net_operating_income': metrics.net_operating_income,
+                    'occupancy_rate': metrics.occupancy_rate
+                }
+            else:
+                # Merge data: use most recent non-null value for each metric type
+                current_data = property_data[prop_code]
+                
+                # If current record is more recent and has data we don't have yet
+                current_period_key = (year, month)
+                existing_period_key = (current_data['period_year'], current_data['period_month'])
+                
+                # Update if we find more recent data for specific metrics
+                if current_period_key > existing_period_key:
+                    # Check each metric and use the most recent non-null value
+                    if metrics.total_assets is not None and current_data['total_assets'] is None:
+                        current_data['total_assets'] = metrics.total_assets
+                        current_data['total_revenue'] = metrics.total_revenue
+                        current_data['net_income'] = metrics.net_income
+                        current_data['net_operating_income'] = metrics.net_operating_income
+                    
+                    if metrics.occupancy_rate is not None and current_data['occupancy_rate'] is None:
+                        current_data['occupancy_rate'] = metrics.occupancy_rate
+                    
+                    # Update period to most recent if we got any new data
+                    if (metrics.total_assets is not None or metrics.occupancy_rate is not None):
+                        current_data['period_year'] = year
+                        current_data['period_month'] = month
+                
+                # Also check for older periods that might have data we're missing
+                elif current_period_key < existing_period_key:
+                    if metrics.total_assets is not None and current_data['total_assets'] is None:
+                        current_data['total_assets'] = metrics.total_assets
+                        current_data['total_revenue'] = metrics.total_revenue
+                        current_data['net_income'] = metrics.net_income
+                        current_data['net_operating_income'] = metrics.net_operating_income
+                    
+                    if metrics.occupancy_rate is not None and current_data['occupancy_rate'] is None:
+                        current_data['occupancy_rate'] = metrics.occupancy_rate
         
+        # Build summary items with merged data
         summary_items = []
-        for metrics, prop_code, prop_name, year, month in results:
+        for prop_code, data in property_data.items():
             summary_items.append(MetricsSummaryItem(
                 property_code=prop_code,
-                property_name=prop_name,
-                period_year=year,
-                period_month=month,
-                total_assets=float(metrics.total_assets) if metrics.total_assets else None,
-                total_revenue=float(metrics.total_revenue) if metrics.total_revenue else None,
-                net_income=float(metrics.net_income) if metrics.net_income else None,
-                occupancy_rate=float(metrics.occupancy_rate) if metrics.occupancy_rate else None
+                property_name=data['property_name'],
+                period_year=data['period_year'],
+                period_month=data['period_month'],
+                total_assets=float(data['total_assets']) if data['total_assets'] else None,
+                total_revenue=float(data['total_revenue']) if data['total_revenue'] else None,
+                net_income=float(data['net_income']) if data['net_income'] else None,
+                net_operating_income=float(data['net_operating_income']) if data['net_operating_income'] else None,
+                occupancy_rate=float(data['occupancy_rate']) if data['occupancy_rate'] else None
             ))
         
-        return summary_items
+        # Sort by property code for consistent ordering
+        summary_items.sort(key=lambda x: x.property_code)
+        
+        # Apply pagination
+        paginated_items = summary_items[skip:skip + limit]
+        
+        return paginated_items
     
     except Exception as e:
         raise HTTPException(
