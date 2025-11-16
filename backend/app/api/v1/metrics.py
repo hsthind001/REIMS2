@@ -1230,3 +1230,250 @@ async def get_tenant_mix(
     except Exception as e:
         raise HTTPException(500, f"Failed to get tenant mix: {str(e)}")
 
+
+# Latest Metrics Endpoint
+
+@router.get("/metrics/{property_id}/latest")
+def get_latest_metrics(
+    property_id: int = Path(..., description="Property ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the latest financial metrics for a property including DSCR
+
+    Returns the most recent period's financial metrics with all calculated values
+    including DSCR, LTV, NOI, etc.
+    """
+    try:
+        # Verify property exists
+        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        if not property_obj:
+            raise HTTPException(404, f"Property {property_id} not found")
+
+        # Get latest financial metrics (join with period to get the most recent period that has metrics)
+        metrics_with_period = (
+            db.query(FinancialMetrics, FinancialPeriod)
+            .join(FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id)
+            .filter(FinancialMetrics.property_id == property_id)
+            .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
+            .first()
+        )
+
+        if not metrics_with_period:
+            raise HTTPException(404, f"No financial metrics found for property {property_id}")
+
+        metrics, latest_period = metrics_with_period
+
+        return {
+            "property_id": property_id,
+            "property_code": property_obj.property_code,
+            "period_id": latest_period.id,
+            "period_year": latest_period.period_year,
+            "period_month": latest_period.period_month,
+            "net_operating_income": float(metrics.net_operating_income) if metrics.net_operating_income else None,
+            "total_revenue": float(metrics.total_revenue) if metrics.total_revenue else None,
+            "total_expenses": float(metrics.total_expenses) if metrics.total_expenses else None,
+            "dscr": float(metrics.dscr) if metrics.dscr else None,
+            "dscr_status": metrics.dscr_status,
+            "annual_debt_service": float(metrics.annual_debt_service) if metrics.annual_debt_service else None,
+            "annual_interest_expense": float(metrics.annual_interest_expense) if metrics.annual_interest_expense else None,
+            "ltv_ratio": float(metrics.ltv_ratio) if metrics.ltv_ratio else None,
+            "occupancy_rate": float(metrics.occupancy_rate) if metrics.occupancy_rate else None,
+            "total_assets": float(metrics.total_assets) if metrics.total_assets else None,
+            "calculated_at": metrics.calculated_at.isoformat() if metrics.calculated_at else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get latest metrics: {str(e)}")
+
+
+# Debt Service and DSCR Calculation Endpoints
+
+@router.post("/metrics/{property_id}/calculate-debt-service")
+def calculate_debt_service_for_property(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: Optional[int] = Query(None, description="Specific period ID, or latest if not provided"),
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate debt service metrics for a property
+
+    Extracts interest expense from income statement and principal payments
+    from cash flow statement, then calculates DSCR and updates financial_metrics.
+
+    Returns:
+        Calculated debt service metrics including DSCR
+    """
+    from app.services.debt_service_calculator import DebtServiceCalculator
+
+    try:
+        # Verify property exists
+        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        if not property_obj:
+            raise HTTPException(404, f"Property {property_id} not found")
+
+        # Get period (latest if not specified)
+        if period_id:
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id,
+                FinancialPeriod.property_id == property_id
+            ).first()
+            if not period:
+                raise HTTPException(404, f"Period {period_id} not found for property {property_id}")
+        else:
+            period = (
+                db.query(FinancialPeriod)
+                .filter(FinancialPeriod.property_id == property_id)
+                .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
+                .first()
+            )
+            if not period:
+                raise HTTPException(404, f"No financial periods found for property {property_id}")
+
+        # Calculate debt service
+        calculator = DebtServiceCalculator(db)
+        result = calculator.calculate_for_period(property_id, period.id)
+
+        # Update financial metrics
+        calculator.update_financial_metrics(property_id, period.id)
+
+        return {
+            "success": True,
+            "property_id": property_id,
+            "property_code": property_obj.property_code,
+            "period_id": period.id,
+            "period_year": period.period_year,
+            "period_month": period.period_month,
+            "debt_service": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to calculate debt service: {str(e)}")
+
+
+@router.post("/metrics/calculate-debt-service-all")
+def calculate_debt_service_for_all_properties(
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate debt service for all properties and periods
+
+    Processes all financial metrics records and updates with calculated
+    debt service data from income statements and cash flow statements.
+
+    Returns:
+        Summary of calculations performed
+    """
+    from app.services.debt_service_calculator import DebtServiceCalculator
+
+    try:
+        calculator = DebtServiceCalculator(db)
+        summary = calculator.calculate_all_properties()
+
+        return {
+            "success": True,
+            "message": f"Calculated debt service for {summary['successful']}/{summary['total_processed']} records",
+            "summary": summary
+        }
+
+    except Exception as e:
+        raise HTTPException(500, f"Failed to calculate debt service for all properties: {str(e)}")
+
+
+@router.get("/metrics/data-reconciliation")
+def get_data_reconciliation_report(
+    db: Session = Depends(get_db)
+):
+    """
+    Get data reconciliation report showing data completeness for all properties
+
+    Returns which periods have complete data (Value, NOI, DSCR, LTV, Occupancy) for each property.
+    Helps identify gaps in financial data across periods.
+    """
+    try:
+        from datetime import datetime
+
+        # Get all properties
+        properties = db.query(Property).filter(Property.status == 'active').all()
+
+        reconciliation_data = []
+
+        for prop in properties:
+            # Get all financial periods for this property with metrics
+            metrics_with_period = (
+                db.query(FinancialMetrics, FinancialPeriod)
+                .join(FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id)
+                .filter(FinancialMetrics.property_id == prop.id)
+                .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
+                .all()
+            )
+
+            periods = []
+            for metrics, period in metrics_with_period:
+                # Check data completeness
+                has_value = metrics.total_assets is not None
+                has_noi = metrics.net_operating_income is not None
+                has_dscr = metrics.dscr is not None
+                has_ltv = metrics.ltv_ratio is not None
+                has_occupancy = metrics.occupancy_rate is not None
+
+                completeness_score = sum([has_value, has_noi, has_dscr, has_ltv, has_occupancy]) / 5 * 100
+
+                periods.append({
+                    "period_id": period.id,
+                    "period_year": period.period_year,
+                    "period_month": period.period_month,
+                    "period_label": f"{period.period_year}-{period.period_month:02d}",
+                    "data_completeness": {
+                        "score": round(completeness_score, 1),
+                        "has_value": has_value,
+                        "has_noi": has_noi,
+                        "has_dscr": has_dscr,
+                        "has_ltv": has_ltv,
+                        "has_occupancy": has_occupancy
+                    },
+                    "values": {
+                        "total_assets": float(metrics.total_assets) if metrics.total_assets else None,
+                        "net_operating_income": float(metrics.net_operating_income) if metrics.net_operating_income else None,
+                        "dscr": float(metrics.dscr) if metrics.dscr else None,
+                        "ltv_ratio": float(metrics.ltv_ratio) if metrics.ltv_ratio else None,
+                        "occupancy_rate": float(metrics.occupancy_rate) if metrics.occupancy_rate else None
+                    },
+                    "last_updated": metrics.calculated_at.isoformat() if metrics.calculated_at else None
+                })
+
+            # Calculate overall completeness for this property
+            if periods:
+                latest_period = periods[0]
+                overall_completeness = latest_period["data_completeness"]["score"]
+            else:
+                latest_period = None
+                overall_completeness = 0.0
+
+            reconciliation_data.append({
+                "property_id": prop.id,
+                "property_code": prop.property_code,
+                "property_name": prop.property_name,
+                "overall_completeness": overall_completeness,
+                "total_periods": len(periods),
+                "latest_period": latest_period,
+                "periods": periods[:12]  # Last 12 periods
+            })
+
+        return {
+            "success": True,
+            "generated_at": datetime.now().isoformat(),
+            "properties": reconciliation_data,
+            "summary": {
+                "total_properties": len(properties),
+                "avg_completeness": round(sum(p["overall_completeness"] for p in reconciliation_data) / len(reconciliation_data), 1) if reconciliation_data else 0
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate reconciliation report: {str(e)}")
+

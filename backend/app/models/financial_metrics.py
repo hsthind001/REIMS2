@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, DECIMAL, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DECIMAL, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -63,7 +63,18 @@ class FinancialMetrics(Base):
     shareholder_loans = Column(DECIMAL(15, 2))  # Loans from shareholders
     long_term_debt = Column(DECIMAL(15, 2))  # Total long-term debt
     total_debt = Column(DECIMAL(15, 2))  # Short-term + Long-term
-    
+
+    # ==================== DEBT SERVICE & DSCR ====================
+    annual_interest_expense = Column(DECIMAL(15, 2))  # Annual interest payments
+    annual_principal_payment = Column(DECIMAL(15, 2))  # Annual principal payments
+    annual_debt_service = Column(DECIMAL(15, 2))  # Total annual debt service (interest + principal)
+    monthly_debt_service = Column(DECIMAL(15, 2))  # Monthly debt service
+    dscr = Column(DECIMAL(10, 4))  # Debt Service Coverage Ratio (NOI / Annual Debt Service)
+    dscr_status = Column(String(20))  # Status: 'good' (>=1.35), 'warning' (>=1.25), 'critical' (<1.25)
+    total_long_term_debt = Column(DECIMAL(15, 2))  # Total long-term debt for DSCR context
+    debt_calculation_method = Column(String(50))  # How debt service was calculated
+    debt_service_calculated_at = Column(DateTime(timezone=True))  # When DSCR was last calculated
+
     # ==================== EQUITY ANALYSIS (Template v1.0) ====================
     partners_contribution = Column(DECIMAL(15, 2))  # Capital contributions (3050-0000)
     beginning_equity = Column(DECIMAL(15, 2))  # Retained earnings from prior periods (3910-0000)

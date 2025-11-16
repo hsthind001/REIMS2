@@ -57,7 +57,7 @@ interface PropertyPerformance {
   code: string;
   value: number;
   noi: number;
-  dscr: number;
+  dscr: number | null;
   ltv: number;
   occupancy: number;
   status: 'critical' | 'warning' | 'good';
@@ -124,6 +124,25 @@ export default function CommandCenter() {
       // Load properties
       const propertiesData = await propertyService.getAllProperties();
       setProperties(propertiesData);
+
+      // Auto-calculate debt service for all properties (background task)
+      // This ensures DSCR data is up-to-date
+      try {
+        console.log('🔄 Auto-calculating debt service for all properties...');
+        const debtServiceRes = await fetch(`${API_BASE_URL}/metrics/calculate-debt-service-all`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+        if (debtServiceRes.ok) {
+          const debtServiceData = await debtServiceRes.json();
+          console.log(`✅ Debt service calculated for ${debtServiceData.summary?.successful || 0} properties`);
+        } else {
+          console.warn('⚠️ Debt service auto-calculation failed:', await debtServiceRes.text());
+        }
+      } catch (debtErr) {
+        console.error('❌ Failed to auto-calculate debt service:', debtErr);
+        // Don't block dashboard load if this fails
+      }
 
       // Load portfolio health (will use selectedPropertyFilter from state)
       await loadPortfolioHealth(propertiesData);
@@ -360,46 +379,30 @@ export default function CommandCenter() {
               console.error('Failed to load historical data:', histErr);
             }
 
-            // Fetch DSCR from proper backend API (uses actual debt service from income statement)
-            let dscr = 1.25; // Fallback
-            let status: 'critical' | 'warning' | 'good' = 'good'; // Fallback
+            // Fetch DSCR from financial_metrics table (pre-calculated from real debt service data)
+            let dscr: number | null = null;
+            let status: 'critical' | 'warning' | 'good' = 'good';
             try {
-              const dscrRes = await fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate`, {
-                method: 'POST',
+              const metricsRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/latest`, {
                 credentials: 'include'
               });
-              if (dscrRes.ok) {
-                const dscrData = await dscrRes.json();
-                if (dscrData.success && dscrData.dscr) {
-                  dscr = dscrData.dscr;
-                  // Use status from API response (healthy/warning/critical)
-                  status = dscrData.status === 'healthy' ? 'good' : 
-                           dscrData.status === 'warning' ? 'warning' : 'critical';
-                } else {
-                  console.warn(`DSCR API returned no data for property ${property.property_code}:`, dscrData);
-                }
-              } else {
-                console.warn(`DSCR API failed for property ${property.property_code}: ${dscrRes.status} ${dscrRes.statusText}`);
-              }
-            } catch (dscrErr) {
-              console.error(`Failed to fetch DSCR for property ${property.property_code}:`, dscrErr);
-              // Fallback: calculate DSCR using simplified formula if API fails
-              try {
-                const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
-                  credentials: 'include'
-                });
-                if (ltvRes.ok) {
-                  const ltvData = await ltvRes.json();
-                  const loanAmount = ltvData.loan_amount || 0;
-                  const annualDebtService = loanAmount * 0.08;
-                  if (annualDebtService > 0 && noi > 0) {
-                    dscr = noi / annualDebtService;
-                    status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
+              if (metricsRes.ok) {
+                const metricsData = await metricsRes.json();
+                // DSCR is now pre-calculated and stored in financial_metrics table
+                if (metricsData.dscr !== null && metricsData.dscr !== undefined) {
+                  dscr = metricsData.dscr;
+                  // Determine status based on DSCR thresholds
+                  if (dscr < 1.25) {
+                    status = 'critical';
+                  } else if (dscr < 1.35) {
+                    status = 'warning';
+                  } else {
+                    status = 'good';
                   }
                 }
-              } catch (fallbackErr) {
-                console.error('Failed to calculate DSCR fallback:', fallbackErr);
               }
+            } catch (dscrErr) {
+              console.error(`Failed to fetch metrics for property ${property.property_code}:`, dscrErr);
             }
 
             // Fetch real LTV from API
@@ -440,7 +443,7 @@ export default function CommandCenter() {
               code: property.property_code,
               value: 0,
               noi: 0,
-              dscr: 0,
+              dscr: null,
               ltv: 0,
               occupancy: 0,
               status: 'warning',
@@ -845,6 +848,40 @@ export default function CommandCenter() {
           <div className="lg:col-span-2">
             <Card className="p-6">
               <h2 className="text-2xl font-bold mb-4">Portfolio Performance</h2>
+
+              {/* Critical DSCR Alert Banner */}
+              {propertyPerformance.some(p => p.dscr !== null && p.dscr < 1.0) && (
+                <div className="mb-4 bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-red-800 mb-1">
+                        🚨 Critical: Property Cannot Cover Debt Payments
+                      </h3>
+                      <p className="text-sm text-red-700 mb-2">
+                        {propertyPerformance.filter(p => p.dscr !== null && p.dscr < 1.0).length} {propertyPerformance.filter(p => p.dscr !== null && p.dscr < 1.0).length === 1 ? 'property has' : 'properties have'} DSCR below 1.0 - NOI is insufficient to cover debt service.
+                      </p>
+                      <div className="space-y-1">
+                        {propertyPerformance.filter(p => p.dscr !== null && p.dscr < 1.0).map(prop => (
+                          <div key={prop.id} className="text-sm bg-white rounded p-2 border border-red-200">
+                            <span className="font-semibold text-red-900">{prop.name}</span>
+                            <span className="text-red-700 ml-2">
+                              DSCR: {prop.dscr?.toFixed(2)} | NOI: ${(prop.noi / 1000).toFixed(0)}K
+                            </span>
+                            <span className="block text-xs text-red-600 mt-1">
+                              ⚠️ Requires immediate attention - Property generating only {((prop.dscr || 0) * 100).toFixed(0)}% of required debt service
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-red-600 mt-2">
+                        💡 Recommended Actions: Increase revenue, reduce expenses, or refinance debt to lower payments
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -875,7 +912,9 @@ export default function CommandCenter() {
                         <td className="py-3 px-4 text-right">
                           ${(prop.noi / 1000).toFixed(0)}K
                         </td>
-                        <td className="py-3 px-4 text-right">{prop.dscr.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-right">
+                          {prop.dscr !== null ? prop.dscr.toFixed(2) : 'N/A'}
+                        </td>
                         <td className="py-3 px-4 text-right">{prop.ltv.toFixed(1)}%</td>
                         <td className="py-3 px-4">
                           <div className="h-6 w-24 flex items-end gap-0.5">

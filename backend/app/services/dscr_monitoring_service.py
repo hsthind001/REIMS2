@@ -119,7 +119,8 @@ class DSCRMonitoringService:
                     "id": period.id,
                     "start_date": period.period_start_date.isoformat(),
                     "end_date": period.period_end_date.isoformat(),
-                    "period_type": period.period_type,
+                    "year": period.period_year,
+                    "month": period.period_month,
                 },
                 "calculated_at": datetime.utcnow().isoformat(),
             }
@@ -145,33 +146,21 @@ class DSCRMonitoringService:
 
     def _calculate_noi(self, property_id: int, financial_period_id: int) -> Decimal:
         """
-        Calculate Net Operating Income (NOI)
+        Get Net Operating Income (NOI) from financial_metrics
 
-        NOI = Total Revenue - Operating Expenses
+        Uses pre-calculated NOI from financial_metrics table.
         """
-        # Get income statement data for the period
-        # Note: IncomeStatementData uses 'period_id', not 'financial_period_id'
-        income_data = self.db.query(IncomeStatementData).filter(
-            IncomeStatementData.property_id == property_id,
-            IncomeStatementData.period_id == financial_period_id
-        ).all()
+        # Get NOI from financial_metrics (pre-calculated)
+        metrics = self.db.query(FinancialMetrics).filter(
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.period_id == financial_period_id
+        ).first()
 
-        total_revenue = Decimal("0")
-        operating_expenses = Decimal("0")
+        if metrics and metrics.net_operating_income:
+            return Decimal(str(metrics.net_operating_income))
 
-        for item in income_data:
-            # Revenue accounts (typically 4xxxx or similar)
-            if item.account_code and item.account_code.startswith("4"):
-                total_revenue += Decimal(str(item.amount or 0))
-            # Operating expense accounts (typically 5xxxx or 6xxxx)
-            elif item.account_code and (
-                item.account_code.startswith("5") or
-                item.account_code.startswith("6")
-            ):
-                operating_expenses += Decimal(str(item.amount or 0))
-
-        noi = total_revenue - operating_expenses
-        return noi
+        # Fallback: return 0 if no NOI available
+        return Decimal("0")
 
     def _get_total_debt_service(
         self,
@@ -179,31 +168,22 @@ class DSCRMonitoringService:
         financial_period_id: int
     ) -> Decimal:
         """
-        Get total debt service (principal + interest payments)
+        Get total debt service (principal + interest payments) from financial_metrics
 
-        For now, we'll look for debt service in income statement or use a mock value.
-        In production, this should come from a separate loan/debt table.
+        Returns the annual_debt_service calculated from income statement and cash flow data.
+        If not available, returns 0.
         """
-        # Look for debt service accounts in income statement
-        # Note: IncomeStatementData uses 'period_id', not 'financial_period_id'
-        debt_accounts = self.db.query(IncomeStatementData).filter(
-            IncomeStatementData.property_id == property_id,
-            IncomeStatementData.period_id == financial_period_id,
-            IncomeStatementData.account_code.like("7%")  # Debt service accounts
-        ).all()
+        # Get annual debt service from financial_metrics (calculated by DebtServiceCalculator)
+        metrics = self.db.query(FinancialMetrics).filter(
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.period_id == financial_period_id
+        ).first()
 
-        total_debt_service = Decimal("0")
-        for account in debt_accounts:
-            # IncomeStatementData uses 'period_amount', not 'amount'
-            total_debt_service += Decimal(str(account.period_amount or 0))
+        if metrics and metrics.annual_debt_service:
+            return Decimal(str(metrics.annual_debt_service))
 
-        # If no debt service found, use mock value for demo
-        if total_debt_service == 0:
-            # Mock: 8% of NOI (typical for commercial real estate)
-            noi = self._calculate_noi(property_id, financial_period_id)
-            total_debt_service = noi * Decimal("0.80")  # Assuming 80% of NOI goes to debt
-
-        return total_debt_service
+        # No debt service data available
+        return Decimal("0")
 
     def _create_dscr_alert(
         self,
