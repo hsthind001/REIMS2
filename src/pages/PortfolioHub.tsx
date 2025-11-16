@@ -1076,11 +1076,11 @@ export default function PortfolioHub() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
                           <div className="text-sm text-text-secondary">Purchase Price</div>
-                          <div className="text-xl font-bold">${(costs?.initialBuying || 0) / 1000000}M</div>
+                          <div className="text-xl font-bold">${((costs?.initialBuying || 0) / 1000000).toFixed(2)}M</div>
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Current Value</div>
-                          <div className="text-xl font-bold">${(metrics?.value || 0) / 1000000}M</div>
+                          <div className="text-xl font-bold">${((metrics?.value || 0) / 1000000).toFixed(2)}M</div>
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Hold Period</div>

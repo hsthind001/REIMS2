@@ -198,7 +198,7 @@ export default function FinancialCommand() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ query: nlqQuery })
+        body: JSON.stringify({ question: nlqQuery })
       });
 
       if (response.ok) {
@@ -219,21 +219,22 @@ export default function FinancialCommand() {
         }]);
         setNlqQuery('');
       } else {
-        // Mock response for demo
-        const mockResponse: NLQResponse = {
-          answer: `Based on your query "${nlqQuery}", here's the analysis:\n\n4 properties currently have DSCR below 1.25:\n\n1. 🔴 Downtown Office Tower - DSCR: 1.07 (-18%)\n   NOI: $760K | Debt Service: $710K/year\n   Gap: Needs $128K additional NOI\n\n2. 🔴 Lakeside Retail Center - DSCR: 1.03 (-21%)\n   NOI: $780K | Debt Service: $757K/year\n   Gap: Needs $189K additional NOI\n\n💡 Recommendation: Prioritize refinancing for properties 1 & 2 to avoid covenant breach.`,
+        // Show error response
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        const errorResponse: NLQResponse = {
+          answer: `❌ I encountered an error processing your question:\n\n"${nlqQuery}"\n\n${errorData.detail || 'Please try rephrasing your question or contact support if the issue persists.'}\n\n**Tip:** Try asking specific questions about properties, metrics, or time periods.`,
           data: {},
-          confidence: 92,
+          confidence: 0,
           suggestedFollowUps: [
-            'What would refinancing cost for these properties?',
-            'Show me historical DSCR trends',
-            'Calculate impact of 5% rent increase on DSCR'
+            'Show me value of my properties',
+            'Which properties have DSCR below 1.25?',
+            'What is my total portfolio NOI?'
           ]
         };
 
         setNlqHistory(prev => [...prev, {
           query: nlqQuery,
-          response: mockResponse,
+          response: errorResponse,
           timestamp: new Date()
         }]);
         setNlqQuery('');
@@ -558,32 +559,53 @@ export default function FinancialCommand() {
               </div>
 
               {/* Conversation History */}
-              <div className="space-y-4 max-h-96 overflow-y-auto">
+              <div className="space-y-6 max-h-96 overflow-y-auto">
+                {nlqHistory.length === 0 && (
+                  <div className="text-center text-text-secondary py-8">
+                    <Sparkles className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                    <p>No conversations yet. Ask a question to get started!</p>
+                  </div>
+                )}
                 {nlqHistory.map((item, i) => (
-                  <div key={i} className="space-y-2">
-                    <div className="text-sm font-medium text-text-primary">
-                      You: {item.query}
+                  <div key={i} className="space-y-2 pb-4 border-b border-border last:border-0">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium text-text-primary">
+                        💬 You: {item.query}
+                      </div>
+                      <div className="text-xs text-text-secondary">
+                        {item.timestamp.toLocaleTimeString()}
+                      </div>
                     </div>
-                    <Card variant="premium" className="p-4 border-l-4 border-premium">
-                      <div className="flex items-start gap-2 mb-2">
-                        <Sparkles className="w-5 h-5 text-premium" />
+                    <Card variant="premium" className="p-4 border-l-4 border-premium bg-premium-light/10">
+                      <div className="flex items-start gap-2">
+                        <Sparkles className="w-5 h-5 text-premium flex-shrink-0 mt-1" />
                         <div className="flex-1">
-                          <div className="font-semibold mb-2">🤖 REIMS AI:</div>
-                          <div className="whitespace-pre-line text-sm">{item.response.answer}</div>
-                          {item.response.suggestedFollowUps.length > 0 && (
-                            <div className="mt-4">
-                              <div className="text-sm font-medium mb-2">Suggested follow-ups:</div>
-                              <div className="space-y-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-semibold">🤖 REIMS AI</div>
+                            {item.response.confidence > 0 && (
+                              <div className={`text-xs px-2 py-1 rounded ${
+                                item.response.confidence >= 80 ? 'bg-success-light text-success' :
+                                item.response.confidence >= 60 ? 'bg-warning-light text-warning' :
+                                'bg-danger-light text-danger'
+                              }`}>
+                                {item.response.confidence}% confident
+                              </div>
+                            )}
+                          </div>
+                          <div className="whitespace-pre-line text-sm leading-relaxed">{item.response.answer}</div>
+                          {item.response.suggestedFollowUps && item.response.suggestedFollowUps.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-border/30">
+                              <div className="text-xs font-medium text-text-secondary mb-2">💡 Suggested follow-ups (click to use):</div>
+                              <div className="flex flex-wrap gap-2">
                                 {item.response.suggestedFollowUps.map((followUp, j) => (
                                   <button
                                     key={j}
                                     onClick={() => {
                                       setNlqQuery(followUp);
-                                      handleNLQSubmit();
                                     }}
-                                    className="text-sm text-premium hover:underline block"
+                                    className="text-xs px-3 py-1.5 bg-premium-light/20 border border-premium/30 rounded-full hover:bg-premium-light/40 hover:border-premium transition-colors"
                                   >
-                                    • {followUp}
+                                    {followUp}
                                   </button>
                                 ))}
                               </div>

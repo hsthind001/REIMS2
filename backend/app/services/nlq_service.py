@@ -58,19 +58,25 @@ class NaturalLanguageQueryService:
 
     # Common metrics mapping
     METRIC_MAPPINGS = {
-        'noi': {'table': 'income_statement', 'field': 'net_operating_income'},
-        'net operating income': {'table': 'income_statement', 'field': 'net_operating_income'},
-        'revenue': {'table': 'income_statement', 'field': 'total_revenue'},
-        'total revenue': {'table': 'income_statement', 'field': 'total_revenue'},
-        'expenses': {'table': 'income_statement', 'field': 'total_expenses'},
-        'total expenses': {'table': 'income_statement', 'field': 'total_expenses'},
-        'assets': {'table': 'balance_sheet', 'field': 'total_assets'},
-        'total assets': {'table': 'balance_sheet', 'field': 'total_assets'},
-        'liabilities': {'table': 'balance_sheet', 'field': 'total_liabilities'},
-        'equity': {'table': 'balance_sheet', 'field': 'total_equity'},
+        'noi': {'table': 'metrics', 'field': 'net_operating_income'},
+        'net operating income': {'table': 'metrics', 'field': 'net_operating_income'},
+        'revenue': {'table': 'metrics', 'field': 'total_revenue'},
+        'total revenue': {'table': 'metrics', 'field': 'total_revenue'},
+        'expenses': {'table': 'metrics', 'field': 'total_expenses'},
+        'total expenses': {'table': 'metrics', 'field': 'total_expenses'},
+        'assets': {'table': 'metrics', 'field': 'total_assets'},
+        'total assets': {'table': 'metrics', 'field': 'total_assets'},
+        'liabilities': {'table': 'metrics', 'field': 'total_liabilities'},
+        'equity': {'table': 'metrics', 'field': 'total_equity'},
         'occupancy': {'table': 'metrics', 'field': 'occupancy_rate'},
         'occupancy rate': {'table': 'metrics', 'field': 'occupancy_rate'},
-        'cash flow': {'table': 'cash_flow', 'field': 'net_cash_flow'},
+        'cash flow': {'table': 'metrics', 'field': 'net_cash_flow'},
+        'value': {'table': 'metrics', 'field': 'net_property_value'},
+        'property value': {'table': 'metrics', 'field': 'net_property_value'},
+        'current value': {'table': 'metrics', 'field': 'net_property_value'},
+        'dscr': {'table': 'metrics', 'field': 'dscr'},
+        'debt service coverage': {'table': 'metrics', 'field': 'dscr'},
+        'ltv': {'table': 'metrics', 'field': 'ltv_ratio'},
     }
 
     def __init__(self, db: Session):
@@ -142,7 +148,10 @@ class NaturalLanguageQueryService:
             # 7. Calculate execution time
             execution_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
-            # 8. Store query
+            # 8. Generate suggested follow-ups
+            suggested_follow_ups = self._generate_follow_ups(question, intent, data)
+
+            # 9. Store query
             nlq = NLQQuery(
                 user_id=user_id,
                 question=question,
@@ -167,7 +176,8 @@ class NaturalLanguageQueryService:
                 "confidence": confidence,
                 "sql_query": sql_query,
                 "execution_time_ms": execution_time_ms,
-                "query_id": nlq.id
+                "query_id": nlq.id,
+                "suggested_follow_ups": suggested_follow_ups
             }
 
             # Cache result
@@ -313,11 +323,12 @@ class NaturalLanguageQueryService:
         properties = entities.get('properties', [])
         metrics = entities.get('metrics', [])
 
+        # If no specific metrics mentioned, try to infer from question
         if not metrics:
-            return [], None
+            # Default to showing property values
+            metrics = ['value']
 
         # Build query
-        sql_parts = []
         params = {}
 
         for metric in metrics:
@@ -325,7 +336,61 @@ class NaturalLanguageQueryService:
             if not mapping:
                 continue
 
-            if mapping['table'] == 'income_statement':
+            if mapping['table'] == 'metrics':
+                # Query financial_metrics table
+                field = mapping['field']
+                sql = f"""
+                SELECT
+                    p.property_name,
+                    p.property_code,
+                    fm.{field} as value,
+                    fp.period_year,
+                    fp.period_month
+                FROM financial_metrics fm
+                JOIN properties p ON fm.property_id = p.id
+                JOIN financial_periods fp ON fm.period_id = fp.id
+                WHERE fm.{field} IS NOT NULL
+                """
+                if properties:
+                    sql += " AND p.property_name IN :properties"
+                    params['properties'] = tuple(properties)
+
+                sql += " ORDER BY fp.period_year DESC, fp.period_month DESC, p.property_name"
+
+                # Get latest period for each property
+                sql = f"""
+                WITH latest_periods AS (
+                    SELECT
+                        fm.property_id,
+                        MAX(fp.period_year * 100 + fp.period_month) as latest_period
+                    FROM financial_metrics fm
+                    JOIN financial_periods fp ON fm.period_id = fp.id
+                    WHERE fm.{field} IS NOT NULL
+                    GROUP BY fm.property_id
+                )
+                SELECT
+                    p.property_name,
+                    p.property_code,
+                    fm.{field} as value,
+                    fp.period_year,
+                    fp.period_month
+                FROM financial_metrics fm
+                JOIN properties p ON fm.property_id = p.id
+                JOIN financial_periods fp ON fm.period_id = fp.id
+                JOIN latest_periods lp ON fm.property_id = lp.property_id
+                    AND (fp.period_year * 100 + fp.period_month) = lp.latest_period
+                WHERE fm.{field} IS NOT NULL
+                """
+                if properties:
+                    sql += " AND p.property_name IN :properties"
+                    params['properties'] = tuple(properties)
+
+                sql += " ORDER BY p.property_name"
+
+                result = self.db.execute(text(sql), params).fetchall()
+                return [dict(r._mapping) for r in result], sql
+
+            elif mapping['table'] == 'income_statement':
                 sql = """
                 SELECT p.property_name, fp.period_name, isd.amount_period, isd.account_name
                 FROM income_statement_data isd
@@ -337,7 +402,7 @@ class NaturalLanguageQueryService:
                     sql += " AND p.property_name IN :properties"
                     params['properties'] = tuple(properties)
 
-                sql += " ORDER BY fp.year DESC, fp.month DESC LIMIT 10"
+                sql += " ORDER BY fp.period_year DESC, fp.period_month DESC LIMIT 10"
                 params['metric'] = f'%{mapping["field"]}%'
 
                 result = self.db.execute(text(sql), params).fetchall()
@@ -448,13 +513,21 @@ User Question: {question}
 Retrieved Data:
 {data_json}
 
-CRITICAL RULES:
-1. Use ONLY the data above
-2. Be specific with numbers and property names
-3. Format currency as $X,XXX.XX
-4. Format percentages as XX.X%
-5. Keep answer concise (2-3 sentences max)
-6. If data is insufficient, state what's missing
+CRITICAL FORMATTING RULES:
+1. Use ONLY the data above - NO made-up information
+2. List each property on a NEW LINE with bullet points (•)
+3. Format: • **Property Name** (Code): $X,XXX.XX
+4. Format currency as $X,XXX.XX
+5. Format ratios/percentages as XX.XX (e.g., DSCR: 1.25, LTV: 65.5%)
+6. Include period/date if available in data
+7. Keep total answer under 10 lines
+8. If data is insufficient, state what's missing
+
+Example format:
+Here are the current values for your properties:
+
+• **Property A** (PROP001): $1,234,567.89 (as of 2024-10)
+• **Property B** (PROP002): $2,345,678.90 (as of 2024-10)
 
 Generate a clear, accurate answer:"""
 
@@ -504,12 +577,59 @@ Generate a clear, accurate answer:"""
             return f"The highest performing property is {top.get('property_name', 'Unknown')} with ${top.get('total', 0):,.2f}."
 
         else:
-            # Generic answer
+            # Generic answer for metric queries
+            if not data:
+                return "No data found for your query."
+
+            # Check if this is a property value query
+            if 'value' in data[0]:
+                # Format property values nicely with each on new line
+                lines = []
+                for row in data:
+                    prop_name = row.get('property_name', 'Unknown Property')
+                    prop_code = row.get('property_code', '')
+                    value = row.get('value', 0)
+                    period_year = row.get('period_year', '')
+                    period_month = row.get('period_month', '')
+
+                    # Format the value line
+                    if value is not None:
+                        if isinstance(value, (int, float)) and value > 1000:
+                            # Format as currency for large values (property values, NOI, etc.)
+                            value_str = f"${value:,.2f}"
+                        elif isinstance(value, (int, float)) and value < 10:
+                            # Format as ratio/percentage for small values (DSCR, LTV, etc.)
+                            value_str = f"{value:.2f}"
+                        else:
+                            value_str = f"${value:,.2f}"
+
+                        line = f"• **{prop_name}** ({prop_code}): {value_str}"
+                        if period_year and period_month:
+                            line += f" (as of {period_year}-{period_month:02d})"
+                        lines.append(line)
+
+                if lines:
+                    header = f"Here are the current values for your {len(lines)} {'property' if len(lines) == 1 else 'properties'}:\n\n"
+                    return header + "\n".join(lines)
+
+            # Fallback for other metric types
             if len(data) == 1:
                 row = data[0]
-                return f"For {row.get('property_name', 'the property')}, the value is ${row.get('amount_period', 0):,.2f} for {row.get('period_name', 'the period')}."
+                prop_name = row.get('property_name', 'the property')
+                value = row.get('amount_period') or row.get('value') or row.get('total', 0)
+                return f"For {prop_name}, the value is ${value:,.2f}."
             else:
-                return f"Found {len(data)} results for your query."
+                # Show up to 10 results with nice formatting
+                lines = []
+                for i, row in enumerate(data[:10]):
+                    prop_name = row.get('property_name', f'Property {i+1}')
+                    value = row.get('amount_period') or row.get('value') or row.get('total', 0)
+                    lines.append(f"• **{prop_name}**: ${value:,.2f}")
+
+                result = f"Found {len(data)} results:\n\n" + "\n".join(lines)
+                if len(data) > 10:
+                    result += f"\n\n...and {len(data) - 10} more"
+                return result
 
     def _extract_citations(self, data: List[Dict], intent: Dict) -> List[Dict]:
         """Extract data sources for citations"""
@@ -577,3 +697,53 @@ Generate a clear, accurate answer:"""
     def _cache_result(self, question: str, result: Dict):
         """Cache result (already stored in database via NLQQuery)"""
         pass
+
+    def _generate_follow_ups(self, question: str, intent: Dict, data: List[Dict]) -> List[str]:
+        """Generate contextual follow-up questions based on the query"""
+        follow_ups = []
+        question_lower = question.lower()
+        intent_type = intent.get('intent_type', '')
+
+        # Get property names from data
+        property_names = [row.get('property_name', '') for row in data if row.get('property_name')]
+
+        # Context-aware suggestions based on what was asked
+        if 'value' in question_lower or 'property value' in question_lower:
+            follow_ups = [
+                'Show me the NOI for these properties',
+                'What is the occupancy rate for each property?',
+                'Show me DSCR for all properties'
+            ]
+        elif 'dscr' in question_lower:
+            follow_ups = [
+                'Which properties have DSCR below 1.25?',
+                'Show me the debt service for these properties',
+                'What is the NOI for these properties?'
+            ]
+        elif 'noi' in question_lower:
+            follow_ups = [
+                'Show me revenue trends over time',
+                'What are the operating expenses?',
+                'Compare NOI across all properties'
+            ]
+        elif 'occupancy' in question_lower:
+            follow_ups = [
+                'Show me vacancy trends',
+                'What is the total leasable square footage?',
+                'Compare occupancy rates across properties'
+            ]
+        elif 'revenue' in question_lower:
+            follow_ups = [
+                'Show me expense breakdown',
+                'What is the net operating income?',
+                'Compare revenue year over year'
+            ]
+        else:
+            # Generic follow-ups
+            follow_ups = [
+                'Show me value of my properties',
+                'Which properties have DSCR below 1.25?',
+                'What is my total portfolio NOI?'
+            ]
+
+        return follow_ups[:3]  # Return top 3
