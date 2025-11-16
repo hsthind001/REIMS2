@@ -1,18 +1,23 @@
 import { useState, useEffect } from 'react';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Plus, 
-  Upload, 
+import {
+  AlertTriangle,
+  CheckCircle,
+  Plus,
+  Upload,
   MessageSquare,
   FileText,
   Building2,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Pause,
+  Play,
+  Download
 } from 'lucide-react';
 import { MetricCard, Card, Button, ProgressBar } from '../components/design-system';
 import { propertyService } from '../lib/property';
 import { DocumentUpload } from '../components/DocumentUpload';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
 import type { Property } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -100,12 +105,19 @@ export default function CommandCenter() {
     occupancy: [],
     irr: []
   });
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
+  // Auto-refresh hook with pause/resume controls
+  const { isRefreshing, isPaused, lastRefresh, pause, resume, toggle, refresh } = useAutoRefresh({
+    interval: 300000, // 5 minutes
+    enabled: true,
+    onRefresh: loadDashboardData,
+    dependencies: []
+  });
+
+  // Initial load
   useEffect(() => {
     loadDashboardData();
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(loadDashboardData, 300000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -673,6 +685,58 @@ export default function CommandCenter() {
     }
   };
 
+  // Export functions
+  const handleExportPDF = () => {
+    if (!portfolioHealth) {
+      alert('No data to export');
+      return;
+    }
+
+    exportPortfolioHealthToPDF(portfolioHealth, propertyPerformance, 'portfolio-health-report');
+    setShowExportMenu(false);
+  };
+
+  const handleExportExcel = () => {
+    if (propertyPerformance.length === 0) {
+      alert('No property data to export');
+      return;
+    }
+
+    const data = propertyPerformance.map(p => ({
+      'Property': p.name,
+      'Property Code': p.code,
+      'Value': p.value,
+      'NOI': p.noi,
+      'DSCR': p.dscr,
+      'LTV': p.ltv,
+      'Occupancy': p.occupancy,
+      'Status': p.status
+    }));
+
+    exportToExcel(data, 'portfolio-performance', 'Properties');
+    setShowExportMenu(false);
+  };
+
+  const handleExportCSV = () => {
+    if (propertyPerformance.length === 0) {
+      alert('No property data to export');
+      return;
+    }
+
+    const data = propertyPerformance.map(p => ({
+      'Property': p.name,
+      'Property Code': p.code,
+      'Value': p.value,
+      'NOI': p.noi,
+      'DSCR': p.dscr,
+      'LTV': p.ltv,
+      'Occupancy': p.occupancy,
+      'Status': p.status
+    }));
+
+    exportToCSV(data, 'portfolio-performance');
+    setShowExportMenu(false);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -703,12 +767,82 @@ export default function CommandCenter() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-4xl font-bold mb-2">
-                {selectedPropertyFilter === 'all' 
-                  ? '🏢 Portfolio Health Score' 
+                {selectedPropertyFilter === 'all'
+                  ? '🏢 Portfolio Health Score'
                   : `🏢 ${properties.find(p => p.property_code === selectedPropertyFilter)?.property_name || 'Property'} Health Score`
                 }
               </h1>
-              <p className="text-white/80">Last Updated: {portfolioHealth?.lastUpdated.toLocaleTimeString() || 'Just now'}</p>
+              <div className="flex items-center gap-4">
+                <p className="text-white/80">
+                  Last Updated: {lastRefresh.toLocaleTimeString()}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={toggle}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                    title={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+                  >
+                    {isPaused ? (
+                      <>
+                        <Play className="w-4 h-4" />
+                        <span>Resume</span>
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="w-4 h-4" />
+                        <span>Pause</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={refresh}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm disabled:opacity-50"
+                    title="Refresh now"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowExportMenu(!showExportMenu)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                      title="Export data"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export</span>
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute top-full right-0 mt-2 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 min-w-[160px] z-50">
+                        <button
+                          onClick={handleExportPDF}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-t-lg"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export PDF
+                        </button>
+                        <button
+                          onClick={handleExportExcel}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export Excel
+                        </button>
+                        <button
+                          onClick={handleExportCSV}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-b-lg"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export CSV
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {!isPaused && (
+                    <span className="text-xs text-white/60">Auto-refresh: Every 5 min</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="text-right">
               <div className="text-6xl font-bold mb-2">

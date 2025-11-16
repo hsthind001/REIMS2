@@ -1,20 +1,25 @@
 import { useState, useEffect } from 'react';
-import { 
-  Building2, 
+import {
+  Building2,
   FileText,
   Search,
   Filter,
   Plus,
   Edit,
   Trash2,
-  Sparkles
+  Sparkles,
+  List,
+  Map,
+  Download
 } from 'lucide-react';
 import { Card, Button, ProgressBar } from '../components/design-system';
+import { PropertyMap } from '../components/PropertyMap';
 import { propertyService } from '../lib/property';
 import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
 import { DocumentUpload } from '../components/DocumentUpload';
+import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/exportUtils';
 import type { Property, PropertyCreate, DocumentUpload as DocumentUploadType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
 
@@ -115,6 +120,7 @@ export default function PortfolioHub() {
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingDocumentData, setLoadingDocumentData] = useState(false);
   const [tenantMix, setTenantMix] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
     loadProperties();
@@ -876,9 +882,27 @@ export default function PortfolioHub() {
             <h1 className="text-3xl font-bold text-text-primary">Portfolio Hub</h1>
             <p className="text-text-secondary mt-1">Property management, market intelligence, and tenant optimization</p>
           </div>
-          <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setShowCreateModal(true)}>
-            Add Property
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="info"
+              icon={<Download className="w-4 h-4" />}
+              onClick={() => exportPropertyListToCSV(properties)}
+              size="sm"
+            >
+              CSV
+            </Button>
+            <Button
+              variant="info"
+              icon={<Download className="w-4 h-4" />}
+              onClick={() => exportPropertyListToExcel(properties)}
+              size="sm"
+            >
+              Excel
+            </Button>
+            <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setShowCreateModal(true)}>
+              Add Property
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
@@ -912,9 +936,36 @@ export default function PortfolioHub() {
                   </Button>
                 </div>
               </div>
+
+              {/* View Mode Toggle */}
+              <div className="flex gap-2 border border-border rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-info text-white'
+                      : 'text-text-secondary hover:bg-background'
+                  }`}
+                >
+                  <List className="w-4 h-4" />
+                  <span className="text-sm font-medium">List</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded transition-colors ${
+                    viewMode === 'map'
+                      ? 'bg-info text-white'
+                      : 'text-text-secondary hover:bg-background'
+                  }`}
+                >
+                  <Map className="w-4 h-4" />
+                  <span className="text-sm font-medium">Map</span>
+                </button>
+              </div>
             </Card>
 
-            {/* Property Cards */}
+            {/* Property Cards (List View) */}
+            {viewMode === 'list' && (
             <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto">
               {sortedProperties.map((property) => {
                 const isSelected = selectedProperty?.id === property.id;
@@ -988,6 +1039,19 @@ export default function PortfolioHub() {
                 );
               })}
             </div>
+            )}
+
+            {/* Map View */}
+            {viewMode === 'map' && (
+              <div className="h-[calc(100vh-300px)]">
+                <PropertyMap
+                  properties={filteredProperties}
+                  selectedProperty={selectedProperty}
+                  onPropertySelect={setSelectedProperty}
+                  height={700}
+                />
+              </div>
+            )}
           </div>
 
           {/* Right Panel - Property Details (70%) */}

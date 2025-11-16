@@ -1,6 +1,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Card } from './Card';
+import { Sparkline } from './Sparkline';
 import styles from './MetricCard.module.css';
 
 export interface MetricCardProps {
@@ -45,28 +46,18 @@ export const MetricCard: React.FC<MetricCardProps> = ({
     return styles.changeNeutral;
   };
 
-  // Simple sparkline rendering
-  const renderSparkline = () => {
-    if (!sparkline || sparkline.length === 0) return null;
-    
-    const max = Math.max(...sparkline);
-    const min = Math.min(...sparkline);
-    const range = max - min || 1;
-    
-    return (
-      <div className={styles.sparkline}>
-        {sparkline.map((point, index) => {
-          const height = ((point - min) / range) * 100;
-          return (
-            <div
-              key={index}
-              className={styles.sparklineBar}
-              style={{ height: `${Math.max(height, 5)}%` }}
-            />
-          );
-        })}
-      </div>
-    );
+  // Get sparkline color based on variant and trend
+  const getSparklineColor = () => {
+    if (trend === 'up') return '#10b981'; // green-500
+    if (trend === 'down') return '#ef4444'; // red-500
+
+    switch (variant) {
+      case 'success': return '#10b981';
+      case 'warning': return '#f59e0b';
+      case 'danger': return '#ef4444';
+      case 'info': return '#0ea5e9';
+      default: return '#6366f1'; // indigo-500
+    }
   };
 
   return (
@@ -88,7 +79,15 @@ export const MetricCard: React.FC<MetricCardProps> = ({
         )}
       </div>
 
-      {renderSparkline()}
+      {sparkline && sparkline.length > 0 && (
+        <Sparkline
+          data={sparkline}
+          color={getSparklineColor()}
+          trend={trend}
+          showGradient={true}
+          height={40}
+        />
+      )}
     </Card>
   );
 };
