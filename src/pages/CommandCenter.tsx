@@ -338,6 +338,14 @@ export default function CommandCenter() {
               period: `${metric.period_year}-${metric.period_month}`
             });
             
+            // Calculate NOI (Net Operating Income) once - use for both DSCR and display
+            // Prefer net_operating_income over net_income for consistency with KPI cards
+            const noi = (metric.net_operating_income !== null && metric.net_operating_income !== undefined)
+              ? metric.net_operating_income
+              : (metric.net_income !== null && metric.net_income !== undefined)
+                ? metric.net_income
+                : 0;
+
             // Fetch real NOI trend data from historical API
             let noiTrend: number[] = [];
             try {
@@ -352,27 +360,51 @@ export default function CommandCenter() {
               console.error('Failed to load historical data:', histErr);
             }
 
-            // Calculate DSCR from real data (NOI / estimated debt service)
-            // Proxy: NOI / (Total Liabilities * 0.08) where 0.08 = 8% annual debt service
+            // Fetch DSCR from proper backend API (uses actual debt service from income statement)
             let dscr = 1.25; // Fallback
+            let status: 'critical' | 'warning' | 'good' = 'good'; // Fallback
             try {
-              const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
+              const dscrRes = await fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate`, {
+                method: 'POST',
                 credentials: 'include'
               });
-              if (ltvRes.ok) {
-                const ltvData = await ltvRes.json();
-                const loanAmount = ltvData.loan_amount || 0;
-                const annualDebtService = loanAmount * 0.08;
-                if (annualDebtService > 0 && metric.net_income) {
-                  dscr = metric.net_income / annualDebtService;
+              if (dscrRes.ok) {
+                const dscrData = await dscrRes.json();
+                if (dscrData.success && dscrData.dscr) {
+                  dscr = dscrData.dscr;
+                  // Use status from API response (healthy/warning/critical)
+                  status = dscrData.status === 'healthy' ? 'good' : 
+                           dscrData.status === 'warning' ? 'warning' : 'critical';
+                } else {
+                  console.warn(`DSCR API returned no data for property ${property.property_code}:`, dscrData);
                 }
+              } else {
+                console.warn(`DSCR API failed for property ${property.property_code}: ${dscrRes.status} ${dscrRes.statusText}`);
               }
             } catch (dscrErr) {
-              console.error('Failed to calculate DSCR:', dscrErr);
+              console.error(`Failed to fetch DSCR for property ${property.property_code}:`, dscrErr);
+              // Fallback: calculate DSCR using simplified formula if API fails
+              try {
+                const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
+                  credentials: 'include'
+                });
+                if (ltvRes.ok) {
+                  const ltvData = await ltvRes.json();
+                  const loanAmount = ltvData.loan_amount || 0;
+                  const annualDebtService = loanAmount * 0.08;
+                  if (annualDebtService > 0 && noi > 0) {
+                    dscr = noi / annualDebtService;
+                    status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
+                  }
+                }
+              } catch (fallbackErr) {
+                console.error('Failed to calculate DSCR fallback:', fallbackErr);
+              }
             }
-            const status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
 
             // Fetch real LTV from API
+            // API now uses true LTV: long_term_debt / net_property_value
+            // Falls back through multiple calculation methods if data is unavailable
             let ltv = 52.8; // Fallback
             try {
               const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
@@ -381,9 +413,11 @@ export default function CommandCenter() {
               if (ltvRes.ok) {
                 const ltvData = await ltvRes.json();
                 ltv = ltvData.ltv || 52.8;
+              } else {
+                console.warn(`LTV API failed for property ${property.property_code}: ${ltvRes.status} ${ltvRes.statusText}`);
               }
             } catch (ltvErr) {
-              console.error('Failed to fetch LTV:', ltvErr);
+              console.error(`Failed to fetch LTV for property ${property.property_code}:`, ltvErr);
             }
 
             performance.push({
@@ -391,7 +425,7 @@ export default function CommandCenter() {
               name: property.property_name,
               code: property.property_code,
               value: metric.total_assets || 0,
-              noi: metric.net_income || 0,
+              noi: noi,
               dscr,
               ltv,
               occupancy: metric.occupancy_rate || 0,

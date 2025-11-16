@@ -150,9 +150,10 @@ class DSCRMonitoringService:
         NOI = Total Revenue - Operating Expenses
         """
         # Get income statement data for the period
+        # Note: IncomeStatementData uses 'period_id', not 'financial_period_id'
         income_data = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
-            IncomeStatementData.financial_period_id == financial_period_id
+            IncomeStatementData.period_id == financial_period_id
         ).all()
 
         total_revenue = Decimal("0")
@@ -184,15 +185,17 @@ class DSCRMonitoringService:
         In production, this should come from a separate loan/debt table.
         """
         # Look for debt service accounts in income statement
+        # Note: IncomeStatementData uses 'period_id', not 'financial_period_id'
         debt_accounts = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
-            IncomeStatementData.financial_period_id == financial_period_id,
+            IncomeStatementData.period_id == financial_period_id,
             IncomeStatementData.account_code.like("7%")  # Debt service accounts
         ).all()
 
         total_debt_service = Decimal("0")
         for account in debt_accounts:
-            total_debt_service += Decimal(str(account.amount or 0))
+            # IncomeStatementData uses 'period_amount', not 'amount'
+            total_debt_service += Decimal(str(account.period_amount or 0))
 
         # If no debt service found, use mock value for demo
         if total_debt_service == 0:

@@ -656,8 +656,13 @@ async def get_ltv(
     """
     Calculate LTV (Loan-to-Value) ratio for a property
 
-    Formula: (Loan Amount / Property Value) * 100
-    Uses total_liabilities as loan proxy and total_assets as value proxy
+    True LTV Formula: (Long-Term Debt / Net Property Value) * 100
+    
+    Priority:
+    1. Use pre-calculated ltv_ratio from FinancialMetrics (preferred)
+    2. Calculate from long_term_debt and net_property_value if ltv_ratio is null
+    3. Fall back to total_long_term_liabilities / net_property_value if available
+    4. Last resort: Use total_liabilities / total_assets (debt-to-assets ratio)
     """
     try:
         property_obj = db.query(Property).filter(Property.id == property_id).first()
@@ -667,22 +672,62 @@ async def get_ltv(
                 detail="Property not found"
             )
 
+        # Get latest metrics with data - prioritize records that have at least some relevant data
         latest_metrics = db.query(FinancialMetrics).filter(
             FinancialMetrics.property_id == property_id
         ).join(FinancialPeriod).order_by(
+            # Prioritize records with ltv_ratio first, then by recency
+            FinancialMetrics.ltv_ratio.desc().nulls_last(),
             FinancialPeriod.period_year.desc(),
             FinancialPeriod.period_month.desc()
         ).first()
 
-        if not latest_metrics or not latest_metrics.total_liabilities or not latest_metrics.total_assets:
+        if not latest_metrics:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Insufficient data to calculate LTV"
+                detail="Insufficient data to calculate LTV - no financial metrics found"
             )
 
-        loan_amount = float(latest_metrics.total_liabilities)
-        property_value = float(latest_metrics.total_assets)
-        ltv = (loan_amount / property_value) * 100 if property_value > 0 else 0
+        # Priority 1: Use pre-calculated ltv_ratio (most accurate)
+        if latest_metrics.ltv_ratio is not None:
+            ltv = float(latest_metrics.ltv_ratio) * 100  # Convert decimal to percentage
+            loan_amount = float(latest_metrics.long_term_debt) if latest_metrics.long_term_debt else float(latest_metrics.total_long_term_liabilities) if latest_metrics.total_long_term_liabilities else 0
+            property_value = float(latest_metrics.net_property_value) if latest_metrics.net_property_value else float(latest_metrics.total_property_equipment) if latest_metrics.total_property_equipment else 0
+            calculation_method = "ltv_ratio_precalculated"
+        
+        # Priority 2: Calculate from long_term_debt and net_property_value
+        elif latest_metrics.long_term_debt and latest_metrics.net_property_value and latest_metrics.net_property_value > 0:
+            loan_amount = float(latest_metrics.long_term_debt)
+            property_value = float(latest_metrics.net_property_value)
+            ltv = (loan_amount / property_value) * 100
+            calculation_method = "long_term_debt_to_net_property_value"
+        
+        # Priority 3: Calculate from total_long_term_liabilities and net_property_value
+        elif latest_metrics.total_long_term_liabilities and latest_metrics.net_property_value and latest_metrics.net_property_value > 0:
+            loan_amount = float(latest_metrics.total_long_term_liabilities)
+            property_value = float(latest_metrics.net_property_value)
+            ltv = (loan_amount / property_value) * 100
+            calculation_method = "total_long_term_liabilities_to_net_property_value"
+        
+        # Priority 4: Fall back to total_long_term_liabilities and total_property_equipment
+        elif latest_metrics.total_long_term_liabilities and latest_metrics.total_property_equipment and latest_metrics.total_property_equipment > 0:
+            loan_amount = float(latest_metrics.total_long_term_liabilities)
+            property_value = float(latest_metrics.total_property_equipment)
+            ltv = (loan_amount / property_value) * 100
+            calculation_method = "total_long_term_liabilities_to_property_equipment"
+        
+        # Last resort: Use debt-to-assets ratio (not true LTV, but better than nothing)
+        elif latest_metrics.total_liabilities and latest_metrics.total_assets and latest_metrics.total_assets > 0:
+            loan_amount = float(latest_metrics.total_liabilities)
+            property_value = float(latest_metrics.total_assets)
+            ltv = (loan_amount / property_value) * 100
+            calculation_method = "debt_to_assets_ratio_fallback"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Insufficient data to calculate LTV - missing required financial metrics"
+            )
+
         debt_to_equity = float(latest_metrics.debt_to_equity_ratio) if latest_metrics.debt_to_equity_ratio else 0
 
         return LTVResponse(
@@ -692,7 +737,7 @@ async def get_ltv(
             loan_amount=loan_amount,
             property_value=property_value,
             debt_to_equity=debt_to_equity,
-            calculation_method="liabilities_to_assets_ratio",
+            calculation_method=calculation_method,
             calculated_at=datetime.now()
         )
 
