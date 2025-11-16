@@ -242,6 +242,12 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ai-models-cache:/app/.cache/huggingface  # Share model cache
+    deploy:
+      resources:
+        limits:
+          memory: 8G  # Increased from 3.6GB to 8GB for full metadata capture
+        reservations:
+          memory: 4G  # Reserve 4GB minimum
     depends_on:
       db-init:
         condition: service_completed_successfully

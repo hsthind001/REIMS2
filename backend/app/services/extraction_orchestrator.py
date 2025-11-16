@@ -1687,12 +1687,12 @@ class ExtractionOrchestrator:
         try:
             print(f"📊 Capturing field-level confidence metadata...")
 
-            # Step 1: Run ONLY top 3 engines to prevent memory exhaustion
-            # CHANGED: Previously ran all 6 engines causing worker crashes
-            # Now using only PyMuPDF, PDFPlumber, and Camelot (lightweight engines)
+            # Step 1: Run all 6 engines for comprehensive field-level confidence
+            # Memory limit increased to 8GB to support all engines simultaneously
+            # Engines: PyMuPDF, PDFPlumber, Camelot, OCR, LayoutLM, EasyOCR
             extraction_results = self.extraction_engine.extract_with_confidence(
                 pdf_data=pdf_data,
-                run_all_engines=False  # CHANGED: Use only the best engine
+                run_all_engines=True  # Full metadata capture with 8GB memory
             )
             
             if not extraction_results or len(extraction_results) == 0:
