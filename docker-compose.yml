@@ -217,7 +217,13 @@ services:
         condition: service_healthy
     networks:
       - reims-network
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    deploy:
+      resources:
+        limits:
+          memory: 2G  # Limit backend memory to prevent resource exhaustion
+        reservations:
+          memory: 512M  # Reserve 512MB minimum
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
   # Celery Worker - Background task processing
   celery-worker:
@@ -314,6 +320,12 @@ services:
       - backend
     networks:
       - reims-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G  # Limit frontend memory
+        reservations:
+          memory: 256M  # Reserve 256MB minimum
     command: npm run dev -- --host 0.0.0.0
 
 # Networks
