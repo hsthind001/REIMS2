@@ -103,9 +103,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         </form>
 
         <div style={{ marginTop: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-          <p>Default credentials:</p>
-          <p><strong>Email:</strong> admin@reims.com</p>
-          <p><strong>Password:</strong> admin123</p>
+          <p>Contact your administrator for credentials</p>
         </div>
       </div>
     </div>

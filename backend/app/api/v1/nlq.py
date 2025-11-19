@@ -9,6 +9,8 @@ import logging
 
 from app.db.database import get_db
 from app.services.nlq_service import NaturalLanguageQueryService
+from app.api.dependencies import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/nlq", tags=["natural_language_query"])
 logger = logging.getLogger(__name__)
@@ -23,7 +25,7 @@ class NLQueryRequest(BaseModel):
 def natural_language_query(
     request: NLQueryRequest,
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user)  # Add auth when ready
+    current_user: User = Depends(get_current_user)
 ):
     """
     Process natural language query
@@ -36,8 +38,7 @@ def natural_language_query(
 
     Returns answer with data, citations, and SQL query used
     """
-    # For now, use a default user_id (add proper auth later)
-    user_id = 1  # TODO: Replace with current_user.id
+    user_id = current_user.id
 
     service = NaturalLanguageQueryService(db)
 
@@ -74,14 +75,14 @@ def get_query_suggestions():
 def get_query_history(
     limit: int = 20,
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get user's query history
 
     Returns recent queries with answers
     """
-    user_id = 1  # TODO: Replace with current_user.id
+    user_id = current_user.id
 
     service = NaturalLanguageQueryService(db)
     history = service.get_history(user_id, limit)

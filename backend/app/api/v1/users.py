@@ -77,8 +77,8 @@ def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
     # Update user fields
     update_data = user.model_dump(exclude_unset=True)
     if "password" in update_data:
-        # TODO: Hash password before storing!
-        update_data["hashed_password"] = update_data.pop("password")
+        from app.core.security import get_password_hash
+        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
     
     for field, value in update_data.items():
         setattr(db_user, field, value)

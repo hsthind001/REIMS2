@@ -319,7 +319,7 @@ class DocumentService:
     
     def calculate_file_hash(self, file_content: bytes) -> str:
         """Calculate MD5 hash of file content"""
-        return hashlib.md5(file_content).hexdigest()
+        return hashlib.sha256(file_content).hexdigest()
     
     def check_duplicate(
         self,

@@ -75,7 +75,7 @@ async def analyze_pdf(
         pdf_data = await file.read()
         
         # Calculate file hash
-        file_hash = hashlib.md5(pdf_data).hexdigest()
+        file_hash = hashlib.sha256(pdf_data).hexdigest()
         
         # Extract with validation
         result = extractor.extract_with_validation(
