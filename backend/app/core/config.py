@@ -46,9 +46,22 @@ class Settings(BaseSettings):
         return v
     
     # Security
-    SECRET_KEY: str = "your-secret-key-change-this-in-production"
+    # IMPORTANT: Set SECRET_KEY environment variable in production!
+    SECRET_KEY: str = "CHANGE-THIS-IN-PRODUCTION-USE-ENV-VAR"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    @field_validator('SECRET_KEY', mode='before')
+    @classmethod
+    def validate_secret_key(cls, v):
+        if v in ["your-secret-key-change-this-in-production", "CHANGE-THIS-IN-PRODUCTION-USE-ENV-VAR"]:
+            import os
+            env_key = os.environ.get('SECRET_KEY')
+            if env_key:
+                return env_key
+            import warnings
+            warnings.warn("SECRET_KEY not set! Using default value. Set SECRET_KEY environment variable in production!")
+        return v
 
     # LLM API Settings
     OPENAI_API_KEY: Optional[str] = None

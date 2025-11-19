@@ -6,6 +6,9 @@ FROM reims-base:latest
 USER root
 RUN apt-get update && apt-get install -y postgresql-client redis-tools && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for security
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
 # Set working directory (already set in base, but explicit for clarity)
 WORKDIR /app
 
@@ -19,8 +22,11 @@ COPY celery-entrypoint.sh /celery-entrypoint.sh
 COPY flower-entrypoint.sh /flower-entrypoint.sh
 RUN chmod +x /entrypoint.sh /celery-entrypoint.sh /flower-entrypoint.sh
 
-# Create directory for temp files
-RUN mkdir -p /tmp
+# Create directory for temp files and set ownership
+RUN mkdir -p /tmp && chown -R appuser:appgroup /app /tmp
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8000

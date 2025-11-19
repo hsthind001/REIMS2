@@ -54,6 +54,7 @@ async def list_anomalies(
     from sqlalchemy import text
     
     # Build SQL query (models don't exist yet, use direct SQL)
+    # Include financial metrics to show underlying calculation data
     sql = """
         SELECT 
             ad.id,
@@ -67,12 +68,27 @@ async def list_anomalies(
             ad.z_score,
             ad.percentage_change,
             p.property_code,
+            p.id as property_id,
             fp.period_year,
-            fp.period_month
+            fp.period_month,
+            fp.id as period_id,
+            du.file_name,
+            du.document_type,
+            du.upload_date,
+            -- Include underlying metrics for calculated fields
+            fm.total_current_assets,
+            fm.total_current_liabilities,
+            fm.total_liabilities,
+            fm.total_equity,
+            fm.total_assets,
+            fm.occupancy_rate,
+            fm.total_units,
+            fm.occupied_units
         FROM anomaly_detections ad
         JOIN document_uploads du ON ad.document_id = du.id
         JOIN properties p ON du.property_id = p.id
         JOIN financial_periods fp ON du.period_id = fp.id
+        LEFT JOIN financial_metrics fm ON fm.property_id = p.id AND fm.period_id = fp.id
         WHERE 1=1
     """
     
@@ -92,20 +108,48 @@ async def list_anomalies(
     results = db.execute(text(sql), params).fetchall()
     
     # Build response
+    def safe_float(value):
+        """Safely convert value to float, handling percentages and strings."""
+        if not value:
+            return None
+        try:
+            # Remove percentage sign and convert
+            if isinstance(value, str):
+                value = value.replace('%', '').strip()
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    
     return [
         AnomalyResponse(
             type=row.anomaly_type,
             severity=row.severity,
             record_id=row.id,
             field_name=row.field_name,
-            value=float(row.field_value) if row.field_value else None,
+            value=safe_float(row.field_value),
             message=f"{row.property_code} ({row.period_year}/{row.period_month:02d}): {row.field_name} = {row.field_value} (expected: {row.expected_value or 'normal range'})",
             details={
                 'property_code': row.property_code,
+                'property_id': row.property_id,
                 'period': f"{row.period_year}/{row.period_month:02d}",
-                'z_score': float(row.z_score) if row.z_score else None,
-                'percentage_change': float(row.percentage_change) if row.percentage_change else None,
-                'confidence': float(row.confidence)
+                'period_id': row.period_id,
+                'document_id': row.document_id,
+                'file_name': row.file_name,
+                'document_type': row.document_type,
+                'upload_date': row.upload_date.isoformat() if row.upload_date else None,
+                'expected_value': row.expected_value,
+                'field_value': row.field_value,
+                'z_score': safe_float(row.z_score),
+                'percentage_change': safe_float(row.percentage_change),
+                'confidence': safe_float(row.confidence) if row.confidence else None,
+                # Include underlying calculation data
+                'total_current_assets': safe_float(getattr(row, 'total_current_assets', None)),
+                'total_current_liabilities': safe_float(getattr(row, 'total_current_liabilities', None)),
+                'total_liabilities': safe_float(getattr(row, 'total_liabilities', None)),
+                'total_equity': safe_float(getattr(row, 'total_equity', None)),
+                'total_assets': safe_float(getattr(row, 'total_assets', None)),
+                'total_units': safe_float(getattr(row, 'total_units', None)),
+                'occupied_units': safe_float(getattr(row, 'occupied_units', None)),
             }
         )
         for row in results

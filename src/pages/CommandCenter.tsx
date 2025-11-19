@@ -1,18 +1,23 @@
 import { useState, useEffect } from 'react';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Plus, 
-  Upload, 
+import {
+  AlertTriangle,
+  CheckCircle,
+  Plus,
+  Upload,
   MessageSquare,
   FileText,
   Building2,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Pause,
+  Play,
+  Download
 } from 'lucide-react';
 import { MetricCard, Card, Button, ProgressBar } from '../components/design-system';
 import { propertyService } from '../lib/property';
 import { DocumentUpload } from '../components/DocumentUpload';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
 import type { Property } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -84,34 +89,72 @@ export default function CommandCenter() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
+  const [analysisDetails, setAnalysisDetails] = useState<any>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
+  const [sparklineData, setSparklineData] = useState<{
+    value: number[];
+    noi: number[];
+    occupancy: number[];
+    irr: number[];
+  }>({
+    value: [],
+    noi: [],
+    occupancy: [],
+    irr: []
+  });
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
+  // Auto-refresh hook with pause/resume controls
+  const { isRefreshing, isPaused, lastRefresh, pause, resume, toggle, refresh } = useAutoRefresh({
+    interval: 300000, // 5 minutes
+    enabled: true,
+    onRefresh: loadDashboardData,
+    dependencies: []
+  });
+
+  // Initial load
   useEffect(() => {
     loadDashboardData();
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(loadDashboardData, 300000);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    // Reload portfolio health and sparklines when property filter changes
+    if (properties.length > 0) {
+      loadPortfolioHealth(properties);
+      loadSparklineData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPropertyFilter]);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      
+
       // Load properties
       const propertiesData = await propertyService.getAllProperties();
       setProperties(propertiesData);
 
-      // Load portfolio health
+      // Load portfolio health (will use selectedPropertyFilter from state)
       await loadPortfolioHealth(propertiesData);
       
+      // Reload sparklines when data changes
+      await loadSparklineData();
+
       // Load critical alerts
       await loadCriticalAlerts();
-      
+
       // Load property performance
       await loadPropertyPerformance(propertiesData);
-      
+
       // Load AI insights
       await loadAIInsights();
-      
+
+      // Load sparkline data
+      await loadSparklineData();
+
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
@@ -122,9 +165,14 @@ export default function CommandCenter() {
   const loadPortfolioHealth = async (_properties: Property[]) => {
     try {
       // Calculate portfolio health from properties and metrics
-      const metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
+      let metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
         credentials: 'include'
       }).then(r => r.ok ? r.json() : []);
+
+      // Filter by selected property if not "all"
+      if (selectedPropertyFilter !== 'all') {
+        metricsSummary = metricsSummary.filter((m: any) => m.property_code === selectedPropertyFilter);
+      }
 
       let totalValue = 0;
       let totalNOI = 0;
@@ -133,17 +181,59 @@ export default function CommandCenter() {
       let criticalAlerts = 0;
       let warningAlerts = 0;
 
+      // Use only latest period per property (API now filters, but double-check)
+      const propertyMap = new Map<string, any>();
       metricsSummary.forEach((m: any) => {
+        const existing = propertyMap.get(m.property_code);
+        if (!existing) {
+          propertyMap.set(m.property_code, m);
+        } else {
+          // Prefer later period if duplicate
+          if (m.period_year > existing.period_year || 
+              (m.period_year === existing.period_year && m.period_month > existing.period_month)) {
+            propertyMap.set(m.property_code, m);
+          }
+        }
+      });
+
+      // Sum values from unique properties only
+      propertyMap.forEach((m: any) => {
         if (m.total_assets) totalValue += m.total_assets;
-        if (m.net_income) totalNOI += m.net_income;
-        if (m.occupancy_rate) {
+        // Use NOI (Net Operating Income) instead of net_income for portfolio NOI
+        if (m.net_operating_income !== null && m.net_operating_income !== undefined) {
+          totalNOI += m.net_operating_income;
+        } else if (m.net_income !== null && m.net_income !== undefined) {
+          // Fallback to net_income if NOI not available
+          totalNOI += m.net_income;
+        }
+        if (m.occupancy_rate !== null && m.occupancy_rate !== undefined) {
           totalOccupancy += m.occupancy_rate;
           occupancyCount++;
         }
       });
 
       const avgOccupancy = occupancyCount > 0 ? totalOccupancy / occupancyCount : 0;
-      
+
+      // Fetch Portfolio IRR from API (only for "all" - single property IRR not available)
+      let portfolioIRR = 14.2; // Fallback
+      if (selectedPropertyFilter === 'all') {
+        try {
+          const irrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-irr`, {
+            credentials: 'include'
+          });
+          if (irrResponse.ok) {
+            const irrData = await irrResponse.json();
+            portfolioIRR = irrData.irr;
+          }
+        } catch (irrErr) {
+          console.error('Failed to fetch portfolio IRR:', irrErr);
+        }
+      } else {
+        // For single property, use a placeholder or calculate from NOI
+        // TODO: Calculate property-specific IRR when available
+        portfolioIRR = 14.2; // Placeholder
+      }
+
       // Calculate health score (0-100)
       let score = 85; // Base score
       if (avgOccupancy < 85) score -= 15;
@@ -160,7 +250,7 @@ export default function CommandCenter() {
         totalValue,
         totalNOI,
         avgOccupancy,
-        portfolioIRR: 14.2, // Would come from exit strategy analysis
+        portfolioIRR,
         alertCount: {
           critical: criticalAlerts,
           warning: warningAlerts,
@@ -209,38 +299,181 @@ export default function CommandCenter() {
     try {
       const performance: PropertyPerformance[] = [];
       
+      // Fetch all metrics once with a high limit to get all properties
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+        credentials: 'include'
+      });
+      const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
+      
+      // Create a map of property_code -> latest metric with actual data for quick lookup
+      const metricsMap = new Map<string, any>();
+      allMetrics.forEach((m: any) => {
+        const existing = metricsMap.get(m.property_code);
+        const hasData = (m.total_assets !== null && m.total_assets !== undefined) || 
+                        (m.net_income !== null && m.net_income !== undefined);
+        const existingHasData = existing && 
+                                ((existing.total_assets !== null && existing.total_assets !== undefined) || 
+                                 (existing.net_income !== null && existing.net_income !== undefined));
+        
+        // Prefer metrics with actual data over null values
+        // If both have data, prefer the latest period
+        // If neither has data, prefer the latest period anyway
+        if (!existing) {
+          metricsMap.set(m.property_code, m);
+        } else if (hasData && !existingHasData) {
+          // Current has data, existing doesn't - use current
+          metricsMap.set(m.property_code, m);
+        } else if (!hasData && existingHasData) {
+          // Existing has data, current doesn't - keep existing
+          // Don't update
+        } else {
+          // Both have same data status - prefer latest period
+          if (m.period_year && existing.period_year && m.period_year > existing.period_year) {
+            metricsMap.set(m.property_code, m);
+          } else if (m.period_year === existing.period_year && 
+                     m.period_month && existing.period_month && 
+                     m.period_month > existing.period_month) {
+            metricsMap.set(m.property_code, m);
+          }
+        }
+      });
+      
+      // Process each property
       for (const property of properties.slice(0, 10)) {
         try {
-          const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=1`, {
-            credentials: 'include'
-          });
-          const metrics = metricsRes.ok ? await metricsRes.json() : [];
-          const metric = metrics.find((m: any) => m.property_code === property.property_code);
-          
-          if (metric) {
-            // Generate mock trend data (12 months)
-            const noiTrend = Array.from({ length: 12 }, () => 
-              (metric.net_income || 0) * (0.9 + Math.random() * 0.2)
-            );
+          const metric = metricsMap.get(property.property_code);
 
-            const dscr = 1.0 + Math.random() * 0.3; // Mock DSCR
-            const status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
+          if (metric) {
+            console.log(`Loaded metrics for ${property.property_code}:`, {
+              total_assets: metric.total_assets,
+              net_income: metric.net_income,
+              period: `${metric.period_year}-${metric.period_month}`
+            });
+            
+            // Calculate NOI (Net Operating Income) once - use for both DSCR and display
+            // Prefer net_operating_income over net_income for consistency with KPI cards
+            const noi = (metric.net_operating_income !== null && metric.net_operating_income !== undefined)
+              ? metric.net_operating_income
+              : (metric.net_income !== null && metric.net_income !== undefined)
+                ? metric.net_income
+                : 0;
+
+            // Fetch real NOI trend data from historical API
+            let noiTrend: number[] = [];
+            try {
+              const histRes = await fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
+                credentials: 'include'
+              });
+              if (histRes.ok) {
+                const histData = await histRes.json();
+                noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
+              }
+            } catch (histErr) {
+              console.error('Failed to load historical data:', histErr);
+            }
+
+            // Fetch DSCR from proper backend API (uses actual debt service from income statement)
+            let dscr = 1.25; // Fallback
+            let status: 'critical' | 'warning' | 'good' = 'good'; // Fallback
+            try {
+              const dscrRes = await fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate`, {
+                method: 'POST',
+                credentials: 'include'
+              });
+              if (dscrRes.ok) {
+                const dscrData = await dscrRes.json();
+                if (dscrData.success && dscrData.dscr) {
+                  dscr = dscrData.dscr;
+                  // Use status from API response (healthy/warning/critical)
+                  status = dscrData.status === 'healthy' ? 'good' : 
+                           dscrData.status === 'warning' ? 'warning' : 'critical';
+                } else {
+                  console.warn(`DSCR API returned no data for property ${property.property_code}:`, dscrData);
+                }
+              } else {
+                console.warn(`DSCR API failed for property ${property.property_code}: ${dscrRes.status} ${dscrRes.statusText}`);
+              }
+            } catch (dscrErr) {
+              console.error(`Failed to fetch DSCR for property ${property.property_code}:`, dscrErr);
+              // Fallback: calculate DSCR using simplified formula if API fails
+              try {
+                const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
+                  credentials: 'include'
+                });
+                if (ltvRes.ok) {
+                  const ltvData = await ltvRes.json();
+                  const loanAmount = ltvData.loan_amount || 0;
+                  const annualDebtService = loanAmount * 0.08;
+                  if (annualDebtService > 0 && noi > 0) {
+                    dscr = noi / annualDebtService;
+                    status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
+                  }
+                }
+              } catch (fallbackErr) {
+                console.error('Failed to calculate DSCR fallback:', fallbackErr);
+              }
+            }
+
+            // Fetch real LTV from API
+            // API now uses true LTV: long_term_debt / net_property_value
+            // Falls back through multiple calculation methods if data is unavailable
+            let ltv = 52.8; // Fallback
+            try {
+              const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
+                credentials: 'include'
+              });
+              if (ltvRes.ok) {
+                const ltvData = await ltvRes.json();
+                ltv = ltvData.ltv || 52.8;
+              } else {
+                console.warn(`LTV API failed for property ${property.property_code}: ${ltvRes.status} ${ltvRes.statusText}`);
+              }
+            } catch (ltvErr) {
+              console.error(`Failed to fetch LTV for property ${property.property_code}:`, ltvErr);
+            }
 
             performance.push({
               id: property.id,
               name: property.property_name,
               code: property.property_code,
               value: metric.total_assets || 0,
-              noi: metric.net_income || 0,
+              noi: noi,
               dscr,
-              ltv: 52.8, // Mock
+              ltv,
               occupancy: metric.occupancy_rate || 0,
               status,
               trends: { noi: noiTrend }
             });
+          } else {
+            // Property exists but no metrics yet - show with zeros
+            performance.push({
+              id: property.id,
+              name: property.property_name,
+              code: property.property_code,
+              value: 0,
+              noi: 0,
+              dscr: 0,
+              ltv: 0,
+              occupancy: 0,
+              status: 'warning',
+              trends: { noi: [] }
+            });
           }
         } catch (err) {
           console.error(`Failed to load metrics for ${property.property_code}:`, err);
+          // Add property with zeros if there's an error
+          performance.push({
+            id: property.id,
+            name: property.property_name,
+            code: property.property_code,
+            value: 0,
+            noi: 0,
+            dscr: 0,
+            ltv: 0,
+            occupancy: 0,
+            status: 'warning',
+            trends: { noi: [] }
+          });
         }
       }
       
@@ -252,7 +485,43 @@ export default function CommandCenter() {
 
   const loadAIInsights = async () => {
     try {
-      // Mock AI insights - would come from NLQ API
+      // Fetch real AI insights from NLQ API
+      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAIInsights(data.insights);
+      } else {
+        // Fallback to mock data
+        setAIInsights([
+          {
+            id: '1',
+            type: 'risk',
+            title: 'DSCR Stress Pattern Detected',
+            description: '3 properties showing DSCR stress - refinancing window optimal',
+            confidence: 0.85
+          },
+          {
+            id: '2',
+            type: 'market',
+            title: 'Market Cap Rates Trending Up',
+            description: 'Market cap rates trending up 0.3% - favorable for sales',
+            confidence: 0.78
+          },
+          {
+            id: '3',
+            type: 'operational',
+            title: 'Q1 2026 Lease Expirations',
+            description: '45 lease expirations Q1 2026 - start negotiations NOW',
+            confidence: 0.92
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to load AI insights:', err);
+      // Fallback to mock data
       setAIInsights([
         {
           id: '1',
@@ -276,11 +545,198 @@ export default function CommandCenter() {
           confidence: 0.92
         }
       ]);
-    } catch (err) {
-      console.error('Failed to load AI insights:', err);
     }
   };
 
+  const loadSparklineData = async () => {
+    try {
+      // Determine if we need property-specific or portfolio-wide data
+      let url = `${API_BASE_URL}/metrics/historical?months=12`;
+      if (selectedPropertyFilter !== 'all') {
+        // Find property ID for the selected property
+        const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
+        if (selectedProp) {
+          url += `&property_id=${selectedProp.id}`;
+        }
+      }
+      
+      // Fetch 12 months of historical data for sparklines
+      const response = await fetch(url, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Transform API data to sparkline format
+        // Convert millions to display values for sparklines
+        const valueSparkline = data.data.value.map((v: number) => v / 1000000); // Convert to millions
+        const noiSparkline = data.data.noi.map((n: number) => n / 1000000); // Convert to millions
+        const occupancySparkline = data.data.occupancy;
+
+        // For IRR, generate reasonable trend based on portfolio growth
+        // (API doesn't have IRR history yet, so derive from NOI trend)
+        const irrSparkline = noiSparkline.map((noi: number) => {
+          const baseIRR = 12;
+          const growth = (noi / (noiSparkline[0] || 1)) - 1;
+          return baseIRR + (growth * 10); // Scale NOI growth to IRR points
+        });
+
+        setSparklineData({
+          value: valueSparkline,
+          noi: noiSparkline,
+          occupancy: occupancySparkline,
+          irr: irrSparkline
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load sparkline data:', err);
+      // Keep empty arrays as fallback - component will handle gracefully
+    }
+  };
+
+  const loadPortfolioAnalysis = async () => {
+    try {
+      setLoadingAnalysis(true);
+      // Try to fetch detailed portfolio analysis from NLQ API
+      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio?detailed=true`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAnalysisDetails(data);
+      } else {
+        // Generate analysis from portfolio health data
+        setAnalysisDetails({
+          title: 'Portfolio Health Analysis',
+          summary: portfolioHealth ? 
+            `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
+            'Portfolio analysis unavailable',
+          details: portfolioHealth ? [
+            `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
+            `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(0)}K`,
+            `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
+            `Portfolio IRR: ${(portfolioHealth.portfolioIRR || 0).toFixed(1)}%`,
+            `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
+            `Warning Alerts: ${portfolioHealth.alertCount.warning}`
+          ] : [],
+          recommendations: portfolioHealth && portfolioHealth.score < 90 ? [
+            'Monitor properties with DSCR below 1.35',
+            'Review occupancy rates for properties below 85%',
+            'Consider refinancing opportunities for properties with high LTV'
+          ] : [
+            'Portfolio is performing well',
+            'Continue monitoring key metrics',
+            'Maintain current operational strategies'
+          ]
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load portfolio analysis:', err);
+      setAnalysisDetails({
+        title: 'Portfolio Health Analysis',
+        summary: 'Unable to load detailed analysis',
+        details: [],
+        recommendations: ['Please try again later']
+      });
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  const loadInsightAnalysis = async (insight: AIInsight) => {
+    try {
+      setLoadingAnalysis(true);
+      // Try to fetch detailed analysis for specific insight
+      const response = await fetch(`${API_BASE_URL}/nlq/insights/${insight.id}`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAnalysisDetails(data);
+      } else {
+        // Generate analysis from insight data
+        setAnalysisDetails({
+          title: insight.title,
+          summary: insight.description,
+          details: [
+            `Type: ${insight.type}`,
+            `Confidence: ${(insight.confidence * 100).toFixed(0)}%`
+          ],
+          recommendations: [
+            'Review related financial metrics',
+            'Monitor trends over next quarter',
+            'Consider implementing suggested actions'
+          ]
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load insight analysis:', err);
+      setAnalysisDetails({
+        title: insight.title,
+        summary: insight.description,
+        details: [],
+        recommendations: ['Please try again later']
+      });
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  // Export functions
+  const handleExportPDF = () => {
+    if (!portfolioHealth) {
+      alert('No data to export');
+      return;
+    }
+
+    exportPortfolioHealthToPDF(portfolioHealth, propertyPerformance, 'portfolio-health-report');
+    setShowExportMenu(false);
+  };
+
+  const handleExportExcel = () => {
+    if (propertyPerformance.length === 0) {
+      alert('No property data to export');
+      return;
+    }
+
+    const data = propertyPerformance.map(p => ({
+      'Property': p.name,
+      'Property Code': p.code,
+      'Value': p.value,
+      'NOI': p.noi,
+      'DSCR': p.dscr,
+      'LTV': p.ltv,
+      'Occupancy': p.occupancy,
+      'Status': p.status
+    }));
+
+    exportToExcel(data, 'portfolio-performance', 'Properties');
+    setShowExportMenu(false);
+  };
+
+  const handleExportCSV = () => {
+    if (propertyPerformance.length === 0) {
+      alert('No property data to export');
+      return;
+    }
+
+    const data = propertyPerformance.map(p => ({
+      'Property': p.name,
+      'Property Code': p.code,
+      'Value': p.value,
+      'NOI': p.noi,
+      'DSCR': p.dscr,
+      'LTV': p.ltv,
+      'Occupancy': p.occupancy,
+      'Status': p.status
+    }));
+
+    exportToCSV(data, 'portfolio-performance');
+    setShowExportMenu(false);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -310,8 +766,83 @@ export default function CommandCenter() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-4xl font-bold mb-2">🏢 Portfolio Health Score</h1>
-              <p className="text-white/80">Last Updated: {portfolioHealth?.lastUpdated.toLocaleTimeString() || 'Just now'}</p>
+              <h1 className="text-4xl font-bold mb-2">
+                {selectedPropertyFilter === 'all'
+                  ? '🏢 Portfolio Health Score'
+                  : `🏢 ${properties.find(p => p.property_code === selectedPropertyFilter)?.property_name || 'Property'} Health Score`
+                }
+              </h1>
+              <div className="flex items-center gap-4">
+                <p className="text-white/80">
+                  Last Updated: {lastRefresh.toLocaleTimeString()}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={toggle}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                    title={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+                  >
+                    {isPaused ? (
+                      <>
+                        <Play className="w-4 h-4" />
+                        <span>Resume</span>
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="w-4 h-4" />
+                        <span>Pause</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={refresh}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm disabled:opacity-50"
+                    title="Refresh now"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowExportMenu(!showExportMenu)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                      title="Export data"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export</span>
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute top-full right-0 mt-2 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 min-w-[160px] z-50">
+                        <button
+                          onClick={handleExportPDF}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-t-lg"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export PDF
+                        </button>
+                        <button
+                          onClick={handleExportExcel}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export Excel
+                        </button>
+                        <button
+                          onClick={handleExportCSV}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-b-lg"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export CSV
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {!isPaused && (
+                    <span className="text-xs text-white/60">Auto-refresh: Every 5 min</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="text-right">
               <div className="text-6xl font-bold mb-2">
@@ -327,43 +858,70 @@ export default function CommandCenter() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Property Filter */}
+        <Card className="p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+              Filter by Property:
+            </label>
+            <select
+              value={selectedPropertyFilter}
+              onChange={(e) => setSelectedPropertyFilter(e.target.value)}
+              className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">📊 All Properties (Portfolio Overview)</option>
+              {properties.map((property) => (
+                <option key={property.id} value={property.property_code}>
+                  {property.property_code} - {property.property_name}
+                </option>
+              ))}
+            </select>
+            <div className="text-sm text-gray-600">
+              {selectedPropertyFilter === 'all' 
+                ? `Showing metrics for ${properties.length} properties`
+                : `Showing metrics for selected property`
+              }
+            </div>
+          </div>
+        </Card>
+
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <MetricCard
-            title="Total Portfolio Value"
+            title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
             value={portfolioHealth?.totalValue || 0}
             change={5.2}
             trend="up"
             icon="💰"
             variant="success"
-            sparkline={[65, 68, 70, 69, 72, 71, 73, 75, 74, 76, 75, 77]}
+            sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
           />
           <MetricCard
-            title="Portfolio NOI"
+            title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
             value={portfolioHealth?.totalNOI || 0}
             change={3.8}
             trend="up"
             icon="📊"
             variant="info"
-            sparkline={[2.8, 2.9, 2.85, 2.9, 2.95, 2.92, 2.98, 3.0, 2.98, 3.02, 3.0, 3.05]}
+            sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
           />
           <MetricCard
-            title="Average Occupancy"
+            title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
             value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
             change={-1.2}
             trend="down"
             icon="🏘️"
             variant="warning"
-            sparkline={[92, 91.5, 91.8, 91.2, 91.0, 90.8, 91.0, 90.5, 90.8, 91.0, 90.5, 91.0]}
+            sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
           />
           <MetricCard
-            title="Portfolio IRR"
+            title={selectedPropertyFilter === 'all' ? "Portfolio IRR" : "Property IRR"}
             value={`${portfolioHealth?.portfolioIRR || 0}%`}
             change={2.1}
             trend="up"
             icon="📈"
             variant="success"
-            sparkline={[12, 12.5, 13, 12.8, 13.2, 13.5, 13.8, 14, 13.9, 14.1, 14.0, 14.2]}
+            sparkline={sparklineData.irr.length > 0 ? sparklineData.irr : undefined}
           />
         </div>
 
@@ -488,8 +1046,15 @@ export default function CommandCenter() {
                 <h2 className="text-2xl font-bold">AI Portfolio Insights</h2>
               </div>
               <p className="text-sm text-text-secondary mb-4">Powered by Claude AI</p>
+
+              {/* AI Insights */}
               <div className="space-y-4">
-                {aiInsights.map((insight) => (
+                {aiInsights.length === 0 ? (
+                  <div className="bg-premium-light/20 p-4 rounded-lg border border-premium/30 text-center">
+                    <p className="text-sm text-text-secondary">Loading AI insights...</p>
+                  </div>
+                ) : (
+                  aiInsights.map((insight) => (
                   <div key={insight.id} className="bg-premium-light/20 p-3 rounded-lg border border-premium/30">
                     <div className="flex items-start gap-2">
                       <span className="text-premium">🟣</span>
@@ -497,12 +1062,23 @@ export default function CommandCenter() {
                         <p className="font-medium text-sm mb-1">{insight.title}</p>
                         <p className="text-xs text-text-secondary">{insight.description}</p>
                         <div className="mt-2 flex gap-2">
-                          <Button variant="premium" size="sm">View Analysis</Button>
+                          <Button 
+                            variant="premium" 
+                            size="sm"
+                            onClick={async () => {
+                              setSelectedInsight(insight);
+                              setShowAnalysisModal(true);
+                              await loadInsightAnalysis(insight);
+                            }}
+                          >
+                            View Analysis
+                          </Button>
                         </div>
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </Card>
           </div>
@@ -599,6 +1175,94 @@ export default function CommandCenter() {
               </Button>
               <Button variant="danger" onClick={() => setShowPropertyModal(false)}>
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Analysis Modal */}
+      {showAnalysisModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
+          setShowAnalysisModal(false);
+          setSelectedInsight(null);
+          setAnalysisDetails(null);
+        }}>
+          <div className="bg-surface rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-premium" />
+                <h2 className="text-2xl font-bold">
+                  {analysisDetails?.title || selectedInsight?.title || 'AI Portfolio Analysis'}
+                </h2>
+              </div>
+              <Button variant="danger" size="sm" onClick={() => {
+                setShowAnalysisModal(false);
+                setSelectedInsight(null);
+                setAnalysisDetails(null);
+              }}>
+                ✕
+              </Button>
+            </div>
+
+            {loadingAnalysis ? (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="w-8 h-8 animate-spin text-info" />
+                <span className="ml-3 text-text-secondary">Loading analysis...</span>
+              </div>
+            ) : analysisDetails ? (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Summary</h3>
+                  <p className="text-text-secondary">{analysisDetails.summary}</p>
+                </div>
+
+                {analysisDetails.details && analysisDetails.details.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Key Metrics</h3>
+                    <ul className="list-disc list-inside space-y-1 text-text-secondary">
+                      {analysisDetails.details.map((detail: string, idx: number) => (
+                        <li key={idx}>{detail}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {analysisDetails.recommendations && analysisDetails.recommendations.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Recommendations</h3>
+                    <ul className="list-disc list-inside space-y-1 text-text-secondary">
+                      {analysisDetails.recommendations.map((rec: string, idx: number) => (
+                        <li key={idx}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {selectedInsight && (
+                  <div className="mt-4 p-4 bg-premium-light/10 rounded-lg">
+                    <p className="text-sm text-text-secondary">
+                      <strong>Confidence:</strong> {(selectedInsight.confidence * 100).toFixed(0)}%
+                    </p>
+                    <p className="text-sm text-text-secondary mt-1">
+                      <strong>Type:</strong> {selectedInsight.type}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-text-secondary">No analysis data available</p>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="primary" onClick={() => {
+                setShowAnalysisModal(false);
+                setSelectedInsight(null);
+                setAnalysisDetails(null);
+              }}>
+                Close
               </Button>
             </div>
           </div>

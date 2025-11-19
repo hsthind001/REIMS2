@@ -29,8 +29,8 @@ export default function Register({ onRegisterSuccess }: RegisterProps) {
       return
     }
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters')
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters')
       setLoading(false)
       return
     }
@@ -127,11 +127,11 @@ export default function Register({ onRegisterSuccess }: RegisterProps) {
                 id="password"
                 type="password"
                 className="form-input"
-                placeholder="Minimum 6 characters"
+                placeholder="Minimum 8 characters"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
-                minLength={6}
+                minLength={8}
               />
             </div>
 
@@ -145,7 +145,7 @@ export default function Register({ onRegisterSuccess }: RegisterProps) {
                 value={formData.confirm_password}
                 onChange={(e) => setFormData({ ...formData, confirm_password: e.target.value })}
                 required
-                minLength={6}
+                minLength={8}
               />
             </div>
 

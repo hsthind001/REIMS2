@@ -8,8 +8,9 @@ import PortfolioHub from './pages/PortfolioHub'
 import FinancialCommand from './pages/FinancialCommand'
 import DataControlCenter from './pages/DataControlCenter'
 import AdminHub from './pages/AdminHub'
+import RiskManagement from './pages/RiskManagement'
 
-type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -25,7 +26,7 @@ function AppContent() {
       return <LoginForm />
     }
 
-    // Show app pages if authenticated - Only 5 Strategic Pages
+    // Show app pages if authenticated
     switch (currentPage) {
       case 'dashboard':
         return <CommandCenter />
@@ -37,6 +38,8 @@ function AppContent() {
         return <DataControlCenter />
       case 'users':
         return <AdminHub />
+      case 'risk':
+        return <RiskManagement />
       default:
         return <CommandCenter />
     }
@@ -130,6 +133,13 @@ function AppContent() {
             >
               <span className="nav-icon">⚙️</span>
               {sidebarOpen && <span className="nav-text">Admin Hub</span>}
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'risk' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('risk')}
+            >
+              <span className="nav-icon">🛡️</span>
+              {sidebarOpen && <span className="nav-text">Risk Management</span>}
             </button>
           </nav>
         </aside>

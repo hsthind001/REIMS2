@@ -4,7 +4,7 @@
  * Provides authentication state and methods throughout the app
  */
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { authService } from '../lib/auth';
 import type { User, UserLogin, UserCreate } from '../types/api';
 
@@ -25,6 +25,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastCheckRef = useRef<number>(0);
+  const isCheckingRef = useRef<boolean>(false);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -32,7 +34,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAuth = async () => {
+    // Debounce: Prevent checks within 5 seconds of last check
+    const now = Date.now();
+    if (now - lastCheckRef.current < 5000 || isCheckingRef.current) {
+      return;
+    }
+
     try {
+      isCheckingRef.current = true;
+      lastCheckRef.current = now;
       setLoading(true);
       const currentUser = await authService.getCurrentUser();
       setUser(currentUser);
@@ -45,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } finally {
       setLoading(false);
+      isCheckingRef.current = false;
     }
   };
 

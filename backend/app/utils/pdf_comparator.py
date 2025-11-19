@@ -254,7 +254,7 @@ def calculate_reconciliation_summary(
     Returns:
         Summary statistics dict
     """
-    # Count by difference type
+    # Count by match status (reconciliation uses match_status, not difference_type)
     difference_counts = {
         'exact': 0,
         'tolerance': 0,
@@ -264,13 +264,14 @@ def calculate_reconciliation_summary(
     }
     
     for diff in differences:
-        diff_type = diff.get('difference_type', 'unknown')
+        # Check both match_status (used by reconciliation) and difference_type (legacy)
+        diff_type = diff.get('match_status') or diff.get('difference_type', 'unknown')
         if diff_type in difference_counts:
             difference_counts[diff_type] += 1
     
-    total_records = len(set(list(pdf_records.keys()) + list(db_records.keys())))
+    total_records = len(differences) if differences else len(set(list(pdf_records.keys()) + list(db_records.keys())))
     matches = difference_counts['exact'] + difference_counts['tolerance']
-    total_differences = sum(difference_counts.values()) - matches
+    total_differences = difference_counts['mismatch'] + difference_counts['missing_pdf'] + difference_counts['missing_db']
     
     return {
         'total_records': total_records,

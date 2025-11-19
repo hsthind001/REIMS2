@@ -6,6 +6,86 @@ from sqlalchemy.orm import Session
 from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
 from decimal import Decimal
+import ast
+import operator
+
+# Safe operators for expression evaluation
+SAFE_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+    ast.And: lambda a, b: a and b,
+    ast.Or: lambda a, b: a or b,
+}
+
+
+def safe_eval(expression: str) -> any:
+    """
+    Safely evaluate a mathematical or logical expression.
+    Only allows basic arithmetic and comparison operations.
+    """
+    try:
+        tree = ast.parse(expression, mode='eval')
+        return _eval_node(tree.body)
+    except Exception:
+        return None
+
+
+def _eval_node(node):
+    """Recursively evaluate an AST node"""
+    if isinstance(node, ast.Constant):
+        return node.value
+    elif isinstance(node, ast.Num):  # Python 3.7 compatibility
+        return node.n
+    elif isinstance(node, ast.BinOp):
+        left = _eval_node(node.left)
+        right = _eval_node(node.right)
+        op = SAFE_OPERATORS.get(type(node.op))
+        if op:
+            return op(left, right)
+        raise ValueError(f"Unsupported operator: {type(node.op)}")
+    elif isinstance(node, ast.UnaryOp):
+        operand = _eval_node(node.operand)
+        op = SAFE_OPERATORS.get(type(node.op))
+        if op:
+            return op(operand)
+        raise ValueError(f"Unsupported unary operator: {type(node.op)}")
+    elif isinstance(node, ast.Compare):
+        left = _eval_node(node.left)
+        result = True
+        for op, comparator in zip(node.ops, node.comparators):
+            right = _eval_node(comparator)
+            op_func = SAFE_OPERATORS.get(type(op))
+            if op_func:
+                result = result and op_func(left, right)
+                left = right
+            else:
+                raise ValueError(f"Unsupported comparison: {type(op)}")
+        return result
+    elif isinstance(node, ast.BoolOp):
+        values = [_eval_node(v) for v in node.values]
+        op = SAFE_OPERATORS.get(type(node.op))
+        if op:
+            result = values[0]
+            for v in values[1:]:
+                result = op(result, v)
+            return result
+        raise ValueError(f"Unsupported boolean operator: {type(node.op)}")
+    elif isinstance(node, ast.Name):
+        # Variable names should already be substituted
+        raise ValueError(f"Unknown variable: {node.id}")
+    else:
+        raise ValueError(f"Unsupported expression type: {type(node)}")
 
 
 class BusinessValidator:
@@ -134,13 +214,17 @@ class BusinessValidator:
         passed = True
         
         try:
-            # Basic evaluation (in production, use safer evaluation)
+            # Substitute values into formula
             formula_with_values = rule.rule_formula
             for key, value in data.items():
                 formula_with_values = formula_with_values.replace(key, str(value))
-            
-            # Evaluate (simplified - in production use safer method)
-            passed = eval(formula_with_values)
+
+            # Convert AND/OR to Python syntax for parsing
+            formula_with_values = formula_with_values.replace(' AND ', ' and ').replace(' OR ', ' or ')
+
+            # Safe evaluation
+            result = safe_eval(formula_with_values)
+            passed = bool(result) if result is not None else False
         except:
             passed = False
         
@@ -177,11 +261,13 @@ class BusinessValidator:
         for key, value in data.items():
             if key in expression:
                 expression = expression.replace(key, str(value))
-        
-        # Evaluate (simplified - in production use safer evaluation)
+
+        # Safe evaluation
         try:
-            result = eval(expression)
-            return Decimal(str(result))
+            result = safe_eval(expression)
+            if result is not None:
+                return Decimal(str(result))
+            return Decimal('0')
         except:
             return Decimal('0')
 
