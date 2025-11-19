@@ -1,14 +1,26 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import './App.css'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { LoginForm } from './components/LoginForm'
 import { RegisterForm } from './components/RegisterForm'
-import CommandCenter from './pages/CommandCenter'
-import PortfolioHub from './pages/PortfolioHub'
-import FinancialCommand from './pages/FinancialCommand'
-import DataControlCenter from './pages/DataControlCenter'
-import AdminHub from './pages/AdminHub'
-import RiskManagement from './pages/RiskManagement'
+
+// Lazy load pages for better initial bundle size
+const CommandCenter = lazy(() => import('./pages/CommandCenter'))
+const PortfolioHub = lazy(() => import('./pages/PortfolioHub'))
+const FinancialCommand = lazy(() => import('./pages/FinancialCommand'))
+const DataControlCenter = lazy(() => import('./pages/DataControlCenter'))
+const AdminHub = lazy(() => import('./pages/AdminHub'))
+const RiskManagement = lazy(() => import('./pages/RiskManagement'))
+
+// Loading fallback component
+const PageLoader = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>Loading...</div>
+      <div style={{ color: 'var(--text-muted)' }}>Please wait</div>
+    </div>
+  </div>
+)
 
 type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register'
 
@@ -26,23 +38,31 @@ function AppContent() {
       return <LoginForm />
     }
 
-    // Show app pages if authenticated
-    switch (currentPage) {
-      case 'dashboard':
-        return <CommandCenter />
-      case 'properties':
-        return <PortfolioHub />
-      case 'reports':
-        return <FinancialCommand />
-      case 'operations':
-        return <DataControlCenter />
-      case 'users':
-        return <AdminHub />
-      case 'risk':
-        return <RiskManagement />
-      default:
-        return <CommandCenter />
+    // Show app pages if authenticated (with lazy loading)
+    const PageComponent = () => {
+      switch (currentPage) {
+        case 'dashboard':
+          return <CommandCenter />
+        case 'properties':
+          return <PortfolioHub />
+        case 'reports':
+          return <FinancialCommand />
+        case 'operations':
+          return <DataControlCenter />
+        case 'users':
+          return <AdminHub />
+        case 'risk':
+          return <RiskManagement />
+        default:
+          return <CommandCenter />
+      }
     }
+
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <PageComponent />
+      </Suspense>
+    )
   }
 
   const handleLogout = async () => {

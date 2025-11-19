@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DECIMAL, Boolean, DateTime, Text, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -67,9 +67,12 @@ class IncomeStatementData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Note: No unique constraint needed since we use DELETE-and-REPLACE strategy
-    # Multiple line items can legitimately have the same account code
-    __table_args__ = ()
+    # Composite indexes for query optimization
+    __table_args__ = (
+        Index('ix_is_property_period', 'property_id', 'period_id'),
+        Index('ix_is_property_period_account', 'property_id', 'period_id', 'account_code'),
+        Index('ix_is_review_queue', 'needs_review', 'property_id'),
+    )
     
     # Relationships
     header = relationship("IncomeStatementHeader", back_populates="line_items")

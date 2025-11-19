@@ -9,7 +9,7 @@ celery_app = Celery(
     include=["app.tasks.example_tasks", "app.tasks.extraction_tasks"]
 )
 
-# Celery configuration
+# Celery configuration - optimized for performance
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -22,6 +22,11 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=1000,
     result_expires=3600,  # 1 hour
+    # Performance optimizations
+    worker_concurrency=4,  # Match CPU cores for optimal throughput
+    task_acks_late=True,  # Ensure task completion before acknowledgment
+    task_reject_on_worker_lost=True,  # Requeue tasks if worker dies
+    task_default_rate_limit='10/m',  # Prevent overwhelming database
 )
 
 # Task routing (optional - for multiple queues)

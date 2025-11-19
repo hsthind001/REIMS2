@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, Date, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DECIMAL, Date, Boolean, DateTime, Text, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -71,9 +71,12 @@ class RentRollData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Unique constraint
+    # Constraints and indexes for query optimization
     __table_args__ = (
         UniqueConstraint('property_id', 'period_id', 'unit_number', name='uq_rr_property_period_unit'),
+        Index('ix_rr_property_period', 'property_id', 'period_id'),
+        Index('ix_rr_lease_expiry', 'property_id', 'lease_end_date'),
+        Index('ix_rr_occupancy', 'property_id', 'occupancy_status'),
     )
     
     # Relationships

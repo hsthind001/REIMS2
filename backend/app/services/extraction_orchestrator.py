@@ -153,7 +153,8 @@ class ExtractionOrchestrator:
             parse_result = self._parse_and_insert_financial_data(
                 upload=upload,
                 extracted_text=extracted_text,
-                confidence_score=extraction_result["validation"]["confidence_score"]
+                confidence_score=extraction_result["validation"]["confidence_score"],
+                pdf_data=pdf_data  # Pass already downloaded PDF to avoid re-download
             )
             
             if not parse_result["success"]:
@@ -359,25 +360,27 @@ class ExtractionOrchestrator:
         self,
         upload: DocumentUpload,
         extracted_text: str,
-        confidence_score: float
+        confidence_score: float,
+        pdf_data: bytes = None
     ) -> Dict:
         """
         Parse extracted text and insert into appropriate financial tables
-        
+
         Enhanced with table extraction for 100% accuracy
         """
         try:
-            # Download PDF again for table extraction
-            pdf_data = download_file(
-                object_name=upload.file_path,
-                bucket_name=settings.MINIO_BUCKET_NAME
-            )
-            
-            if not pdf_data:
-                return {
-                    "success": False,
-                    "error": "Failed to download PDF for table extraction"
-                }
+            # Use provided pdf_data or download if not provided
+            if pdf_data is None:
+                pdf_data = download_file(
+                    object_name=upload.file_path,
+                    bucket_name=settings.MINIO_BUCKET_NAME
+                )
+
+                if not pdf_data:
+                    return {
+                        "success": False,
+                        "error": "Failed to download PDF for table extraction"
+                    }
             
             # Step 1: Try table extraction first (highest accuracy)
             parsed_data = self._extract_with_tables(pdf_data, upload.document_type)
