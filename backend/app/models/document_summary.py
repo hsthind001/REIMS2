@@ -43,7 +43,7 @@ class DocumentSummary(Base):
 
     # Reference
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
-    document_id = Column(Integer, ForeignKey("document_uploads.id"), nullable=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
 
     # Document details
     document_type = Column(SQLEnum(DocumentType), nullable=False, index=True)
@@ -119,7 +119,7 @@ class DocumentSummary(Base):
             "processing_time_seconds": self.processing_time_seconds,
             "token_count": self.token_count,
             "error_message": self.error_message,
-            "metadata": self.summary_metadata,
+            "summary_metadata": self.summary_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,

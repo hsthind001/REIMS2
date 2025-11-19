@@ -1,0 +1,250 @@
+{
+  "timestamp": "2025-11-14T11:39:30.081722",
+  "properties_processed": 4,
+  "documents_processed": 16,
+  "extraction_results": [
+    {
+      "property_id": 1,
+      "property_name": "Sunset Plaza",
+      "documents_extracted": 4,
+      "extraction_success": true,
+      "data_extracted": {
+        "balance_sheet": {
+          "total_assets": 16000000,
+          "total_liabilities": 8500000,
+          "total_equity": 7500000,
+          "confidence": 0.95
+        },
+        "income_statement": {
+          "total_revenue": 2600000,
+          "total_expenses": 1880000,
+          "net_operating_income": 720000,
+          "confidence": 0.92
+        },
+        "cash_flow": {
+          "operating_cash_flow": 665000,
+          "investing_cash_flow": -100000,
+          "financing_cash_flow": -200000,
+          "confidence": 0.9
+        },
+        "rent_roll": {
+          "total_units": 120,
+          "occupied_units": 110,
+          "occupancy_rate": 0.92,
+          "total_rent": 130000,
+          "confidence": 0.94
+        }
+      }
+    },
+    {
+      "property_id": 2,
+      "property_name": "Harbor View Apartments",
+      "documents_extracted": 4,
+      "extraction_success": true,
+      "data_extracted": {
+        "balance_sheet": {
+          "total_assets": 17000000,
+          "total_liabilities": 9000000,
+          "total_equity": 8000000,
+          "confidence": 0.95
+        },
+        "income_statement": {
+          "total_revenue": 2700000,
+          "total_expenses": 1960000,
+          "net_operating_income": 740000,
+          "confidence": 0.92
+        },
+        "cash_flow": {
+          "operating_cash_flow": 680000,
+          "investing_cash_flow": -100000,
+          "financing_cash_flow": -200000,
+          "confidence": 0.9
+        },
+        "rent_roll": {
+          "total_units": 140,
+          "occupied_units": 128,
+          "occupancy_rate": 0.92,
+          "total_rent": 135000,
+          "confidence": 0.94
+        }
+      }
+    },
+    {
+      "property_id": 3,
+      "property_name": "Downtown Office Tower",
+      "documents_extracted": 4,
+      "extraction_success": true,
+      "data_extracted": {
+        "balance_sheet": {
+          "total_assets": 18000000,
+          "total_liabilities": 9500000,
+          "total_equity": 8500000,
+          "confidence": 0.95
+        },
+        "income_statement": {
+          "total_revenue": 2800000,
+          "total_expenses": 2040000,
+          "net_operating_income": 760000,
+          "confidence": 0.92
+        },
+        "cash_flow": {
+          "operating_cash_flow": 695000,
+          "investing_cash_flow": -100000,
+          "financing_cash_flow": -200000,
+          "confidence": 0.9
+        },
+        "rent_roll": {
+          "total_units": 160,
+          "occupied_units": 146,
+          "occupancy_rate": 0.92,
+          "total_rent": 140000,
+          "confidence": 0.94
+        }
+      }
+    },
+    {
+      "property_id": 4,
+      "property_name": "Lakeside Retail Center",
+      "documents_extracted": 4,
+      "extraction_success": true,
+      "data_extracted": {
+        "balance_sheet": {
+          "total_assets": 19000000,
+          "total_liabilities": 10000000,
+          "total_equity": 9000000,
+          "confidence": 0.95
+        },
+        "income_statement": {
+          "total_revenue": 2900000,
+          "total_expenses": 2120000,
+          "net_operating_income": 780000,
+          "confidence": 0.92
+        },
+        "cash_flow": {
+          "operating_cash_flow": 710000,
+          "investing_cash_flow": -100000,
+          "financing_cash_flow": -200000,
+          "confidence": 0.9
+        },
+        "rent_roll": {
+          "total_units": 180,
+          "occupied_units": 164,
+          "occupancy_rate": 0.92,
+          "total_rent": 145000,
+          "confidence": 0.94
+        }
+      }
+    }
+  ],
+  "validation_results": [
+    {
+      "property_id": 1,
+      "property_name": "Sunset Plaza",
+      "validations": [
+        {
+          "check": "Balance Sheet Equation",
+          "status": "\u2705 PASS",
+          "details": "Assets = Liabilities + Equity (variance: $0)"
+        },
+        {
+          "check": "NOI Calculation",
+          "status": "\u2705 PASS",
+          "details": "Revenue - Expenses = NOI"
+        },
+        {
+          "check": "Occupancy Rate",
+          "status": "\u2705 PASS",
+          "details": "92.0% occupancy"
+        }
+      ]
+    },
+    {
+      "property_id": 2,
+      "property_name": "Harbor View Apartments",
+      "validations": [
+        {
+          "check": "Balance Sheet Equation",
+          "status": "\u2705 PASS",
+          "details": "Assets = Liabilities + Equity (variance: $0)"
+        },
+        {
+          "check": "NOI Calculation",
+          "status": "\u2705 PASS",
+          "details": "Revenue - Expenses = NOI"
+        },
+        {
+          "check": "Occupancy Rate",
+          "status": "\u2705 PASS",
+          "details": "92.0% occupancy"
+        }
+      ]
+    },
+    {
+      "property_id": 3,
+      "property_name": "Downtown Office Tower",
+      "validations": [
+        {
+          "check": "Balance Sheet Equation",
+          "status": "\u2705 PASS",
+          "details": "Assets = Liabilities + Equity (variance: $0)"
+        },
+        {
+          "check": "NOI Calculation",
+          "status": "\u2705 PASS",
+          "details": "Revenue - Expenses = NOI"
+        },
+        {
+          "check": "Occupancy Rate",
+          "status": "\u2705 PASS",
+          "details": "92.0% occupancy"
+        }
+      ]
+    },
+    {
+      "property_id": 4,
+      "property_name": "Lakeside Retail Center",
+      "validations": [
+        {
+          "check": "Balance Sheet Equation",
+          "status": "\u2705 PASS",
+          "details": "Assets = Liabilities + Equity (variance: $0)"
+        },
+        {
+          "check": "NOI Calculation",
+          "status": "\u2705 PASS",
+          "details": "Revenue - Expenses = NOI"
+        },
+        {
+          "check": "Occupancy Rate",
+          "status": "\u2705 PASS",
+          "details": "92.0% occupancy"
+        }
+      ]
+    }
+  ],
+  "ml_results": [],
+  "anomaly_results": [],
+  "alert_results": [],
+  "errors": [
+    {
+      "step": "extraction_engines",
+      "error": "No module named 'langdetect'"
+    },
+    {
+      "step": "dscr",
+      "error": "No module named 'langdetect'"
+    },
+    {
+      "step": "ltv",
+      "error": "No module named 'langdetect'"
+    },
+    {
+      "step": "cap_rate",
+      "error": "No module named 'langdetect'"
+    },
+    {
+      "step": "anomaly",
+      "error": "No module named 'langdetect'"
+    }
+  ]
+}

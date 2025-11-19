@@ -142,7 +142,7 @@ class CommitteeAlert(Base):
             "dismissed_by": self.dismissed_by,
             "resolution_notes": self.resolution_notes,
             "dismissal_reason": self.dismissal_reason,
-            "metadata": self.alert_metadata,
+            "alert_metadata": self.alert_metadata,
             "related_metric": self.related_metric,
             "br_id": self.br_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,

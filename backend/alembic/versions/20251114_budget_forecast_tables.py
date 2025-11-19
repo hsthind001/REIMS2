@@ -1,7 +1,7 @@
 """Budget and Forecast tables
 
 Revision ID: 20251114_002
-Revises: 20251114_001
+Revises: 20251114_next_level_features
 Create Date: 2025-11-14 12:00:00.000000
 
 """
@@ -11,21 +11,18 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = '20251114_002'
-down_revision = '852cf3e0750d'
+down_revision = '20251114_next_level_features'
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
-    # Create BudgetStatus enum (only if it doesn't exist)
-    conn = op.get_bind()
-    result = conn.execute(sa.text("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'budgetstatus')")).scalar()
-    if not result:
-        conn.execute(sa.text("CREATE TYPE budgetstatus AS ENUM ('DRAFT', 'APPROVED', 'ACTIVE', 'REVISED', 'ARCHIVED')"))
+    # Create BudgetStatus enum
     budget_status = postgresql.ENUM(
         'DRAFT', 'APPROVED', 'ACTIVE', 'REVISED', 'ARCHIVED',
         name='budgetstatus'
     )
+    budget_status.create(op.get_bind())
 
     # Create budgets table
     op.create_table(

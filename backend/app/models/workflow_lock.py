@@ -135,7 +135,7 @@ class WorkflowLock(Base):
             "rejection_reason": self.rejection_reason,
             "auto_release_conditions": self.auto_release_conditions,
             "auto_released": self.auto_released,
-            "metadata": self.lock_metadata,
+            "lock_metadata": self.lock_metadata,
             "br_id": self.br_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
