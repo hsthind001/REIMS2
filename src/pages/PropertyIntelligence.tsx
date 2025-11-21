@@ -140,7 +140,7 @@ export default function PropertyIntelligence() {
             <option value="">Choose a property...</option>
             {properties.map(p => (
               <option key={p.id} value={p.id}>
-                {p.property_name} - {p.address}
+                {p.property_name}{p.address ? ` - ${p.address}` : ''}
               </option>
             ))}
           </select>
@@ -148,7 +148,7 @@ export default function PropertyIntelligence() {
           {selectedPropertyData && (
             <div className="property-card" style={{ marginTop: '1rem' }}>
               <h4>{selectedPropertyData.property_name}</h4>
-              <p><strong>Address:</strong> {selectedPropertyData.address}</p>
+              {selectedPropertyData.address && <p><strong>Address:</strong> {selectedPropertyData.address}</p>}
               <p><strong>Type:</strong> {selectedPropertyData.property_type}</p>
               <p><strong>Square Feet:</strong> {selectedPropertyData.square_feet?.toLocaleString()}</p>
             </div>

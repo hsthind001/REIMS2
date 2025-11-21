@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { propertyService } from '../lib/property';
 import { documentService } from '../lib/document';
+import { reviewService } from '../lib/review';
 import type { Property, DocumentUpload } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -24,9 +25,10 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [propertiesData, documentsResponse] = await Promise.all([
+      const [propertiesData, documentsResponse, reviewQueueData] = await Promise.all([
         propertyService.getAllProperties(),
-        documentService.getDocuments({ limit: 100 })
+        documentService.getDocuments({ limit: 100 }),
+        reviewService.getReviewQueue({ limit: 1000 }).catch(() => ({ items: [], total: 0 })) // Fetch review queue, fallback to empty on error
       ]);
 
       setProperties(propertiesData);
@@ -34,10 +36,11 @@ export default function Dashboard() {
       setDocuments(docs.slice(0, 10)); // Recent 10
 
       // Calculate stats
+      const reviewItems = reviewQueueData.items || [];
       setStats({
         totalProperties: propertiesData.length,
         totalDocuments: (documentsResponse.total || (documentsResponse as any).length),
-        pendingReviews: 0, // Would come from review queue
+        pendingReviews: reviewItems.length, // Actual count from review queue
         completedExtractions: docs.filter((d: DocumentUpload) => d.extraction_status === 'completed').length
       });
 

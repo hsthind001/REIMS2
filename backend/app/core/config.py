@@ -67,13 +67,21 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     LLM_PROVIDER: str = "openai"  # "openai" or "anthropic"
-    LLM_MODEL: str = "gpt-4"  # gpt-4, gpt-3.5-turbo, claude-3-opus-20240229
+    LLM_MODEL: str = "gpt-4-turbo-preview"  # gpt-4-turbo-preview, gpt-4, claude-3-5-sonnet-20241022
     LLM_TEMPERATURE: float = 0.3  # Lower temperature for factual summarization
     LLM_MAX_TOKENS: int = 4000
 
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = True
+        
+        @classmethod
+        def parse_env_var(cls, field_name: str, raw_val: str) -> any:
+            # Ensure API keys are read from environment
+            if field_name in ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']:
+                return raw_val
+            return cls.json_loads(raw_val)
 
 
 settings = Settings()

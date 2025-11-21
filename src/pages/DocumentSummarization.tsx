@@ -157,7 +157,7 @@ export default function DocumentSummarization() {
           <option value="">Choose a property...</option>
           {properties.map(p => (
             <option key={p.id} value={p.id}>
-              {p.property_name} - {p.address}
+              {p.property_name}{p.address ? ` - ${p.address}` : ''}
             </option>
           ))}
         </select>

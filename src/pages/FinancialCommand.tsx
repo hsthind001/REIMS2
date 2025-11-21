@@ -198,7 +198,7 @@ export default function FinancialCommand() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ query: nlqQuery })
+        body: JSON.stringify({ question: nlqQuery })
       });
 
       if (response.ok) {
@@ -206,7 +206,7 @@ export default function FinancialCommand() {
         const nlqResponse: NLQResponse = {
           answer: data.answer || 'Analysis complete',
           data: data.data,
-          sql: data.sql,
+          sql: data.sql_query,
           visualizations: data.visualizations,
           confidence: data.confidence || 85,
           suggestedFollowUps: data.suggested_follow_ups || []
@@ -219,21 +219,18 @@ export default function FinancialCommand() {
         }]);
         setNlqQuery('');
       } else {
-        // Mock response for demo
-        const mockResponse: NLQResponse = {
-          answer: `Based on your query "${nlqQuery}", here's the analysis:\n\n4 properties currently have DSCR below 1.25:\n\n1. 🔴 Downtown Office Tower - DSCR: 1.07 (-18%)\n   NOI: $760K | Debt Service: $710K/year\n   Gap: Needs $128K additional NOI\n\n2. 🔴 Lakeside Retail Center - DSCR: 1.03 (-21%)\n   NOI: $780K | Debt Service: $757K/year\n   Gap: Needs $189K additional NOI\n\n💡 Recommendation: Prioritize refinancing for properties 1 & 2 to avoid covenant breach.`,
+        // Show error instead of dummy data
+        const errorData = await response.json().catch(() => ({ error: 'Failed to process query' }));
+        const errorResponse: NLQResponse = {
+          answer: `❌ Error: ${errorData.error || 'Unable to process your query. Please try rephrasing or check if the required data is available.'}`,
           data: {},
-          confidence: 92,
-          suggestedFollowUps: [
-            'What would refinancing cost for these properties?',
-            'Show me historical DSCR trends',
-            'Calculate impact of 5% rent increase on DSCR'
-          ]
+          confidence: 0,
+          suggestedFollowUps: []
         };
 
         setNlqHistory(prev => [...prev, {
           query: nlqQuery,
-          response: mockResponse,
+          response: errorResponse,
           timestamp: new Date()
         }]);
         setNlqQuery('');

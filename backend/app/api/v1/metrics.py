@@ -109,6 +109,7 @@ class MetricsSummaryItem(BaseModel):
     """Summary metrics for dashboard"""
     property_code: str
     property_name: str
+    period_id: Optional[int] = None  # Period ID for API calls
     period_year: int
     period_month: int
     total_assets: Optional[float] = None
@@ -349,6 +350,7 @@ async def get_metrics_summary(
             if prop_code not in property_data:
                 property_data[prop_code] = {
                     'property_name': prop_name,
+                    'period_id': period_id,  # Store period_id for API calls
                     'period_year': year,
                     'period_month': month,
                     'total_assets': metrics.total_assets,
@@ -381,6 +383,7 @@ async def get_metrics_summary(
                     if (metrics.total_assets is not None or metrics.occupancy_rate is not None):
                         current_data['period_year'] = year
                         current_data['period_month'] = month
+                        current_data['period_id'] = period_id  # Update period_id when period changes
                 
                 # Also check for older periods that might have data we're missing
                 elif current_period_key < existing_period_key:
@@ -399,6 +402,7 @@ async def get_metrics_summary(
             summary_items.append(MetricsSummaryItem(
                 property_code=prop_code,
                 property_name=data['property_name'],
+                period_id=data.get('period_id'),  # Include period_id for API calls
                 period_year=data['period_year'],
                 period_month=data['period_month'],
                 total_assets=float(data['total_assets']) if data['total_assets'] else None,

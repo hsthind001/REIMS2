@@ -19,8 +19,8 @@ class StatisticalAnomalyDetector:
     
     def __init__(self, db: Session):
         self.db = db
-        self.z_score_threshold = 3.0  # Standard: 3 sigma
-        self.percentage_change_threshold = 0.25  # 25% change
+        self.z_score_threshold = 2.0  # Lowered from 3.0 to 2.0 for more sensitive detection (2 sigma)
+        self.percentage_change_threshold = 0.15  # Lowered from 0.25 to 0.15 (15% change) for more sensitive detection
     
     def detect_anomalies(
         self,
@@ -37,15 +37,16 @@ class StatisticalAnomalyDetector:
         """
         anomalies = []
         
-        if len(historical_values) < 3:
+        if len(historical_values) < 1:
             return {"anomalies": [], "insufficient_data": True}
         
-        # Z-score detection
-        z_anomaly = self._detect_z_score_anomaly(current_value, historical_values)
-        if z_anomaly:
-            anomalies.append(z_anomaly)
+        # Z-score detection (requires 2+ values for standard deviation)
+        if len(historical_values) >= 2:
+            z_anomaly = self._detect_z_score_anomaly(current_value, historical_values)
+            if z_anomaly:
+                anomalies.append(z_anomaly)
         
-        # Percentage change detection
+        # Percentage change detection (works with 1+ values)
         pct_anomaly = self._detect_percentage_change(current_value, historical_values)
         if pct_anomaly:
             anomalies.append(pct_anomaly)
@@ -92,18 +93,19 @@ class StatisticalAnomalyDetector:
         if not historical_values:
             return None
         
-        recent_avg = statistics.mean(historical_values[-3:]) if len(historical_values) >= 3 else historical_values[-1]
+        # Use average of all historical values (or single value if only one)
+        recent_avg = statistics.mean(historical_values) if len(historical_values) > 0 else None
         
-        if recent_avg == 0:
+        if recent_avg is None or recent_avg == 0:
             return None
         
-        pct_change = (value - recent_avg) / recent_avg
+        pct_change = abs((value - recent_avg) / recent_avg)
         
-        if abs(pct_change) > self.percentage_change_threshold:
+        if pct_change > self.percentage_change_threshold:
             return {
                 "type": "percentage_change",
                 "percentage_change": round(pct_change * 100, 2),
-                "severity": "critical" if abs(pct_change) > 0.5 else "medium"
+                "severity": "critical" if pct_change > 0.5 else "high" if pct_change > 0.25 else "medium"
             }
         
         return None

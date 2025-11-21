@@ -75,12 +75,25 @@ export default function RiskManagement() {
   const [locks, setLocks] = useState<WorkflowLock[]>([])
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [loading, setLoading] = useState(false)
-  const [dashboardStats, setDashboardStats] = useState<any>(null)
+  const [dashboardStats, setDashboardStats] = useState<any>({
+    total_critical_alerts: 0,
+    total_active_alerts: 0,
+    total_active_locks: 0,
+    properties_with_good_dscr: 0
+  })
   const [propertiesLoading, setPropertiesLoading] = useState(true)
+  const [dscrCalculationDetails, setDscrCalculationDetails] = useState<{
+    noi?: number
+    totalDebtService?: number
+    dscr?: number
+    period?: string
+    isAnnualized?: boolean
+  } | null>(null)
+  const [showTooltip, setShowTooltip] = useState<string | null>(null)
+  const [propertyDSCRHealthy, setPropertyDSCRHealthy] = useState<boolean>(false)
 
   useEffect(() => {
     fetchProperties()
-    fetchDashboardStats()
   }, [])
 
   useEffect(() => {
@@ -88,8 +101,47 @@ export default function RiskManagement() {
       fetchAlerts(selectedProperty)
       fetchLocks(selectedProperty)
       fetchAnomalies(selectedProperty)
+      fetchPropertyDSCR(selectedProperty)
+    } else {
+      // Reset stats when no property selected
+      setDashboardStats({
+        total_critical_alerts: 0,
+        total_active_alerts: 0,
+        total_active_locks: 0,
+        properties_with_good_dscr: 0
+      })
+      setPropertyDSCRHealthy(false)
     }
-  }, [selectedProperty])
+  }, [selectedProperty, properties])
+
+  // Update KPIs whenever alerts, locks, or DSCR status changes
+  useEffect(() => {
+    if (selectedProperty) {
+      // Use case-insensitive comparison for status and severity
+      const criticalAlerts = alerts.filter(a => {
+        const status = (a.status || '').toUpperCase()
+        const severity = (a.severity || '').toUpperCase()
+        return status === 'ACTIVE' && (severity === 'CRITICAL' || severity === 'URGENT')
+      }).length
+      
+      const activeAlerts = alerts.filter(a => {
+        const status = (a.status || '').toUpperCase()
+        return status === 'ACTIVE'
+      }).length
+      
+      const activeLocks = locks.filter(l => {
+        const status = (l.status || '').toUpperCase()
+        return status === 'ACTIVE'
+      }).length
+      
+      setDashboardStats({
+        total_critical_alerts: criticalAlerts,
+        total_active_alerts: activeAlerts,
+        total_active_locks: activeLocks,
+        properties_with_good_dscr: propertyDSCRHealthy ? 1 : 0
+      })
+    }
+  }, [alerts, locks, selectedProperty, propertyDSCRHealthy])
 
   const fetchProperties = async () => {
     try {
@@ -108,35 +160,86 @@ export default function RiskManagement() {
     }
   }
 
-  const fetchDashboardStats = async () => {
+  const fetchPropertyDSCR = async (propertyId: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts/dashboard/summary`, {
+      // Get the latest period for this property to calculate DSCR
+      const periodResponse = await fetch(`${API_BASE_URL}/metrics/summary`, {
         credentials: 'include'
       })
-      if (response.ok) {
-        const data = await response.json()
-        // Use top-level fields if available, otherwise use summary object
-        setDashboardStats({
-          total_critical_alerts: data.total_critical_alerts ?? data.summary?.critical_alerts ?? 0,
-          total_active_alerts: data.total_active_alerts ?? data.summary?.active_alerts ?? 0,
-          total_active_locks: data.total_active_locks ?? data.summary?.active_locks ?? 0,
-          properties_with_good_dscr: data.properties_with_good_dscr ?? data.summary?.properties_with_good_dscr ?? 0
-        })
+      if (periodResponse.ok) {
+        const metricsData = await periodResponse.json()
+        const prop = properties.find(p => p.id === propertyId)
+        const propertyMetrics = prop ? metricsData.find((m: any) => m.property_code === prop.property_code) : null
+        
+        if (propertyMetrics?.period_id) {
+          const dscrResponse = await fetch(
+            `${API_BASE_URL}/risk-alerts/properties/${propertyId}/dscr/calculate?financial_period_id=${propertyMetrics.period_id}`,
+            {
+              method: 'POST',
+              credentials: 'include'
+            }
+          )
+          if (dscrResponse.ok) {
+            const dscrData = await dscrResponse.json()
+            const hasGoodDSCR = dscrData.success && dscrData.dscr && dscrData.dscr >= 1.25
+            setPropertyDSCRHealthy(hasGoodDSCR)
+            
+            // Store calculation details for tooltip
+            if (dscrData.success) {
+              setDscrCalculationDetails({
+                noi: dscrData.noi,
+                totalDebtService: dscrData.total_debt_service,
+                dscr: dscrData.dscr,
+                period: dscrData.period ? `${dscrData.period.year}-${String(dscrData.period.month).padStart(2, '0')}` : undefined,
+                isAnnualized: dscrData.noi && dscrData.noi > 0 && dscrData.total_debt_service && dscrData.noi / dscrData.total_debt_service !== dscrData.dscr
+              })
+            }
+          } else {
+            setPropertyDSCRHealthy(false)
+            setDscrCalculationDetails(null)
+          }
+        } else {
+          setPropertyDSCRHealthy(false)
+          setDscrCalculationDetails(null)
+        }
+      } else {
+        setPropertyDSCRHealthy(false)
+        setDscrCalculationDetails(null)
       }
     } catch (err) {
-      console.error('Failed to fetch dashboard stats:', err)
+      console.error('Failed to fetch property DSCR:', err)
+      setPropertyDSCRHealthy(false)
+      setDscrCalculationDetails(null)
     }
   }
 
   const fetchAlerts = async (propertyId: number) => {
     setLoading(true)
     try {
+      // Fetch both active and resolved alerts, but prioritize active ones
       const response = await fetch(`${API_BASE_URL}/risk-alerts/properties/${propertyId}/alerts`, {
         credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()
-        setAlerts(data.alerts || [])
+        const allAlerts = data.alerts || []
+        
+        // Sort: Active alerts first, then resolved, then by date
+        const sortedAlerts = allAlerts.sort((a: Alert, b: Alert) => {
+          const aStatus = (a.status || '').toUpperCase()
+          const bStatus = (b.status || '').toUpperCase()
+          
+          // Active alerts first
+          if (aStatus === 'ACTIVE' && bStatus !== 'ACTIVE') return -1
+          if (aStatus !== 'ACTIVE' && bStatus === 'ACTIVE') return 1
+          
+          // Then by date (newest first)
+          const aDate = new Date(a.created_at || a.triggered_at || 0).getTime()
+          const bDate = new Date(b.created_at || b.triggered_at || 0).getTime()
+          return bDate - aDate
+        })
+        
+        setAlerts(sortedAlerts)
       }
     } catch (err) {
       console.error('Failed to fetch alerts:', err)
@@ -201,11 +304,15 @@ export default function RiskManagement() {
   }
 
   const getSeverityColor = (severity: string) => {
-    switch (severity.toLowerCase()) {
+    const sev = (severity || '').toLowerCase()
+    switch (sev) {
       case 'critical':
       case 'urgent':
         return 'error'
       case 'warning':
+      case 'high':
+        return 'warning'
+      case 'medium':
         return 'warning'
       default:
         return 'info'
@@ -222,38 +329,108 @@ export default function RiskManagement() {
       </div>
 
       {/* Dashboard Stats */}
-      {dashboardStats && (
-        <div className="stats-grid">
-          <div className="stat-card stat-error">
-            <div className="stat-icon">🚨</div>
-            <div className="stat-info">
-              <div className="stat-value">{dashboardStats.total_critical_alerts || 0}</div>
-              <div className="stat-label">Critical Alerts</div>
-            </div>
-          </div>
-          <div className="stat-card stat-warning">
-            <div className="stat-icon">⚠️</div>
-            <div className="stat-info">
-              <div className="stat-value">{dashboardStats.total_active_alerts || 0}</div>
-              <div className="stat-label">Active Alerts</div>
-            </div>
-          </div>
-          <div className="stat-card stat-info">
-            <div className="stat-icon">🔒</div>
-            <div className="stat-info">
-              <div className="stat-value">{dashboardStats.total_active_locks || 0}</div>
-              <div className="stat-label">Active Locks</div>
-            </div>
-          </div>
-          <div className="stat-card stat-success">
-            <div className="stat-icon">✅</div>
-            <div className="stat-info">
-              <div className="stat-value">{dashboardStats.properties_with_good_dscr || 0}</div>
-              <div className="stat-label">Healthy Properties</div>
-            </div>
+      <div className="stats-grid">
+        <div 
+          className="stat-card stat-error" 
+          onClick={() => setActiveTab('alerts')}
+          style={{ cursor: 'pointer', transition: 'transform 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        >
+          <div className="stat-icon">🚨</div>
+          <div className="stat-info">
+            <div className="stat-value">{dashboardStats.total_critical_alerts || 0}</div>
+            <div className="stat-label">Critical Alerts</div>
           </div>
         </div>
-      )}
+        <div 
+          className="stat-card stat-warning"
+          onClick={() => setActiveTab('alerts')}
+          style={{ cursor: 'pointer', transition: 'transform 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        >
+          <div className="stat-icon">⚠️</div>
+          <div className="stat-info">
+            <div className="stat-value">{dashboardStats.total_active_alerts || 0}</div>
+            <div className="stat-label">Active Alerts</div>
+          </div>
+        </div>
+        <div 
+          className="stat-card stat-info"
+          onClick={() => setActiveTab('locks')}
+          style={{ cursor: 'pointer', transition: 'transform 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        >
+          <div className="stat-icon">🔒</div>
+          <div className="stat-info">
+            <div className="stat-value">{dashboardStats.total_active_locks || 0}</div>
+            <div className="stat-label">Active Locks</div>
+          </div>
+        </div>
+        <div 
+          className="stat-card stat-success"
+          onClick={() => setActiveTab('alerts')}
+          style={{ cursor: 'pointer', transition: 'transform 0.2s', position: 'relative' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.02)'
+            if (selectedProperty && dscrCalculationDetails) {
+              setShowTooltip('dscr')
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)'
+            setShowTooltip(null)
+          }}
+        >
+          <div className="stat-icon">✅</div>
+          <div className="stat-info">
+            <div className="stat-value">{dashboardStats.properties_with_good_dscr || 0}</div>
+            <div className="stat-label">{selectedProperty ? 'Property Health' : 'Healthy Properties'}</div>
+          </div>
+          {showTooltip === 'dscr' && dscrCalculationDetails && (
+            <div style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              marginBottom: '8px',
+              padding: '12px',
+              backgroundColor: '#1a1a1a',
+              color: '#fff',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              minWidth: '300px',
+              zIndex: 1000,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              pointerEvents: 'none'
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '8px', borderBottom: '1px solid #333', paddingBottom: '4px' }}>
+                DSCR Calculation Details
+              </div>
+              <div style={{ marginBottom: '4px' }}>
+                <strong>Formula:</strong> DSCR = NOI / Total Debt Service
+              </div>
+              <div style={{ marginBottom: '4px' }}>
+                <strong>NOI:</strong> ${dscrCalculationDetails.noi?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 'N/A'}
+                {dscrCalculationDetails.isAnnualized && <span style={{ color: '#ffd700', fontSize: '0.75rem', marginLeft: '4px' }}>(Annualized)</span>}
+              </div>
+              <div style={{ marginBottom: '4px' }}>
+                <strong>Total Debt Service:</strong> ${dscrCalculationDetails.totalDebtService?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 'N/A'}
+              </div>
+              <div style={{ marginBottom: '4px' }}>
+                <strong>DSCR:</strong> {dscrCalculationDetails.dscr?.toFixed(4) || 'N/A'}
+              </div>
+              {dscrCalculationDetails.period && (
+                <div style={{ marginTop: '8px', fontSize: '0.75rem', color: '#aaa', borderTop: '1px solid #333', paddingTop: '4px' }}>
+                  Period: {dscrCalculationDetails.period}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Property Selector */}
       <div className="card">
@@ -278,7 +455,7 @@ export default function RiskManagement() {
             <option value="">Choose a property...</option>
             {properties.map(p => (
               <option key={p.id} value={p.id}>
-                {p.property_name} - {p.address}
+                {p.property_name}{p.address ? ` - ${p.address}` : ''}
               </option>
             ))}
           </select>
@@ -341,9 +518,9 @@ export default function RiskManagement() {
                     className="alert-card"
                     style={{
                       border: `2px solid ${
-                        alert.severity === 'critical' || alert.severity === 'urgent' ? '#dc3545' :
-                        alert.severity === 'high' ? '#fd7e14' :
-                        alert.severity === 'medium' ? '#ffc107' :
+                        ['critical', 'urgent'].includes((alert.severity || '').toLowerCase()) ? '#dc3545' :
+                        (alert.severity || '').toLowerCase() === 'high' ? '#fd7e14' :
+                        (alert.severity || '').toLowerCase() === 'medium' ? '#ffc107' :
                         '#17a2b8'
                       }`,
                       borderRadius: '8px',
@@ -361,18 +538,28 @@ export default function RiskManagement() {
                           <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>
                             {alert.alert_type?.replace('_', ' ').toUpperCase() || 'ALERT'}
                           </span>
-                          <span className={`badge badge-${alert.status === 'active' ? 'warning' : 'success'}`} style={{ fontSize: '0.75rem' }}>
-                            {alert.status.toUpperCase()}
+                          <span className={`badge badge-${(alert.status || '').toUpperCase() === 'ACTIVE' ? 'warning' : 'success'}`} style={{ fontSize: '0.75rem' }}>
+                            {(alert.status || '').toUpperCase()}
                           </span>
                         </div>
                         <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: '600' }}>
-                          📄 {alert.file_name || 'Unknown File'}
+                          📄 {alert.file_name || alert.document_type ? `${alert.document_type?.replace('_', ' ')} Document` : 'Financial Document'}
                         </h4>
                         <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>
                           <span className="badge badge-info" style={{ marginRight: '0.5rem' }}>
                             {alert.document_type?.replace('_', ' ').toUpperCase() || 'N/A'}
                           </span>
-                          Created: {new Date(alert.created_at).toLocaleDateString()}
+                          {(alert as any).period && (
+                            <span className="badge badge-info" style={{ marginRight: '0.5rem', backgroundColor: '#17a2b8' }}>
+                              Period: {(alert as any).period}
+                            </span>
+                          )}
+                          {(alert as any).period_year && (alert as any).period_month && !(alert as any).period && (
+                            <span className="badge badge-info" style={{ marginRight: '0.5rem', backgroundColor: '#17a2b8' }}>
+                              Period: {(alert as any).period_year}-{String((alert as any).period_month).padStart(2, '0')}
+                            </span>
+                          )}
+                          Created: {new Date(alert.created_at || (alert as any).triggered_at || Date.now()).toLocaleDateString()}
                         </div>
                       </div>
                     </div>
@@ -431,7 +618,7 @@ export default function RiskManagement() {
                       </div>
                     </div>
                     
-                    {alert.status === 'active' && (
+                    {(alert.status || '').toUpperCase() === 'ACTIVE' && (
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                         <button
                           className="btn-sm btn-primary"
@@ -483,7 +670,7 @@ export default function RiskManagement() {
                       <td>{lock.id}</td>
                       <td>{lock.lock_reason}</td>
                       <td>
-                        <span className={`badge badge-${lock.status === 'active' ? 'error' : 'success'}`}>
+                        <span className={`badge badge-${(lock.status || '').toUpperCase() === 'ACTIVE' ? 'error' : 'success'}`}>
                           {lock.status}
                         </span>
                       </td>
@@ -492,7 +679,7 @@ export default function RiskManagement() {
                       </td>
                       <td>{new Date(lock.created_at).toLocaleDateString()}</td>
                       <td>
-                        {lock.status === 'active' && (
+                        {(lock.status || '').toUpperCase() === 'ACTIVE' && (
                           <button className="btn-sm btn-warning">
                             Request Release
                           </button>

@@ -464,9 +464,45 @@ def get_property_alerts(
         committee_alerts = committee_alerts.filter(CommitteeAlert.status == status)
     committee_alerts = committee_alerts.order_by(CommitteeAlert.triggered_at.desc()).all()
     
-    # Add committee alerts to the list
+    # Add committee alerts to the list with file information
     for alert in committee_alerts:
-        alerts_list.append(alert.to_dict())
+        alert_dict = alert.to_dict()
+        
+        # Get period information
+        if alert.financial_period_id:
+            from app.models.financial_period import FinancialPeriod
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == alert.financial_period_id
+            ).first()
+            if period:
+                alert_dict["period_year"] = period.period_year
+                alert_dict["period_month"] = period.period_month
+                alert_dict["period"] = f"{period.period_year}-{str(period.period_month).zfill(2)}"
+        
+        # Try to get file information from financial_period_id
+        if alert.financial_period_id and not alert_dict.get("file_name"):
+            from app.models.document_upload import DocumentUpload
+            # Look for document uploads for this property and period
+            uploads = db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == alert.property_id,
+                DocumentUpload.period_id == alert.financial_period_id
+            ).order_by(DocumentUpload.upload_date.desc()).all()
+            
+            # Prefer income statement for DSCR alerts, otherwise use most recent
+            for upload in uploads:
+                if upload.document_type == 'income_statement' or (alert.alert_type.value == 'DSCR_BREACH' and upload.document_type == 'income_statement'):
+                    alert_dict["file_name"] = upload.file_name
+                    alert_dict["document_type"] = upload.document_type
+                    alert_dict["document_id"] = upload.id
+                    break
+            
+            # If no income statement, use most recent document
+            if not alert_dict.get("file_name") and uploads:
+                alert_dict["file_name"] = uploads[0].file_name
+                alert_dict["document_type"] = uploads[0].document_type
+                alert_dict["document_id"] = uploads[0].id
+        
+        alerts_list.append(alert_dict)
     
     return {
         "success": True,

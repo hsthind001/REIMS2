@@ -30,7 +30,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check authentication status on mount
   useEffect(() => {
-    checkAuth();
+    console.log('🔐 AuthContext: Starting authentication check...');
+    checkAuth().catch((err) => {
+      console.error('🔴 AuthContext: Error in checkAuth:', err);
+      // Ensure loading state is cleared even if checkAuth fails
+      setLoading(false);
+      isCheckingRef.current = false;
+    });
   }, []);
 
   const checkAuth = async () => {
@@ -44,16 +50,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isCheckingRef.current = true;
       lastCheckRef.current = now;
       setLoading(true);
-      const currentUser = await authService.getCurrentUser();
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication check timeout')), 10000)
+      );
+      
+      const currentUser = await Promise.race([
+        authService.getCurrentUser(),
+        timeoutPromise
+      ]) as User;
+      
+      console.log('✅ AuthContext: User authenticated:', currentUser?.username);
       setUser(currentUser);
       setError(null);
     } catch (err: any) {
+      console.log('ℹ️ AuthContext: Not authenticated or error:', err.status || err.message);
       setUser(null);
-      // Don't set error on initial check if not authenticated
-      if (err.status !== 401) {
+      // Don't set error on initial check if not authenticated or timeout
+      if (err.status !== 401 && err.message !== 'Authentication check timeout') {
+        console.warn('⚠️ AuthContext: Authentication error:', err.message);
         setError(err.message || 'Failed to check authentication');
       }
+      // Always resolve loading state even on error
     } finally {
+      console.log('✅ AuthContext: Authentication check complete, loading set to false');
       setLoading(false);
       isCheckingRef.current = false;
     }

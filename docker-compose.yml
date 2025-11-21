@@ -160,6 +160,8 @@ services:
       dockerfile: Dockerfile
     container_name: reims-backend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       # Database
       POSTGRES_USER: reims
@@ -167,6 +169,11 @@ services:
       POSTGRES_SERVER: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: reims
+      # LLM API Keys (from .env file - explicitly pass through)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4-turbo-preview}
       
       # Redis
       REDIS_HOST: redis

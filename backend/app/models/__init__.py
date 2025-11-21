@@ -42,6 +42,9 @@ from app.models.budget import Budget, Forecast
 # Document summarization models
 from app.models.document_summary import DocumentSummary
 
+# RAG models
+from app.models.document_chunk import DocumentChunk
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -82,4 +85,6 @@ __all__ = [
     "Forecast",
     # Document summarization
     "DocumentSummary",
+    # RAG
+    "DocumentChunk",
 ]

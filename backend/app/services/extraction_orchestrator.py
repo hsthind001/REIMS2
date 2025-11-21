@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from datetime import datetime
 import re
+import statistics
 
 from app.utils.extraction_engine import MultiEngineExtractor
 from app.utils.template_extractor import TemplateExtractor
@@ -24,6 +25,7 @@ from app.services.metadata_storage_service import MetadataStorageService
 from app.services.ensemble_engine import EnsembleEngine
 from app.services.active_learning_service import ActiveLearningService
 from app.services.model_monitoring_service import ModelMonitoringService
+from app.services.anomaly_detector import StatisticalAnomalyDetector
 from app.db.minio_client import download_file
 from app.core.config import settings
 
@@ -181,6 +183,16 @@ class ExtractionOrchestrator:
                 # Metrics calculation is non-critical - log and continue
                 print(f"⚠️  Metrics calculation skipped: {str(metrics_error)}")
                 # Don't fail extraction if metrics fail
+            
+            # Step 5.5: Detect anomalies in extracted financial data
+            print(f"🔍 Detecting anomalies in financial data...")
+            try:
+                self._detect_anomalies_for_document(upload)
+                print(f"✅ Anomaly detection completed")
+            except Exception as anomaly_error:
+                # Anomaly detection is non-critical - log and continue
+                print(f"⚠️  Anomaly detection skipped: {str(anomaly_error)}")
+                # Don't fail extraction if anomaly detection fails
             
             # Step 6: Run validations for quality assurance
             print(f"🔍 Running {upload.document_type} validations...")
@@ -1423,6 +1435,362 @@ class ExtractionOrchestrator:
             # Log error but don't fail extraction
             print(f"Warning: Metrics calculation failed for upload {upload.id}: {str(e)}")
             return None
+    
+    def _detect_anomalies_for_document(self, upload: DocumentUpload):
+        """
+        Detect anomalies in extracted financial data for a document.
+        
+        Compares current period values against historical data to identify
+        statistical anomalies (Z-score, percentage change).
+        """
+        try:
+            from app.models.financial_period import FinancialPeriod
+            
+            # Get the period for this upload
+            period = self.db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == upload.period_id
+            ).first()
+            
+            if not period:
+                return
+            
+            # Initialize anomaly detector
+            detector = StatisticalAnomalyDetector(self.db)
+            
+            # Detect anomalies based on document type
+            if upload.document_type == 'income_statement':
+                self._detect_income_statement_anomalies(upload, period, detector)
+            elif upload.document_type == 'balance_sheet':
+                self._detect_balance_sheet_anomalies(upload, period, detector)
+            
+        except Exception as e:
+            # Log error but don't fail extraction
+            print(f"⚠️  Anomaly detection error: {str(e)}")
+    
+    def _detect_income_statement_anomalies(
+        self, 
+        upload: DocumentUpload, 
+        period: 'FinancialPeriod',
+        detector: StatisticalAnomalyDetector
+    ):
+        """Detect anomalies in income statement data"""
+        from app.models.income_statement_data import IncomeStatementData
+        from app.models.financial_period import FinancialPeriod
+        from datetime import timedelta
+        
+        # Get current period data
+        current_data = self.db.query(IncomeStatementData).filter(
+            IncomeStatementData.property_id == upload.property_id,
+            IncomeStatementData.period_id == upload.period_id
+        ).all()
+        
+        if not current_data:
+            return
+        
+        # Get historical periods (last 12 months)
+        # Use period_start_date for comparison to avoid excluding periods that end on the same date
+        cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
+        historical_periods = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == upload.property_id,
+            FinancialPeriod.id != period.id,  # Exclude current period by ID
+            FinancialPeriod.period_end_date >= cutoff_date
+        ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
+        
+        if len(historical_periods) < 1:  # Lowered from 3 to 1 - need at least 1 historical period for comparison
+            return
+        
+        # Get historical data for key accounts
+        historical_period_ids = [p.id for p in historical_periods]
+        historical_data = self.db.query(IncomeStatementData).filter(
+            IncomeStatementData.property_id == upload.property_id,
+            IncomeStatementData.period_id.in_(historical_period_ids)
+        ).all()
+        
+        # Group by account code and period - aggregate by period first, then by account
+        # This ensures we compare period totals, not individual line items
+        period_account_totals = {}
+        
+        # First, aggregate current period by account
+        current_totals = {}
+        for item in current_data:
+            account_code = item.account_code
+            if account_code not in current_totals:
+                current_totals[account_code] = 0
+            current_totals[account_code] += float(item.period_amount or 0)
+        
+        # Then, aggregate historical periods by account
+        historical_totals_by_period = {}
+        for item in historical_data:
+            period_id = item.period_id
+            account_code = item.account_code
+            if period_id not in historical_totals_by_period:
+                historical_totals_by_period[period_id] = {}
+            if account_code not in historical_totals_by_period[period_id]:
+                historical_totals_by_period[period_id][account_code] = 0
+            historical_totals_by_period[period_id][account_code] += float(item.period_amount or 0)
+        
+        # Build account groups with historical values aggregated by period
+        account_groups = {}
+        for account_code in set(list(current_totals.keys()) + [code for period_data in historical_totals_by_period.values() for code in period_data.keys()]):
+            account_groups[account_code] = {
+                'current': [current_totals.get(account_code, 0)],
+                'historical': [historical_totals_by_period[pid].get(account_code, 0) for pid in historical_totals_by_period.keys()]
+            }
+        
+        # Detect anomalies for each account
+        for account_code, data in account_groups.items():
+            if not data['current']:
+                continue
+            
+            current_value = sum(data['current'])
+            historical_values = data['historical']
+            
+            # Filter out zero values from historical
+            historical_values_filtered = [v for v in historical_values if v != 0]
+            if len(historical_values_filtered) < 1:  # Need at least 1 historical value for comparison
+                continue
+            
+            # Run anomaly detection with filtered historical values
+            result = detector.detect_anomalies(
+                document_id=upload.id,
+                field_name=account_code,
+                current_value=current_value,
+                historical_values=historical_values_filtered
+            )
+            
+            # Create anomaly_detections records
+            if result.get('anomalies'):
+                for anomaly in result['anomalies']:
+                    # Calculate dynamic confidence based on deviation magnitude and data quality
+                    confidence = self._calculate_anomaly_confidence(
+                        anomaly=anomaly,
+                        historical_count=len(historical_values_filtered),
+                        current_value=current_value,
+                        expected_value=statistics.mean(historical_values_filtered)
+                    )
+                    
+                    self._create_anomaly_detection(
+                        upload=upload,
+                        field_name=account_code,
+                        field_value=str(current_value),
+                        expected_value=str(statistics.mean(historical_values)),
+                        anomaly_type=anomaly.get('type', 'statistical'),
+                        severity=anomaly.get('severity', 'medium'),
+                        z_score=anomaly.get('z_score'),
+                        percentage_change=anomaly.get('percentage_change'),
+                        confidence=confidence
+                    )
+    
+    def _detect_balance_sheet_anomalies(
+        self,
+        upload: DocumentUpload,
+        period: 'FinancialPeriod',
+        detector: StatisticalAnomalyDetector
+    ):
+        """Detect anomalies in balance sheet data"""
+        from app.models.balance_sheet_data import BalanceSheetData
+        from app.models.financial_period import FinancialPeriod
+        from datetime import timedelta
+        
+        # Similar implementation to income statement
+        current_data = self.db.query(BalanceSheetData).filter(
+            BalanceSheetData.property_id == upload.property_id,
+            BalanceSheetData.period_id == upload.period_id
+        ).all()
+        
+        if not current_data:
+            return
+        
+        cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
+        historical_periods = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == upload.property_id,
+            FinancialPeriod.id != period.id,  # Exclude current period by ID
+            FinancialPeriod.period_end_date >= cutoff_date
+        ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
+        
+        if len(historical_periods) < 1:  # Lowered from 3 to 1 for balance sheet
+            return
+        
+        historical_period_ids = [p.id for p in historical_periods]
+        historical_data = self.db.query(BalanceSheetData).filter(
+            BalanceSheetData.property_id == upload.property_id,
+            BalanceSheetData.period_id.in_(historical_period_ids)
+        ).all()
+        
+        # Group by account code and period - aggregate by period first
+        current_totals = {}
+        for item in current_data:
+            account_code = item.account_code
+            if account_code not in current_totals:
+                current_totals[account_code] = 0
+            current_totals[account_code] += float(item.amount or 0)
+        
+        historical_totals_by_period = {}
+        for item in historical_data:
+            period_id = item.period_id
+            account_code = item.account_code
+            if period_id not in historical_totals_by_period:
+                historical_totals_by_period[period_id] = {}
+            if account_code not in historical_totals_by_period[period_id]:
+                historical_totals_by_period[period_id][account_code] = 0
+            historical_totals_by_period[period_id][account_code] += float(item.amount or 0)
+        
+        account_groups = {}
+        for account_code in set(list(current_totals.keys()) + [code for period_data in historical_totals_by_period.values() for code in period_data.keys()]):
+            account_groups[account_code] = {
+                'current': [current_totals.get(account_code, 0)],
+                'historical': [historical_totals_by_period[pid].get(account_code, 0) for pid in historical_totals_by_period.keys()]
+            }
+        
+        for account_code, data in account_groups.items():
+            if not data['current']:
+                continue
+            
+            current_value = sum(data['current'])
+            historical_values = data['historical']
+            
+            # Filter out zero values but keep at least 1 non-zero value
+            historical_values_filtered = [v for v in historical_values if v != 0]
+            if len(historical_values_filtered) < 1:
+                continue
+            
+            result = detector.detect_anomalies(
+                document_id=upload.id,
+                field_name=account_code,
+                current_value=current_value,
+                historical_values=historical_values_filtered
+            )
+            
+            if result.get('anomalies'):
+                for anomaly in result['anomalies']:
+                    # Calculate dynamic confidence based on deviation magnitude and data quality
+                    confidence = self._calculate_anomaly_confidence(
+                        anomaly=anomaly,
+                        historical_count=len(historical_values_filtered),
+                        current_value=current_value,
+                        expected_value=statistics.mean(historical_values_filtered)
+                    )
+                    
+                    self._create_anomaly_detection(
+                        upload=upload,
+                        field_name=account_code,
+                        field_value=str(current_value),
+                        expected_value=str(statistics.mean(historical_values_filtered)),
+                        anomaly_type=anomaly.get('type', 'statistical'),
+                        severity=anomaly.get('severity', 'medium'),
+                        z_score=anomaly.get('z_score'),
+                        percentage_change=anomaly.get('percentage_change'),
+                        confidence=confidence
+                    )
+    
+    def _calculate_anomaly_confidence(
+        self,
+        anomaly: Dict,
+        historical_count: int,
+        current_value: float,
+        expected_value: float
+    ) -> float:
+        """
+        Calculate dynamic confidence score for anomaly detection.
+        
+        Factors considered:
+        1. Deviation magnitude (larger deviations = higher confidence)
+        2. Number of historical data points (more data = higher confidence)
+        3. Statistical significance (Z-score or percentage change)
+        4. Data quality (non-zero values, consistent historical data)
+        
+        Returns:
+            Confidence score between 0.0 and 1.0 (0% to 100%)
+        """
+        base_confidence = 0.70  # Start with 70% base confidence
+        
+        # Factor 1: Deviation magnitude (percentage change)
+        pct_change = anomaly.get('percentage_change', 0)
+        if pct_change:
+            # Larger deviations = higher confidence
+            # 15% change = 70%, 50% change = 85%, 100%+ change = 95%+
+            if pct_change >= 100:
+                base_confidence += 0.25  # +25% for 100%+ change
+            elif pct_change >= 50:
+                base_confidence += 0.15  # +15% for 50-100% change
+            elif pct_change >= 25:
+                base_confidence += 0.10  # +10% for 25-50% change
+            else:
+                base_confidence += 0.05  # +5% for 15-25% change
+        
+        # Factor 2: Z-score (if available, indicates statistical significance)
+        z_score = anomaly.get('z_score')
+        if z_score:
+            abs_z = abs(z_score)
+            if abs_z >= 4.0:
+                base_confidence += 0.10  # +10% for very high Z-score
+            elif abs_z >= 3.0:
+                base_confidence += 0.05  # +5% for high Z-score
+            elif abs_z >= 2.0:
+                base_confidence += 0.02  # +2% for moderate Z-score
+        
+        # Factor 3: Historical data points (more data = more reliable)
+        if historical_count >= 5:
+            base_confidence += 0.05  # +5% for 5+ historical periods
+        elif historical_count >= 3:
+            base_confidence += 0.03  # +3% for 3-4 periods
+        elif historical_count >= 2:
+            base_confidence += 0.01  # +1% for 2 periods
+        # 1 period = no bonus (less reliable)
+        
+        # Factor 4: Severity (critical anomalies are more certain)
+        severity = anomaly.get('severity', 'medium')
+        if severity == 'critical':
+            base_confidence += 0.03  # +3% for critical severity
+        elif severity == 'high':
+            base_confidence += 0.02  # +2% for high severity
+        
+        # Cap at 100% (1.0)
+        return min(1.0, base_confidence)
+    
+    def _create_anomaly_detection(
+        self,
+        upload: DocumentUpload,
+        field_name: str,
+        field_value: str,
+        expected_value: str,
+        anomaly_type: str,
+        severity: str,
+        z_score: Optional[float] = None,
+        percentage_change: Optional[float] = None,
+        confidence: float = 0.85
+    ):
+        """Create an anomaly_detection record"""
+        from sqlalchemy import text
+        
+        # Map severity to database values
+        severity_map = {
+            'critical': 'critical',
+            'high': 'high',
+            'medium': 'medium',
+            'low': 'low'
+        }
+        db_severity = severity_map.get(severity.lower(), 'medium')
+        
+        # Insert anomaly detection record
+        sql = text("""
+            INSERT INTO anomaly_detections 
+            (document_id, field_name, field_value, expected_value, anomaly_type, severity, confidence, z_score, percentage_change, detected_at)
+            VALUES (:document_id, :field_name, :field_value, :expected_value, :anomaly_type, :severity, :confidence, :z_score, :percentage_change, NOW())
+        """)
+        
+        self.db.execute(sql, {
+            'document_id': upload.id,
+            'field_name': field_name,
+            'field_value': field_value[:500],  # Limit to 500 chars
+            'expected_value': expected_value[:500],
+            'anomaly_type': anomaly_type,
+            'severity': db_severity,
+            'confidence': confidence,
+            'z_score': z_score,
+            'percentage_change': percentage_change
+        })
+        self.db.commit()
     
     def _extract_with_tables(self, pdf_data: bytes, document_type: str) -> Dict:
         """

@@ -59,4 +59,5 @@ class DocumentUpload(Base):
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="upload", cascade="all, delete-orphan")
     rent_roll_data = relationship("RentRollData", back_populates="upload", cascade="all, delete-orphan")
     validation_results = relationship("ValidationResult", back_populates="upload", cascade="all, delete-orphan")
+    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
 

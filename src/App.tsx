@@ -25,9 +25,33 @@ const PageLoader = () => (
 type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register'
 
 function AppContent() {
+  console.log('🎨 AppContent: Component rendering');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const { user, logout, isAuthenticated } = useAuth()
+  const { user, logout, isAuthenticated, loading } = useAuth()
+
+  console.log('🎨 AppContent: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated);
+
+  // Show loading state while checking authentication
+  if (loading) {
+    console.log('🎨 AppContent: Showing loading state');
+    return (
+      <div className="app" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh', 
+          flexDirection: 'column',
+          backgroundColor: '#ffffff',
+          padding: '2rem'
+        }}>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem', color: '#0f172a' }}>Loading...</div>
+          <div style={{ color: '#64748b' }}>Initializing application</div>
+        </div>
+      </div>
+    )
+  }
 
   const renderPage = () => {
     // Show login/register if not authenticated

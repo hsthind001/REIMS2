@@ -541,6 +541,20 @@ class MetricsService:
     
     # ==================== HELPER METHODS ====================
     
+    def _is_special_unit_type(self, unit_number: Optional[str]) -> bool:
+        """
+        Check if unit is a special type that shouldn't count toward occupancy
+        
+        Special unit types: COMMON, ATM, LAND, SIGN
+        These are not leasable units and should be excluded from occupancy calculations
+        """
+        if not unit_number:
+            return False
+        
+        unit_upper = str(unit_number).upper()
+        special_codes = ['COMMON', 'ATM', 'LAND', 'SIGN']
+        return any(code in unit_upper for code in special_codes)
+    
     def calculate_rent_roll_stats(
         self, 
         property_id: int, 
@@ -550,6 +564,7 @@ class MetricsService:
         Aggregate rent roll statistics
         
         Returns detailed statistics from rent roll data
+        Excludes special unit types (COMMON, ATM, LAND, SIGN) from occupancy calculations
         """
         # Get all rent roll entries
         rent_roll = self.db.query(RentRollData).filter(
@@ -568,22 +583,26 @@ class MetricsService:
                 'total_annual_rent': None,
             }
         
-        # Count units
-        total_units = len(rent_roll)
-        occupied_units = sum(1 for unit in rent_roll if unit.occupancy_status == 'occupied')
+        # Filter out special unit types (COMMON, ATM, LAND, SIGN) for occupancy calculations
+        # These are not leasable units and shouldn't count toward occupancy
+        leasable_units = [unit for unit in rent_roll if not self._is_special_unit_type(unit.unit_number)]
+        
+        # Count units (only leasable units count toward occupancy)
+        total_units = len(leasable_units)
+        occupied_units = sum(1 for unit in leasable_units if unit.occupancy_status == 'occupied')
         vacant_units = total_units - occupied_units
         
-        # Sum sqft
+        # Sum sqft (include all units for sqft, but occupancy uses only leasable)
         total_leasable_sqft = sum(
             unit.unit_area_sqft for unit in rent_roll 
             if unit.unit_area_sqft is not None
         )
         occupied_sqft = sum(
-            unit.unit_area_sqft for unit in rent_roll 
+            unit.unit_area_sqft for unit in leasable_units 
             if unit.unit_area_sqft is not None and unit.occupancy_status == 'occupied'
         )
         
-        # Sum rents
+        # Sum rents (include all units for rent totals)
         total_monthly_rent = sum(
             unit.monthly_rent for unit in rent_roll 
             if unit.monthly_rent is not None

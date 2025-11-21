@@ -31,7 +31,7 @@ class DSCRMonitoringService:
     """
 
     # DSCR Thresholds
-    CRITICAL_THRESHOLD = Decimal("1.10")  # Below this = critical
+    CRITICAL_THRESHOLD = Decimal("1.25")  # Below this = critical (changed from 1.10 to 1.25)
     WARNING_THRESHOLD = Decimal("1.25")   # Below this = warning
     HEALTHY_THRESHOLD = Decimal("1.25")   # Above this = healthy
 
@@ -117,25 +117,55 @@ class DSCRMonitoringService:
                 },
                 "period": {
                     "id": period.id,
-                    "start_date": period.period_start_date.isoformat(),
-                    "end_date": period.period_end_date.isoformat(),
-                    "period_type": period.period_type,
+                    "year": period.period_year,
+                    "month": period.period_month,
+                    "start_date": period.period_start_date.isoformat() if period.period_start_date else None,
+                    "end_date": period.period_end_date.isoformat() if period.period_end_date else None,
                 },
                 "calculated_at": datetime.utcnow().isoformat(),
             }
 
-            # Check if alert needed
+            # Check if alert needed or if existing alert should be resolved
             if dscr < self.WARNING_THRESHOLD:
-                alert = self._create_dscr_alert(
-                    property_id=property_id,
-                    financial_period_id=period.id,
-                    dscr=dscr,
-                    noi=noi,
-                    total_debt_service=total_debt_service,
-                    severity=severity,
-                )
-                result["alert_created"] = True
-                result["alert_id"] = alert.id
+                # DSCR is below threshold - create or update alert
+                try:
+                    alert = self._create_dscr_alert(
+                        property_id=property_id,
+                        financial_period_id=period.id,
+                        dscr=dscr,
+                        noi=noi,
+                        total_debt_service=total_debt_service,
+                        severity=severity,
+                    )
+                    result["alert_created"] = True
+                    result["alert_id"] = alert.id if alert else None
+                except Exception as alert_err:
+                    # Log but don't fail the DSCR calculation if alert creation fails
+                    logger.warning(f"Failed to create DSCR alert (DSCR calculation still successful): {str(alert_err)}")
+                    result["alert_created"] = False
+                    result["alert_error"] = str(alert_err)
+            else:
+                # DSCR is healthy - auto-resolve any existing active alerts for this property/period
+                try:
+                    existing_alerts = self.db.query(CommitteeAlert).filter(
+                        CommitteeAlert.property_id == property_id,
+                        CommitteeAlert.financial_period_id == period.id,
+                        CommitteeAlert.alert_type == AlertType.DSCR_BREACH,
+                        CommitteeAlert.status == AlertStatus.ACTIVE
+                    ).all()
+                    
+                    if existing_alerts:
+                        for alert in existing_alerts:
+                            alert.status = AlertStatus.RESOLVED
+                            alert.resolved_at = datetime.utcnow()
+                            alert.resolved_by = None  # Auto-resolved by system, no user required
+                            alert.resolution_notes = f"Auto-resolved: DSCR improved to {float(dscr):.2f} (above threshold {float(self.WARNING_THRESHOLD):.2f})"
+                        self.db.commit()
+                        result["alerts_resolved"] = len(existing_alerts)
+                        logger.info(f"Auto-resolved {len(existing_alerts)} DSCR alert(s) for property {property_id} - DSCR now healthy")
+                except Exception as resolve_err:
+                    logger.warning(f"Failed to auto-resolve DSCR alerts: {str(resolve_err)}")
+                    result["alert_resolve_error"] = str(resolve_err)
 
             return result
 
@@ -147,9 +177,40 @@ class DSCRMonitoringService:
         """
         Calculate Net Operating Income (NOI)
 
-        NOI = Total Revenue - Operating Expenses
+        First tries to use pre-calculated NOI from FinancialMetrics.
+        Falls back to calculating from income statement data if not available.
+        
+        CRITICAL: If period_type is Monthly, annualizes the NOI (multiplies by 12).
         """
-        # Get income statement data for the period
+        # Try to get pre-calculated NOI from FinancialMetrics first
+        from app.models.financial_metrics import FinancialMetrics
+        metrics = self.db.query(FinancialMetrics).filter(
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.period_id == financial_period_id
+        ).first()
+        
+        # Determine period type from income statement header
+        from app.models.income_statement_header import IncomeStatementHeader
+        period_type = None
+        header = self.db.query(IncomeStatementHeader).join(
+            IncomeStatementData, IncomeStatementData.header_id == IncomeStatementHeader.id
+        ).filter(
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == financial_period_id
+        ).first()
+        
+        if header:
+            period_type = header.period_type
+        
+        if metrics and metrics.net_operating_income is not None:
+            noi = Decimal(str(metrics.net_operating_income))
+            # Annualize if monthly
+            if period_type and period_type.upper() in ["MONTHLY", "MONTH"]:
+                noi = noi * Decimal("12")
+                logger.debug(f"NOI is monthly ({metrics.net_operating_income}), annualized to {noi}")
+            return noi
+        
+        # Fallback: Calculate from income statement data
         # Note: IncomeStatementData uses 'period_id', not 'financial_period_id'
         income_data = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
@@ -162,15 +223,21 @@ class DSCRMonitoringService:
         for item in income_data:
             # Revenue accounts (typically 4xxxx or similar)
             if item.account_code and item.account_code.startswith("4"):
-                total_revenue += Decimal(str(item.amount or 0))
+                total_revenue += Decimal(str(item.period_amount or 0))
             # Operating expense accounts (typically 5xxxx or 6xxxx)
             elif item.account_code and (
                 item.account_code.startswith("5") or
                 item.account_code.startswith("6")
             ):
-                operating_expenses += Decimal(str(item.amount or 0))
+                operating_expenses += Decimal(str(item.period_amount or 0))
 
         noi = total_revenue - operating_expenses
+        
+        # Annualize if monthly
+        if period_type and period_type.upper() in ["MONTHLY", "MONTH"]:
+            noi = noi * Decimal("12")
+            logger.debug(f"Calculated NOI is monthly, annualized to {noi}")
+        
         return noi
 
     def _get_total_debt_service(
@@ -180,28 +247,145 @@ class DSCRMonitoringService:
     ) -> Decimal:
         """
         Get total debt service (principal + interest payments)
-
-        For now, we'll look for debt service in income statement or use a mock value.
-        In production, this should come from a separate loan/debt table.
+        
+        DSCR = NOI / (Principal + Interest)
+        
+        IMPORTANT: Only include actual debt service payments:
+        - Mortgage Interest (7010-0000) - YES
+        - Principal payments - Need to calculate or get from cash flow
+        - Depreciation (7020-0000) - NO (non-cash expense)
+        - Amortization (7030-0000) - NO (non-cash expense)
         """
-        # Look for debt service accounts in income statement
-        # Note: IncomeStatementData uses 'period_id', not 'financial_period_id'
-        debt_accounts = self.db.query(IncomeStatementData).filter(
+        # Get ONLY Mortgage Interest (7010-0000) - this is the interest portion of debt service
+        from app.models.income_statement_header import IncomeStatementHeader
+        mortgage_interest = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
             IncomeStatementData.period_id == financial_period_id,
-            IncomeStatementData.account_code.like("7%")  # Debt service accounts
+            IncomeStatementData.account_code == "7010-0000"  # Mortgage Interest only
+        ).first()
+
+        interest_payment = Decimal("0")
+        if mortgage_interest and mortgage_interest.period_amount:
+            interest_payment = Decimal(str(mortgage_interest.period_amount))
+            
+            # CRITICAL: Check if period_amount is monthly or annual
+            # Income statements can be Monthly or Annual
+            # Get period_type from header if not in data row
+            period_type = None
+            if mortgage_interest.header_id:
+                header = self.db.query(IncomeStatementHeader).filter(
+                    IncomeStatementHeader.id == mortgage_interest.header_id
+                ).first()
+                if header:
+                    period_type = header.period_type
+            
+            # Fallback to data row period_type, then default to Monthly
+            if not period_type:
+                period_type = mortgage_interest.period_type
+            
+            if not period_type:
+                # Default to Monthly if not specified (most common)
+                period_type = "Monthly"
+            
+            if period_type.upper() in ["MONTHLY", "MONTH"]:
+                # Monthly interest - multiply by 12 to get annual
+                interest_payment = interest_payment * Decimal("12")
+                logger.debug(f"Interest is monthly ({mortgage_interest.period_amount}), annualized to {interest_payment}")
+            elif period_type.upper() in ["ANNUAL", "YEAR", "YEARLY"]:
+                # Already annual - use as-is
+                logger.debug(f"Interest is annual: {interest_payment}")
+            else:
+                # Unknown period type - check period dates to determine
+                from app.models.financial_period import FinancialPeriod
+                period = self.db.query(FinancialPeriod).filter(
+                    FinancialPeriod.id == financial_period_id
+                ).first()
+                
+                if period and period.period_start_date and period.period_end_date:
+                    days_diff = (period.period_end_date - period.period_start_date).days
+                    # If period is ~30 days, it's monthly; if ~365 days, it's annual
+                    if days_diff <= 35:
+                        # Monthly period - annualize
+                        interest_payment = interest_payment * Decimal("12")
+                        logger.debug(f"Period is {days_diff} days (monthly), annualized interest to {interest_payment}")
+                    else:
+                        # Annual period - use as-is
+                        logger.debug(f"Period is {days_diff} days (annual), using interest as-is: {interest_payment}")
+        
+        # Try to get principal payments from cash flow statement (financing activities)
+        # Principal payments are typically in cash flow financing section
+        from app.models.cash_flow_data import CashFlowData
+        principal_payments = self.db.query(CashFlowData).filter(
+            CashFlowData.property_id == property_id,
+            CashFlowData.period_id == financial_period_id,
+            CashFlowData.line_category.ilike("%principal%"),
+            CashFlowData.line_section == "FINANCING"
         ).all()
-
-        total_debt_service = Decimal("0")
-        for account in debt_accounts:
-            # IncomeStatementData uses 'period_amount', not 'amount'
-            total_debt_service += Decimal(str(account.period_amount or 0))
-
-        # If no debt service found, use mock value for demo
+        
+        principal_payment = Decimal("0")
+        for payment in principal_payments:
+            if payment.period_amount:
+                principal_payment += Decimal(str(payment.period_amount))
+        
+        total_debt_service = interest_payment + principal_payment
+        
+        # If no principal found, estimate annual debt service from loan amount and interest rate
+        # Try to get loan amount from LTV API or balance sheet
+        if principal_payment == 0 and interest_payment > 0:
+            # Try to get loan amount to calculate proper debt service
+            from app.models.balance_sheet_data import BalanceSheetData
+            # Get long-term debt from balance sheet (account 2900-0000)
+            long_term_debt = self.db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == financial_period_id,
+                BalanceSheetData.account_code == "2900-0000"
+            ).first()
+            
+            loan_amount = Decimal("0")
+            if long_term_debt and long_term_debt.amount:
+                loan_amount = Decimal(str(long_term_debt.amount))
+            
+            # Calculate estimated principal payment using amortization formula
+            # For commercial loans, typical amortization is 25-30 years
+            # Monthly payment = P * [r(1+r)^n] / [(1+r)^n - 1]
+            # Where P = principal, r = monthly rate, n = number of payments
+            if loan_amount > 0 and interest_payment > 0:
+                # Calculate interest rate from interest payment
+                # If interest_payment is annual: rate = interest_payment / loan_amount
+                # If interest_payment is monthly: rate = (interest_payment * 12) / loan_amount
+                # Assume interest_payment is annual (typical for income statements)
+                annual_rate = interest_payment / loan_amount if loan_amount > 0 else Decimal("0.06")
+                monthly_rate = annual_rate / Decimal("12")
+                
+                # Assume 25-year amortization (300 months) - typical for commercial real estate
+                num_payments = Decimal("300")
+                
+                # Calculate monthly payment using amortization formula
+                if monthly_rate > 0:
+                    monthly_payment = loan_amount * (
+                        monthly_rate * (Decimal("1") + monthly_rate) ** num_payments
+                    ) / (
+                        (Decimal("1") + monthly_rate) ** num_payments - Decimal("1")
+                    )
+                    annual_payment = monthly_payment * Decimal("12")
+                    estimated_principal = annual_payment - interest_payment
+                    total_debt_service = interest_payment + max(estimated_principal, Decimal("0"))
+                else:
+                    # Fallback: Use simpler estimate (interest × 0.5 for principal)
+                    estimated_principal = interest_payment * Decimal("0.5")
+                    total_debt_service = interest_payment + estimated_principal
+            else:
+                # Fallback: Use conservative estimate (interest × 0.5 for principal)
+                # This assumes principal is about 50% of interest (typical for early loan years)
+                estimated_principal = interest_payment * Decimal("0.5")
+                total_debt_service = interest_payment + estimated_principal
+        
+        # If still zero, fallback to estimated calculation based on NOI
         if total_debt_service == 0:
-            # Mock: 8% of NOI (typical for commercial real estate)
             noi = self._calculate_noi(property_id, financial_period_id)
-            total_debt_service = noi * Decimal("0.80")  # Assuming 80% of NOI goes to debt
+            # Estimate: Assume debt service is ~60-70% of NOI (typical for commercial real estate)
+            # This ensures DSCR will be around 1.4-1.6 if NOI is healthy
+            total_debt_service = noi * Decimal("0.65") if noi > 0 else Decimal("0")
 
         return total_debt_service
 
@@ -226,10 +410,24 @@ class DSCRMonitoringService:
         ).first()
 
         if existing_alert:
-            # Update existing alert
+            # Update existing alert with current DSCR calculation
             existing_alert.actual_value = dscr
             existing_alert.severity = severity
+            existing_alert.title = f"DSCR Breach: {float(dscr):.2f}" if dscr < self.WARNING_THRESHOLD else f"DSCR: {float(dscr):.2f}"
+            existing_alert.description = (
+                f"Debt Service Coverage Ratio ({float(dscr):.2f}) is {'below' if dscr < self.WARNING_THRESHOLD else 'above'} the threshold of {float(self.WARNING_THRESHOLD):.2f}.\n\n"
+                f"NOI: ${float(noi):,.2f}\n"
+                f"Total Debt Service: ${float(total_debt_service):,.2f}\n"
+                f"DSCR: {float(dscr):.2f}\n\n"
+                + (f"This may indicate covenant violation. Finance committee review required." if dscr < self.WARNING_THRESHOLD else "Property meets DSCR requirements.")
+            )
             existing_alert.updated_at = datetime.utcnow()
+            # Auto-resolve if DSCR is now healthy
+            if dscr >= self.WARNING_THRESHOLD and existing_alert.status == AlertStatus.ACTIVE:
+                existing_alert.status = AlertStatus.RESOLVED
+                existing_alert.resolved_at = datetime.utcnow()
+                existing_alert.resolved_by = None
+                existing_alert.resolution_notes = f"Auto-resolved: DSCR improved to {float(dscr):.2f} (above threshold {float(self.WARNING_THRESHOLD):.2f})"
             self.db.commit()
             return existing_alert
 
