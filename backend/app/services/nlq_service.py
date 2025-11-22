@@ -115,23 +115,38 @@ class NaturalLanguageQueryService:
         self.embedding_service = EmbeddingService(db)
         self.rag_service = RAGRetrievalService(db, self.embedding_service)
 
-    def query(self, question: str, user_id: int) -> Dict:
+    def query(self, question: str, user_id: int, context: Optional[Dict] = None) -> Dict:
         """
         Process natural language query
 
         Args:
             question: User's natural language question
             user_id: User ID for logging
+            context: Optional context dict with property_id, property_code, property_name
 
         Returns:
             dict: Answer with data, citations, and metadata
         """
         start_time = datetime.now()
-        logger.info(f"Processing NLQ: '{question}' for user {user_id}")
+        
+        # Extract property context if provided
+        property_id = None
+        property_code = None
+        property_name = None
+        if context:
+            property_id = context.get('property_id')
+            property_code = context.get('property_code')
+            property_name = context.get('property_name')
+            logger.info(f"Processing NLQ: '{question}' for user {user_id} (Property: {property_name or property_code or 'None'})")
+        else:
+            logger.info(f"Processing NLQ: '{question}' for user {user_id}")
 
         try:
-            # 1. Check cache
-            cached = self._check_cache(question)
+            # 1. Check cache (include property context in cache key for property-specific queries)
+            cache_key = question
+            if property_id:
+                cache_key = f"{property_id}:{question}"
+            cached = self._check_cache(cache_key)
             if cached:
                 logger.info("Returning cached result")
                 return cached
@@ -139,7 +154,7 @@ class NaturalLanguageQueryService:
             # 2. If LLM is available, use it directly for better understanding
             if self.llm_client:
                 logger.info("Using LLM for query understanding")
-                return self._query_with_llm(question, user_id, start_time)
+                return self._query_with_llm(question, user_id, start_time, property_id=property_id, property_code=property_code, property_name=property_name)
             
             # 3. Fallback to rule-based system if no LLM
             # Detect intent
@@ -231,12 +246,13 @@ class NaturalLanguageQueryService:
                 "citations": citations,
                 "confidence": confidence,
                 "sql_query": sql_query,
+                "suggested_follow_ups": self._generate_suggested_followups(question, answer, data),
                 "execution_time_ms": execution_time_ms,
                 "query_id": nlq.id if nlq else None
             }
 
-            # Cache result
-            self._cache_result(question, result)
+            # Cache result (use cache_key that includes property context)
+            self._cache_result(cache_key, result)
 
             logger.info(f"NLQ processed in {execution_time_ms}ms")
             return result
@@ -276,16 +292,32 @@ class NaturalLanguageQueryService:
 
     # Helper methods
     
-    def _query_with_llm(self, question: str, user_id: int, start_time: datetime) -> Dict:
+    def _query_with_llm(self, question: str, user_id: int, start_time: datetime, 
+                        property_id: Optional[int] = None, property_code: Optional[str] = None, 
+                        property_name: Optional[str] = None) -> Dict:
         """
         Use LLM directly to understand query, retrieve data, and generate answer
         
         This is the primary method when LLM is available - it's more flexible
         and can handle any question variation.
+        
+        Args:
+            question: User's question
+            user_id: User ID
+            start_time: Start time for execution tracking
+            property_id: Optional property ID from context
+            property_code: Optional property code from context
+            property_name: Optional property name from context
         """
         try:
+            # Build context string for prompt
+            property_context = ""
+            if property_name or property_code:
+                property_context = f"\n\nIMPORTANT CONTEXT: The user has selected property '{property_name or property_code}' (ID: {property_id}). "
+                property_context += "Focus the answer on this specific property. Filter all queries to this property unless the question explicitly asks about other properties or the entire portfolio."
+            
             # Step 1: Use LLM to understand the query and determine what data is needed
-            understanding_prompt = f"""You are a financial data analyst assistant. A user asked: "{question}"
+            understanding_prompt = f"""You are a financial data analyst assistant. A user asked: "{question}"{property_context}
 
 Based on this question, determine:
 1. What type of data is needed (properties with losses, revenue comparison, DSCR values, rent roll data, lease information, etc.)
@@ -298,13 +330,15 @@ IMPORTANT: If the question mentions:
 - Data that might be in PDF documents
 Then set "needs_document_content": true
 
+{property_context}
+
 Respond in JSON format:
 {{
     "query_type": "loss_query|profit_query|dscr_query|revenue_query|trend_query|aggregation_query|document_query|hybrid_query",
     "needs_structured_data": true/false,
     "needs_document_content": true/false,
     "key_entities": {{
-        "properties": ["list of property names if mentioned"],
+        "properties": ["list of property names if mentioned"{" or automatically include '{property_name}' if property context provided" if property_name else ""}],
         "metrics": ["list of metrics like 'net_income', 'revenue', 'dscr', 'occupied_area', 'lease_area'"],
         "filters": {{"loss": true/false, "profit": true/false, "threshold": number or null}}
     }},
@@ -396,10 +430,13 @@ Respond in JSON format:
             
             # Retrieve document content if needed
             if needs_documents:
-                document_chunks = self._query_document_content(entities, question)
+                document_chunks = self._query_document_content(entities, question, property_id=property_id)
             
             # Step 3: Generate comprehensive answer using LLM with retrieved data
-            answer = self._generate_llm_answer_with_context(question, data, document_chunks, understanding)
+            answer = self._generate_llm_answer_with_context(
+                question, data, document_chunks, understanding,
+                property_id=property_id, property_code=property_code, property_name=property_name
+            )
             
             # Step 4: Extract citations and calculate confidence
             citations = self._extract_citations(data if data else [], {'intent_type': query_type})
@@ -452,6 +489,7 @@ Respond in JSON format:
                 "citations": citations,
                 "confidence": confidence,
                 "sql_query": sql_query,
+                "suggested_follow_ups": self._generate_suggested_followups(question, answer, data),
                 "execution_time_ms": execution_time_ms,
                 "query_id": nlq.id if nlq else None
             }
@@ -731,25 +769,32 @@ Respond in JSON format:
         else:
             return [], None
     
-    def _query_document_content(self, entities: Dict, question: str) -> List[Dict]:
+    def _query_document_content(self, entities: Dict, question: str, property_id: Optional[int] = None) -> List[Dict]:
         """
         Query document content using RAG
+        
+        Args:
+            entities: Entities extracted from question
+            question: User's question
+            property_id: Optional property ID from context (takes precedence)
         
         Returns: List of relevant chunks
         """
         # Extract property/period filters from entities
-        property_id = None
+        # Use provided property_id if available, otherwise try to find from entities
         period_id = None
         document_type = None
         
-        # Try to find property ID from property names
-        properties = entities.get('properties', [])
-        if properties:
-            property_obj = self.db.query(Property).filter(
-                Property.property_name.in_(properties)
-            ).first()
-            if property_obj:
-                property_id = property_obj.id
+        # If property_id is provided from context, use it directly
+        # Otherwise, try to find property ID from property names in entities
+        if not property_id:
+            properties = entities.get('properties', [])
+            if properties:
+                property_obj = self.db.query(Property).filter(
+                    Property.property_name.in_(properties)
+                ).first()
+                if property_obj:
+                    property_id = property_obj.id
         
         # Extract document type if mentioned
         question_lower = question.lower()
@@ -1430,14 +1475,32 @@ Generate a clear, accurate answer:"""
             logger.error(f"LLM answer generation failed: {e}")
             return self._template_answer(question, data, intent)
     
-    def _generate_llm_answer_with_context(self, question: str, data: List[Dict], document_chunks: List[Dict], understanding: Dict) -> str:
+    def _generate_llm_answer_with_context(self, question: str, data: List[Dict], document_chunks: List[Dict], 
+                                         understanding: Dict, property_id: Optional[int] = None, 
+                                         property_code: Optional[str] = None, property_name: Optional[str] = None) -> str:
         """
         Generate answer using LLM with full context from structured data and documents
         
         This is the primary answer generation method when LLM is available
+        
+        Args:
+            question: User's question
+            data: Structured financial data
+            document_chunks: Retrieved document chunks
+            understanding: LLM understanding of the query
+            property_id: Optional property ID from context
+            property_code: Optional property code from context
+            property_name: Optional property name from context
         """
         if not self.llm_client:
             return self._template_answer(question, data, {'intent_type': understanding.get('query_type', 'metric_query')})
+        
+        # Build property context string
+        property_context = ""
+        if property_name or property_code:
+            property_context = f"\n\n**IMPORTANT:** The user has selected property '{property_name or property_code}' (ID: {property_id}). "
+            property_context += "Focus your answer specifically on this property. Reference this property by name in your answer. "
+            property_context += "All data and documents provided are for this specific property unless otherwise noted."
         
         # Build comprehensive context
         context_parts = []
@@ -1480,7 +1543,7 @@ Generate a clear, accurate answer:"""
         context = "\n\n".join(context_parts) if context_parts else "No specific data found."
         
         # Build comprehensive prompt
-        prompt = f"""You are a financial analyst assistant helping users understand their real estate investment portfolio.
+        prompt = f"""You are a financial analyst assistant helping users understand their real estate investment portfolio.{property_context}
 
 **User Question:** "{question}"
 
@@ -1901,8 +1964,14 @@ Generate a clear, accurate answer:"""
             logger.warning(f"Data serialization failed: {e}")
             return {"rows": [], "total_rows": 0}
 
-    def _check_cache(self, question: str) -> Optional[Dict]:
+    def _check_cache(self, cache_key: str) -> Optional[Dict]:
         """Check if similar question was asked recently"""
+        # Cache key may be in format "property_id:question" or just "question"
+        # Extract question from cache_key if it contains property context
+        question = cache_key
+        if ':' in cache_key:
+            question = cache_key.split(':', 1)[1]  # Get question part after property_id
+        
         # Simple exact match cache (could be enhanced with similarity search)
         question_hash = hashlib.md5(question.lower().encode()).hexdigest()
 
@@ -1910,6 +1979,7 @@ Generate a clear, accurate answer:"""
         from datetime import timedelta
         cutoff = datetime.now() - timedelta(hours=24)
 
+        # Check for exact question match (works for both property-specific and general queries)
         cached = self.db.query(NLQQuery)\
             .filter(NLQQuery.created_at >= cutoff)\
             .filter(NLQQuery.question == question)\
@@ -1923,3 +1993,51 @@ Generate a clear, accurate answer:"""
     def _cache_result(self, question: str, result: Dict):
         """Cache result (already stored in database via NLQQuery)"""
         pass
+    
+    def _generate_suggested_followups(self, question: str, answer: str, data: List[Dict]) -> List[str]:
+        """Generate suggested follow-up questions based on the current query and answer"""
+        suggestions = []
+        
+        question_lower = question.lower()
+        
+        # If query is about DSCR, suggest related queries
+        if 'dscr' in question_lower:
+            suggestions.extend([
+                "Which properties have the highest DSCR?",
+                "Show me DSCR trends over time",
+                "What's the average DSCR across all properties?"
+            ])
+        
+        # If query is about NOI, suggest related queries
+        elif 'noi' in question_lower or 'net operating income' in question_lower:
+            suggestions.extend([
+                "Show me NOI trends for the last 12 months",
+                "Which properties have the highest NOI?",
+                "Compare NOI across all properties"
+            ])
+        
+        # If query is about revenue, suggest related queries
+        elif 'revenue' in question_lower:
+            suggestions.extend([
+                "Show me revenue trends over time",
+                "Which properties have the highest revenue?",
+                "Compare revenue across all properties"
+            ])
+        
+        # If query is about occupancy, suggest related queries
+        elif 'occupancy' in question_lower or 'occupied' in question_lower:
+            suggestions.extend([
+                "Show me occupancy trends",
+                "Which properties have the highest occupancy?",
+                "What's the average occupancy rate?"
+            ])
+        
+        # Default suggestions
+        if not suggestions:
+            suggestions.extend([
+                "Show me more details about this property",
+                "Compare this with other properties",
+                "What are the trends over time?"
+            ])
+        
+        return suggestions[:3]  # Return top 3 suggestions

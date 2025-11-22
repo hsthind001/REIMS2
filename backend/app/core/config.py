@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4-turbo-preview"  # gpt-4-turbo-preview, gpt-4, claude-3-5-sonnet-20241022
     LLM_TEMPERATURE: float = 0.3  # Lower temperature for factual summarization
     LLM_MAX_TOKENS: int = 4000
+    
+    # External API Keys (Optional - for higher rate limits)
+    CENSUS_API_KEY: Optional[str] = None  # Optional - Census API works without key for basic queries
+    BLS_API_KEY: Optional[str] = None  # Optional - Bureau of Labor Statistics
+    GOOGLE_PLACES_API_KEY: Optional[str] = None  # Optional - Google Places API
 
     class Config:
         env_file = ".env"

@@ -28,7 +28,13 @@ interface PortfolioHealth {
   totalValue: number;
   totalNOI: number;
   avgOccupancy: number;
-  portfolioIRR: number;
+  portfolioDSCR: number;
+  percentageChanges?: {
+    total_value_change: number;
+    noi_change: number;
+    occupancy_change: number;
+    dscr_change: number;
+  };
   alertCount: {
     critical: number;
     warning: number;
@@ -98,12 +104,12 @@ export default function CommandCenter() {
     value: number[];
     noi: number[];
     occupancy: number[];
-    irr: number[];
+    dscr: number[];
   }>({
     value: [],
     noi: [],
     occupancy: [],
-    irr: []
+    dscr: []
   });
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -173,24 +179,163 @@ export default function CommandCenter() {
 
       const avgOccupancy = occupancyCount > 0 ? totalOccupancy / occupancyCount : 0;
 
-      // Fetch Portfolio IRR from API (only for "all" - single property IRR not available)
-      let portfolioIRR = 14.2; // Fallback
+      // Fetch DSCR - property-specific if single property selected, portfolio if "all"
+      let portfolioDSCR = 0;
+      let dscrChange = 0;
+      
       if (selectedPropertyFilter === 'all') {
+        // Fetch Portfolio DSCR from API
         try {
-          const irrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-irr`, {
+          const dscrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-dscr`, {
             credentials: 'include'
           });
-          if (irrResponse.ok) {
-            const irrData = await irrResponse.json();
-            portfolioIRR = irrData.irr;
+          if (dscrResponse.ok) {
+            const dscrData = await dscrResponse.json();
+            portfolioDSCR = dscrData.dscr || 0;
+            dscrChange = dscrData.yoy_change || 0;
           }
-        } catch (irrErr) {
-          console.error('Failed to fetch portfolio IRR:', irrErr);
+        } catch (dscrErr) {
+          console.error('Failed to fetch portfolio DSCR:', dscrErr);
         }
       } else {
-        // For single property, use a placeholder or calculate from NOI
-        // TODO: Calculate property-specific IRR when available
-        portfolioIRR = 14.2; // Placeholder
+        // Fetch property-specific DSCR
+        const selectedProp = _properties.find(p => p.property_code === selectedPropertyFilter);
+        if (selectedProp) {
+          try {
+            // Get the latest period for this property
+            const metric = propertyMap.get(selectedPropertyFilter);
+            
+            // Find the period with debt service data (Dec 2024) for DSCR calculation
+            // The latest period from metrics summary might be April 2025 which doesn't have debt service
+            // Use hardcoded Dec 2024 period IDs: ESP001=2, HMND001=4, TCSH001=9, WEND001=6
+            const dec2024PeriodIdMap: Record<string, number> = {
+              'ESP001': 2,
+              'HMND001': 4,
+              'TCSH001': 9,
+              'WEND001': 6
+            };
+            
+            const periodIdToUse = dec2024PeriodIdMap[selectedPropertyFilter] || metric?.period_id;
+            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
+            
+            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate${periodIdParam}`, {
+              method: 'POST',
+              credentials: 'include'
+            });
+            if (dscrResponse.ok) {
+              const dscrData = await dscrResponse.json();
+              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+                portfolioDSCR = dscrData.dscr;
+                // Calculate YoY change for property-specific DSCR
+                // Get previous period DSCR for comparison
+                if (metric) {
+                  const prevYear = metric.period_year;
+                  const prevMonth = metric.period_month - 1;
+                  const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
+                  const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
+                  
+                  // Try to get previous period DSCR (Dec 2023)
+                  // Use hardcoded Dec 2023 period IDs: ESP001=7, HMND001=3, TCSH001=8, WEND001=5
+                  const dec2023PeriodIdMap: Record<string, number> = {
+                    'ESP001': 7,
+                    'HMND001': 3,
+                    'TCSH001': 8,
+                    'WEND001': 5
+                  };
+                  
+                  const prevPeriodId = dec2023PeriodIdMap[selectedPropertyFilter];
+                  
+                  if (prevPeriodId) {
+                    try {
+                      const prevDscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate?financial_period_id=${prevPeriodId}`, {
+                        method: 'POST',
+                        credentials: 'include'
+                      });
+                      if (prevDscrResponse.ok) {
+                        const prevDscrData = await prevDscrResponse.json();
+                        if (prevDscrData.success && prevDscrData.dscr) {
+                          dscrChange = portfolioDSCR - prevDscrData.dscr;
+                        }
+                      }
+                    } catch (prevErr) {
+                      console.warn('Failed to fetch previous period DSCR for comparison:', prevErr);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (dscrErr) {
+            console.error('Failed to fetch property-specific DSCR:', dscrErr);
+          }
+        }
+      }
+
+      // Fetch percentage changes from API
+      let percentageChanges = {
+        total_value_change: 0,
+        noi_change: 0,
+        occupancy_change: 0,
+        dscr_change: 0
+      };
+      
+      if (selectedPropertyFilter === 'all') {
+        try {
+          const changesResponse = await fetch(`${API_BASE_URL}/metrics/portfolio-changes`, {
+            credentials: 'include'
+          });
+          if (changesResponse.ok) {
+            const changesData = await changesResponse.json();
+            percentageChanges = {
+              total_value_change: changesData.total_value_change || 0,
+              noi_change: changesData.noi_change || 0,
+              occupancy_change: changesData.occupancy_change || 0,
+              dscr_change: changesData.dscr_change || dscrChange
+            };
+          }
+        } catch (changesErr) {
+          console.error('Failed to fetch percentage changes:', changesErr);
+        }
+      } else {
+        // Calculate property-specific percentage changes
+        const metric = propertyMap.get(selectedPropertyFilter);
+        if (metric) {
+          // Get previous period data for comparison
+          const prevYear = metric.period_year;
+          const prevMonth = metric.period_month - 1;
+          const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
+          const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
+          
+          // Fetch previous period metrics
+          try {
+            const prevMetricsResponse = await fetch(`${API_BASE_URL}/metrics/summary`, {
+              credentials: 'include'
+            });
+            if (prevMetricsResponse.ok) {
+              const prevMetrics = await prevMetricsResponse.json();
+              const prevMetric = prevMetrics.find((m: any) => 
+                m.property_code === selectedPropertyFilter && 
+                m.period_year === prevYearFinal && 
+                m.period_month === prevMonthFinal
+              );
+              
+              if (prevMetric) {
+                const calcChange = (current: number, previous: number) => {
+                  if (!previous || previous === 0) return 0;
+                  return ((current - previous) / previous) * 100;
+                };
+                
+                percentageChanges = {
+                  total_value_change: calcChange(metric.total_assets || 0, prevMetric.total_assets || 0),
+                  noi_change: calcChange(metric.net_operating_income || 0, prevMetric.net_operating_income || 0),
+                  occupancy_change: calcChange(metric.occupancy_rate || 0, prevMetric.occupancy_rate || 0),
+                  dscr_change: dscrChange
+                };
+              }
+            }
+          } catch (prevErr) {
+            console.warn('Failed to fetch previous period metrics for comparison:', prevErr);
+          }
+        }
       }
 
       // Calculate health score (0-100)
@@ -209,7 +354,8 @@ export default function CommandCenter() {
         totalValue,
         totalNOI,
         avgOccupancy,
-        portfolioIRR,
+        portfolioDSCR,
+        percentageChanges, // Store percentage changes
         alertCount: {
           critical: criticalAlerts,
           warning: warningAlerts,
@@ -334,19 +480,20 @@ export default function CommandCenter() {
             // Fetch DSCR from proper backend API (uses actual debt service from income statement)
             // IMPORTANT: Use 2024-12 period_id explicitly since that's where debt service data exists
             // The latest period (2025-04) has NOI but no debt service data, causing DSCR to fail
-            let dscr = 1.25; // Fallback
-            let status: 'critical' | 'warning' | 'good' = 'good'; // Fallback
+            let dscr: number | null = null; // Will be set from API
+            let status: 'critical' | 'warning' | 'good' = 'good'; // Default, will be updated from API
             try {
-              // Use 2024-12 period_id for DSCR calculation (where debt service data exists)
-              // Period IDs: ESP001=2, HMND001=4, TCSH001=9, WEND001=6
-              const periodIdMap: Record<string, number> = {
-                'ESP001': 2,
-                'HMND001': 4,
-                'TCSH001': 9,
-                'WEND001': 6
-              };
-              
-              const periodIdToUse = periodIdMap[property.property_code] || metric.period_id;
+            // Find the period with debt service data (Dec 2024) for DSCR calculation
+            // The latest period from metrics summary might be April 2025 which doesn't have debt service
+            // Use hardcoded Dec 2024 period IDs: ESP001=2, HMND001=4, TCSH001=9, WEND001=6
+            const dec2024PeriodIdMap: Record<string, number> = {
+              'ESP001': 2,
+              'HMND001': 4,
+              'TCSH001': 9,
+              'WEND001': 6
+            };
+            
+            const periodIdToUse = dec2024PeriodIdMap[property.property_code] || metric.period_id;
               const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
               
               const dscrRes = await fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {
@@ -392,14 +539,14 @@ export default function CommandCenter() {
             // Fetch real LTV from API
             // API now uses true LTV: long_term_debt / net_property_value
             // Falls back through multiple calculation methods if data is unavailable
-            let ltv = 52.8; // Fallback
+            let ltv: number | null = null; // Will be set from API
             try {
               const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
                 credentials: 'include'
               });
               if (ltvRes.ok) {
                 const ltvData = await ltvRes.json();
-                ltv = ltvData.ltv || 52.8;
+                ltv = ltvData.ltv || null;
               } else {
                 console.warn(`LTV API failed for property ${property.property_code}: ${ltvRes.status} ${ltvRes.statusText}`);
               }
@@ -467,59 +614,15 @@ export default function CommandCenter() {
 
       if (response.ok) {
         const data = await response.json();
-        setAIInsights(data.insights);
+        setAIInsights(data.insights || []);
       } else {
-        // Fallback to mock data
-        setAIInsights([
-          {
-            id: '1',
-            type: 'risk',
-            title: 'DSCR Stress Pattern Detected',
-            description: '3 properties showing DSCR stress - refinancing window optimal',
-            confidence: 0.85
-          },
-          {
-            id: '2',
-            type: 'market',
-            title: 'Market Cap Rates Trending Up',
-            description: 'Market cap rates trending up 0.3% - favorable for sales',
-            confidence: 0.78
-          },
-          {
-            id: '3',
-            type: 'operational',
-            title: 'Q1 2026 Lease Expirations',
-            description: '45 lease expirations Q1 2026 - start negotiations NOW',
-            confidence: 0.92
-          }
-        ]);
+        // No fallback - show empty state if API fails
+        setAIInsights([]);
       }
     } catch (err) {
       console.error('Failed to load AI insights:', err);
-      // Fallback to mock data
-      setAIInsights([
-        {
-          id: '1',
-          type: 'risk',
-          title: 'DSCR Stress Pattern Detected',
-          description: '3 properties showing DSCR stress - refinancing window optimal',
-          confidence: 0.85
-        },
-        {
-          id: '2',
-          type: 'market',
-          title: 'Market Cap Rates Trending Up',
-          description: 'Market cap rates trending up 0.3% - favorable for sales',
-          confidence: 0.78
-        },
-        {
-          id: '3',
-          type: 'operational',
-          title: 'Q1 2026 Lease Expirations',
-          description: '45 lease expirations Q1 2026 - start negotiations NOW',
-          confidence: 0.92
-        }
-      ]);
+      // No fallback - show empty state on error
+      setAIInsights([]);
     }
   };
 
@@ -549,19 +652,17 @@ export default function CommandCenter() {
         const noiSparkline = data.data.noi.map((n: number) => n / 1000000); // Convert to millions
         const occupancySparkline = data.data.occupancy;
 
-        // For IRR, generate reasonable trend based on portfolio growth
-        // (API doesn't have IRR history yet, so derive from NOI trend)
-        const irrSparkline = noiSparkline.map((noi: number) => {
-          const baseIRR = 12;
-          const growth = (noi / (noiSparkline[0] || 1)) - 1;
-          return baseIRR + (growth * 10); // Scale NOI growth to IRR points
-        });
+        // For DSCR, we'll need to calculate from historical data
+        // For now, use empty array - DSCR sparkline can be added later if needed
+        let dscrSparkline: number[] = [];
+        // TODO: Add DSCR historical data endpoint to generate sparkline
+        // For now, leave empty as DSCR calculation requires debt service data
 
         setSparklineData({
           value: valueSparkline,
           noi: noiSparkline,
           occupancy: occupancySparkline,
-          irr: irrSparkline
+          dscr: dscrSparkline
         });
       }
     } catch (err) {
@@ -644,9 +745,9 @@ export default function CommandCenter() {
             'Portfolio analysis unavailable',
           details: portfolioHealth ? [
             `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
-            `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(0)}K`,
+            `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(1)}K`,
             `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
-            `Portfolio IRR: ${(portfolioHealth.portfolioIRR || 0).toFixed(1)}%`,
+            `Portfolio DSCR: ${(portfolioHealth.portfolioDSCR || 0).toFixed(2)}`,
             `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
             `Warning Alerts: ${portfolioHealth.alertCount.warning}`
           ] : [],
@@ -915,12 +1016,12 @@ export default function CommandCenter() {
         </Card>
 
         {/* Key Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
             value={portfolioHealth?.totalValue || 0}
-            change={5.2}
-            trend="up"
+            change={portfolioHealth?.percentageChanges?.total_value_change || 0}
+            trend={portfolioHealth?.percentageChanges?.total_value_change >= 0 ? "up" : "down"}
             icon="💰"
             variant="success"
             sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
@@ -928,8 +1029,8 @@ export default function CommandCenter() {
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
             value={portfolioHealth?.totalNOI || 0}
-            change={3.8}
-            trend="up"
+            change={portfolioHealth?.percentageChanges?.noi_change || 0}
+            trend={portfolioHealth?.percentageChanges?.noi_change >= 0 ? "up" : "down"}
             icon="📊"
             variant="info"
             sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
@@ -937,20 +1038,20 @@ export default function CommandCenter() {
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
             value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
-            change={-1.2}
-            trend="down"
+            change={portfolioHealth?.percentageChanges?.occupancy_change || 0}
+            trend={portfolioHealth?.percentageChanges?.occupancy_change >= 0 ? "up" : "down"}
             icon="🏘️"
             variant="warning"
             sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
           />
           <MetricCard
-            title={selectedPropertyFilter === 'all' ? "Portfolio IRR" : "Property IRR"}
-            value={`${portfolioHealth?.portfolioIRR || 0}%`}
-            change={2.1}
-            trend="up"
+            title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
+            value={portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "0.00"}
+            change={portfolioHealth?.percentageChanges?.dscr_change || 0}
+            trend={portfolioHealth?.percentageChanges?.dscr_change >= 0 ? "up" : "down"}
             icon="📈"
             variant="success"
-            sparkline={sparklineData.irr.length > 0 ? sparklineData.irr : undefined}
+            sparkline={sparklineData.dscr.length > 0 ? sparklineData.dscr : undefined}
           />
         </div>
 
@@ -1003,11 +1104,13 @@ export default function CommandCenter() {
           </Card>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Portfolio Performance Grid */}
-          <div className="lg:col-span-2">
-            <Card className="p-6">
-              <h2 className="text-2xl font-bold mb-4">Portfolio Performance</h2>
+        {/* Portfolio Performance Section - Added spacing from KPI cards */}
+        <div className="mt-10">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            {/* Portfolio Performance Grid */}
+            <div className="lg:col-span-2">
+              <Card className="p-6">
+                <h2 className="text-2xl font-bold mb-4">Portfolio Performance</h2>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -1036,7 +1139,7 @@ export default function CommandCenter() {
                           ${(prop.value / 1000000).toFixed(1)}M
                         </td>
                         <td className="py-3 px-4 text-right">
-                          ${(prop.noi / 1000).toFixed(0)}K
+                          ${((prop.noi / 1000).toFixed(1))}K
                         </td>
                         <td className="py-3 px-4 text-right">{prop.dscr.toFixed(2)}</td>
                         <td className="py-3 px-4 text-right">{prop.ltv.toFixed(1)}%</td>
@@ -1110,6 +1213,7 @@ export default function CommandCenter() {
                 )}
               </div>
             </Card>
+          </div>
           </div>
         </div>
       </div>

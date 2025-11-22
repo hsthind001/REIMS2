@@ -82,10 +82,10 @@ export default function FinancialCommand() {
   const [selectedStatementType, setSelectedStatementType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow' | null>(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [kpiDscr, setKpiDscr] = useState<number>(1.25);
-  const [kpiLtv, setKpiLtv] = useState<number>(52.8);
-  const [kpiCapRate, setKpiCapRate] = useState<number>(4.22);
-  const [kpiIrr, setKpiIrr] = useState<number>(14.2);
+  const [kpiDscr, setKpiDscr] = useState<number | null>(null);
+  const [kpiLtv, setKpiLtv] = useState<number | null>(null);
+  const [kpiCapRate, setKpiCapRate] = useState<number | null>(null);
+  const [kpiIrr, setKpiIrr] = useState<number | null>(null);
   
   // Reconciliation state
   const [reconciliationSessions, setReconciliationSessions] = useState<ReconciliationSession[]>([]);
@@ -161,24 +161,34 @@ export default function FinancialCommand() {
 
           if (ltvRes.ok) {
             const ltvData = await ltvRes.json();
-            setKpiLtv(ltvData.ltv || 52.8);
+            setKpiLtv(ltvData.ltv || null);
 
             // Calculate DSCR from LTV data
+            // Use net_operating_income (NOI) for DSCR calculation, not net_income
             const loanAmount = ltvData.loan_amount || 0;
             const annualDebtService = loanAmount * 0.08;
-            if (annualDebtService > 0 && propertyMetric?.net_income) {
-              setKpiDscr(propertyMetric.net_income / annualDebtService);
+            const noiForDscr = propertyMetric?.net_operating_income || propertyMetric?.net_income || 0;
+            if (annualDebtService > 0 && noiForDscr > 0) {
+              setKpiDscr(noiForDscr / annualDebtService);
+            } else {
+              setKpiDscr(null);
             }
+          } else {
+            setKpiLtv(null);
           }
 
           if (capRateRes.ok) {
             const capRateData = await capRateRes.json();
-            setKpiCapRate(capRateData.cap_rate || 4.22);
+            setKpiCapRate(capRateData.cap_rate || null);
+          } else {
+            setKpiCapRate(null);
           }
 
           if (irrRes.ok) {
             const irrData = await irrRes.json();
-            setKpiIrr(irrData.irr || 14.2);
+            setKpiIrr(irrData.irr || null);
+          } else {
+            setKpiIrr(null);
           }
         } catch (kpiErr) {
           console.error('Failed to fetch KPI metrics:', kpiErr);
@@ -194,15 +204,77 @@ export default function FinancialCommand() {
 
     setNlqLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/nlq/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ question: nlqQuery })
-      });
+      // Include property context if a property is selected
+      const requestBody: any = { question: nlqQuery };
+      if (selectedProperty) {
+        requestBody.context = {
+          property_id: selectedProperty.id,
+          property_code: selectedProperty.property_code,
+          property_name: selectedProperty.property_name
+        };
+      }
+
+      console.log('🚀 Sending NLQ request to:', `${API_BASE_URL}/nlq/query`);
+      console.log('📦 Request body:', requestBody);
+      
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE_URL}/nlq/query`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(requestBody)
+        });
+        console.log('✅ Response received:', response.status, response.statusText);
+        console.log('📋 Response headers:', Object.fromEntries(response.headers.entries()));
+      } catch (fetchError: any) {
+        // Catch network errors and provide better error message
+        console.error('❌ Fetch error details:', fetchError);
+        console.error('❌ Error type:', fetchError.constructor.name);
+        console.error('❌ Error message:', fetchError.message);
+        console.error('❌ Error stack:', fetchError.stack);
+        
+        const errorResponse: NLQResponse = {
+          answer: `❌ Network Error: ${fetchError.message || 'Failed to connect to server'}\n\nPlease check:\n1. Backend is running at ${API_BASE_URL}\n2. Open browser console (F12) and check for CORS errors\n3. Try refreshing the page and logging in again\n4. Check Network tab to see if request was sent`,
+          data: {},
+          confidence: 0,
+          suggestedFollowUps: []
+        };
+        setNlqHistory(prev => [...prev, {
+          query: nlqQuery,
+          response: errorResponse,
+          timestamp: new Date()
+        }]);
+        setNlqQuery('');
+        setNlqLoading(false);
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
+        
+        // Check if response indicates failure
+        if (!data.success) {
+          const errorResponse: NLQResponse = {
+            answer: `❌ Error: ${data.error || 'Unable to process your query. Please try rephrasing or check if the required data is available.'}`,
+            data: data.data || {},
+            sql: data.sql_query,
+            visualizations: data.visualizations,
+            confidence: data.confidence || 0,
+            suggestedFollowUps: data.suggested_follow_ups || []
+          };
+          setNlqHistory(prev => [...prev, {
+            query: nlqQuery,
+            response: errorResponse,
+            timestamp: new Date()
+          }]);
+          setNlqQuery('');
+          return;
+        }
+        
         const nlqResponse: NLQResponse = {
           answer: data.answer || 'Analysis complete',
           data: data.data,
@@ -219,10 +291,26 @@ export default function FinancialCommand() {
         }]);
         setNlqQuery('');
       } else {
-        // Show error instead of dummy data
-        const errorData = await response.json().catch(() => ({ error: 'Failed to process query' }));
+        // Handle HTTP error responses
+        let errorMessage = 'Unable to process your query.';
+        
+        if (response.status === 401) {
+          errorMessage = 'Authentication required. Please refresh the page and log in again.';
+        } else if (response.status === 403) {
+          errorMessage = 'You do not have permission to perform this action.';
+        } else if (response.status === 500) {
+          errorMessage = 'Server error. Please try again later or contact support.';
+        } else if (response.status === 404) {
+          errorMessage = 'Endpoint not found. Please check if the backend is running correctly.';
+        }
+        
+        const errorData = await response.json().catch(() => ({ 
+          error: errorMessage,
+          detail: `HTTP ${response.status}: ${response.statusText}`
+        }));
+        
         const errorResponse: NLQResponse = {
-          answer: `❌ Error: ${errorData.error || 'Unable to process your query. Please try rephrasing or check if the required data is available.'}`,
+          answer: `❌ Error (HTTP ${response.status}): ${errorData.error || errorData.detail || errorMessage}`,
           data: {},
           confidence: 0,
           suggestedFollowUps: []
@@ -237,6 +325,26 @@ export default function FinancialCommand() {
       }
     } catch (err) {
       console.error('NLQ query failed:', err);
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+        errorMessage = 'Failed to connect to the server. Please check if the backend is running and try again.';
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      const errorResponse: NLQResponse = {
+        answer: `❌ Error: ${errorMessage}`,
+        data: {},
+        confidence: 0,
+        suggestedFollowUps: []
+      };
+      setNlqHistory(prev => [...prev, {
+        query: nlqQuery,
+        response: errorResponse,
+        timestamp: new Date()
+      }]);
+      setNlqQuery('');
     } finally {
       setNlqLoading(false);
     }
@@ -862,7 +970,8 @@ export default function FinancialCommand() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <div className="text-sm text-text-secondary">NOI</div>
-                    <div className="text-lg font-bold">${(financialMetrics.net_income || 0) / 1000}K</div>
+                    {/* Use net_operating_income (NOI) instead of net_income for consistency */}
+                    <div className="text-lg font-bold">${((financialMetrics.net_operating_income || financialMetrics.net_income || 0) / 1000).toFixed(0)}K</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">DSCR</div>

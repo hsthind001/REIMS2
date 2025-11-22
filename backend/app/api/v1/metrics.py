@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.db.database import get_db
 from app.services.metrics_service import MetricsService
+from app.services.dscr_monitoring_service import DSCRMonitoringService
 from app.models.financial_metrics import FinancialMetrics
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
@@ -583,6 +584,34 @@ class PortfolioIRRResponse(BaseModel):
         from_attributes = True
 
 
+class PortfolioDSCRResponse(BaseModel):
+    """Portfolio DSCR response"""
+    dscr: float
+    yoy_change: float
+    total_noi: float
+    total_debt_service: float
+    properties: List[dict]
+    calculation_date: datetime
+    note: str
+
+    class Config:
+        from_attributes = True
+
+
+class PortfolioPercentageChangesResponse(BaseModel):
+    """Portfolio percentage changes for dashboard"""
+    total_value_change: float  # Percentage change for Total Portfolio Value
+    noi_change: float  # Percentage change for Portfolio NOI
+    occupancy_change: float  # Percentage change for Average Occupancy
+    dscr_change: float  # Percentage change for Portfolio DSCR (replaces IRR)
+    current_period: dict  # Current period info
+    previous_period: dict  # Previous period info
+    calculation_date: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class HistoricalMetricsResponse(BaseModel):
     """Historical metrics for sparklines"""
     property_id: Optional[int] = None
@@ -614,18 +643,23 @@ async def get_cap_rate(
                 detail="Property not found"
             )
 
-        # Get most recent metrics
+        # Get most recent metrics WITH actual NOI and total_assets data
+        # Don't use periods that only have rent roll data (like April 2025 for ESP001)
         latest_metrics = db.query(FinancialMetrics).filter(
-            FinancialMetrics.property_id == property_id
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.net_operating_income.isnot(None),
+            FinancialMetrics.total_assets.isnot(None),
+            FinancialMetrics.net_operating_income > 0,
+            FinancialMetrics.total_assets > 0
         ).join(FinancialPeriod).order_by(
             FinancialPeriod.period_year.desc(),
             FinancialPeriod.period_month.desc()
         ).first()
 
-        if not latest_metrics or not latest_metrics.net_operating_income or not latest_metrics.total_assets:
+        if not latest_metrics:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Insufficient data to calculate cap rate"
+                detail="Insufficient data to calculate cap rate (need NOI and property value)"
             )
 
         noi = float(latest_metrics.net_operating_income)
@@ -754,29 +788,512 @@ async def get_ltv(
         )
 
 
+@router.get("/exit-strategy/portfolio-dscr", response_model=PortfolioDSCRResponse)
+async def get_portfolio_dscr(db: Session = Depends(get_db)):
+    """
+    Calculate portfolio-wide DSCR from actual financial data
+    
+    Calculates DSCR for all active properties and returns weighted average:
+    - DSCR = NOI / Total Debt Service
+    - Portfolio DSCR = Weighted average based on debt service amounts
+    """
+    try:
+        from sqlalchemy import func
+        from decimal import Decimal
+        
+        # Get all active properties
+        properties = db.query(Property).filter(Property.status == 'active').all()
+        
+        if not properties:
+            return PortfolioDSCRResponse(
+                dscr=0.0,
+                yoy_change=0.0,
+                total_noi=0.0,
+                total_debt_service=0.0,
+                properties=[],
+                calculation_date=datetime.now(),
+                note="No active properties found"
+            )
+        
+        # Find the actual latest period that has income statement data (needed for DSCR)
+        # Check which periods have income statements for any property
+        from app.models.income_statement_data import IncomeStatementData
+        latest_period_with_data = db.query(
+            FinancialPeriod.period_year,
+            FinancialPeriod.period_month
+        ).join(
+            IncomeStatementData, FinancialPeriod.id == IncomeStatementData.period_id
+        ).join(
+            Property, IncomeStatementData.property_id == Property.id
+        ).filter(
+            Property.status == 'active'
+        ).order_by(
+            FinancialPeriod.period_year.desc(),
+            FinancialPeriod.period_month.desc()
+        ).first()
+        
+        if not latest_period_with_data:
+            return PortfolioDSCRResponse(
+                dscr=0.0,
+                yoy_change=0.0,
+                total_noi=0.0,
+                total_debt_service=0.0,
+                properties=[],
+                calculation_date=datetime.now(),
+                note="No income statement data available for DSCR calculation"
+            )
+        
+        current_year = latest_period_with_data.period_year
+        current_month = latest_period_with_data.period_month
+        
+        dscr_service = DSCRMonitoringService(db)
+        property_dscrs = []
+        total_noi = Decimal('0')
+        total_debt_service = Decimal('0')
+        
+        # Calculate DSCR for each property using the latest period that has data
+        for property in properties:
+            # Get period for this property (use latest period with data)
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property.id,
+                FinancialPeriod.period_year == current_year,
+                FinancialPeriod.period_month == current_month
+            ).first()
+            
+            if not period:
+                continue
+            
+            # Calculate DSCR
+            dscr_result = dscr_service.calculate_dscr(property.id, period.id)
+            
+            if dscr_result.get("success"):
+                dscr = Decimal(str(dscr_result["dscr"]))
+                noi = Decimal(str(dscr_result["noi"]))
+                debt_service = Decimal(str(dscr_result["total_debt_service"]))
+                
+                total_noi += noi
+                total_debt_service += debt_service
+                
+                property_dscrs.append({
+                    "property_id": property.id,
+                    "property_code": property.property_code,
+                    "dscr": float(dscr),
+                    "noi": float(noi),
+                    "debt_service": float(debt_service),
+                    "weight": float(debt_service) if total_debt_service > 0 else 0,
+                    "status": dscr_result.get("status", "unknown")
+                })
+        
+        # Calculate portfolio DSCR (weighted average)
+        if total_debt_service > 0:
+            portfolio_dscr = float(total_noi / total_debt_service)
+        else:
+            portfolio_dscr = 0.0
+        
+        # Calculate YoY change - find previous period that has income statement data
+        previous_period_with_data = db.query(
+            FinancialPeriod.period_year,
+            FinancialPeriod.period_month
+        ).join(
+            IncomeStatementData, FinancialPeriod.id == IncomeStatementData.period_id
+        ).join(
+            Property, IncomeStatementData.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            # Previous period must be before current period
+            (
+                (FinancialPeriod.period_year < current_year) |
+                (
+                    (FinancialPeriod.period_year == current_year) &
+                    (FinancialPeriod.period_month < current_month)
+                )
+            )
+        ).order_by(
+            FinancialPeriod.period_year.desc(),
+            FinancialPeriod.period_month.desc()
+        ).first()
+        
+        prev_year = previous_period_with_data.period_year if previous_period_with_data else current_year
+        prev_month = previous_period_with_data.period_month if previous_period_with_data else (current_month - 1 if current_month > 1 else 12)
+        if not previous_period_with_data and current_month == 1:
+            prev_year = current_year - 1
+            prev_month = 12
+        
+        prev_total_noi = Decimal('0')
+        prev_total_debt_service = Decimal('0')
+        
+        for property in properties:
+            prev_period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property.id,
+                FinancialPeriod.period_year == prev_year,
+                FinancialPeriod.period_month == prev_month
+            ).first()
+            
+            if prev_period:
+                prev_dscr_result = dscr_service.calculate_dscr(property.id, prev_period.id)
+                if prev_dscr_result.get("success"):
+                    prev_total_noi += Decimal(str(prev_dscr_result["noi"]))
+                    prev_total_debt_service += Decimal(str(prev_dscr_result["total_debt_service"]))
+        
+        prev_portfolio_dscr = 0.0
+        if prev_total_debt_service > 0:
+            prev_portfolio_dscr = float(prev_total_noi / prev_total_debt_service)
+        
+        yoy_change = portfolio_dscr - prev_portfolio_dscr
+        
+        # Calculate weights for property list
+        for prop in property_dscrs:
+            if total_debt_service > 0:
+                prop["weight"] = float(Decimal(str(prop["debt_service"])) / total_debt_service)
+            else:
+                prop["weight"] = 0
+        
+        return PortfolioDSCRResponse(
+            dscr=round(portfolio_dscr, 2),
+            yoy_change=round(yoy_change, 2),
+            total_noi=float(total_noi),
+            total_debt_service=float(total_debt_service),
+            properties=property_dscrs,
+            calculation_date=datetime.now(),
+            note=f"Calculated from NOI and debt service. Based on {current_year}-{current_month:02d} data."
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to calculate portfolio DSCR: {str(e)}"
+        )
+
+
 @router.get("/exit-strategy/portfolio-irr", response_model=PortfolioIRRResponse)
 async def get_portfolio_irr(db: Session = Depends(get_db)):
     """
-    Calculate portfolio-wide IRR
-
-    Currently returns calculated mock data until property acquisition/sale data is added
-    Future: Will calculate real IRR from cash flows and property values
+    Calculate portfolio-wide IRR from actual financial data
+    
+    Calculates IRR approximation from:
+    - Annual NOI (from income statements)
+    - Total Equity (from balance sheets)
+    - Uses simplified IRR formula: NOI / Equity * 100 (annualized)
     """
-    # TODO: Real IRR calculation when property.purchase_price and cash flow history available
-    # For now, return structured data from API instead of frontend
+    try:
+        from sqlalchemy import func
+        from decimal import Decimal
+        
+        # Get most recent period for all active properties
+        latest_period = db.query(
+            func.max(FinancialPeriod.period_year).label('max_year'),
+            func.max(FinancialPeriod.period_month).label('max_month')
+        ).join(
+            Property, FinancialPeriod.property_id == Property.id
+        ).filter(
+            Property.status == 'active'
+        ).first()
+        
+        if not latest_period or not latest_period.max_year:
+            # No data available
+            return PortfolioIRRResponse(
+                irr=0.0,
+                yoy_change=0.0,
+                properties=[],
+                calculation_date=datetime.now(),
+                note="No financial data available for IRR calculation"
+            )
+        
+        # Get portfolio totals for current period
+        current_metrics = db.query(
+            func.sum(FinancialMetrics.net_operating_income).label('total_noi'),
+            func.sum(FinancialMetrics.total_equity).label('total_equity')
+        ).join(
+            FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+        ).join(
+            Property, FinancialMetrics.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            FinancialPeriod.period_year == latest_period.max_year,
+            FinancialPeriod.period_month == latest_period.max_month
+        ).first()
+        
+        # Get previous period (same month, previous year, or previous month)
+        prev_year = latest_period.max_year
+        prev_month = latest_period.max_month - 1
+        if prev_month < 1:
+            prev_month = 12
+            prev_year -= 1
+        
+        previous_metrics = db.query(
+            func.sum(FinancialMetrics.net_operating_income).label('total_noi'),
+            func.sum(FinancialMetrics.total_equity).label('total_equity')
+        ).join(
+            FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+        ).join(
+            Property, FinancialMetrics.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            FinancialPeriod.period_year == prev_year,
+            FinancialPeriod.period_month == prev_month
+        ).first()
+        
+        # Calculate IRR approximation: Annual NOI / Equity * 100
+        # Convert monthly NOI to annual (multiply by 12)
+        current_noi = float(current_metrics.total_noi or 0)
+        current_equity = float(current_metrics.total_equity or 1)  # Avoid division by zero
+        
+        # Annualized NOI (assuming monthly data)
+        annual_noi = current_noi * 12
+        
+        # IRR approximation: (Annual NOI / Equity) * 100
+        # This is a simplified calculation - true IRR requires cash flow timing
+        irr = (annual_noi / current_equity * 100) if current_equity > 0 else 0.0
+        
+        # Calculate YoY change
+        prev_noi = float(previous_metrics.total_noi or 0) if previous_metrics else 0
+        prev_equity = float(previous_metrics.total_equity or 1) if previous_metrics else 1
+        prev_annual_noi = prev_noi * 12
+        prev_irr = (prev_annual_noi / prev_equity * 100) if prev_equity > 0 else 0.0
+        
+        yoy_change = irr - prev_irr if prev_irr > 0 else 0.0
+        
+        # Get property-level IRRs
+        property_irrs = []
+        property_metrics = db.query(
+            Property.id,
+            Property.property_code,
+            FinancialMetrics.net_operating_income,
+            FinancialMetrics.total_equity
+        ).join(
+            FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+        ).join(
+            Property, FinancialMetrics.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            FinancialPeriod.period_year == latest_period.max_year,
+            FinancialPeriod.period_month == latest_period.max_month,
+            FinancialMetrics.total_equity > 0
+        ).all()
+        
+        total_equity_for_weight = sum(float(m.total_equity or 0) for m in property_metrics)
+        
+        for prop_id, prop_code, noi, equity in property_metrics:
+            prop_noi = float(noi or 0) * 12  # Annualize
+            prop_equity = float(equity or 1)
+            prop_irr = (prop_noi / prop_equity * 100) if prop_equity > 0 else 0.0
+            weight = (prop_equity / total_equity_for_weight) if total_equity_for_weight > 0 else 0
+            
+            property_irrs.append({
+                "property_id": prop_id,
+                "property_code": prop_code,
+                "irr": round(prop_irr, 2),
+                "weight": round(weight, 4)
+            })
+        
+        return PortfolioIRRResponse(
+            irr=round(irr, 2),
+            yoy_change=round(yoy_change, 2),
+            properties=property_irrs,
+            calculation_date=datetime.now(),
+            note=f"Calculated from annualized NOI and equity. Based on {latest_period.max_year}-{latest_period.max_month:02d} data."
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to calculate portfolio IRR: {str(e)}"
+        )
 
-    return PortfolioIRRResponse(
-        irr=14.2,
-        yoy_change=2.1,
-        properties=[
-            {"property_id": 1, "property_code": "PROP001", "irr": 15.3, "weight": 0.25},
-            {"property_id": 2, "property_code": "PROP002", "irr": 13.8, "weight": 0.30},
-            {"property_id": 3, "property_code": "PROP003", "irr": 14.5, "weight": 0.20},
-            {"property_id": 4, "property_code": "PROP004", "irr": 13.2, "weight": 0.25}
-        ],
-        calculation_date=datetime.now(),
-        note="Calculated from portfolio NOI and equity - requires property acquisition data for precise IRR"
-    )
+
+@router.get("/metrics/portfolio-changes", response_model=PortfolioPercentageChangesResponse)
+async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
+    """
+    Get portfolio percentage changes for dashboard KPIs
+    
+    Calculates percentage changes for:
+    - Total Portfolio Value (total_assets)
+    - Portfolio NOI (net_operating_income)
+    - Average Occupancy (occupancy_rate)
+    - Portfolio IRR
+    
+    Compares current period to previous period
+    """
+    try:
+        from sqlalchemy import func
+        from decimal import Decimal
+        
+        # Find the actual latest period that has VALID financial metrics data (not NULL)
+        latest_period = db.query(
+            FinancialPeriod.period_year,
+            FinancialPeriod.period_month
+        ).join(
+            FinancialMetrics, FinancialPeriod.id == FinancialMetrics.period_id
+        ).join(
+            Property, FinancialPeriod.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            FinancialMetrics.net_operating_income.isnot(None),  # Must have NOI
+            FinancialMetrics.total_assets.isnot(None)  # Must have assets
+        ).order_by(
+            FinancialPeriod.period_year.desc(),
+            FinancialPeriod.period_month.desc()
+        ).first()
+        
+        if not latest_period:
+            return PortfolioPercentageChangesResponse(
+                total_value_change=0.0,
+                noi_change=0.0,
+                occupancy_change=0.0,
+                dscr_change=0.0,
+                current_period={"year": None, "month": None},
+                previous_period={"year": None, "month": None},
+                calculation_date=datetime.now()
+            )
+        
+        current_year = latest_period.period_year
+        current_month = latest_period.period_month
+        
+        # Find the ACTUAL previous period that has VALID data (not just previous month)
+        previous_period = db.query(
+            FinancialPeriod.period_year,
+            FinancialPeriod.period_month
+        ).join(
+            FinancialMetrics, FinancialPeriod.id == FinancialMetrics.period_id
+        ).join(
+            Property, FinancialPeriod.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            FinancialMetrics.net_operating_income.isnot(None),  # Must have NOI
+            FinancialMetrics.total_assets.isnot(None),  # Must have assets
+            # Previous period must be before current period
+            (
+                (FinancialPeriod.period_year < current_year) |
+                (
+                    (FinancialPeriod.period_year == current_year) &
+                    (FinancialPeriod.period_month < current_month)
+                )
+            )
+        ).order_by(
+            FinancialPeriod.period_year.desc(),
+            FinancialPeriod.period_month.desc()
+        ).first()
+        
+        prev_year = previous_period.period_year if previous_period else current_year
+        prev_month = previous_period.period_month if previous_period else (current_month - 1 if current_month > 1 else 12)
+        if not previous_period and current_month == 1:
+            prev_year = current_year - 1
+            prev_month = 12
+        
+        # Get current period portfolio totals
+        current_totals = db.query(
+            func.sum(FinancialMetrics.total_assets).label('total_value'),
+            func.sum(FinancialMetrics.net_operating_income).label('total_noi'),
+            func.avg(FinancialMetrics.occupancy_rate).label('avg_occupancy')
+        ).join(
+            FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+        ).join(
+            Property, FinancialMetrics.property_id == Property.id
+        ).filter(
+            Property.status == 'active',
+            FinancialPeriod.period_year == current_year,
+            FinancialPeriod.period_month == current_month
+        ).first()
+        
+        # Get previous period portfolio totals (only if previous period exists)
+        previous_totals = None
+        if previous_period:
+            previous_totals = db.query(
+                func.sum(FinancialMetrics.total_assets).label('total_value'),
+                func.sum(FinancialMetrics.net_operating_income).label('total_noi'),
+                func.avg(FinancialMetrics.occupancy_rate).label('avg_occupancy')
+            ).join(
+                FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+            ).join(
+                Property, FinancialMetrics.property_id == Property.id
+            ).filter(
+                Property.status == 'active',
+                FinancialPeriod.period_year == prev_year,
+                FinancialPeriod.period_month == prev_month
+            ).first()
+        
+        # Calculate percentage changes
+        def calc_change(current, previous):
+            if not previous or previous == 0:
+                return 0.0
+            return ((current - previous) / previous) * 100
+        
+        current_value = float(current_totals.total_value or 0)
+        prev_value = float(previous_totals.total_value or 0) if previous_totals else 0
+        value_change = calc_change(current_value, prev_value)
+        
+        current_noi = float(current_totals.total_noi or 0)
+        prev_noi = float(previous_totals.total_noi or 0) if previous_totals else 0
+        noi_change = calc_change(current_noi, prev_noi)
+        
+        current_occ = float(current_totals.avg_occupancy or 0)
+        prev_occ = float(previous_totals.avg_occupancy or 0) if previous_totals else 0
+        occupancy_change = calc_change(current_occ, prev_occ)
+        
+        # Calculate DSCR change
+        from decimal import Decimal
+        dscr_service = DSCRMonitoringService(db)
+        current_dscr = 0.0
+        prev_dscr = 0.0
+        
+        # Get all active properties for current period
+        properties = db.query(Property).filter(Property.status == 'active').all()
+        
+        current_total_noi = Decimal('0')
+        current_total_debt_service = Decimal('0')
+        prev_total_noi = Decimal('0')
+        prev_total_debt_service = Decimal('0')
+        
+        for property in properties:
+            # Current period DSCR
+            current_period_obj = db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property.id,
+                FinancialPeriod.period_year == current_year,
+                FinancialPeriod.period_month == current_month
+            ).first()
+            
+            if current_period_obj:
+                dscr_result = dscr_service.calculate_dscr(property.id, current_period_obj.id)
+                if dscr_result.get("success"):
+                    current_total_noi += Decimal(str(dscr_result["noi"]))
+                    current_total_debt_service += Decimal(str(dscr_result["total_debt_service"]))
+            
+            # Previous period DSCR
+            prev_period_obj = db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property.id,
+                FinancialPeriod.period_year == prev_year,
+                FinancialPeriod.period_month == prev_month
+            ).first()
+            
+            if prev_period_obj:
+                prev_dscr_result = dscr_service.calculate_dscr(property.id, prev_period_obj.id)
+                if prev_dscr_result.get("success"):
+                    prev_total_noi += Decimal(str(prev_dscr_result["noi"]))
+                    prev_total_debt_service += Decimal(str(prev_dscr_result["total_debt_service"]))
+        
+        if current_total_debt_service > 0:
+            current_dscr = float(current_total_noi / current_total_debt_service)
+        if prev_total_debt_service > 0:
+            prev_dscr = float(prev_total_noi / prev_total_debt_service)
+        
+        dscr_change = current_dscr - prev_dscr
+        
+        return PortfolioPercentageChangesResponse(
+            total_value_change=round(value_change, 2),
+            noi_change=round(noi_change, 2),
+            occupancy_change=round(occupancy_change, 2),
+            dscr_change=round(dscr_change, 2),
+            current_period={"year": current_year, "month": current_month},
+            previous_period={"year": previous_period.period_year if previous_period else None, 
+                           "month": previous_period.period_month if previous_period else None},
+            calculation_date=datetime.now()
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to calculate portfolio percentage changes: {str(e)}"
+        )
 
 
 @router.get("/metrics/historical", response_model=HistoricalMetricsResponse)
@@ -904,13 +1421,16 @@ async def get_property_costs(
         if not property_obj:
             raise HTTPException(404, "Property not found")
 
-        # Get latest financial metrics with expenses
+        # Get latest financial metrics WITH actual expense data (income statement)
+        # Don't use periods that only have rent roll data (like April 2025 for ESP001)
+        # Check for periods that have income statement data by looking for net_operating_income
         latest_metrics = db.query(
             FinancialMetrics,
             FinancialPeriod.period_year,
             FinancialPeriod.period_month
         ).join(FinancialPeriod).filter(
-            FinancialMetrics.property_id == property_id
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.net_operating_income.isnot(None)
         ).order_by(
             FinancialPeriod.period_year.desc(),
             FinancialPeriod.period_month.desc()
@@ -921,19 +1441,78 @@ async def get_property_costs(
 
         metrics, year, month = latest_metrics
 
-        # Calculate cost breakdown from total_expenses
-        # This is an estimated breakdown - ideally would come from detailed expense categories
-        total_expenses = float(metrics.total_expenses) if metrics.total_expenses else 0
-
-        # Typical commercial real estate expense breakdown percentages
+        # Get actual expense breakdown from income statement data (not estimates)
+        from app.models.income_statement_data import IncomeStatementData
+        from app.models.income_statement_header import IncomeStatementHeader
+        
+        # Get income statement header for this period
+        income_header = db.query(IncomeStatementHeader).filter(
+            IncomeStatementHeader.property_id == property_id,
+            IncomeStatementHeader.period_id == metrics.period_id
+        ).first()
+        
         costs = {
-            "insurance": round(total_expenses * 0.15, 2),  # ~15% insurance
-            "mortgage": round(total_expenses * 0.45, 2),   # ~45% debt service
-            "utilities": round(total_expenses * 0.20, 2),  # ~20% utilities
-            "maintenance": round(total_expenses * 0.10, 2), # ~10% maintenance
-            "taxes": round(total_expenses * 0.08, 2),      # ~8% property taxes
-            "other": round(total_expenses * 0.02, 2)       # ~2% other
+            "insurance": 0.0,
+            "mortgage": 0.0,
+            "utilities": 0.0,
+            "maintenance": 0.0,
+            "taxes": 0.0,
+            "other": 0.0
         }
+        
+        # Get expense line items from income statement
+        # Try with header_id first if header exists, then fall back to period_id only
+        expense_items = []
+        if income_header:
+            expense_items = db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == metrics.period_id,
+                IncomeStatementData.header_id == income_header.id
+            ).all()
+        
+        # If no items found with header_id, try without header_id (some data might not have header)
+        if not expense_items:
+            expense_items = db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == metrics.period_id
+            ).all()
+        
+        if expense_items:
+            for item in expense_items:
+                account_code = item.account_code or ''
+                account_name = (item.account_name or '').upper()
+                amount = float(item.period_amount or 0)
+                
+                # Map account codes to expense categories based on Chart of Accounts
+                if account_code.startswith('5012') or 'INSURANCE' in account_name:
+                    costs["insurance"] += amount
+                elif account_code.startswith('7000') or 'MORTGAGE' in account_name or 'INTEREST' in account_name:
+                    costs["mortgage"] += amount
+                elif account_code.startswith('5100') or account_code.startswith('5105') or account_code.startswith('5115') or account_code.startswith('5125') or account_code.startswith('5199') or 'UTILITY' in account_name or 'ELECTRIC' in account_name or 'WATER' in account_name:
+                    costs["utilities"] += amount
+                elif account_code.startswith('5040') or account_code.startswith('5200') or account_code.startswith('5210') or 'MAINTENANCE' in account_name or 'REPAIR' in account_name:
+                    costs["maintenance"] += amount
+                elif account_code.startswith('5010') or account_code.startswith('5014') or 'TAX' in account_name:
+                    costs["taxes"] += amount
+                elif account_code.startswith('8') or (amount < 0 and account_code.startswith('5')):
+                    # Other expenses (8000 series or negative expense amounts)
+                    costs["other"] += abs(amount)
+        
+        # Round all costs
+        costs = {k: round(v, 2) for k, v in costs.items()}
+        
+        # Calculate total as sum of all operating expense categories
+        # This represents Total Annual Operating Expenses (Insurance + Mortgage + Utilities + Maintenance + Taxes + Other)
+        # Note: Initial Buying (purchase price) is NOT included as it's a one-time cost, not an annual expense
+        total_operating_expenses = sum(costs.values())
+        
+        # Use total_expenses from metrics if available and reasonable, otherwise use calculated sum
+        # total_expenses from metrics might include other expenses not categorized above
+        if metrics.total_expenses and metrics.total_expenses > 0:
+            # Use metrics total if it's close to our calculated sum (within 10%)
+            if abs(float(metrics.total_expenses) - total_operating_expenses) / total_operating_expenses < 0.1:
+                total_operating_expenses = float(metrics.total_expenses)
+            # Otherwise use calculated sum (more accurate breakdown)
 
         return PropertyCostsResponse(
             property_id=property_id,
@@ -941,7 +1520,7 @@ async def get_property_costs(
             period_year=year,
             period_month=month,
             costs=costs,
-            total_costs=round(total_expenses, 2),
+            total_costs=round(total_operating_expenses, 2),
             calculated_at=datetime.now()
         )
 
@@ -984,6 +1563,7 @@ class UnitDetailsResponse(BaseModel):
 @router.get("/metrics/{property_id}/units", response_model=UnitDetailsResponse)
 async def get_unit_details(
     property_id: int = Path(..., description="Property ID"),
+    period_id: Optional[int] = Query(None, description="Financial period ID (optional, defaults to latest)"),
     limit: int = Query(50, description="Maximum number of units to return"),
     db: Session = Depends(get_db)
 ):
@@ -995,7 +1575,7 @@ async def get_unit_details(
     - Occupied vs available units
     - Total square footage
     - Individual unit details (number, size, status, tenant, rent)
-    - Based on latest financial period rent roll
+    - Based on specified period or latest financial period rent roll
     """
     try:
         # Get property
@@ -1006,13 +1586,20 @@ async def get_unit_details(
                 detail=f"Property {property_id} not found"
             )
 
-        # Get latest financial period for this property
-        latest_period = (
-            db.query(FinancialPeriod)
-            .filter(FinancialPeriod.property_id == property_id)
-            .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
-            .first()
-        )
+        # Get financial period - use specified period_id or latest
+        if period_id:
+            latest_period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id,
+                FinancialPeriod.property_id == property_id
+            ).first()
+        else:
+            # Get latest financial period for this property
+            latest_period = (
+                db.query(FinancialPeriod)
+                .filter(FinancialPeriod.property_id == property_id)
+                .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
+                .first()
+            )
 
         if not latest_period:
             # Return empty structure if no data
@@ -1041,6 +1628,35 @@ async def get_unit_details(
             .limit(limit)
             .all()
         )
+        
+        # If no rent roll found for this period, try latest available rent roll
+        if not rent_roll_records:
+            latest_rent_roll_period = (
+                db.query(FinancialPeriod)
+                .join(RentRollData, RentRollData.period_id == FinancialPeriod.id)
+                .filter(
+                    RentRollData.property_id == property_id,
+                    RentRollData.is_gross_rent_row == False
+                )
+                .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
+                .first()
+            )
+            
+            if latest_rent_roll_period:
+                rent_roll_records = (
+                    db.query(RentRollData)
+                    .filter(
+                        RentRollData.property_id == property_id,
+                        RentRollData.period_id == latest_rent_roll_period.id,
+                        RentRollData.is_gross_rent_row == False
+                    )
+                    .order_by(RentRollData.unit_number)
+                    .limit(limit)
+                    .all()
+                )
+                # Update latest_period to the rent roll period
+                if rent_roll_records:
+                    latest_period = latest_rent_roll_period
 
         # Calculate summary statistics
         total_units = len(rent_roll_records)
@@ -1062,13 +1678,18 @@ async def get_unit_details(
                 elif record.occupancy_status.lower() == 'vacant':
                     status_str = 'available'
 
+            # Format date as MM/DD/YYYY to avoid timezone conversion issues
+            lease_end_formatted = None
+            if record.lease_end_date:
+                lease_end_formatted = record.lease_end_date.strftime('%m/%d/%Y')
+            
             unit_info = UnitInfo(
                 unitNumber=record.unit_number,
                 sqft=float(record.unit_area_sqft or 0),
                 status=status_str,
                 tenant=record.tenant_name if status_str == 'occupied' else None,
                 monthlyRent=float(record.monthly_rent) if record.monthly_rent else None,
-                leaseEndDate=record.lease_end_date.isoformat() if record.lease_end_date else None
+                leaseEndDate=lease_end_formatted
             )
             units.append(unit_info)
 
@@ -1233,4 +1854,169 @@ async def get_tenant_mix(
         raise
     except Exception as e:
         raise HTTPException(500, f"Failed to get tenant mix: {str(e)}")
+
+
+class TenantDetailItem(BaseModel):
+    """Complete tenant information from rent roll"""
+    id: int
+    unit_number: str
+    tenant_name: str
+    tenant_code: Optional[str] = None
+    lease_type: Optional[str] = None
+    lease_start_date: Optional[str] = None
+    lease_end_date: Optional[str] = None
+    lease_term_months: Optional[int] = None
+    remaining_lease_years: Optional[float] = None
+    unit_area_sqft: Optional[float] = None
+    monthly_rent: Optional[float] = None
+    monthly_rent_per_sqft: Optional[float] = None
+    annual_rent: Optional[float] = None
+    annual_rent_per_sqft: Optional[float] = None
+    gross_rent: Optional[float] = None
+    security_deposit: Optional[float] = None
+    loc_amount: Optional[float] = None
+    annual_cam_reimbursement: Optional[float] = None
+    annual_tax_reimbursement: Optional[float] = None
+    annual_insurance_reimbursement: Optional[float] = None
+    tenancy_years: Optional[float] = None
+    annual_recoveries_per_sf: Optional[float] = None
+    annual_misc_per_sf: Optional[float] = None
+    occupancy_status: Optional[str] = None
+    lease_status: Optional[str] = None
+    notes: Optional[str] = None
+    period_year: int
+    period_month: int
+
+    class Config:
+        from_attributes = True
+
+
+class TenantDetailsResponse(BaseModel):
+    """Complete tenant list with all rent roll columns"""
+    property_id: int
+    property_code: str
+    period_year: int
+    period_month: int
+    total_tenants: int
+    tenants: List[TenantDetailItem]
+
+
+@router.get("/metrics/{property_id}/tenants", response_model=TenantDetailsResponse)
+async def get_all_tenants(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: Optional[int] = Query(None, description="Optional: Specific period ID. If not provided, uses latest rent roll period"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all tenant information from rent roll data
+    
+    Returns comprehensive tenant data with ALL columns from rent_roll_data table:
+    - Tenant Information (name, code, unit number)
+    - Lease Information (type, dates, term, remaining years)
+    - Space Information (square footage)
+    - Financial Information (rents, deposits, reimbursements)
+    - Status Information (occupancy, lease status)
+    - Additional Details (notes, recoveries, misc charges)
+    
+    Uses latest rent roll period if period_id not specified.
+    """
+    try:
+        # Get property
+        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        if not property_obj:
+            raise HTTPException(404, f"Property {property_id} not found")
+        
+        # Determine which period to use
+        if period_id:
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id,
+                FinancialPeriod.property_id == property_id
+            ).first()
+            if not period:
+                raise HTTPException(404, f"Period {period_id} not found for property {property_id}")
+        else:
+            # Find latest period with rent roll data
+            period = (
+                db.query(FinancialPeriod)
+                .join(RentRollData, RentRollData.period_id == FinancialPeriod.id)
+                .filter(
+                    RentRollData.property_id == property_id,
+                    RentRollData.is_gross_rent_row == False
+                )
+                .order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc())
+                .first()
+            )
+            
+            if not period:
+                raise HTTPException(404, f"No rent roll data found for property {property_id}")
+        
+        # Query all rent roll data for this property and period
+        rent_roll_records = (
+            db.query(RentRollData)
+            .filter(
+                RentRollData.property_id == property_id,
+                RentRollData.period_id == period.id,
+                RentRollData.is_gross_rent_row == False  # Exclude gross rent calculation rows
+            )
+            .order_by(RentRollData.unit_number)
+            .all()
+        )
+        
+        # Build tenant list with all columns
+        tenants = []
+        for record in rent_roll_records:
+            # Format dates as MM/DD/YYYY to avoid timezone conversion issues in frontend
+            lease_start_formatted = None
+            if record.lease_start_date:
+                lease_start_formatted = record.lease_start_date.strftime('%m/%d/%Y')
+            
+            lease_end_formatted = None
+            if record.lease_end_date:
+                lease_end_formatted = record.lease_end_date.strftime('%m/%d/%Y')
+            
+            tenant = TenantDetailItem(
+                id=record.id,
+                unit_number=record.unit_number,
+                tenant_name=record.tenant_name,
+                tenant_code=record.tenant_code,
+                lease_type=record.lease_type,
+                lease_start_date=lease_start_formatted,
+                lease_end_date=lease_end_formatted,
+                lease_term_months=record.lease_term_months,
+                remaining_lease_years=float(record.remaining_lease_years) if record.remaining_lease_years else None,
+                unit_area_sqft=float(record.unit_area_sqft) if record.unit_area_sqft else None,
+                monthly_rent=float(record.monthly_rent) if record.monthly_rent else None,
+                monthly_rent_per_sqft=float(record.monthly_rent_per_sqft) if record.monthly_rent_per_sqft else None,
+                annual_rent=float(record.annual_rent) if record.annual_rent else None,
+                annual_rent_per_sqft=float(record.annual_rent_per_sqft) if record.annual_rent_per_sqft else None,
+                gross_rent=float(record.gross_rent) if record.gross_rent else None,
+                security_deposit=float(record.security_deposit) if record.security_deposit else None,
+                loc_amount=float(record.loc_amount) if record.loc_amount else None,
+                annual_cam_reimbursement=float(record.annual_cam_reimbursement) if record.annual_cam_reimbursement else None,
+                annual_tax_reimbursement=float(record.annual_tax_reimbursement) if record.annual_tax_reimbursement else None,
+                annual_insurance_reimbursement=float(record.annual_insurance_reimbursement) if record.annual_insurance_reimbursement else None,
+                tenancy_years=float(record.tenancy_years) if record.tenancy_years else None,
+                annual_recoveries_per_sf=float(record.annual_recoveries_per_sf) if record.annual_recoveries_per_sf else None,
+                annual_misc_per_sf=float(record.annual_misc_per_sf) if record.annual_misc_per_sf else None,
+                occupancy_status=record.occupancy_status,
+                lease_status=record.lease_status,
+                notes=record.notes,
+                period_year=period.period_year,
+                period_month=period.period_month
+            )
+            tenants.append(tenant)
+        
+        return TenantDetailsResponse(
+            property_id=property_id,
+            property_code=property_obj.property_code,
+            period_year=period.period_year,
+            period_month=period.period_month,
+            total_tenants=len(tenants),
+            tenants=tenants
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get tenant details: {str(e)}")
 

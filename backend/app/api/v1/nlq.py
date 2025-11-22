@@ -11,6 +11,7 @@ from app.db.database import get_db
 from app.services.nlq_service import NaturalLanguageQueryService
 from app.api.dependencies import get_current_user
 from app.models.user import User
+from fastapi import Request
 
 router = APIRouter(prefix="/nlq", tags=["natural_language_query"])
 logger = logging.getLogger(__name__)
@@ -38,21 +39,41 @@ def natural_language_query(
 
     Returns answer with data, citations, and SQL query used
     """
+    logger.info(f"NLQ query received from user {current_user.id}: {request.question}")
     user_id = current_user.id
 
     service = NaturalLanguageQueryService(db)
 
     try:
-        result = service.query(request.question, user_id)
+        # Pass context to service if provided
+        result = service.query(request.question, user_id, context=request.context)
 
-        if not result['success']:
-            raise HTTPException(status_code=400, detail=result.get('error'))
+        if not result.get('success', False):
+            # Return error response with proper format instead of raising exception
+            logger.warning(f"NLQ query failed: {result.get('error', 'Unknown error')}")
+            return {
+                "success": False,
+                "error": result.get('error', 'Unable to process query'),
+                "question": request.question,
+                "answer": f"❌ Error: {result.get('error', 'Unable to process your query. Please try rephrasing or check if the required data is available.')}",
+                "data": result.get('data', {}),
+                "confidence": 0,
+                "suggested_follow_ups": []
+            }
 
         return result
 
     except Exception as e:
-        logger.error(f"NLQ failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"NLQ failed: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "question": request.question,
+            "answer": f"❌ Error: {str(e)}",
+            "data": {},
+            "confidence": 0,
+            "suggested_follow_ups": []
+        }
 
 
 @router.get("/suggestions")

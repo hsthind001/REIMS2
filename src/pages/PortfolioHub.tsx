@@ -9,7 +9,7 @@ import {
   Trash2,
   Sparkles,
   List,
-  Map,
+  Map as MapIcon,
   Download
 } from 'lucide-react';
 import { Card, Button, ProgressBar } from '../components/design-system';
@@ -64,15 +64,16 @@ interface UnitInfo {
 }
 
 interface MarketIntelligence {
-  locationScore: number;
+  locationScore: number | null;
   marketCapRate: number;
   yourCapRate: number;
-  rentGrowth: number;
+  rentGrowth: number | null;
   yourRentGrowth: number;
   demographics: {
-    population: number;
-    medianIncome: number;
+    population: number | null;
+    medianIncome: number | null;
     employmentType: string;
+    dataSource?: string | null;
   };
   comparables: Array<{
     name: string;
@@ -115,11 +116,14 @@ export default function PortfolioHub() {
   const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow'>('income');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [propertyMetricsMap, setPropertyMetricsMap] = useState<Map<number, any>>(new Map());
+  const [propertyDscrMap, setPropertyDscrMap] = useState<Map<number, number | null>>(new Map());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingDocumentData, setLoadingDocumentData] = useState(false);
   const [tenantMix, setTenantMix] = useState<any[]>([]);
+  const [tenantDetails, setTenantDetails] = useState<any[]>([]);
+  const [loadingTenants, setLoadingTenants] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
@@ -131,6 +135,7 @@ export default function PortfolioHub() {
       loadPropertyDetails(selectedProperty.id);
       loadFinancialStatements(selectedProperty.property_code);
       loadTenantMix(selectedProperty.id);
+      loadTenantDetails(selectedProperty.id);
     }
   }, [selectedProperty, selectedYear, selectedMonth]);
 
@@ -170,6 +175,44 @@ export default function PortfolioHub() {
         }
 
         setPropertyMetricsMap(metricsMap);
+        
+        // Fetch DSCR for all properties using the actual API endpoint
+        const dscrMap = new Map<number, number | null>();
+        const dec2024PeriodIdMap: Record<string, number> = {
+          'ESP001': 2,
+          'HMND001': 4,
+          'TCSH001': 9,
+          'WEND001': 6
+        };
+        
+        // Fetch DSCR for each property in parallel
+        const dscrPromises = props.map(async (prop) => {
+          try {
+            const periodIdToUse = dec2024PeriodIdMap[prop.property_code] || metricsMap.get(prop.id)?.period_id;
+            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
+            
+            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${prop.id}/dscr/calculate${periodIdParam}`, {
+              method: 'POST',
+              credentials: 'include'
+            });
+            
+            if (dscrResponse.ok) {
+              const dscrData = await dscrResponse.json();
+              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+                dscrMap.set(prop.id, dscrData.dscr);
+                return;
+              }
+            }
+            // If API fails, set to null (don't show DSCR)
+            dscrMap.set(prop.id, null);
+          } catch (err) {
+            console.error(`Failed to fetch DSCR for ${prop.property_code}:`, err);
+            dscrMap.set(prop.id, null);
+          }
+        });
+        
+        await Promise.all(dscrPromises);
+        setPropertyDscrMap(dscrMap);
       }
     } catch (err) {
       console.error('Failed to load property metrics for sorting:', err);
@@ -208,12 +251,14 @@ export default function PortfolioHub() {
           propertyMetric = {
             property_code: periodSpecificMetrics.property_code,
             total_assets: periodSpecificMetrics.total_assets,
-            net_income: periodSpecificMetrics.net_income,
+            net_operating_income: periodSpecificMetrics.net_operating_income, // Use NOI, not net_income
+            net_income: periodSpecificMetrics.net_income, // Keep for fallback
             occupancy_rate: periodSpecificMetrics.occupancy_rate,
             total_expenses: periodSpecificMetrics.total_expenses,
             total_units: periodSpecificMetrics.total_units,
             occupied_units: periodSpecificMetrics.occupied_units,
-            total_leasable_sqft: periodSpecificMetrics.total_leasable_sqft
+            total_leasable_sqft: periodSpecificMetrics.total_leasable_sqft,
+            period_id: periodSpecificMetrics.period_id // Include period_id for reference
           };
         } else {
           console.warn(`No period-specific data for ${currentProperty.property_code} ${selectedYear}-${selectedMonth}, using summary`);
@@ -233,7 +278,7 @@ export default function PortfolioHub() {
       }
       
       if (propertyMetric) {
-        // Calculate DSCR from real data only - no fallbacks
+        // Calculate DSCR from real data only - use actual DSCR API endpoint
         let dscr: number | null = null;
         let ltv: number | null = null;
         let capRate: number | null = null;
@@ -247,12 +292,43 @@ export default function PortfolioHub() {
           if (ltvRes.ok) {
             const ltvData = await ltvRes.json();
             ltv = ltvData.ltv || null;
+          }
 
-            // Calculate DSCR: NOI / (Loan Amount * 0.08) - only if we have real data
-            const loanAmount = ltvData.loan_amount || 0;
-            const annualDebtService = loanAmount * 0.08;
-            if (annualDebtService > 0 && propertyMetric.net_income) {
-              dscr = propertyMetric.net_income / annualDebtService;
+          // Fetch actual DSCR from API endpoint (same as Command Center uses)
+          // This uses real debt service data (interest + principal) instead of estimated calculation
+          try {
+            // Find the period with debt service data (Dec 2024) for DSCR calculation
+            const dec2024PeriodIdMap: Record<string, number> = {
+              'ESP001': 2,
+              'HMND001': 4,
+              'TCSH001': 9,
+              'WEND001': 6
+            };
+            
+            const periodIdToUse = dec2024PeriodIdMap[currentProperty.property_code] || propertyMetric?.period_id;
+            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
+            
+            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${propertyId}/dscr/calculate${periodIdParam}`, {
+              method: 'POST',
+              credentials: 'include'
+            });
+            
+            if (dscrResponse.ok) {
+              const dscrData = await dscrResponse.json();
+              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+                dscr = dscrData.dscr;
+              }
+            }
+          } catch (dscrErr) {
+            console.error('Failed to fetch DSCR from API:', dscrErr);
+            // Fallback to simplified calculation if API fails
+            if (ltv && propertyMetric) {
+              const loanAmount = ltv * (propertyMetric.total_assets || 0);
+              const annualDebtService = loanAmount * 0.08;
+              const noiForDscr = propertyMetric.net_operating_income || propertyMetric.net_income || 0;
+              if (annualDebtService > 0 && noiForDscr > 0) {
+                dscr = noiForDscr / annualDebtService;
+              }
             }
           }
 
@@ -287,7 +363,9 @@ export default function PortfolioHub() {
 
         // Use period-specific data if available, otherwise use summary
         const metricsValue = periodSpecificMetrics?.total_assets || propertyMetric?.total_assets || 0;
-        const metricsNoi = periodSpecificMetrics?.net_income || propertyMetric?.net_income || 0;
+        // Use net_operating_income (NOI) instead of net_income for consistency with Command Center
+        const metricsNoi = periodSpecificMetrics?.net_operating_income || propertyMetric?.net_operating_income || 
+                          periodSpecificMetrics?.net_income || propertyMetric?.net_income || 0;
         const metricsOccupancy = periodSpecificMetrics?.occupancy_rate || propertyMetric?.occupancy_rate || 0;
         
         setMetrics({
@@ -310,7 +388,7 @@ export default function PortfolioHub() {
         if (propertyMetricFromMap) {
           setMetrics({
             value: propertyMetricFromMap.total_assets || 0,
-            noi: propertyMetricFromMap.net_income || 0,
+            noi: propertyMetricFromMap.net_operating_income || propertyMetricFromMap.net_income || 0,
             dscr: 0, // No fallback
             ltv: 0, // No fallback
             occupancy: propertyMetricFromMap.occupancy_rate || 0,
@@ -338,35 +416,10 @@ export default function PortfolioHub() {
         }
       }
 
-      // Load costs - use period-specific data if available, otherwise try costs endpoint
-      if (periodSpecificMetrics?.total_expenses !== null && periodSpecificMetrics?.total_expenses !== undefined) {
-        // Use period-specific expense data
-        const totalExpenses = periodSpecificMetrics.total_expenses || 0;
-        // Calculate cost breakdown from total_expenses (same logic as backend)
-        const costsData = {
-          insurance: Math.round(totalExpenses * 0.15),
-          mortgage: Math.round(totalExpenses * 0.45),
-          utilities: Math.round(totalExpenses * 0.20),
-          maintenance: Math.round(totalExpenses * 0.10),
-          taxes: Math.round(totalExpenses * 0.08),
-          other: Math.round(totalExpenses * 0.02),
-          total: Math.round(totalExpenses)
-        };
-        
-        console.log('Using period-specific expense data:', costsData);
-        setCosts({
-          insurance: costsData.insurance || 0,
-          mortgage: costsData.mortgage || 0,
-          utilities: costsData.utilities || 0,
-          initialBuying: periodSpecificMetrics?.total_assets || 0,
-          maintenance: costsData.maintenance || 0,
-          taxes: costsData.taxes || 0,
-          other: costsData.other || 0,
-          total: costsData.total || 0
-        });
-      } else {
-        // Fall back to costs endpoint (gets latest period)
-        try {
+      // Load costs - try costs endpoint first, otherwise show zeros (no hardcoded data)
+      // Property costs should come from actual expense data, not estimates
+      // Fall back to costs endpoint (gets latest period)
+      try {
           const costsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/costs`, {
             credentials: 'include'
           });
@@ -386,68 +439,72 @@ export default function PortfolioHub() {
                 total: costsData.total_costs || 0
               });
             } else {
-              // No cost data from detailed endpoint
+              // No cost data - show zeros (no hardcoded estimates)
               console.warn('Costs API returned zero or missing data for property', propertyId, costsData);
-              const totalFromSummary = propertyMetric?.total_assets || 0;
               setCosts({
                 insurance: 0,
                 mortgage: 0,
                 utilities: 0,
-                initialBuying: totalFromSummary,
+                initialBuying: periodSpecificMetrics?.total_assets || propertyMetric?.total_assets || 0,
                 maintenance: 0,
                 taxes: 0,
                 other: 0,
-                total: totalFromSummary
+                total: periodSpecificMetrics?.total_expenses || propertyMetric?.total_expenses || 0
               });
             }
           } else if (costsRes.status === 404) {
-            // No detailed cost data
-            console.warn(`Costs API 404 for property ${propertyId} - using summary data`);
-            const totalFromSummary = propertyMetric?.total_assets || 0;
+            // No detailed cost data - show zeros (no hardcoded estimates)
+            console.warn(`Costs API 404 for property ${propertyId} - showing zeros`);
             setCosts({
               insurance: 0,
               mortgage: 0,
               utilities: 0,
-              initialBuying: totalFromSummary,
+              initialBuying: periodSpecificMetrics?.total_assets || propertyMetric?.total_assets || 0,
               maintenance: 0,
               taxes: 0,
               other: 0,
-              total: totalFromSummary
+              total: periodSpecificMetrics?.total_expenses || propertyMetric?.total_expenses || 0
             });
           } else {
-            // Other API error
+            // Other API error - show zeros (no hardcoded estimates)
             const errorText = await costsRes.text();
             console.error(`Costs API error for property ${propertyId}: ${costsRes.status} ${costsRes.statusText}`, errorText);
-            const totalFromSummary = propertyMetric?.total_assets || 0;
             setCosts({
               insurance: 0,
               mortgage: 0,
               utilities: 0,
-              initialBuying: totalFromSummary,
+              initialBuying: periodSpecificMetrics?.total_assets || propertyMetric?.total_assets || 0,
               maintenance: 0,
               taxes: 0,
               other: 0,
-              total: totalFromSummary
+              total: periodSpecificMetrics?.total_expenses || propertyMetric?.total_expenses || 0
             });
           }
         } catch (costsErr) {
           console.error('Failed to fetch property costs:', costsErr);
-          const totalFromSummary = propertyMetric?.total_assets || 0;
+          // Show zeros if no data (no hardcoded estimates)
           setCosts({
             insurance: 0,
             mortgage: 0,
             utilities: 0,
-            initialBuying: totalFromSummary,
+            initialBuying: periodSpecificMetrics?.total_assets || propertyMetric?.total_assets || 0,
             maintenance: 0,
             taxes: 0,
             other: 0,
-            total: totalFromSummary
+            total: periodSpecificMetrics?.total_expenses || propertyMetric?.total_expenses || 0
           });
         }
-      }
 
-      // Load unit info - use period-specific data if available, otherwise try units endpoint
-      if (periodSpecificMetrics?.total_units !== null && periodSpecificMetrics?.total_units !== undefined) {
+      // Load unit info - use period-specific data if available AND has rent roll data, otherwise try units endpoint
+      // Check if period-specific metrics has valid rent roll data (total_units > 0 and total_leasable_sqft > 0)
+      const hasValidPeriodData = periodSpecificMetrics?.total_units !== null && 
+                                  periodSpecificMetrics?.total_units !== undefined && 
+                                  periodSpecificMetrics?.total_units > 0 &&
+                                  periodSpecificMetrics?.total_leasable_sqft !== null &&
+                                  periodSpecificMetrics?.total_leasable_sqft !== undefined &&
+                                  periodSpecificMetrics?.total_leasable_sqft > 0;
+      
+      if (hasValidPeriodData) {
         // Use period-specific unit data
         const totalUnits = periodSpecificMetrics.total_units || 0;
         const occupiedUnits = periodSpecificMetrics.occupied_units || 0;
@@ -463,9 +520,12 @@ export default function PortfolioHub() {
           units: [] // Individual unit details would need separate query
         });
       } else {
-        // Fall back to units endpoint (gets latest period)
+        // Fall back to units endpoint - always use latest available rent roll period
+        // The units endpoint automatically finds the latest period with rent roll data
         try {
-          const unitsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/units?limit=20`, {
+          // Always fetch latest rent roll (units endpoint has fallback logic to find latest period)
+          // Don't pass period_id - let the endpoint find the latest rent roll period
+          const unitsRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/units?limit=100`, {
             credentials: 'include'
           });
           if (unitsRes.ok) {
@@ -578,31 +638,34 @@ export default function PortfolioHub() {
       // Only set market intelligence if we have real data
       if (research) {
         setMarketIntel({
-          locationScore: research.location_score || 0,
+          locationScore: research.location_score ?? null,
           marketCapRate: research.market_cap_rate || 0,
           yourCapRate: yourCapRate || 0,
-          rentGrowth: research.rent_growth || 0,
+          rentGrowth: research.rent_growth ?? null,
           yourRentGrowth: propertyMetric?.rent_growth_yoy || 0,
           demographics: {
-            population: research.demographics?.population || 0,
-            medianIncome: research.demographics?.median_income || 0,
-            employmentType: research.demographics?.employment_type || ''
+            population: research.demographics?.population ?? null,
+            medianIncome: research.demographics?.median_income ?? null,
+            employmentType: research.demographics?.employment_type || 'Data not available',
+            dataSource: research.demographics?.data_source || null
           },
           comparables: research.comparables || [],
-          aiInsights: research.key_findings || research.insights || []
+          aiInsights: research.key_findings || research.insights || [],
+          dataQuality: research.data_quality || 'pending'
         });
       } else {
         // No data - set to zeros/empty
         setMarketIntel({
-          locationScore: 0,
+          locationScore: null,
           marketCapRate: 0,
           yourCapRate: yourCapRate || 0,
-          rentGrowth: 0,
+          rentGrowth: null,
           yourRentGrowth: propertyMetric?.rent_growth_yoy || 0,
           demographics: {
-            population: 0,
-            medianIncome: 0,
-            employmentType: ''
+            population: null,
+            medianIncome: null,
+            employmentType: 'Data not available',
+            dataSource: null
           },
           comparables: [],
           aiInsights: []
@@ -612,15 +675,16 @@ export default function PortfolioHub() {
       console.error('Failed to load market intelligence:', err);
       // Set to zeros/empty on error - no mock data
       setMarketIntel({
-        locationScore: 0,
+        locationScore: null,
         marketCapRate: 0,
         yourCapRate: 0,
-        rentGrowth: 0,
+        rentGrowth: null,
         yourRentGrowth: 0,
         demographics: {
-          population: 0,
-          medianIncome: 0,
-          employmentType: ''
+          population: null,
+          medianIncome: null,
+          employmentType: 'Data not available',
+          dataSource: null
         },
         comparables: [],
         aiInsights: []
@@ -675,6 +739,26 @@ export default function PortfolioHub() {
     } catch (err) {
       console.error('Failed to load tenant mix:', err);
       setTenantMix([]);
+    }
+  };
+
+  const loadTenantDetails = async (propertyId: number) => {
+    setLoadingTenants(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/metrics/${propertyId}/tenants`, {
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTenantDetails(data.tenants || []);
+      } else {
+        setTenantDetails([]);
+      }
+    } catch (err) {
+      console.error('Failed to load tenant details:', err);
+      setTenantDetails([]);
+    } finally {
+      setLoadingTenants(false);
     }
   };
 
@@ -858,8 +942,9 @@ export default function PortfolioHub() {
     const bMetrics = propertyMetricsMap.get(b.id);
 
     if (sortBy === 'noi') {
-      const aNoi = aMetrics?.net_income || 0;
-      const bNoi = bMetrics?.net_income || 0;
+      // Use net_operating_income (NOI) instead of net_income for consistency with Command Center
+      const aNoi = aMetrics?.net_operating_income || aMetrics?.net_income || 0;
+      const bNoi = bMetrics?.net_operating_income || bMetrics?.net_income || 0;
       return bNoi - aNoi; // Descending
     } else if (sortBy === 'risk') {
       // Lower DSCR = higher risk, so sort ascending
@@ -958,7 +1043,7 @@ export default function PortfolioHub() {
                       : 'text-text-secondary hover:bg-background'
                   }`}
                 >
-                  <Map className="w-4 h-4" />
+                  <MapIcon className="w-4 h-4" />
                   <span className="text-sm font-medium">Map</span>
                 </button>
               </div>
@@ -974,9 +1059,11 @@ export default function PortfolioHub() {
                 // Use selected property's detailed metrics if this is the selected property, otherwise use summary metrics
                 const displayMetrics = isSelected && metrics ? metrics : null;
                 const displayValue = displayMetrics?.value || propertyMetric?.total_assets || 0;
-                const displayNoi = displayMetrics?.noi || propertyMetric?.net_income || 0;
+                // Use net_operating_income (NOI) instead of net_income for consistency with Command Center
+                const displayNoi = displayMetrics?.noi || propertyMetric?.net_operating_income || propertyMetric?.net_income || 0;
                 const displayOccupancy = displayMetrics?.occupancy || propertyMetric?.occupancy_rate || 0;
-                const displayDscr = displayMetrics?.dscr || null;
+                // Use DSCR from API (propertyDscrMap) if available, otherwise use selected property's detailed metrics
+                const displayDscr = displayMetrics?.dscr || propertyDscrMap.get(property.id) || null;
                 // Determine status: use selected property's status if selected, otherwise default to 'good'
                 const status = displayMetrics?.status || (displayOccupancy > 90 ? 'good' : displayOccupancy > 70 ? 'warning' : 'critical');
                 const variant = getStatusVariant(status) as any;
@@ -1012,7 +1099,7 @@ export default function PortfolioHub() {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-text-secondary">NOI:</span>
-                          <span className="font-medium">${(displayNoi / 1000).toFixed(0)}K</span>
+                          <span className="font-medium">${(displayNoi / 1000).toFixed(1)}K</span>
                         </div>
                         {displayDscr !== null && (
                           <div className="flex justify-between">
@@ -1140,11 +1227,11 @@ export default function PortfolioHub() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
                           <div className="text-sm text-text-secondary">Purchase Price</div>
-                          <div className="text-xl font-bold">${(costs?.initialBuying || 0) / 1000000}M</div>
+                          <div className="text-xl font-bold">${((metrics?.value || costs?.initialBuying || 0) / 1000000).toFixed(2)}M</div>
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Current Value</div>
-                          <div className="text-xl font-bold">${(metrics?.value || 0) / 1000000}M</div>
+                          <div className="text-xl font-bold">${((metrics?.value || 0) / 1000000).toFixed(2)}M</div>
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Hold Period</div>
@@ -1161,7 +1248,13 @@ export default function PortfolioHub() {
                         </div>
                         <div>
                           <div className="text-sm text-text-secondary">Cap Rate</div>
-                          <div className="text-xl font-bold">{metrics?.capRate || 0}%</div>
+                          <div className="text-xl font-bold">
+                            {metrics?.capRate !== null && metrics?.capRate !== undefined 
+                              ? `${metrics.capRate.toFixed(2)}%` 
+                              : metrics?.value && metrics?.noi 
+                                ? `${((metrics.noi / metrics.value) * 100).toFixed(2)}%`
+                                : 'N/A'}
+                          </div>
                         </div>
                       </div>
                     </Card>
@@ -1174,7 +1267,7 @@ export default function PortfolioHub() {
                           <div className="flex justify-between mb-1">
                             <span className="text-sm text-text-secondary">NOI Performance</span>
                             <span className="text-sm font-medium">
-                              ${(metrics?.noi || 0) / 1000}K / ${((metrics?.noi || 0) * 1.25) / 1000}K target
+                              ${((metrics?.noi || 0) / 1000).toFixed(1)}K / ${(((metrics?.noi || 0) * 1.25) / 1000).toFixed(1)}K target
                             </span>
                           </div>
                           <ProgressBar
@@ -1234,14 +1327,14 @@ export default function PortfolioHub() {
                           </div>
                           <div>
                             <div className="text-sm text-text-secondary">Initial Buying</div>
-                            <div className="text-lg font-semibold">${(costs.initialBuying / 1000000).toFixed(1)}M</div>
+                            <div className="text-lg font-semibold">${(costs.initialBuying / 1000000).toFixed(2)}M</div>
                           </div>
                           <div>
                             <div className="text-sm text-text-secondary">Other Costs</div>
                             <div className="text-lg font-semibold">${(costs.other / 1000).toFixed(0)}K</div>
                           </div>
                           <div>
-                            <div className="text-sm text-text-secondary">Total</div>
+                            <div className="text-sm text-text-secondary">Total Annual Operating Expenses</div>
                             <div className="text-lg font-bold text-info">${(costs.total / 1000000).toFixed(2)}M</div>
                           </div>
                         </div>
@@ -1597,8 +1690,14 @@ export default function PortfolioHub() {
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                               <div className="text-sm text-text-secondary mb-1">Location Score</div>
-                              <div className="text-3xl font-bold mb-1">{marketIntel.locationScore}/10</div>
-                              <div className="text-xs text-text-secondary">CBD location, high foot traffic, transit access</div>
+                              <div className="text-3xl font-bold mb-1">
+                                {marketIntel.locationScore !== null ? `${marketIntel.locationScore}/10` : 'N/A'}
+                              </div>
+                              <div className="text-xs text-text-secondary">
+                                {marketIntel.locationScore !== null 
+                                  ? 'Calculated from demographics data' 
+                                  : 'Location score not available'}
+                              </div>
                             </div>
                             <div>
                               <div className="text-sm text-text-secondary mb-1">Market Cap Rate</div>
@@ -1615,14 +1714,24 @@ export default function PortfolioHub() {
                             </div>
                             <div>
                               <div className="text-sm text-text-secondary mb-1">Market Rent Growth</div>
-                              <div className="text-2xl font-semibold mb-1">+{marketIntel.rentGrowth}% YoY</div>
+                              <div className="text-2xl font-semibold mb-1">
+                                {marketIntel.rentGrowth !== null 
+                                  ? `+${marketIntel.rentGrowth}% YoY` 
+                                  : 'Data not available'}
+                              </div>
                               <div className="text-sm">
-                                Your rent growth: <span className="font-medium">+{marketIntel.yourRentGrowth}% YoY</span>
-                                {marketIntel.yourRentGrowth < marketIntel.rentGrowth && (
-                                  <span className="text-warning"> (Lagging market)</span>
-                                )}
-                                {marketIntel.yourRentGrowth > marketIntel.rentGrowth && (
-                                  <span className="text-success"> (Outperforming market)</span>
+                                {marketIntel.rentGrowth !== null ? (
+                                  <>
+                                    Your rent growth: <span className="font-medium">+{marketIntel.yourRentGrowth}% YoY</span>
+                                    {marketIntel.yourRentGrowth < marketIntel.rentGrowth && (
+                                      <span className="text-warning"> (Lagging market)</span>
+                                    )}
+                                    {marketIntel.yourRentGrowth > marketIntel.rentGrowth && (
+                                      <span className="text-success"> (Outperforming market)</span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-text-secondary">Insufficient historical data for rent growth calculation</span>
                                 )}
                               </div>
                             </div>
@@ -1631,18 +1740,33 @@ export default function PortfolioHub() {
 
                         <Card className="p-6">
                           <h3 className="text-lg font-semibold mb-4">Demographics</h3>
+                          {marketIntel.demographics.dataSource && (
+                            <div className="text-xs text-text-secondary mb-2">
+                              Source: {marketIntel.demographics.dataSource}
+                            </div>
+                          )}
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                               <div className="text-sm text-text-secondary">Population</div>
-                              <div className="text-xl font-semibold">{marketIntel.demographics.population.toLocaleString()}</div>
+                              <div className="text-xl font-semibold">
+                                {marketIntel.demographics.population !== null 
+                                  ? marketIntel.demographics.population.toLocaleString() 
+                                  : 'Data not available'}
+                              </div>
                             </div>
                             <div>
                               <div className="text-sm text-text-secondary">Median Income</div>
-                              <div className="text-xl font-semibold">${marketIntel.demographics.medianIncome.toLocaleString()}</div>
+                              <div className="text-xl font-semibold">
+                                {marketIntel.demographics.medianIncome !== null 
+                                  ? `$${marketIntel.demographics.medianIncome.toLocaleString()}` 
+                                  : 'Data not available'}
+                              </div>
                             </div>
                             <div>
                               <div className="text-sm text-text-secondary">Employment</div>
-                              <div className="text-xl font-semibold">{marketIntel.demographics.employmentType}</div>
+                              <div className="text-xl font-semibold">
+                                {marketIntel.demographics.employmentType || 'Data not available'}
+                              </div>
                             </div>
                           </div>
                         </Card>
@@ -1709,8 +1833,110 @@ export default function PortfolioHub() {
 
                 {activeTab === 'tenants' && (
                   <div className="space-y-6">
+                    {/* All Tenants Table */}
+                    <Card className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold">All Tenants</h3>
+                        {tenantDetails.length > 0 && (
+                          <div className="text-sm text-text-secondary">
+                            Period: {tenantDetails[0]?.period_year}/{String(tenantDetails[0]?.period_month).padStart(2, '0')} • Total: {tenantDetails.length} tenants
+                          </div>
+                        )}
+                      </div>
+                      {loadingTenants ? (
+                        <div className="py-8 text-center text-text-secondary">Loading tenant data...</div>
+                      ) : tenantDetails.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-border bg-premium-light/10">
+                                <th className="text-left py-3 px-4 font-semibold">Unit #</th>
+                                <th className="text-left py-3 px-4 font-semibold">Tenant Name</th>
+                                <th className="text-left py-3 px-4 font-semibold">Tenant Code</th>
+                                <th className="text-left py-3 px-4 font-semibold">Lease Type</th>
+                                <th className="text-left py-3 px-4 font-semibold">Lease Start</th>
+                                <th className="text-left py-3 px-4 font-semibold">Lease End</th>
+                                <th className="text-right py-3 px-4 font-semibold">Term (Months)</th>
+                                <th className="text-right py-3 px-4 font-semibold">Remaining (Yrs)</th>
+                                <th className="text-right py-3 px-4 font-semibold">Sq Ft</th>
+                                <th className="text-right py-3 px-4 font-semibold">Monthly Rent</th>
+                                <th className="text-right py-3 px-4 font-semibold">Rent/SqFt</th>
+                                <th className="text-right py-3 px-4 font-semibold">Annual Rent</th>
+                                <th className="text-right py-3 px-4 font-semibold">Annual Rent/SqFt</th>
+                                <th className="text-right py-3 px-4 font-semibold">Gross Rent</th>
+                                <th className="text-right py-3 px-4 font-semibold">Security Deposit</th>
+                                <th className="text-right py-3 px-4 font-semibold">LOC Amount</th>
+                                <th className="text-right py-3 px-4 font-semibold">CAM Reimb.</th>
+                                <th className="text-right py-3 px-4 font-semibold">Tax Reimb.</th>
+                                <th className="text-right py-3 px-4 font-semibold">Insurance Reimb.</th>
+                                <th className="text-right py-3 px-4 font-semibold">Tenancy (Yrs)</th>
+                                <th className="text-right py-3 px-4 font-semibold">Recoveries/SF</th>
+                                <th className="text-right py-3 px-4 font-semibold">Misc/SF</th>
+                                <th className="text-left py-3 px-4 font-semibold">Occupancy</th>
+                                <th className="text-left py-3 px-4 font-semibold">Lease Status</th>
+                                <th className="text-left py-3 px-4 font-semibold">Notes</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tenantDetails.map((tenant) => (
+                                <tr key={tenant.id} className="border-b border-border/50 hover:bg-premium-light/5">
+                                  <td className="py-2 px-4 font-medium">{tenant.unit_number || '-'}</td>
+                                  <td className="py-2 px-4">{tenant.tenant_name || '-'}</td>
+                                  <td className="py-2 px-4 text-text-secondary">{tenant.tenant_code || '-'}</td>
+                                  <td className="py-2 px-4">{tenant.lease_type || '-'}</td>
+                                  <td className="py-2 px-4">{tenant.lease_start_date || '-'}</td>
+                                  <td className="py-2 px-4">{tenant.lease_end_date || '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.lease_term_months || '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.remaining_lease_years ? tenant.remaining_lease_years.toFixed(2) : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.unit_area_sqft ? tenant.unit_area_sqft.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.monthly_rent ? `$${tenant.monthly_rent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.monthly_rent_per_sqft ? `$${tenant.monthly_rent_per_sqft.toFixed(2)}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_rent ? `$${tenant.annual_rent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_rent_per_sqft ? `$${tenant.annual_rent_per_sqft.toFixed(2)}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.gross_rent ? `$${tenant.gross_rent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.security_deposit ? `$${tenant.security_deposit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.loc_amount ? `$${tenant.loc_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_cam_reimbursement ? `$${tenant.annual_cam_reimbursement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_tax_reimbursement ? `$${tenant.annual_tax_reimbursement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_insurance_reimbursement ? `$${tenant.annual_insurance_reimbursement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.tenancy_years ? tenant.tenancy_years.toFixed(2) : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_recoveries_per_sf ? `$${tenant.annual_recoveries_per_sf.toFixed(2)}` : '-'}</td>
+                                  <td className="text-right py-2 px-4">{tenant.annual_misc_per_sf ? `$${tenant.annual_misc_per_sf.toFixed(2)}` : '-'}</td>
+                                  <td className="py-2 px-4">
+                                    <span className={`px-2 py-1 rounded text-xs ${
+                                      tenant.occupancy_status === 'occupied' ? 'bg-success-light text-success' :
+                                      tenant.occupancy_status === 'vacant' ? 'bg-warning-light text-warning' :
+                                      'bg-text-secondary/20 text-text-secondary'
+                                    }`}>
+                                      {tenant.occupancy_status || '-'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-4">
+                                    <span className={`px-2 py-1 rounded text-xs ${
+                                      tenant.lease_status === 'active' ? 'bg-info-light text-info' :
+                                      tenant.lease_status === 'expired' ? 'bg-warning-light text-warning' :
+                                      'bg-text-secondary/20 text-text-secondary'
+                                    }`}>
+                                      {tenant.lease_status || '-'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-4 text-text-secondary text-xs max-w-xs truncate" title={tenant.notes || ''}>
+                                    {tenant.notes || '-'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="py-8 text-center text-text-secondary">
+                          No tenant data available for this property.
+                        </div>
+                      )}
+                    </Card>
+
                     {/* Tenant Mix Summary */}
-                    {unitInfo && (
+                    {unitInfo && tenantMix.length > 0 && (
                       <Card className="p-6">
                         <h3 className="text-lg font-semibold mb-4">Tenant Mix Summary</h3>
                         <div className="overflow-x-auto">
@@ -1725,23 +1951,15 @@ export default function PortfolioHub() {
                               </tr>
                             </thead>
                             <tbody>
-                              {tenantMix.length > 0 ? (
-                                tenantMix.map((mix, index) => (
-                                  <tr key={index} className="border-b border-border/50 last:border-0">
-                                    <td className="py-2 px-4">{mix.tenantType}</td>
-                                    <td className="text-right py-2 px-4">{mix.unitCount}</td>
-                                    <td className="text-right py-2 px-4">{mix.totalSqft.toLocaleString()}</td>
-                                    <td className="text-right py-2 px-4">${(mix.totalRevenue / 12).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                                    <td className="py-2 px-4">{mix.occupancyPct.toFixed(0)}% occupied</td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={5} className="py-8 text-center text-text-secondary">
-                                    No tenant mix data available
-                                  </td>
+                              {tenantMix.map((mix, index) => (
+                                <tr key={index} className="border-b border-border/50 last:border-0">
+                                  <td className="py-2 px-4">{mix.tenantType}</td>
+                                  <td className="text-right py-2 px-4">{mix.unitCount}</td>
+                                  <td className="text-right py-2 px-4">{mix.totalSqft.toLocaleString()}</td>
+                                  <td className="text-right py-2 px-4">${(mix.totalRevenue / 12).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                  <td className="py-2 px-4">{mix.occupancyPct.toFixed(0)}% occupied</td>
                                 </tr>
-                              )}
+                              ))}
                             </tbody>
                           </table>
                         </div>
@@ -1919,10 +2137,25 @@ function PropertyFormModal({
     setError('');
 
     try {
+      // Ensure property_code is uppercase and matches format
+      const normalizedCode = formData.property_code.toUpperCase().trim();
+      const codePattern = /^[A-Z]{2,5}\d{3}$/;
+      
+      if (!codePattern.test(normalizedCode)) {
+        setError('Property code must be 2-5 uppercase letters followed by 3 digits (e.g., ESP001, TES121)');
+        setLoading(false);
+        return;
+      }
+
+      const submitData = {
+        ...formData,
+        property_code: normalizedCode
+      };
+
       if (isEditing && property) {
-        await propertyService.updateProperty(property.id, formData);
+        await propertyService.updateProperty(property.id, submitData);
       } else {
-        await propertyService.createProperty(formData);
+        await propertyService.createProperty(submitData);
       }
       onSuccess();
     } catch (err: any) {
@@ -1953,12 +2186,17 @@ function PropertyFormModal({
               <input
                 type="text"
                 value={formData.property_code}
-                onChange={(e) => setFormData({ ...formData, property_code: e.target.value })}
+                onChange={(e) => {
+                  // Auto-convert to uppercase and remove any spaces
+                  const value = e.target.value.toUpperCase().replace(/\s/g, '');
+                  setFormData({ ...formData, property_code: value });
+                }}
                 required
                 disabled={isEditing}
-                pattern="[A-Z]{2,5}\\d{3}"
-                title="Format: LETTERS+3 digits (e.g., ESP001)"
+                pattern="[A-Z]{2,5}[0-9]{3}"
+                title="Format: 2-5 uppercase letters followed by 3 digits (e.g., ESP001, TES121)"
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                placeholder="ESP001"
               />
               <small className="text-text-secondary text-xs">e.g., ESP001, WEND001</small>
             </div>
