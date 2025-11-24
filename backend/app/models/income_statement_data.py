@@ -25,6 +25,12 @@ class IncomeStatementData(Base):
     report_generation_date = Column(DateTime(timezone=True))  # Date report was generated
     page_number = Column(Integer)  # Page number for multi-page documents
     
+    # ==================== EXTRACTION COORDINATES (PDF Source Navigation) ====================
+    extraction_x0 = Column(DECIMAL(10, 2), nullable=True)  # Left coordinate in PDF
+    extraction_y0 = Column(DECIMAL(10, 2), nullable=True)  # Top coordinate in PDF
+    extraction_x1 = Column(DECIMAL(10, 2), nullable=True)  # Right coordinate in PDF
+    extraction_y1 = Column(DECIMAL(10, 2), nullable=True)  # Bottom coordinate in PDF
+    
     # ==================== ACCOUNT INFORMATION ====================
     account_code = Column(String(50), nullable=False, index=True)
     account_name = Column(String(255), nullable=False)

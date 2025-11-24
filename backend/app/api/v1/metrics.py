@@ -8,12 +8,16 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from app.db.database import get_db
+from app.db.minio_client import get_file_url
 from app.services.metrics_service import MetricsService
 from app.services.dscr_monitoring_service import DSCRMonitoringService
 from app.models.financial_metrics import FinancialMetrics
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.rent_roll_data import RentRollData
+from app.models.balance_sheet_data import BalanceSheetData
+from app.models.income_statement_data import IncomeStatementData
+from app.models.document_upload import DocumentUpload
 
 
 router = APIRouter()
@@ -121,6 +125,20 @@ class MetricsSummaryItem(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class MetricSourceResponse(BaseModel):
+    """Source document information for a metric value"""
+    upload_id: int
+    document_type: str
+    file_name: str
+    page_number: Optional[int] = None
+    extraction_x0: Optional[float] = None
+    extraction_y0: Optional[float] = None
+    extraction_x1: Optional[float] = None
+    extraction_y1: Optional[float] = None
+    pdf_url: Optional[str] = None
+    has_coordinates: bool = False
 
 
 # Endpoints
@@ -2019,4 +2037,247 @@ async def get_all_tenants(
         raise
     except Exception as e:
         raise HTTPException(500, f"Failed to get tenant details: {str(e)}")
+
+
+@router.get("/metrics/{property_id}/source", response_model=MetricSourceResponse)
+async def get_metric_source(
+    property_id: int = Path(..., description="Property ID"),
+    account_code: Optional[str] = Query(None, description="Account code (e.g., '1999-0000' for Total Assets)"),
+    metric_type: Optional[str] = Query(None, description="Metric type: 'total_assets', 'net_operating_income', 'occupancy_rate'"),
+    period_id: Optional[int] = Query(None, description="Financial period ID (optional, uses latest if not provided)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get source document information for a metric value
+    
+    Returns the PDF document and coordinates where the metric value was extracted from.
+    Used for PDF source navigation feature.
+    
+    Query params:
+    - account_code: Account code to look up (e.g., '1999-0000' for Total Assets)
+    - metric_type: Type of metric ('total_assets', 'net_operating_income', 'occupancy_rate')
+    - period_id: Financial period ID (optional, uses most recent if not provided)
+    
+    Returns:
+    - upload_id: Document upload ID
+    - document_type: Type of document (balance_sheet, income_statement, etc.)
+    - page_number: Page number in PDF
+    - coordinates: Extraction coordinates (x0, y0, x1, y1)
+    - pdf_url: Presigned URL to access the PDF
+    """
+    try:
+        # Get property
+        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        if not property_obj:
+            raise HTTPException(status_code=404, detail=f"Property {property_id} not found")
+        
+        # Determine which table to query based on metric_type or account_code
+        source_record = None
+        document_type = None
+        
+        # Map metric types to account codes if needed
+        if metric_type == 'total_assets' or metric_type == 'property_value':
+            account_code = account_code or '1999-0000'
+        elif metric_type == 'net_operating_income':
+            # NOI is typically calculated, but we can look for the income statement
+            document_type = 'income_statement'
+        
+        # Get period if not provided
+        if not period_id:
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property_id
+            ).order_by(
+                FinancialPeriod.period_year.desc(),
+                FinancialPeriod.period_month.desc()
+            ).first()
+            if not period:
+                raise HTTPException(status_code=404, detail=f"No financial periods found for property {property_id}")
+            period_id = period.id
+        else:
+            period = db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id).first()
+            if not period:
+                raise HTTPException(status_code=404, detail=f"Period {period_id} not found")
+        
+        # Query balance sheet data if account_code is provided
+        # First try the requested period, then try other periods if not found
+        if account_code:
+            source_record = db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == period_id,
+                BalanceSheetData.account_code == account_code
+            ).order_by(
+                BalanceSheetData.id.desc()
+            ).first()
+            
+            if source_record:
+                document_type = 'balance_sheet'
+            else:
+                # If not found in requested period, search across all periods for this property
+                source_record = db.query(BalanceSheetData).filter(
+                    BalanceSheetData.property_id == property_id,
+                    BalanceSheetData.account_code == account_code
+                ).order_by(
+                    BalanceSheetData.period_id.desc(),
+                    BalanceSheetData.id.desc()
+                ).first()
+                
+                if source_record:
+                    document_type = 'balance_sheet'
+                    # Update period_id to match the found record
+                    period_id = source_record.period_id
+                    period = db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id).first()
+        
+        # If not found in balance sheet, try income statement
+        if not source_record and account_code:
+            source_record = db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id,
+                IncomeStatementData.account_code == account_code
+            ).order_by(
+                IncomeStatementData.id.desc()
+            ).first()
+            
+            if source_record:
+                document_type = 'income_statement'
+            else:
+                # If not found in requested period, search across all periods for this property
+                source_record = db.query(IncomeStatementData).filter(
+                    IncomeStatementData.property_id == property_id,
+                    IncomeStatementData.account_code == account_code
+                ).order_by(
+                    IncomeStatementData.period_id.desc(),
+                    IncomeStatementData.id.desc()
+                ).first()
+                
+                if source_record:
+                    document_type = 'income_statement'
+                    # Update period_id to match the found record
+                    period_id = source_record.period_id
+                    period = db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id).first()
+        
+        # If still not found and metric_type is net_operating_income, look for NOI line
+        if not source_record and metric_type == 'net_operating_income':
+            source_record = db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id,
+                IncomeStatementData.is_total == True,
+                IncomeStatementData.line_category == 'SUMMARY'
+            ).order_by(
+                IncomeStatementData.id.desc()
+            ).first()
+            
+            if source_record:
+                document_type = 'income_statement'
+        
+        # If still not found, try to get any document for this property/period as fallback
+        if not source_record:
+            # Try balance sheet first
+            fallback_record = db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == period_id
+            ).order_by(BalanceSheetData.id.desc()).first()
+            
+            if fallback_record:
+                source_record = fallback_record
+                document_type = 'balance_sheet'
+            else:
+                # Try income statement
+                fallback_record = db.query(IncomeStatementData).filter(
+                    IncomeStatementData.property_id == property_id,
+                    IncomeStatementData.period_id == period_id
+                ).order_by(IncomeStatementData.id.desc()).first()
+                
+                if fallback_record:
+                    source_record = fallback_record
+                    document_type = 'income_statement'
+        
+        if not source_record:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Source document not found for property {property_id}, account_code={account_code}, metric_type={metric_type}. Please ensure documents have been uploaded and extracted."
+            )
+        
+        # Get document upload
+        upload = db.query(DocumentUpload).filter(DocumentUpload.id == source_record.upload_id).first()
+        if not upload:
+            raise HTTPException(status_code=404, detail=f"Document upload {source_record.upload_id} not found")
+        
+        # Get PDF URL - use backend-proxied endpoint to avoid CORS issues
+        pdf_url = None
+        if upload.file_path:
+            # Use backend streaming endpoint instead of presigned URL
+            from app.core.config import settings
+            import os
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+            pdf_url = f"{backend_url}{settings.API_V1_STR}/pdf-viewer/{upload.id}/stream"
+        
+        # Extract coordinates
+        has_coordinates = (
+            source_record.extraction_x0 is not None and
+            source_record.extraction_y0 is not None and
+            source_record.extraction_x1 is not None and
+            source_record.extraction_y1 is not None
+        )
+        
+        # If coordinates are missing, try to extract them from PDF on-the-fly
+        extraction_x0 = float(source_record.extraction_x0) if source_record.extraction_x0 else None
+        extraction_y0 = float(source_record.extraction_y0) if source_record.extraction_y0 else None
+        extraction_x1 = float(source_record.extraction_x1) if source_record.extraction_x1 else None
+        extraction_y1 = float(source_record.extraction_y1) if source_record.extraction_y1 else None
+        page_num = source_record.page_number
+        
+        if not has_coordinates and account_code:
+            try:
+                # Try to find the account code in the PDF
+                from app.db.minio_client import download_file
+                import fitz
+                
+                pdf_data = download_file(upload.file_path)
+                if pdf_data:
+                    doc = fitz.open(stream=pdf_data, filetype='pdf')
+                    # Search for account code or related text
+                    search_terms = [account_code]
+                    if account_code == '1999-0000':
+                        search_terms.append('TOTAL ASSETS')
+                    
+                    for page_idx in range(len(doc)):
+                        page = doc[page_idx]
+                        for term in search_terms:
+                            text_instances = page.search_for(term)
+                            if text_instances:
+                                # Use the first instance found
+                                rect = text_instances[0]
+                                extraction_x0 = rect.x0
+                                extraction_y0 = rect.y0
+                                extraction_x1 = rect.x1
+                                extraction_y1 = rect.y1
+                                page_num = page_idx + 1
+                                has_coordinates = True
+                                break
+                        if has_coordinates:
+                            break
+                    doc.close()
+            except Exception as e:
+                print(f"Could not extract coordinates from PDF: {e}")
+        
+        return MetricSourceResponse(
+            upload_id=upload.id,
+            document_type=document_type or upload.document_type,
+            file_name=upload.file_name,
+            page_number=page_num,
+            extraction_x0=extraction_x0,
+            extraction_y0=extraction_y0,
+            extraction_x1=extraction_x1,
+            extraction_y1=extraction_y1,
+            pdf_url=pdf_url,
+            has_coordinates=has_coordinates
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get metric source: {str(e)}"
+        )
 

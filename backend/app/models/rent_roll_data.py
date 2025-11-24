@@ -59,6 +59,13 @@ class RentRollData(Base):
     
     # Extraction metadata
     extraction_confidence = Column(DECIMAL(5, 2))
+    page_number = Column(Integer, nullable=True)  # Page number for multi-page documents
+    
+    # ==================== EXTRACTION COORDINATES (PDF Source Navigation) ====================
+    extraction_x0 = Column(DECIMAL(10, 2), nullable=True)  # Left coordinate in PDF
+    extraction_y0 = Column(DECIMAL(10, 2), nullable=True)  # Top coordinate in PDF
+    extraction_x1 = Column(DECIMAL(10, 2), nullable=True)  # Right coordinate in PDF
+    extraction_y1 = Column(DECIMAL(10, 2), nullable=True)  # Bottom coordinate in PDF
     
     # Review workflow
     needs_review = Column(Boolean, default=False)

@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    include: ['react-leaflet', 'leaflet']
+    include: ['react-leaflet', 'leaflet', 'react-pdf']
   },
   build: {
     target: 'es2015',

@@ -14,10 +14,12 @@ import {
   Download
 } from 'lucide-react';
 import { MetricCard, Card, Button, ProgressBar } from '../components/design-system';
+import { PDFViewer } from '../components/PDFViewer';
 import { propertyService } from '../lib/property';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
+import { getMetricSource, getPDFViewerData } from '../lib/metrics_source';
 import type { Property } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -112,6 +114,13 @@ export default function CommandCenter() {
     dscr: []
   });
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showPDFViewer, setShowPDFViewer] = useState(false);
+  const [pdfViewerData, setPdfViewerData] = useState<{
+    pdfUrl: string;
+    highlightPage?: number;
+    highlightCoords?: { x0: number; y0: number; x1: number; y1: number };
+  } | null>(null);
+  const [loadingPDFSource, setLoadingPDFSource] = useState(false);
 
   // Auto-refresh hook - we'll define loadDashboardData after helper functions
   // For now, use a placeholder that will be updated
@@ -394,9 +403,14 @@ export default function CommandCenter() {
           recommendation: a.recommendation || 'Review immediately',
           createdAt: new Date(a.created_at || Date.now())
         })));
+      } else if (response.status === 404) {
+        // Endpoint doesn't exist yet - set empty alerts
+        setCriticalAlerts([]);
       }
     } catch (err) {
       console.error('Failed to load critical alerts:', err);
+      // Set empty alerts on error to prevent blocking
+      setCriticalAlerts([]);
     }
   };
 
@@ -443,8 +457,8 @@ export default function CommandCenter() {
         }
       });
       
-      // Process each property
-      for (const property of properties.slice(0, 10)) {
+      // Process properties in parallel for better performance
+      const propertyPromises = properties.slice(0, 10).map(async (property) => {
         try {
           const metric = metricsMap.get(property.property_code);
 
@@ -463,98 +477,84 @@ export default function CommandCenter() {
                 ? metric.net_income
                 : 0;
 
-            // Fetch real NOI trend data from historical API
-            let noiTrend: number[] = [];
-            try {
-              const histRes = await fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
-                credentials: 'include'
-              });
-              if (histRes.ok) {
-                const histData = await histRes.json();
-                noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
-              }
-            } catch (histErr) {
-              console.error('Failed to load historical data:', histErr);
-            }
-
-            // Fetch DSCR from proper backend API (uses actual debt service from income statement)
-            // IMPORTANT: Use 2024-12 period_id explicitly since that's where debt service data exists
-            // The latest period (2025-04) has NOI but no debt service data, causing DSCR to fail
-            let dscr: number | null = null; // Will be set from API
-            let status: 'critical' | 'warning' | 'good' = 'good'; // Default, will be updated from API
-            try {
             // Find the period with debt service data (Dec 2024) for DSCR calculation
-            // The latest period from metrics summary might be April 2025 which doesn't have debt service
-            // Use hardcoded Dec 2024 period IDs: ESP001=2, HMND001=4, TCSH001=9, WEND001=6
             const dec2024PeriodIdMap: Record<string, number> = {
               'ESP001': 2,
               'HMND001': 4,
               'TCSH001': 9,
               'WEND001': 6
             };
-            
             const periodIdToUse = dec2024PeriodIdMap[property.property_code] || metric.period_id;
-              const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-              
-              const dscrRes = await fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {
+            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
+
+            // Parallelize all property-specific API calls
+            const [histRes, dscrRes, ltvRes] = await Promise.all([
+              fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
+                credentials: 'include'
+              }).catch(() => ({ ok: false })),
+              fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {
                 method: 'POST',
                 credentials: 'include'
-              });
-              
-              if (dscrRes.ok) {
+              }).catch(() => ({ ok: false })),
+              fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
+                credentials: 'include'
+              }).catch(() => ({ ok: false }))
+            ]);
+
+            // Process historical data
+            let noiTrend: number[] = [];
+            if (histRes.ok) {
+              try {
+                const histData = await histRes.json();
+                noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
+              } catch (histErr) {
+                console.error('Failed to parse historical data:', histErr);
+              }
+            }
+
+            // Process DSCR
+            let dscr: number | null = null;
+            let status: 'critical' | 'warning' | 'good' = 'good';
+            if (dscrRes.ok) {
+              try {
                 const dscrData = await dscrRes.json();
                 if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
                   dscr = dscrData.dscr;
-                  // Use status from API response (healthy/warning/critical)
                   status = dscrData.status === 'healthy' ? 'good' : 
                            dscrData.status === 'warning' ? 'warning' : 'critical';
-                } else {
-                  console.warn(`DSCR API returned no data for property ${property.property_code}:`, dscrData);
                 }
-              } else {
-                const errorText = await dscrRes.text();
-                console.warn(`DSCR API failed for property ${property.property_code}: ${dscrRes.status} ${dscrRes.statusText}`, errorText);
+              } catch (dscrErr) {
+                console.error(`Failed to parse DSCR for ${property.property_code}:`, dscrErr);
               }
-            } catch (dscrErr) {
-              console.error(`Failed to fetch DSCR for property ${property.property_code}:`, dscrErr);
-              // Fallback: calculate DSCR using simplified formula if API fails
+            }
+
+            // Fallback DSCR calculation if API failed
+            if (dscr === null && ltvRes.ok) {
               try {
-                const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
-                  credentials: 'include'
-                });
-                if (ltvRes.ok) {
-                  const ltvData = await ltvRes.json();
-                  const loanAmount = ltvData.loan_amount || 0;
-                  const annualDebtService = loanAmount * 0.08;
-                  if (annualDebtService > 0 && noi > 0) {
-                    dscr = noi / annualDebtService;
-                    status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
-                  }
+                const ltvData = await ltvRes.json();
+                const loanAmount = ltvData.loan_amount || 0;
+                const annualDebtService = loanAmount * 0.08;
+                if (annualDebtService > 0 && noi > 0) {
+                  dscr = noi / annualDebtService;
+                  status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
                 }
               } catch (fallbackErr) {
                 console.error('Failed to calculate DSCR fallback:', fallbackErr);
               }
             }
 
-            // Fetch real LTV from API
-            // API now uses true LTV: long_term_debt / net_property_value
-            // Falls back through multiple calculation methods if data is unavailable
-            let ltv: number | null = null; // Will be set from API
-            try {
-              const ltvRes = await fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
-                credentials: 'include'
-              });
-              if (ltvRes.ok) {
+            // Process LTV
+            let ltv: number | null = null;
+            if (ltvRes.ok) {
+              try {
                 const ltvData = await ltvRes.json();
                 ltv = ltvData.ltv || null;
-              } else {
-                console.warn(`LTV API failed for property ${property.property_code}: ${ltvRes.status} ${ltvRes.statusText}`);
+              } catch (ltvErr) {
+                console.error(`Failed to parse LTV for ${property.property_code}:`, ltvErr);
               }
-            } catch (ltvErr) {
-              console.error(`Failed to fetch LTV for property ${property.property_code}:`, ltvErr);
             }
 
-            performance.push({
+            return {
               id: property.id,
               name: property.property_name,
               code: property.property_code,
@@ -565,10 +565,10 @@ export default function CommandCenter() {
               occupancy: metric.occupancy_rate || 0,
               status,
               trends: { noi: noiTrend }
-            });
+            };
           } else {
             // Property exists but no metrics yet - show with zeros
-            performance.push({
+            return {
               id: property.id,
               name: property.property_name,
               code: property.property_code,
@@ -577,14 +577,14 @@ export default function CommandCenter() {
               dscr: 0,
               ltv: 0,
               occupancy: 0,
-              status: 'warning',
+              status: 'warning' as const,
               trends: { noi: [] }
-            });
+            };
           }
         } catch (err) {
           console.error(`Failed to load metrics for ${property.property_code}:`, err);
-          // Add property with zeros if there's an error
-          performance.push({
+          // Return property with zeros if there's an error
+          return {
             id: property.id,
             name: property.property_name,
             code: property.property_code,
@@ -593,11 +593,15 @@ export default function CommandCenter() {
             dscr: 0,
             ltv: 0,
             occupancy: 0,
-            status: 'warning',
+            status: 'warning' as const,
             trends: { noi: [] }
-          });
+          };
         }
-      }
+      });
+
+      // Wait for all properties to load in parallel
+      const results = await Promise.all(propertyPromises);
+      performance.push(...results);
       
       setPropertyPerformance(performance);
     } catch (err) {
@@ -623,6 +627,120 @@ export default function CommandCenter() {
       console.error('Failed to load AI insights:', err);
       // No fallback - show empty state on error
       setAIInsights([]);
+    }
+  };
+
+  const handleMetricClick = async (metricType: string) => {
+    // Only work for single property, not portfolio view
+    if (selectedPropertyFilter === 'all') {
+      return; // Don't show source for portfolio aggregates
+    }
+
+    const selectedProperty = properties.find(p => p.property_code === selectedPropertyFilter);
+    if (!selectedProperty) {
+      return;
+    }
+
+    setLoadingPDFSource(true);
+    try {
+      // Get the latest period for this property
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary`, {
+        credentials: 'include'
+      });
+      const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
+      const propertyMetric = allMetrics.find((m: any) => m.property_code === selectedPropertyFilter);
+      
+      if (!propertyMetric || !propertyMetric.period_id) {
+        alert('No financial data available for this property');
+        return;
+      }
+
+      // Get source document info
+      const sourceData = await getMetricSource(selectedProperty.id, metricType, propertyMetric.period_id);
+      
+      if (!sourceData) {
+        // Try to get any document for this property/period as fallback
+        const fallbackUrl = `${API_BASE_URL}/metrics/${selectedProperty.id}/source?period_id=${propertyMetric.period_id}`;
+        try {
+          const fallbackRes = await fetch(fallbackUrl, { credentials: 'include' });
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            if (fallbackData.pdf_url) {
+              setPdfViewerData({
+                pdfUrl: fallbackData.pdf_url,
+                highlightPage: undefined,
+                highlightCoords: undefined
+              });
+              setShowPDFViewer(true);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('Fallback failed:', e);
+        }
+        
+        alert(`Source document not found for ${metricType}. This metric may be calculated from multiple sources or the data may not have been extracted yet.`);
+        return;
+      }
+
+      // Show PDF even if coordinates don't exist
+      if (!sourceData.pdf_url) {
+        alert(`PDF document not available for ${metricType}. This metric may be calculated from multiple sources or the document may not have been uploaded yet for this property.`);
+        return;
+      }
+      
+      // Validate PDF URL format
+      if (!sourceData.pdf_url.includes('/pdf-viewer/') || !sourceData.pdf_url.includes('/stream')) {
+        console.error('Invalid PDF URL format:', sourceData.pdf_url);
+        alert('Invalid PDF URL format. Please contact support.');
+        return;
+      }
+
+      // Get PDF viewer data with highlight coordinates (if available)
+      const highlightCoords = sourceData.has_coordinates && 
+        sourceData.extraction_x0 !== null && 
+        sourceData.extraction_y0 !== null &&
+        sourceData.extraction_x1 !== null &&
+        sourceData.extraction_y1 !== null
+        ? {
+            x0: sourceData.extraction_x0,
+            y0: sourceData.extraction_y0,
+            x1: sourceData.extraction_x1,
+            y1: sourceData.extraction_y1
+          }
+        : undefined;
+
+      // Build PDF URL with highlight coordinates as query params for backend annotation
+      let pdfUrlWithHighlight = sourceData.pdf_url;
+      if (highlightCoords && sourceData.page_number) {
+        const params = new URLSearchParams({
+          page: sourceData.page_number.toString(),
+          x0: highlightCoords.x0.toString(),
+          y0: highlightCoords.y0.toString(),
+          x1: highlightCoords.x1.toString(),
+          y1: highlightCoords.y1.toString(),
+        });
+        pdfUrlWithHighlight = `${sourceData.pdf_url}?${params.toString()}`;
+      }
+      
+      // Use the PDF URL with highlight coordinates
+      setPdfViewerData({
+        pdfUrl: pdfUrlWithHighlight,
+        highlightPage: sourceData.page_number || undefined,
+        highlightCoords: highlightCoords
+      });
+      setShowPDFViewer(true);
+      
+      // Show info message if coordinates are not available
+      if (!sourceData.has_coordinates) {
+        console.info('PDF opened without highlight coordinates. This is normal for existing data that was extracted before coordinate tracking was added.');
+        // Note: Highlighting will not work for this document, but the PDF will still display
+      }
+    } catch (error) {
+      console.error('Error loading PDF source:', error);
+      alert(`Failed to load source document: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
+    } finally {
+      setLoadingPDFSource(false);
     }
   };
 
@@ -676,27 +794,20 @@ export default function CommandCenter() {
     try {
       setLoading(true);
 
-      // Load properties
+      // Load properties first (needed for other calls)
       const propertiesData = await propertyService.getAllProperties();
       setProperties(propertiesData);
 
-      // Load portfolio health (will use selectedPropertyFilter from state)
-      await loadPortfolioHealth(propertiesData);
-      
-      // Reload sparklines when data changes
-      await loadSparklineData();
+      // Parallelize independent API calls for better performance
+      await Promise.all([
+        loadPortfolioHealth(propertiesData),
+        loadCriticalAlerts(),
+        loadAIInsights(),
+        loadSparklineData() // Only call once
+      ]);
 
-      // Load critical alerts
-      await loadCriticalAlerts();
-
-      // Load property performance
+      // Load property performance (depends on properties being loaded)
       await loadPropertyPerformance(propertiesData);
-
-      // Load AI insights
-      await loadAIInsights();
-
-      // Load sparkline data
-      await loadSparklineData();
 
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -1025,6 +1136,7 @@ export default function CommandCenter() {
             icon="💰"
             variant="success"
             sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
+            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('property_value') : undefined}
           />
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
@@ -1034,6 +1146,7 @@ export default function CommandCenter() {
             icon="📊"
             variant="info"
             sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
+            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('net_operating_income') : undefined}
           />
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
@@ -1043,6 +1156,7 @@ export default function CommandCenter() {
             icon="🏘️"
             variant="warning"
             sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
+            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('occupancy_rate') : undefined}
           />
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
@@ -1052,6 +1166,7 @@ export default function CommandCenter() {
             icon="📈"
             variant="success"
             sparkline={sparklineData.dscr.length > 0 ? sparklineData.dscr : undefined}
+            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('dscr') : undefined}
           />
         </div>
 
@@ -1216,6 +1331,22 @@ export default function CommandCenter() {
           </div>
           </div>
         </div>
+
+        {/* PDF Viewer - Inline at bottom after AI Portfolio Insights */}
+        {showPDFViewer && pdfViewerData && (
+          <div className="mt-8">
+            <PDFViewer
+              pdfUrl={pdfViewerData.pdfUrl}
+              highlightPage={pdfViewerData.highlightPage}
+              highlightCoords={pdfViewerData.highlightCoords}
+              inline={true}
+              onClose={() => {
+                setShowPDFViewer(false);
+                setPdfViewerData(null);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Floating Action Button */}
@@ -1401,6 +1532,7 @@ export default function CommandCenter() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

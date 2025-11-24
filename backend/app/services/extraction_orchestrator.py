@@ -540,6 +540,14 @@ class ExtractionOrchestrator:
             # Flag for review if unmatched or low confidence
             needs_review = (final_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
             
+            # Extract coordinates if available (for PDF source navigation)
+            extraction_x0 = item.get("extraction_x0")
+            extraction_y0 = item.get("extraction_y0")
+            extraction_x1 = item.get("extraction_x1")
+            extraction_y1 = item.get("extraction_y1")
+            line_number = item.get("line_number")
+            page_number = item.get("page_number") or item.get("page")
+            
             # Insert new entry (no longer check for existing since we deleted all)
             bs_data = BalanceSheetData(
                 property_id=upload.property_id,
@@ -551,7 +559,13 @@ class ExtractionOrchestrator:
                 amount=Decimal(str(amount)),
                 extraction_confidence=Decimal(str(final_confidence)),
                 match_confidence=Decimal(str(match_confidence)) if match_confidence else None,
-                needs_review=needs_review
+                needs_review=needs_review,
+                page_number=page_number,
+                extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
+                extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
+                extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
+                extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None,
+                line_number=line_number
             )
             self.db.add(bs_data)
             records_inserted += 1
@@ -710,6 +724,12 @@ class ExtractionOrchestrator:
             avg_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
             needs_review = (avg_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
             
+            # Extract coordinates if available (for PDF source navigation)
+            extraction_x0 = item.get("extraction_x0")
+            extraction_y0 = item.get("extraction_y0")
+            extraction_x1 = item.get("extraction_x1")
+            extraction_y1 = item.get("extraction_y1")
+            
             # Insert new with all Template v1.0 fields
             is_data = IncomeStatementData(
                 header_id=header.id,
@@ -741,7 +761,12 @@ class ExtractionOrchestrator:
                 extraction_confidence=Decimal(str(avg_confidence)),
                 match_confidence=Decimal(str(match_confidence)) if match_confidence else None,
                 extraction_method=item.get("extraction_method", "table"),
-                needs_review=needs_review
+                needs_review=needs_review,
+                # PDF Source Navigation: Extraction coordinates
+                extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
+                extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
+                extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
+                extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None
             )
             self.db.add(is_data)
             records_inserted += 1
@@ -1036,6 +1061,12 @@ class ExtractionOrchestrator:
             cash_flow_category = self._determine_cash_flow_category(account_code, item.get("line_section"))
             
             # Insert new line item
+            # Extract coordinates if available (for PDF source navigation)
+            extraction_x0 = item.get("extraction_x0")
+            extraction_y0 = item.get("extraction_y0")
+            extraction_x1 = item.get("extraction_x1")
+            extraction_y1 = item.get("extraction_y1")
+            
             cf_data = CashFlowData(
                 header_id=header.id,
                 property_id=upload.property_id,
@@ -1057,7 +1088,12 @@ class ExtractionOrchestrator:
                 is_total=item.get("is_total", False),
                 page_number=item.get("page"),
                 extraction_confidence=Decimal(str(avg_confidence)),
-                needs_review=needs_review
+                needs_review=needs_review,
+                # PDF Source Navigation: Extraction coordinates
+                extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
+                extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
+                extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
+                extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None
             )
             self.db.add(cf_data)
             records_inserted += 1
@@ -1356,6 +1392,13 @@ class ExtractionOrchestrator:
                     return None
             
             # Create new record
+            # Extract coordinates if available (for PDF source navigation)
+            extraction_x0 = item.get("extraction_x0")
+            extraction_y0 = item.get("extraction_y0")
+            extraction_x1 = item.get("extraction_x1")
+            extraction_y1 = item.get("extraction_y1")
+            page_number = item.get("page_number") or item.get("page")
+            
             rr_data = RentRollData(
                 property_id=upload.property_id,
                 period_id=upload.period_id,
@@ -1390,7 +1433,13 @@ class ExtractionOrchestrator:
                 lease_status=lease_status,
                 # Extraction metadata
                 extraction_confidence=Decimal(str(confidence_score)),
-                needs_review=(critical_count > 0 or record_score < 99.0)
+                needs_review=(critical_count > 0 or record_score < 99.0),
+                # PDF Source Navigation: Extraction coordinates
+                page_number=page_number,
+                extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
+                extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
+                extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
+                extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None
             )
             self.db.add(rr_data)
             self.db.flush()  # Get the ID for parent_row_map

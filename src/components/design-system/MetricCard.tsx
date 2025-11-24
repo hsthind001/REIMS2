@@ -13,6 +13,7 @@ export interface MetricCardProps {
   icon?: React.ReactNode;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
   className?: string;
+  onClick?: () => void; // Click handler for PDF source navigation
 }
 
 export const MetricCard: React.FC<MetricCardProps> = ({
@@ -24,6 +25,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   icon,
   variant = 'default',
   className = '',
+  onClick,
 }) => {
   const formatValue = (val: string | number): string => {
     if (typeof val === 'number') {
@@ -61,7 +63,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   };
 
   return (
-    <Card variant={variant} className={`p-6 ${className}`}>
+    <Card 
+      variant={variant} 
+      className={`p-6 ${className} ${onClick ? 'cursor-pointer hover:shadow-lg transition-shadow' : ''}`}
+      onClick={onClick}
+    >
       <div className={styles.header}>
         <div className={styles.iconContainer}>
           {icon && <span className={styles.icon}>{icon}</span>}

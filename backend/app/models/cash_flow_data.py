@@ -66,6 +66,13 @@ class CashFlowData(Base):
     
     # Metadata
     page_number = Column(Integer)  # Page number in source PDF
+    
+    # ==================== EXTRACTION COORDINATES (PDF Source Navigation) ====================
+    extraction_x0 = Column(DECIMAL(10, 2), nullable=True)  # Left coordinate in PDF
+    extraction_y0 = Column(DECIMAL(10, 2), nullable=True)  # Top coordinate in PDF
+    extraction_x1 = Column(DECIMAL(10, 2), nullable=True)  # Right coordinate in PDF
+    extraction_y1 = Column(DECIMAL(10, 2), nullable=True)  # Bottom coordinate in PDF
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
