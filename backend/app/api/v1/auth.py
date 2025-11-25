@@ -4,12 +4,14 @@ Authentication endpoints
 Session-based authentication using HTTP-only cookies
 No JWT - simpler session management with Starlette middleware
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Header
 from sqlalchemy.orm import Session
+from typing import Optional
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserResponse, PasswordChange
 from app.core.security import get_password_hash, verify_password
+from app.core.config import settings
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -198,4 +200,193 @@ def change_password(
     db.commit()
     
     return {"message": "Password changed successfully"}
+
+
+# ==================== JWT/OAuth2 Endpoints (BR-006) ====================
+
+from app.core.jwt_auth import get_jwt_service
+from pydantic import BaseModel
+from typing import Optional
+
+
+class TokenResponse(BaseModel):
+    """JWT token response"""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request"""
+    refresh_token: str
+
+
+@router.post("/token", response_model=TokenResponse)
+def login_jwt(
+    login_data: UserLogin,
+    db: Session = Depends(get_db)
+):
+    """
+    Login with JWT token (OAuth2-compatible)
+    
+    Returns JWT access token and refresh token.
+    Can be used alongside session-based auth.
+    
+    **BR-006:** JWT/OAuth2 authentication support
+    
+    Returns:
+        TokenResponse with access_token and refresh_token
+    """
+    # Find user by username
+    user = db.query(User).filter(User.username == login_data.username).first()
+    
+    if not user or not verify_password(login_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
+    
+    # Get user roles (if RBAC is implemented)
+    roles = []
+    if hasattr(user, 'roles'):
+        roles = [role.name for role in user.roles] if user.roles else []
+    
+    # Create tokens
+    jwt_service = get_jwt_service()
+    access_token = jwt_service.create_access_token(
+        user_id=user.id,
+        username=user.username,
+        email=user.email,
+        roles=roles
+    )
+    refresh_token = jwt_service.create_refresh_token(
+        user_id=user.id,
+        username=user.username
+    )
+    
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+
+
+@router.post("/token/refresh", response_model=TokenResponse)
+def refresh_token(
+    refresh_request: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh JWT access token using refresh token
+    
+    **BR-006:** OAuth2 token refresh support
+    
+    Returns:
+        New TokenResponse with new access_token
+    """
+    jwt_service = get_jwt_service()
+    
+    try:
+        # Verify refresh token
+        payload = jwt_service.verify_token(refresh_request.refresh_token)
+        
+        # Check token type
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Get user
+        user_id = int(payload.get("sub"))
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Get user roles
+        roles = []
+        if hasattr(user, 'roles'):
+            roles = [role.name for role in user.roles] if user.roles else []
+        
+        # Create new access token
+        access_token = jwt_service.create_access_token(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            roles=roles
+        )
+        
+        # Optionally create new refresh token (rotate)
+        new_refresh_token = jwt_service.create_refresh_token(
+            user_id=user.id,
+            username=user.username
+        )
+        
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            token_type="bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid refresh token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+@router.get("/token/verify")
+def verify_token_endpoint(
+    token: str = None,
+    authorization: Optional[str] = None
+):
+    """
+    Verify JWT token validity
+    
+    **BR-006:** Token verification endpoint
+    
+    Accepts token as query parameter or Authorization header:
+    - Query: ?token=<jwt_token>
+    - Header: Authorization: Bearer <jwt_token>
+    """
+    # Extract token from Authorization header if provided
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token not provided"
+        )
+    
+    jwt_service = get_jwt_service()
+    payload = jwt_service.verify_token(token)
+    
+    return {
+        "valid": True,
+        "user_id": int(payload.get("sub")),
+        "username": payload.get("username"),
+        "email": payload.get("email"),
+        "roles": payload.get("roles", []),
+        "expires_at": payload.get("exp")
+    }
 

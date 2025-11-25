@@ -60,4 +60,5 @@ class DocumentUpload(Base):
     rent_roll_data = relationship("RentRollData", back_populates="upload", cascade="all, delete-orphan")
     validation_results = relationship("ValidationResult", back_populates="upload", cascade="all, delete-orphan")
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
+    concordance_records = relationship("ConcordanceTable", back_populates="upload", cascade="all, delete-orphan")
 

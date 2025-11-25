@@ -1,11 +1,15 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Body
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 import hashlib
 from app.utils.extraction_engine import MultiEngineExtractor
+from app.services.model_scoring_service import ScoringFactors
 from app.db.database import get_db
 from app.models.extraction_log import ExtractionLog
+from app.models.document_upload import DocumentUpload
+from app.db.minio_client import download_file
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -349,5 +353,286 @@ async def get_extraction_stats(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting stats: {str(e)}"
+        )
+
+
+class ModelScoreResult(BaseModel):
+    """Individual model extraction result with score"""
+    model: str
+    score: float
+    confidence: float
+    success: bool
+    text_length: int
+    processing_time_ms: float
+    page_count: Optional[int] = None
+    text_quality_score: Optional[float] = None
+    score_breakdown: Optional[Dict[str, float]] = None
+    error: Optional[str] = None
+
+
+class AllModelsScoredResponse(BaseModel):
+    """Response for all models extraction with scores"""
+    success: bool
+    results: List[ModelScoreResult]
+    best_model: Optional[str]
+    best_score: float
+    total_models: int
+    successful_models: int
+    average_score: float
+    scoring_factors_used: Optional[Dict] = None
+
+
+class ScoringFactorsRequest(BaseModel):
+    """Client-defined scoring factors"""
+    text_length_weight: Optional[float] = 0.20
+    text_quality_weight: Optional[float] = 0.25
+    table_detection_weight: Optional[float] = 0.15
+    table_structure_weight: Optional[float] = 0.10
+    processing_speed_weight: Optional[float] = 0.10
+    accuracy_weight: Optional[float] = 0.15
+    model_type_bonus: Optional[Dict[str, float]] = None
+    min_text_length: Optional[int] = 100
+    max_processing_time_ms: Optional[float] = 10000.0
+
+
+@router.post("/extract/all-models-scored", response_model=AllModelsScoredResponse)
+async def extract_all_models_scored(
+    file: UploadFile = File(...),
+    lang: str = Query("eng", description="Language for OCR"),
+    scoring_factors: Optional[ScoringFactorsRequest] = Body(None, description="Custom scoring factors (optional)")
+):
+    """
+    Extract using ALL available models and return scores (1-10) for each.
+    
+    **IMPORTANT:** Models do NOT calculate their own confidence. Scores are calculated
+    externally based on client-defined factors.
+    
+    **Models Tested:**
+    - PyMuPDF (rule-based)
+    - PDFPlumber (rule-based)
+    - Camelot (table extraction)
+    - Tesseract OCR (OCR)
+    - LayoutLMv3 (AI model)
+    - EasyOCR (AI model)
+    
+    **Scoring (Client-Defined Factors):**
+    - Text length weight (default: 0.20)
+    - Text quality weight (default: 0.25)
+    - Table detection weight (default: 0.15)
+    - Table structure weight (default: 0.10)
+    - Processing speed weight (default: 0.10)
+    - Accuracy weight (default: 0.15)
+    - Model type bonuses (optional)
+    
+    **Custom Scoring Factors:**
+    Pass `scoring_factors` in request body to customize weights:
+    ```json
+    {
+      "text_length_weight": 0.30,
+      "text_quality_weight": 0.30,
+      "table_detection_weight": 0.20,
+      "processing_speed_weight": 0.20
+    }
+    ```
+    
+    **Score Calculation:**
+    - Each factor contributes to final score (0.0-1.0)
+    - Converted to 1-10 scale: score = 1 + (confidence * 9)
+    - Higher score = better extraction quality based on YOUR criteria
+    
+    **Use Cases:**
+    - Compare model performance on specific documents
+    - Identify which model works best for your document types
+    - Debug extraction issues by seeing all model outputs
+    - Performance benchmarking
+    
+    Returns:
+        AllModelsScoredResponse with scored results from all models
+    """
+    if not file.content_type or file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a PDF"
+        )
+    
+    try:
+        # Read PDF
+        pdf_data = await file.read()
+        
+        # Create scoring factors from request (or use defaults)
+        factors = None
+        if scoring_factors:
+            factors = ScoringFactors(
+                text_length_weight=scoring_factors.text_length_weight or 0.20,
+                text_quality_weight=scoring_factors.text_quality_weight or 0.25,
+                table_detection_weight=scoring_factors.table_detection_weight or 0.15,
+                table_structure_weight=scoring_factors.table_structure_weight or 0.10,
+                processing_speed_weight=scoring_factors.processing_speed_weight or 0.10,
+                accuracy_weight=scoring_factors.accuracy_weight or 0.15,
+                model_type_bonus=scoring_factors.model_type_bonus or {},
+                min_text_length=scoring_factors.min_text_length or 100,
+                max_processing_time_ms=scoring_factors.max_processing_time_ms or 10000.0
+            )
+        
+        # Create extractor instance with custom scoring factors
+        extractor = MultiEngineExtractor(scoring_factors=factors)
+        
+        # Extract with all models and get scores (scored externally, not by models)
+        results = extractor.extract_with_all_models_scored(pdf_data, lang=lang)
+        
+        # Convert results to response model format
+        model_results = []
+        for r in results["results"]:
+            model_results.append(ModelScoreResult(
+                model=r["model"],
+                score=r["score"],
+                confidence=r["confidence"],
+                success=r["success"],
+                text_length=r["text_length"],
+                processing_time_ms=r["processing_time_ms"],
+                page_count=r.get("page_count"),
+                text_quality_score=r.get("text_quality_score"),
+                score_breakdown=r.get("score_breakdown"),
+                error=r.get("error")
+            ))
+        
+        # Get scoring factors used
+        scoring_factors_used = extractor.scoring_service.factors.__dict__
+        
+        return AllModelsScoredResponse(
+            success=True,
+            results=model_results,
+            best_model=results["best_model"],
+            best_score=results["best_score"],
+            total_models=results["total_models"],
+            successful_models=results["successful_models"],
+            average_score=results["average_score"],
+            scoring_factors_used=scoring_factors_used
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error extracting with all models: {str(e)}"
+        )
+
+
+@router.post("/extract/all-models-scored/{upload_id}", response_model=AllModelsScoredResponse)
+async def rescore_existing_extraction(
+    upload_id: int,
+    lang: str = Query("eng", description="Language for OCR"),
+    scoring_factors: Optional[ScoringFactorsRequest] = Body(None, description="Custom scoring factors (optional)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Re-score an EXISTING extraction using all models (1-10 scale).
+    
+    This endpoint retrieves a previously uploaded PDF from storage and runs
+    all extraction models on it, returning scored results for comparison.
+    
+    **Use Cases:**
+    - Compare how different models perform on documents already in the system
+    - Re-evaluate extraction quality after model updates
+    - Benchmark model performance on historical documents
+    - Debug extraction issues by seeing all model outputs
+    
+    **Parameters:**
+    - `upload_id`: ID of the DocumentUpload record (from document_uploads table)
+    - `lang`: Language code for OCR engines (default: "eng")
+    
+    **Returns:**
+    - Scored results from all models (1-10 scale)
+    - Best performing model identification
+    - Performance metrics for each model
+    
+    **Note:** This retrieves the PDF from MinIO storage, so the file must exist.
+    """
+    try:
+        # Get upload record
+        upload = db.query(DocumentUpload).filter(
+            DocumentUpload.id == upload_id
+        ).first()
+        
+        if not upload:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Upload {upload_id} not found"
+            )
+        
+        if not upload.file_path:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Upload {upload_id} has no file path - PDF may not be stored"
+            )
+        
+        # Download PDF from MinIO
+        pdf_data = download_file(
+            object_name=upload.file_path,
+            bucket_name=settings.MINIO_BUCKET_NAME
+        )
+        
+        if not pdf_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"PDF file not found in storage: {upload.file_path}"
+            )
+        
+        # Create scoring factors from request (or use defaults)
+        factors = None
+        if scoring_factors:
+            factors = ScoringFactors(
+                text_length_weight=scoring_factors.text_length_weight or 0.20,
+                text_quality_weight=scoring_factors.text_quality_weight or 0.25,
+                table_detection_weight=scoring_factors.table_detection_weight or 0.15,
+                table_structure_weight=scoring_factors.table_structure_weight or 0.10,
+                processing_speed_weight=scoring_factors.processing_speed_weight or 0.10,
+                accuracy_weight=scoring_factors.accuracy_weight or 0.15,
+                model_type_bonus=scoring_factors.model_type_bonus or {},
+                min_text_length=scoring_factors.min_text_length or 100,
+                max_processing_time_ms=scoring_factors.max_processing_time_ms or 10000.0
+            )
+        
+        # Create extractor instance with custom scoring factors
+        extractor = MultiEngineExtractor(scoring_factors=factors)
+        
+        # Extract with all models and get scores (scored externally, not by models)
+        results = extractor.extract_with_all_models_scored(pdf_data, lang=lang)
+        
+        # Convert results to response model format
+        model_results = []
+        for r in results["results"]:
+            model_results.append(ModelScoreResult(
+                model=r["model"],
+                score=r["score"],
+                confidence=r["confidence"],
+                success=r["success"],
+                text_length=r["text_length"],
+                processing_time_ms=r["processing_time_ms"],
+                page_count=r.get("page_count"),
+                text_quality_score=r.get("text_quality_score"),
+                score_breakdown=r.get("score_breakdown"),
+                error=r.get("error")
+            ))
+        
+        # Get scoring factors used
+        scoring_factors_used = extractor.scoring_service.factors.__dict__
+        
+        return AllModelsScoredResponse(
+            success=True,
+            results=model_results,
+            best_model=results["best_model"],
+            best_score=results["best_score"],
+            total_models=results["total_models"],
+            successful_models=results["successful_models"],
+            average_score=results["average_score"],
+            scoring_factors_used=scoring_factors_used
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error re-scoring extraction: {str(e)}"
         )
 

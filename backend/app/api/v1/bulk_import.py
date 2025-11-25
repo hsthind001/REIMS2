@@ -248,18 +248,22 @@ async def import_income_statement(
     file: UploadFile = File(...),
     property_id: int = Form(...),
     financial_period_id: int = Form(...),
+    upload_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
-    Import income statement data from CSV/Excel file
+    Import income statement data from CSV/Excel file (Template v1.0 compliant)
 
     **Required Columns:**
     - account_code
     - account_name
-    - amount
+    - period_amount (or amount for backward compatibility)
 
     **Optional Columns:**
-    - notes
+    - ytd_amount, period_percentage, ytd_percentage
+    - line_category, line_subcategory, line_number
+    - is_subtotal, is_total, is_income, is_below_the_line
+    - account_level, parent_account_code, extraction_confidence, notes
 
     **Use Cases:**
     - Bulk historical data backload
@@ -291,6 +295,7 @@ async def import_income_statement(
             file_content=content,
             property_id=property_id,
             financial_period_id=financial_period_id,
+            upload_id=upload_id,
             file_format=file_format
         )
 
@@ -309,10 +314,11 @@ async def import_balance_sheet(
     file: UploadFile = File(...),
     property_id: int = Form(...),
     financial_period_id: int = Form(...),
+    upload_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
-    Import balance sheet data from CSV/Excel file
+    Import balance sheet data from CSV/Excel file (Template v1.0 compliant)
 
     **Required Columns:**
     - account_code
@@ -320,7 +326,9 @@ async def import_balance_sheet(
     - amount
 
     **Optional Columns:**
-    - notes
+    - account_category, account_subcategory, is_subtotal, is_total
+    - account_level, parent_account_code, is_debit, is_contra_account
+    - extraction_confidence, report_title, period_ending, accounting_basis, notes
     """
     property = db.query(Property).filter(Property.id == property_id).first()
     if not property:
@@ -347,6 +355,7 @@ async def import_balance_sheet(
             file_content=content,
             property_id=property_id,
             financial_period_id=financial_period_id,
+            upload_id=upload_id,
             file_format=file_format
         )
 
@@ -357,6 +366,67 @@ async def import_balance_sheet(
 
     except Exception as e:
         logger.error(f"Balance sheet import failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cash-flow")
+async def import_cash_flow(
+    file: UploadFile = File(...),
+    property_id: int = Form(...),
+    financial_period_id: int = Form(...),
+    upload_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Import cash flow data from CSV/Excel file (Template v1.0 compliant)
+
+    **Required Columns:**
+    - account_code
+    - account_name
+    - period_amount (or amount for backward compatibility)
+
+    **Optional Columns:**
+    - ytd_amount, period_percentage, ytd_percentage
+    - line_section, line_category, line_subcategory, line_number
+    - is_subtotal, is_total, is_inflow, cash_flow_category
+    - extraction_confidence, notes
+    """
+    property = db.query(Property).filter(Property.id == property_id).first()
+    if not property:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    period = db.query(FinancialPeriod).filter(
+        FinancialPeriod.id == financial_period_id
+    ).first()
+    if not period:
+        raise HTTPException(status_code=404, detail="Financial period not found")
+
+    file_format = _get_file_format(file.filename)
+    if not file_format:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file format. Use CSV or Excel (.xlsx, .xls)"
+        )
+
+    try:
+        content = await file.read()
+
+        service = BulkImportService(db)
+        result = service.import_cash_flow_from_csv(
+            file_content=content,
+            property_id=property_id,
+            financial_period_id=financial_period_id,
+            upload_id=upload_id,
+            file_format=file_format
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error"))
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Cash flow import failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -416,7 +486,7 @@ def get_template_json(data_type: str, db: Session = Depends(get_db)):
     Returns template information without downloading a file.
     Useful for frontend applications to generate templates dynamically.
     """
-    valid_types = ["budget", "forecast", "chart_of_accounts", "income_statement", "balance_sheet"]
+    valid_types = ["budget", "forecast", "chart_of_accounts", "income_statement", "balance_sheet", "cash_flow"]
 
     if data_type not in valid_types:
         raise HTTPException(
@@ -487,6 +557,11 @@ def get_supported_formats():
                 "type": "balance_sheet",
                 "description": "Balance sheet financial data",
                 "required_fields": ["account_code", "account_name", "amount"]
+            },
+            {
+                "type": "cash_flow",
+                "description": "Cash flow statement financial data",
+                "required_fields": ["account_code", "account_name", "period_amount"]
             }
         ]
     }

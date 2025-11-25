@@ -5,7 +5,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -96,6 +96,9 @@ app.include_router(bulk_import.router, prefix=settings.API_V1_STR, tags=["bulk-i
 
 # Document summarization
 app.include_router(document_summary.router, prefix=settings.API_V1_STR, tags=["document-summary"])
+
+# Concordance tables
+app.include_router(concordance.router, prefix=settings.API_V1_STR, tags=["concordance"])
 
 
 @app.get("/")

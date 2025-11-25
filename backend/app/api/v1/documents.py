@@ -10,7 +10,9 @@ from decimal import Decimal
 from app.db.database import get_db
 from app.db.minio_client import get_file_url
 from app.services.document_service import DocumentService
+from app.services.pdf_generator_service import PDFGeneratorService
 from app.tasks.extraction_tasks import extract_document
+from fastapi.responses import StreamingResponse
 from app.models.document_upload import DocumentUpload
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
@@ -648,5 +650,79 @@ async def get_download_url(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get download URL: {str(e)}"
+        )
+
+
+@router.get("/documents/uploads/{upload_id}/regenerate-pdf")
+async def regenerate_income_statement_pdf(
+    upload_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Regenerate income statement PDF from database data
+    
+    Creates a new PDF matching the original format using extracted data from the database.
+    This allows you to verify that extracted values match the original PDF.
+    
+    **Supported Document Types:**
+    - income_statement
+    
+    **Returns:**
+    - PDF file matching original format
+    
+    **Example Usage:**
+    1. Upload ESP 2023 Income Statement
+    2. Extract data (already done)
+    3. Call this endpoint to regenerate PDF
+    4. Compare original vs regenerated PDF to verify extraction accuracy
+    """
+    try:
+        # Get upload record
+        upload = db.query(DocumentUpload).filter(
+            DocumentUpload.id == upload_id
+        ).first()
+        
+        if not upload:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Upload {upload_id} not found"
+            )
+        
+        if upload.document_type != "income_statement":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This endpoint only supports income statements. Document type: {upload.document_type}"
+            )
+        
+        # Generate PDF
+        generator = PDFGeneratorService()
+        pdf_bytes = generator.generate_income_statement_pdf(upload_id, db)
+        
+        # Generate filename
+        filename = upload.file_name or f"income_statement_{upload_id}.pdf"
+        # Add "regenerated_" prefix
+        if not filename.startswith("regenerated_"):
+            filename = f"regenerated_{filename}"
+        
+        # Return PDF as streaming response
+        return StreamingResponse(
+            pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to regenerate PDF: {str(e)}"
         )
 

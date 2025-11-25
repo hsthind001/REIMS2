@@ -1,7 +1,9 @@
 """
 API dependencies for authentication and authorization
+
+Supports both session-based and JWT-based authentication (BR-006)
 """
-from fastapi import Request, HTTPException, status, Depends
+from fastapi import Request, HTTPException, status, Depends, Header
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.user import User
@@ -114,3 +116,105 @@ def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -
         return None
     
     return user
+
+
+def get_current_user_jwt(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Get current authenticated user from JWT token (BR-006)
+    
+    Supports both Authorization header and query parameter:
+    - Authorization: Bearer <token>
+    - Query: ?token=<token>
+    
+    Used as a dependency in protected endpoints that support JWT
+    
+    Args:
+        authorization: Authorization header value
+        token: Token as query parameter (fallback)
+        db: Database session
+    
+    Returns:
+        User: Current authenticated user
+    
+    Raises:
+        HTTPException: If not authenticated or user not found
+    """
+    from app.core.jwt_auth import get_jwt_service
+    
+    # Extract token from Authorization header
+    jwt_token = None
+    if authorization and authorization.startswith("Bearer "):
+        jwt_token = authorization[7:]
+    elif token:
+        jwt_token = token
+    
+    if not jwt_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated. JWT token required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify token and get user info
+    jwt_service = get_jwt_service()
+    user_info = jwt_service.get_user_from_token(jwt_token)
+    
+    # Get user from database
+    user = db.query(User).filter(User.id == user_info["user_id"]).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
+    
+    return user
+
+
+def get_current_user_hybrid(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Get current user from either session or JWT token (BR-006)
+    
+    Tries JWT first, falls back to session-based auth.
+    Supports both authentication methods for backward compatibility.
+    
+    Args:
+        request: FastAPI request
+        authorization: Authorization header (Bearer token)
+        token: Token as query parameter
+        db: Database session
+    
+    Returns:
+        User: Current authenticated user
+    """
+    # Try JWT first
+    jwt_token = None
+    if authorization and authorization.startswith("Bearer "):
+        jwt_token = authorization[7:]
+    elif token:
+        jwt_token = token
+    
+    if jwt_token:
+        try:
+            return get_current_user_jwt(authorization=authorization, token=token, db=db)
+        except HTTPException:
+            pass  # Fall through to session auth
+    
+    # Fall back to session-based auth
+    return get_current_user(request, db)

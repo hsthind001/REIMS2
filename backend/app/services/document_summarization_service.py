@@ -14,6 +14,8 @@ import re
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+import hashlib
+import redis
 
 from app.models.document_summary import DocumentSummary, DocumentType, SummaryStatus
 from app.models.property import Property
@@ -34,6 +36,21 @@ class DocumentSummarizationService:
         self.db = db
         self.llm_provider = settings.LLM_PROVIDER
         self.llm_model = settings.LLM_MODEL
+        
+        # BR-011: Initialize Redis cache for performance optimization
+        try:
+            self.redis_client = redis.Redis(
+                host=getattr(settings, 'REDIS_HOST', 'localhost'),
+                port=getattr(settings, 'REDIS_PORT', 6379),
+                db=getattr(settings, 'REDIS_DB', 0),
+                decode_responses=True
+            )
+            self.cache_enabled = True
+            self.cache_ttl = 7 * 24 * 60 * 60  # 7 days TTL
+        except Exception as e:
+            logger.warning(f"Redis cache not available: {e}. Summarization will work without caching.")
+            self.redis_client = None
+            self.cache_enabled = False
 
         # Initialize LLM client
         self._init_llm_client()
@@ -128,7 +145,7 @@ class DocumentSummarizationService:
             self.db.commit()
             self.db.refresh(summary)
 
-            return {
+            result = {
                 "success": True,
                 "summary_id": summary.id,
                 "executive_summary": summary.executive_summary,
@@ -138,7 +155,13 @@ class DocumentSummarizationService:
                 "confidence_score": summary.confidence_score,
                 "has_quality_issues": summary.has_quality_issues(),
                 "processing_time_seconds": summary.processing_time_seconds,
+                "from_cache": False
             }
+            
+            # BR-011: Cache the result for future requests
+            self._cache_summary(cache_key, result)
+            
+            return result
 
         except Exception as e:
             logger.error(f"Lease summarization failed: {str(e)}")
@@ -157,7 +180,7 @@ class DocumentSummarizationService:
         created_by: Optional[int] = None
     ) -> Dict:
         """
-        Summarize an Offering Memorandum (OM)
+        Summarize an Offering Memorandum (OM) (BR-011: Optimized with caching)
 
         Extracts key information:
         - Property overview
@@ -174,6 +197,15 @@ class DocumentSummarizationService:
             - om_data: dict with structured OM info
         """
         start_time = time.time()
+        
+        # BR-011: Check cache first
+        cache_key = self._get_cache_key(document_text, "om")
+        cached_result = self._get_cached_summary(cache_key)
+        if cached_result:
+            cached_result["property_id"] = property_id
+            cached_result["from_cache"] = True
+            cached_result["processing_time_seconds"] = int((time.time() - start_time) * 1000)  # milliseconds
+            return cached_result
 
         try:
             # Verify property exists
@@ -222,7 +254,7 @@ class DocumentSummarizationService:
             self.db.commit()
             self.db.refresh(summary)
 
-            return {
+            result = {
                 "success": True,
                 "summary_id": summary.id,
                 "executive_summary": summary.executive_summary,
@@ -232,7 +264,13 @@ class DocumentSummarizationService:
                 "confidence_score": summary.confidence_score,
                 "has_quality_issues": summary.has_quality_issues(),
                 "processing_time_seconds": summary.processing_time_seconds,
+                "from_cache": False
             }
+            
+            # BR-011: Cache the result for future requests
+            self._cache_summary(cache_key, result)
+            
+            return result
 
         except Exception as e:
             logger.error(f"OM summarization failed: {str(e)}")

@@ -45,6 +45,9 @@ from app.models.document_summary import DocumentSummary
 # RAG models
 from app.models.document_chunk import DocumentChunk
 
+# Concordance models
+from app.models.concordance_table import ConcordanceTable
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -87,4 +90,6 @@ __all__ = [
     "DocumentSummary",
     # RAG
     "DocumentChunk",
+    # Concordance
+    "ConcordanceTable",
 ]

@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.core.config import settings
 
 # Create Celery instance
@@ -6,7 +7,11 @@ celery_app = Celery(
     "reims",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.example_tasks", "app.tasks.extraction_tasks"]
+    include=[
+        "app.tasks.example_tasks",
+        "app.tasks.extraction_tasks",
+        "app.tasks.anomaly_detection_tasks"  # BR-008: Nightly anomaly detection
+    ]
 )
 
 # Celery configuration - optimized for performance
@@ -28,6 +33,17 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,  # Requeue tasks if worker dies
     task_default_rate_limit='10/m',  # Prevent overwhelming database
 )
+
+# BR-008: Nightly batch job schedule (Celery Beat)
+celery_app.conf.beat_schedule = {
+    'nightly-anomaly-detection': {
+        'task': 'app.tasks.anomaly_detection_tasks.run_nightly_anomaly_detection',
+        'schedule': crontab(hour=2, minute=0),  # 2:00 AM UTC daily
+        'options': {
+            'expires': 3600,  # Task expires after 1 hour if not picked up
+        }
+    },
+}
 
 # Task routing (optional - for multiple queues)
 # DISABLED: Worker only listens to default "celery" queue

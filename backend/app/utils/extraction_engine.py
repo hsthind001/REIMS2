@@ -5,6 +5,7 @@ from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
 from app.utils.engines.base_extractor import ExtractionResult
 from app.utils.pdf_classifier import PDFClassifier, DocumentType
 from app.utils.quality_validator import QualityValidator
+from app.services.model_scoring_service import ModelScoringService, ScoringFactors
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
@@ -48,7 +49,7 @@ class MultiEngineExtractor:
     validates results, and provides quality scores
     """
     
-    def __init__(self):
+    def __init__(self, scoring_factors: Optional[ScoringFactors] = None):
         # Initialize core engines (always available)
         self.pymupdf = PyMuPDFEngine()
         self.pdfplumber = PDFPlumberEngine()
@@ -62,6 +63,9 @@ class MultiEngineExtractor:
         # Initialize utilities
         self.classifier = PDFClassifier()
         self.validator = QualityValidator()
+        
+        # Initialize external scoring service (models don't calculate their own confidence)
+        self.scoring_service = ModelScoringService(scoring_factors=scoring_factors)
 
         # Log available engines
         available_engines = ['PyMuPDF', 'PDFPlumber']
@@ -517,6 +521,225 @@ class MultiEngineExtractor:
         
         # Return best result
         return scored_results[0]["result"]
+    
+    def _convert_confidence_to_score(self, confidence: float) -> float:
+        """
+        Convert confidence score (0.0-1.0) to extraction score (1-10).
+        
+        Formula: score = 1 + (confidence * 9)
+        - confidence 0.0 → score 1.0
+        - confidence 0.5 → score 5.5
+        - confidence 1.0 → score 10.0
+        
+        Args:
+            confidence: Confidence score between 0.0 and 1.0
+            
+        Returns:
+            Score between 1.0 and 10.0
+        """
+        if confidence < 0:
+            return 1.0
+        if confidence > 1.0:
+            return 10.0
+        
+        score = 1.0 + (confidence * 9.0)
+        return round(score, 1)
+    
+    def extract_with_all_models_scored(
+        self,
+        pdf_data: bytes,
+        lang: str = "eng"
+    ) -> Dict[str, Any]:
+        """
+        Extract using ALL available models and score each on 1-10 scale.
+        
+        This method runs all available extraction engines (including AI models)
+        and returns a scored comparison of their results.
+        
+        Args:
+            pdf_data: Binary PDF data
+            lang: Language code for OCR engines (default: "eng")
+        
+        Returns:
+            dict: {
+                "results": [
+                    {
+                        "model": "PyMuPDF",
+                        "score": 8.5,
+                        "confidence": 0.85,
+                        "success": True,
+                        "text_length": 5000,
+                        "processing_time_ms": 120,
+                        "extracted_data": {...},
+                        "error": None
+                    },
+                    ...
+                ],
+                "best_model": "LayoutLM",
+                "best_score": 9.2,
+                "total_models": 6,
+                "successful_models": 5
+            }
+        """
+        all_results = []
+        
+        # List of all available engines with their display names
+        engines_to_run = [
+            ("PyMuPDF", self.pymupdf),
+            ("PDFPlumber", self.pdfplumber),
+        ]
+        
+        # Add optional engines if available
+        if self.camelot:
+            engines_to_run.append(("Camelot", self.camelot))
+        if self.ocr:
+            engines_to_run.append(("Tesseract OCR", self.ocr))
+        if self.layoutlm:
+            engines_to_run.append(("LayoutLMv3", self.layoutlm))
+        if self.easyocr:
+            engines_to_run.append(("EasyOCR", self.easyocr))
+        
+        logger.info(f"Running {len(engines_to_run)} extraction engines for scoring...")
+        
+        # Run all engines
+        for engine_name, engine in engines_to_run:
+            try:
+                logger.info(f"Running {engine_name}...")
+                
+                # Handle different engine types
+                # Most engines have extract() method returning ExtractionResult
+                # OCR engine has extract_text_from_pdf() returning Dict
+                extracted_data = {}
+                processing_time_ms = 0.0
+                success = True
+                error = None
+                
+                try:
+                    if hasattr(engine, 'extract'):
+                        result = engine.extract(pdf_data, lang=lang)
+                        
+                        # Extract data (NOT confidence - models don't calculate it)
+                        if hasattr(result, 'extracted_data') and result.extracted_data:
+                            extracted_data = result.extracted_data
+                        
+                        # Get processing time
+                        if hasattr(result, 'processing_time_ms') and result.processing_time_ms:
+                            processing_time_ms = float(result.processing_time_ms)
+                        
+                        success = result.success if hasattr(result, 'success') else True
+                        if not success:
+                            error = getattr(result, 'error_message', 'Extraction failed')
+                    elif hasattr(engine, 'extract_text_from_pdf'):
+                        # OCR engine uses extract_text_from_pdf()
+                        result = engine.extract_text_from_pdf(pdf_data, lang=lang)
+                        
+                        # Convert dict result to extracted_data format
+                        extracted_data = {
+                            'text': result.get('text', ''),
+                            'pages': result.get('pages', []),
+                            'total_pages': result.get('total_pages', 0),
+                            'total_words': result.get('total_words', 0),
+                            'total_chars': result.get('total_chars', 0)
+                        }
+                        processing_time_ms = 0.0  # OCR doesn't track time
+                        success = result.get('success', False)
+                        if not success:
+                            error = result.get('error', 'Extraction failed')
+                    else:
+                        # Fallback: try extract_text() method
+                        result = engine.extract_text(pdf_data)
+                        
+                        # Convert dict result to extracted_data format
+                        extracted_data = {
+                            'text': result.get('text', ''),
+                            'pages': result.get('pages', []),
+                            'total_pages': result.get('total_pages', 0),
+                            'total_words': result.get('total_words', 0),
+                            'total_chars': result.get('total_chars', 0)
+                        }
+                        processing_time_ms = 0.0
+                        success = result.get('success', False)
+                        if not success:
+                            error = result.get('error', 'Extraction failed')
+                except Exception as e:
+                    success = False
+                    error = str(e)
+                    extracted_data = {}
+                
+                # Score externally using client-defined factors (NOT model's internal confidence)
+                scoring_result = self.scoring_service.score_extraction_result(
+                    model_name=engine_name,
+                    extracted_data=extracted_data,
+                    processing_time_ms=processing_time_ms,
+                    success=success,
+                    error=error
+                )
+                
+                score = scoring_result['score']
+                confidence = scoring_result['confidence']
+                
+                # Extract text length from extracted_data
+                text_length = len(extracted_data.get('text', '')) if extracted_data else 0
+                
+                # Prepare result dict
+                result_dict = {
+                    "model": engine_name,
+                    "score": score,
+                    "confidence": confidence,
+                    "success": success,
+                    "text_length": text_length,
+                    "processing_time_ms": round(processing_time_ms, 2),
+                    "extracted_data": extracted_data,
+                    "score_breakdown": scoring_result.get('score_breakdown', {}),
+                    "error": error
+                }
+                
+                # Add page count if available
+                if extracted_data and 'total_pages' in extracted_data:
+                    result_dict["page_count"] = extracted_data['total_pages']
+                
+                all_results.append(result_dict)
+                logger.info(f"{engine_name} completed: score={score}, confidence={confidence:.3f}, text_length={text_length}")
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"{engine_name} failed: {error_msg}")
+                all_results.append({
+                    "model": engine_name,
+                    "score": 0.0,
+                    "confidence": 0.0,
+                    "success": False,
+                    "text_length": 0,
+                    "processing_time_ms": 0.0,
+                    "extracted_data": {},
+                    "error": error_msg
+                })
+        
+        # Find best model
+        successful_results = [r for r in all_results if r['success']]
+        if successful_results:
+            best = max(successful_results, key=lambda x: x['score'])
+            best_model = best['model']
+            best_score = best['score']
+        else:
+            best_model = None
+            best_score = 0.0
+        
+        # Calculate average score
+        avg_score = 0.0
+        if successful_results:
+            avg_score = sum(r['score'] for r in successful_results) / len(successful_results)
+        
+        logger.info(f"All models completed. Best: {best_model} (score: {best_score})")
+        
+        return {
+            "results": all_results,
+            "best_model": best_model,
+            "best_score": round(best_score, 1),
+            "total_models": len(all_results),
+            "successful_models": len(successful_results),
+            "average_score": round(avg_score, 1)
+        }
     
     def extract_with_consensus(
         self,

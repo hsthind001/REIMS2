@@ -26,6 +26,7 @@ from app.services.ensemble_engine import EnsembleEngine
 from app.services.active_learning_service import ActiveLearningService
 from app.services.model_monitoring_service import ModelMonitoringService
 from app.services.anomaly_detector import StatisticalAnomalyDetector
+from app.services.concordance_service import ConcordanceService
 from app.db.minio_client import download_file
 from app.core.config import settings
 
@@ -275,7 +276,41 @@ class ExtractionOrchestrator:
                 upload.notes = (upload.notes or "") + f"\nMetadata capture skipped: {str(metadata_error)[:100]}"
                 metadata_result = {"success": False, "error": str(metadata_error), "skipped_due_to_exception": True}
             
-            # Step 8: Update upload status to completed
+            # Step 8: GENERATE CONCORDANCE TABLE (BR-005: Model Comparison)
+            # NOTE: Concordance generation is NON-CRITICAL to prevent worker crashes
+            # Data is already saved, so we won't rollback if concordance fails
+            print(f"📊 Generating concordance table for model comparison...")
+            
+            concordance_result = {"success": True, "skipped": True}
+            
+            try:
+                concordance_service = ConcordanceService(self.db)
+                
+                concordance_result = concordance_service.generate_concordance_table(
+                    upload_id=upload_id,
+                    pdf_data=pdf_data,
+                    document_type=upload.document_type,
+                    property_id=upload.property_id,
+                    period_id=upload.period_id
+                )
+                
+                if concordance_result.get("success"):
+                    print(
+                        f"✅ Concordance table generated: "
+                        f"{concordance_result.get('total_fields', 0)} fields, "
+                        f"{concordance_result.get('overall_agreement_percentage', 0)}% overall agreement"
+                    )
+                else:
+                    print(f"⚠️  Concordance table generation failed (non-critical): {concordance_result.get('error', 'Unknown error')}")
+                    upload.notes = (upload.notes or "") + f"\nConcordance table skipped: {concordance_result.get('error', 'Unknown')[:100]}"
+            
+            except Exception as concordance_error:
+                # Catch any exceptions during concordance generation to prevent worker crashes
+                print(f"⚠️  Concordance generation exception (non-critical): {str(concordance_error)}")
+                upload.notes = (upload.notes or "") + f"\nConcordance table skipped: {str(concordance_error)[:100]}"
+                concordance_result = {"success": False, "error": str(concordance_error), "skipped_due_to_exception": True}
+            
+            # Step 9: Update upload status to completed
             upload.extraction_status = "completed"
             upload.extraction_completed_at = datetime.now()
             self.db.commit()
@@ -291,6 +326,7 @@ class ExtractionOrchestrator:
                 "needs_review": extraction_result["needs_review"] or len(warnings) > 0,
                 "validation_results": validation_results,
                 "metadata": metadata_result,  # NEW: Metadata capture results
+                "concordance": concordance_result,  # NEW: Concordance table results
                 "message": "Extraction completed - all critical validations passed"
             }
         
