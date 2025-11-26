@@ -1547,6 +1547,8 @@ class ExtractionOrchestrator:
                 self._detect_income_statement_anomalies(upload, period, detector)
             elif upload.document_type == 'balance_sheet':
                 self._detect_balance_sheet_anomalies(upload, period, detector)
+            elif upload.document_type == 'cash_flow':
+                self._detect_cash_flow_anomalies(upload, period, detector)
             
         except Exception as e:
             # Log error but don't fail extraction
@@ -1622,6 +1624,10 @@ class ExtractionOrchestrator:
                 'historical': [historical_totals_by_period[pid].get(account_code, 0) for pid in historical_totals_by_period.keys()]
             }
         
+        # Get threshold service for fetching thresholds
+        from app.services.anomaly_threshold_service import AnomalyThresholdService
+        threshold_service = AnomalyThresholdService(self.db)
+        
         # Detect anomalies for each account
         for account_code, data in account_groups.items():
             if not data['current']:
@@ -1635,23 +1641,29 @@ class ExtractionOrchestrator:
             if len(historical_values_filtered) < 1:  # Need at least 1 historical value for comparison
                 continue
             
-            # Run anomaly detection with filtered historical values
+            # Get threshold for this account code (returns default if not set)
+            threshold_value = float(threshold_service.get_threshold_value(account_code))
+            
+            # Run anomaly detection with filtered historical values and threshold
             result = detector.detect_anomalies(
                 document_id=upload.id,
                 field_name=account_code,
                 current_value=current_value,
-                historical_values=historical_values_filtered
+                historical_values=historical_values_filtered,
+                threshold_value=threshold_value
             )
             
             # Create anomaly_detections records
             if result.get('anomalies'):
                 for anomaly in result['anomalies']:
-                    # Calculate dynamic confidence based on deviation magnitude and data quality
+                    # Calculate confidence based on extraction accuracy
                     confidence = self._calculate_anomaly_confidence(
                         anomaly=anomaly,
                         historical_count=len(historical_values_filtered),
                         current_value=current_value,
-                        expected_value=statistics.mean(historical_values_filtered)
+                        expected_value=statistics.mean(historical_values_filtered),
+                        upload=upload,
+                        field_name=account_code
                     )
                     
                     self._create_anomaly_detection(
@@ -1727,6 +1739,10 @@ class ExtractionOrchestrator:
                 'historical': [historical_totals_by_period[pid].get(account_code, 0) for pid in historical_totals_by_period.keys()]
             }
         
+        # Get threshold service for fetching thresholds
+        from app.services.anomaly_threshold_service import AnomalyThresholdService
+        threshold_service = AnomalyThresholdService(self.db)
+        
         for account_code, data in account_groups.items():
             if not data['current']:
                 continue
@@ -1739,21 +1755,144 @@ class ExtractionOrchestrator:
             if len(historical_values_filtered) < 1:
                 continue
             
+            # Get threshold for this account code (returns default if not set)
+            threshold_value = float(threshold_service.get_threshold_value(account_code))
+            
             result = detector.detect_anomalies(
                 document_id=upload.id,
                 field_name=account_code,
                 current_value=current_value,
-                historical_values=historical_values_filtered
+                historical_values=historical_values_filtered,
+                threshold_value=threshold_value
             )
             
             if result.get('anomalies'):
                 for anomaly in result['anomalies']:
-                    # Calculate dynamic confidence based on deviation magnitude and data quality
+                    # Calculate confidence based on extraction accuracy
                     confidence = self._calculate_anomaly_confidence(
                         anomaly=anomaly,
                         historical_count=len(historical_values_filtered),
                         current_value=current_value,
-                        expected_value=statistics.mean(historical_values_filtered)
+                        expected_value=statistics.mean(historical_values_filtered),
+                        upload=upload,
+                        field_name=account_code
+                    )
+                    
+                    self._create_anomaly_detection(
+                        upload=upload,
+                        field_name=account_code,
+                        field_value=str(current_value),
+                        expected_value=str(statistics.mean(historical_values_filtered)),
+                        anomaly_type=anomaly.get('type', 'statistical'),
+                        severity=anomaly.get('severity', 'medium'),
+                        z_score=anomaly.get('z_score'),
+                        percentage_change=anomaly.get('percentage_change'),
+                        confidence=confidence
+                    )
+    
+    def _detect_cash_flow_anomalies(
+        self,
+        upload: DocumentUpload,
+        period: 'FinancialPeriod',
+        detector: StatisticalAnomalyDetector
+    ):
+        """Detect anomalies in cash flow data"""
+        from app.models.cash_flow_data import CashFlowData
+        from app.models.financial_period import FinancialPeriod
+        from datetime import timedelta
+        
+        # Get current period data
+        current_data = self.db.query(CashFlowData).filter(
+            CashFlowData.property_id == upload.property_id,
+            CashFlowData.period_id == upload.period_id
+        ).all()
+        
+        if not current_data:
+            return
+        
+        # Get historical periods (last 12 months)
+        cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
+        historical_periods = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == upload.property_id,
+            FinancialPeriod.id != period.id,  # Exclude current period by ID
+            FinancialPeriod.period_end_date >= cutoff_date
+        ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
+        
+        if len(historical_periods) < 1:
+            return
+        
+        # Get historical data for key accounts
+        historical_period_ids = [p.id for p in historical_periods]
+        historical_data = self.db.query(CashFlowData).filter(
+            CashFlowData.property_id == upload.property_id,
+            CashFlowData.period_id.in_(historical_period_ids)
+        ).all()
+        
+        # Group by account code and period - aggregate by period first
+        current_totals = {}
+        for item in current_data:
+            account_code = item.account_code
+            if account_code not in current_totals:
+                current_totals[account_code] = 0
+            current_totals[account_code] += float(item.period_amount or 0)
+        
+        historical_totals_by_period = {}
+        for item in historical_data:
+            period_id = item.period_id
+            account_code = item.account_code
+            if period_id not in historical_totals_by_period:
+                historical_totals_by_period[period_id] = {}
+            if account_code not in historical_totals_by_period[period_id]:
+                historical_totals_by_period[period_id][account_code] = 0
+            historical_totals_by_period[period_id][account_code] += float(item.period_amount or 0)
+        
+        account_groups = {}
+        for account_code in set(list(current_totals.keys()) + [code for period_data in historical_totals_by_period.values() for code in period_data.keys()]):
+            account_groups[account_code] = {
+                'current': [current_totals.get(account_code, 0)],
+                'historical': [historical_totals_by_period[pid].get(account_code, 0) for pid in historical_totals_by_period.keys()]
+            }
+        
+        # Get threshold service for fetching thresholds
+        from app.services.anomaly_threshold_service import AnomalyThresholdService
+        threshold_service = AnomalyThresholdService(self.db)
+        
+        # Detect anomalies for each account
+        for account_code, data in account_groups.items():
+            if not data['current']:
+                continue
+            
+            current_value = sum(data['current'])
+            historical_values = data['historical']
+            
+            # Filter out zero values from historical
+            historical_values_filtered = [v for v in historical_values if v != 0]
+            if len(historical_values_filtered) < 1:
+                continue
+            
+            # Get threshold for this account code (returns default if not set)
+            threshold_value = float(threshold_service.get_threshold_value(account_code))
+            
+            # Run anomaly detection with filtered historical values and threshold
+            result = detector.detect_anomalies(
+                document_id=upload.id,
+                field_name=account_code,
+                current_value=current_value,
+                historical_values=historical_values_filtered,
+                threshold_value=threshold_value
+            )
+            
+            # Create anomaly_detections records
+            if result.get('anomalies'):
+                for anomaly in result['anomalies']:
+                    # Calculate confidence based on extraction accuracy
+                    confidence = self._calculate_anomaly_confidence(
+                        anomaly=anomaly,
+                        historical_count=len(historical_values_filtered),
+                        current_value=current_value,
+                        expected_value=statistics.mean(historical_values_filtered),
+                        upload=upload,
+                        field_name=account_code
                     )
                     
                     self._create_anomaly_detection(
@@ -1773,65 +1912,109 @@ class ExtractionOrchestrator:
         anomaly: Dict,
         historical_count: int,
         current_value: float,
-        expected_value: float
+        expected_value: float,
+        upload: DocumentUpload = None,
+        field_name: str = None
     ) -> float:
         """
-        Calculate dynamic confidence score for anomaly detection.
+        Calculate confidence score based on extraction accuracy, not statistical factors.
         
-        Factors considered:
-        1. Deviation magnitude (larger deviations = higher confidence)
-        2. Number of historical data points (more data = higher confidence)
-        3. Statistical significance (Z-score or percentage change)
-        4. Data quality (non-zero values, consistent historical data)
+        Uses the extraction_confidence from the database to determine if the value
+        was correctly extracted. If extraction confidence is high (>= 95%), returns 100%.
         
         Returns:
             Confidence score between 0.0 and 1.0 (0% to 100%)
         """
-        base_confidence = 0.70  # Start with 70% base confidence
+        # Try to get extraction confidence from the database
+        extraction_confidence = None
         
-        # Factor 1: Deviation magnitude (percentage change)
-        pct_change = anomaly.get('percentage_change', 0)
-        if pct_change:
-            # Larger deviations = higher confidence
-            # 15% change = 70%, 50% change = 85%, 100%+ change = 95%+
-            if pct_change >= 100:
-                base_confidence += 0.25  # +25% for 100%+ change
-            elif pct_change >= 50:
-                base_confidence += 0.15  # +15% for 50-100% change
-            elif pct_change >= 25:
-                base_confidence += 0.10  # +10% for 25-50% change
-            else:
-                base_confidence += 0.05  # +5% for 15-25% change
+        if upload and field_name:
+            try:
+                # Determine document type and query appropriate table
+                # Note: An account_code might have multiple line items, so we aggregate confidence
+                if upload.document_type == 'income_statement':
+                    from app.models.income_statement_data import IncomeStatementData
+                    from sqlalchemy import func
+                    # First try to get items with non-null confidence
+                    items = self.db.query(IncomeStatementData).filter(
+                        IncomeStatementData.upload_id == upload.id,
+                        IncomeStatementData.account_code == field_name,
+                        IncomeStatementData.extraction_confidence.isnot(None)
+                    ).all()
+                    
+                    # If no items with confidence, try without the confidence filter to see if records exist
+                    if not items:
+                        items = self.db.query(IncomeStatementData).filter(
+                            IncomeStatementData.upload_id == upload.id,
+                            IncomeStatementData.account_code == field_name
+                        ).all()
+                    
+                    if items:
+                        # Use average confidence if multiple records exist (aggregated account)
+                        confidences = [float(item.extraction_confidence) for item in items if item.extraction_confidence is not None]
+                        if confidences:
+                            # Use average confidence for aggregated accounts
+                            extraction_confidence = sum(confidences) / len(confidences)
+                        
+                elif upload.document_type == 'balance_sheet':
+                    from app.models.balance_sheet_data import BalanceSheetData
+                    items = self.db.query(BalanceSheetData).filter(
+                        BalanceSheetData.upload_id == upload.id,
+                        BalanceSheetData.account_code == field_name,
+                        BalanceSheetData.extraction_confidence.isnot(None)
+                    ).all()
+                    
+                    if not items:
+                        items = self.db.query(BalanceSheetData).filter(
+                            BalanceSheetData.upload_id == upload.id,
+                            BalanceSheetData.account_code == field_name
+                        ).all()
+                    
+                    if items:
+                        confidences = [float(item.extraction_confidence) for item in items if item.extraction_confidence is not None]
+                        if confidences:
+                            extraction_confidence = sum(confidences) / len(confidences)
+                        
+                elif upload.document_type == 'cash_flow':
+                    from app.models.cash_flow_data import CashFlowData
+                    items = self.db.query(CashFlowData).filter(
+                        CashFlowData.upload_id == upload.id,
+                        CashFlowData.account_code == field_name,
+                        CashFlowData.extraction_confidence.isnot(None)
+                    ).all()
+                    
+                    if not items:
+                        items = self.db.query(CashFlowData).filter(
+                            CashFlowData.upload_id == upload.id,
+                            CashFlowData.account_code == field_name
+                        ).all()
+                    
+                    if items:
+                        confidences = [float(item.extraction_confidence) for item in items if item.extraction_confidence is not None]
+                        if confidences:
+                            extraction_confidence = sum(confidences) / len(confidences)
+            except Exception as e:
+                # If query fails, fall back to default
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to get extraction confidence for {field_name}: {str(e)}")
+                pass
         
-        # Factor 2: Z-score (if available, indicates statistical significance)
-        z_score = anomaly.get('z_score')
-        if z_score:
-            abs_z = abs(z_score)
-            if abs_z >= 4.0:
-                base_confidence += 0.10  # +10% for very high Z-score
-            elif abs_z >= 3.0:
-                base_confidence += 0.05  # +5% for high Z-score
-            elif abs_z >= 2.0:
-                base_confidence += 0.02  # +2% for moderate Z-score
+        # If we have extraction confidence, use it directly
+        if extraction_confidence is not None:
+            # Convert from 0-100 scale to 0-1 scale
+            confidence_decimal = extraction_confidence / 100.0
+            
+            # If extraction confidence is >= 95%, return 100% (1.0)
+            if confidence_decimal >= 0.95:
+                return 1.0
+            
+            # Otherwise return the actual extraction confidence
+            return confidence_decimal
         
-        # Factor 3: Historical data points (more data = more reliable)
-        if historical_count >= 5:
-            base_confidence += 0.05  # +5% for 5+ historical periods
-        elif historical_count >= 3:
-            base_confidence += 0.03  # +3% for 3-4 periods
-        elif historical_count >= 2:
-            base_confidence += 0.01  # +1% for 2 periods
-        # 1 period = no bonus (less reliable)
-        
-        # Factor 4: Severity (critical anomalies are more certain)
-        severity = anomaly.get('severity', 'medium')
-        if severity == 'critical':
-            base_confidence += 0.03  # +3% for critical severity
-        elif severity == 'high':
-            base_confidence += 0.02  # +2% for high severity
-        
-        # Cap at 100% (1.0)
-        return min(1.0, base_confidence)
+        # Fallback: if extraction confidence not available, return a default
+        # You can adjust this default based on your needs
+        return 0.85  # Default confidence if extraction confidence not found
     
     def _create_anomaly_detection(
         self,

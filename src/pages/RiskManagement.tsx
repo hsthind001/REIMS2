@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
 import '../App.css'
 import { propertyService } from '../lib/property'
+import {
+  getAllAccountsWithThresholds,
+  getDefaultThreshold,
+  setDefaultThreshold,
+  saveThreshold
+} from '../lib/anomalyThresholds'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 
@@ -68,13 +74,20 @@ interface Anomaly {
 }
 
 export default function RiskManagement() {
-  const [activeTab, setActiveTab] = useState<'alerts' | 'locks' | 'anomalies'>('alerts')
+  const [activeTab, setActiveTab] = useState<'alerts' | 'locks' | 'anomalies' | 'thresholds'>('alerts')
   const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<number | null>(null)
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [locks, setLocks] = useState<WorkflowLock[]>([])
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [loading, setLoading] = useState(false)
+  const [accountsWithThresholds, setAccountsWithThresholds] = useState<any[]>([])
+  const [defaultThreshold, setDefaultThreshold] = useState<number>(1000)
+  const [editingThreshold, setEditingThreshold] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState<number | null>(null)
+  const [thresholdsLoading, setThresholdsLoading] = useState(false)
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>('all')
+  const [selectedAnomalyDocumentType, setSelectedAnomalyDocumentType] = useState<string>('all')
   const [dashboardStats, setDashboardStats] = useState<any>({
     total_critical_alerts: 0,
     total_active_alerts: 0,
@@ -113,6 +126,18 @@ export default function RiskManagement() {
       setPropertyDSCRHealthy(false)
     }
   }, [selectedProperty, properties])
+
+  useEffect(() => {
+    if (selectedProperty && activeTab === 'anomalies') {
+      fetchAnomalies(selectedProperty)
+    }
+  }, [selectedAnomalyDocumentType, selectedProperty, activeTab])
+
+  useEffect(() => {
+    if (activeTab === 'thresholds') {
+      fetchThresholds()
+    }
+  }, [activeTab, selectedDocumentType])
 
   // Update KPIs whenever alerts, locks, or DSCR status changes
   useEffect(() => {
@@ -268,8 +293,19 @@ export default function RiskManagement() {
   const fetchAnomalies = async (propertyId: number) => {
     setLoading(true)
     try {
+      // Build query parameters
+      const params = new URLSearchParams({
+        property_id: propertyId.toString(),
+        limit: '100'
+      })
+      
+      // Add document_type filter if not 'all'
+      if (selectedAnomalyDocumentType && selectedAnomalyDocumentType !== 'all') {
+        params.append('document_type', selectedAnomalyDocumentType)
+      }
+      
       // Use the anomalies endpoint which returns actual anomaly_detections with document info
-      const response = await fetch(`${API_BASE_URL}/anomalies?property_id=${propertyId}&limit=100`, {
+      const response = await fetch(`${API_BASE_URL}/anomalies?${params.toString()}`, {
         credentials: 'include'
       })
       if (response.ok) {
@@ -284,6 +320,47 @@ export default function RiskManagement() {
       setAnomalies([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchThresholds = async () => {
+    setThresholdsLoading(true)
+    try {
+      const documentType = selectedDocumentType === 'all' ? undefined : selectedDocumentType
+      const [accounts, defaultThresh] = await Promise.all([
+        getAllAccountsWithThresholds(documentType),
+        getDefaultThreshold()
+      ])
+      setAccountsWithThresholds(accounts)
+      setDefaultThreshold(defaultThresh.default_threshold)
+    } catch (err) {
+      console.error('Failed to fetch thresholds:', err)
+      setAccountsWithThresholds([])
+    } finally {
+      setThresholdsLoading(false)
+    }
+  }
+
+  const handleSaveThreshold = async (accountCode: string, accountName: string, thresholdValue: number) => {
+    try {
+      await saveThreshold(accountCode, accountName, thresholdValue, true)
+      setEditingThreshold(null)
+      setEditingValue(null)
+      await fetchThresholds() // Refresh the list
+    } catch (err: any) {
+      console.error('Failed to save threshold:', err)
+      alert(`Failed to save threshold: ${err.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleSaveDefaultThreshold = async (thresholdValue: number) => {
+    try {
+      await setDefaultThreshold(thresholdValue)
+      setDefaultThreshold(thresholdValue)
+      await fetchThresholds() // Refresh the list to update default values
+    } catch (err: any) {
+      console.error('Failed to save default threshold:', err)
+      alert(`Failed to save default threshold: ${err.message || 'Unknown error'}`)
     }
   }
 
@@ -481,6 +558,12 @@ export default function RiskManagement() {
           onClick={() => setActiveTab('anomalies')}
         >
           📊 Anomalies ({anomalies.length})
+        </button>
+        <button
+          className={`tab ${activeTab === 'thresholds' ? 'active' : ''}`}
+          onClick={() => setActiveTab('thresholds')}
+        >
+          ⚙️ Value Setup
         </button>
       </div>
 
@@ -724,7 +807,33 @@ export default function RiskManagement() {
 
       {activeTab === 'anomalies' && (
         <div className="card">
-          <h3 className="card-title">Detected Anomalies</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>Detected Anomalies</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <label style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
+                Filter by Document Type:
+              </label>
+              <select
+                value={selectedAnomalyDocumentType}
+                onChange={(e) => setSelectedAnomalyDocumentType(e.target.value)}
+                style={{
+                  padding: '0.5rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  fontSize: '0.875rem',
+                  backgroundColor: 'white',
+                  cursor: 'pointer',
+                  minWidth: '200px'
+                }}
+              >
+                <option value="all">All Document Types</option>
+                <option value="income_statement">Income Statement</option>
+                <option value="balance_sheet">Balance Sheet</option>
+                <option value="cash_flow">Cash Flow Statement</option>
+                <option value="rent_roll">Rent Roll</option>
+              </select>
+            </div>
+          </div>
           {loading ? (
             <div className="empty-state">
               <div className="spinner"></div>
@@ -734,7 +843,8 @@ export default function RiskManagement() {
             <div className="anomalies-list" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {anomalies.map((anomaly, idx) => {
                 const getAnomalyExplanation = () => {
-                  const fieldName = anomaly.field_name || 'Unknown field'
+                  const accountName = anomaly.details.account_name || anomaly.field_name || 'Unknown field'
+                  const fieldCode = anomaly.field_name || 'Unknown field'
                   const actualValue = anomaly.details.field_value || anomaly.value?.toString() || 'N/A'
                   const expectedValue = anomaly.details.expected_value || 'Normal range'
                   const anomalyType = anomaly.type || 'unknown'
@@ -742,13 +852,13 @@ export default function RiskManagement() {
                   const explanations: Record<string, string> = {
                     'low_occupancy': `The occupancy rate is ${actualValue}, which is below the expected threshold of ${expectedValue}. This indicates the property has more vacant units than expected, which could impact revenue.`,
                     'low_liquidity': `The current ratio is ${actualValue}, which is below the expected minimum of ${expectedValue}. This indicates the property may have difficulty meeting short-term obligations.`,
-                    'extreme_outlier': `The ${fieldName} value of ${actualValue} is an extreme outlier compared to normal ranges. This requires immediate investigation as it may indicate data errors or significant financial issues.`,
+                    'extreme_outlier': `The ${accountName} (${fieldCode}) value of ${actualValue} is an extreme outlier compared to normal ranges. This requires immediate investigation as it may indicate data errors or significant financial issues.`,
                     'high_debt': `The debt-to-equity ratio is ${actualValue}, which is significantly higher than expected. This indicates high financial leverage and potential risk.`,
-                    'negative_value': `The ${fieldName} shows a negative value of ${actualValue}, which is unexpected. Negative values may indicate accounting errors or financial distress.`,
-                    'missing_data': `Required field ${fieldName} is missing from the document. This may indicate incomplete data extraction or missing information in the source document.`
+                    'negative_value': `The ${accountName} (${fieldCode}) shows a negative value of ${actualValue}, which is unexpected. Negative values may indicate accounting errors or financial distress.`,
+                    'missing_data': `Required field ${accountName} (${fieldCode}) is missing from the document. This may indicate incomplete data extraction or missing information in the source document.`
                   }
                   
-                  return explanations[anomalyType] || `The ${fieldName} value of ${actualValue} deviates from the expected ${expectedValue}. This anomaly was detected using statistical analysis.`
+                  return explanations[anomalyType] || `The ${accountName} (${fieldCode}) value of ${actualValue} deviates from the expected ${expectedValue}. This anomaly was detected using statistical analysis.`
                 }
                 
                 const getCalculationDetails = () => {
@@ -967,7 +1077,25 @@ export default function RiskManagement() {
                         border: '1px solid #ffc107'
                       }}>
                         <div style={{ fontSize: '0.75rem', color: '#856404', marginBottom: '0.25rem', fontWeight: '600' }}>
-                          ACTUAL VALUE
+                          {(() => {
+                            const accountName = anomaly.details.account_name || anomaly.field_name || 'N/A'
+                            // Get year from period_year field, or parse from period string (format: "YYYY/MM")
+                            // Fallback: extract from message field which contains "PROPERTY_CODE (YYYY/MM): ..."
+                            let year = null
+                            if (anomaly.details?.period_year) {
+                              year = String(anomaly.details.period_year)
+                            } else if (anomaly.details?.period) {
+                              const periodParts = String(anomaly.details.period).split('/')
+                              year = periodParts[0] || null
+                            } else if (anomaly.message) {
+                              // Extract year from message format: "PROPERTY_CODE (YYYY/MM): ..."
+                              const match = anomaly.message.match(/\((\d{4})\/\d{2}\)/)
+                              if (match) {
+                                year = match[1]
+                              }
+                            }
+                            return year ? `${accountName} (${year})` : accountName
+                          })()}
                         </div>
                         <div style={{ fontSize: '1.125rem', fontWeight: '600', color: '#856404' }}>
                           {anomaly.details.field_value || (anomaly.value !== undefined && anomaly.value !== null
@@ -988,7 +1116,19 @@ export default function RiskManagement() {
                         border: '1px solid #17a2b8'
                       }}>
                         <div style={{ fontSize: '0.75rem', color: '#0c5460', marginBottom: '0.25rem', fontWeight: '600' }}>
-                          EXPECTED VALUE
+                          {(() => {
+                            const accountName = anomaly.details.account_name || anomaly.field_name || 'N/A'
+                            // Get year from period_year field, or parse from period string (format: "YYYY/MM")
+                            // Use the same year as the first box (current file's year)
+                            let year = null
+                            if (anomaly.details?.period_year) {
+                              year = String(anomaly.details.period_year)
+                            } else if (anomaly.details?.period) {
+                              const periodParts = String(anomaly.details.period).split('/')
+                              year = periodParts[0] || null
+                            }
+                            return year ? `${accountName} (${year})` : accountName
+                          })()}
                         </div>
                         <div style={{ fontSize: '1.125rem', fontWeight: '600', color: '#0c5460' }}>
                           {anomaly.details.expected_value || 'Normal range'}
@@ -1014,11 +1154,32 @@ export default function RiskManagement() {
                           </span>
                         </div>
                       )}
-                      {anomaly.details.percentage_change && (
-                        <div>
-                          <strong>Change:</strong> {anomaly.details.percentage_change > 0 ? '+' : ''}{anomaly.details.percentage_change.toFixed(1)}%
-                        </div>
-                      )}
+                      {(() => {
+                        // Calculate percentage change from actual values if available, otherwise use stored value
+                        let pctChange = anomaly.details.percentage_change;
+                        
+                        // Recalculate from field_value and expected_value to ensure correct sign
+                        if (anomaly.details.field_value && anomaly.details.expected_value) {
+                          try {
+                            const currentVal = parseFloat(String(anomaly.details.field_value));
+                            const expectedVal = parseFloat(String(anomaly.details.expected_value));
+                            
+                            if (!isNaN(currentVal) && !isNaN(expectedVal) && expectedVal !== 0) {
+                              // Calculate: (current - expected) / expected * 100
+                              // Positive = increase, Negative = decrease
+                              pctChange = ((currentVal - expectedVal) / expectedVal) * 100;
+                            }
+                          } catch (e) {
+                            // Fall back to stored value if calculation fails
+                          }
+                        }
+                        
+                        return pctChange !== null && pctChange !== undefined ? (
+                          <div>
+                            <strong>Change:</strong> {pctChange > 0 ? '+' : ''}{pctChange.toFixed(1)}%
+                          </div>
+                        ) : null;
+                      })()}
                       {anomaly.details.confidence && (
                         <div>
                           <strong>Detection Confidence:</strong> {(anomaly.details.confidence * 100).toFixed(1)}%
@@ -1035,6 +1196,248 @@ export default function RiskManagement() {
               <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.5rem' }}>
                 Anomalies are automatically detected when financial data deviates from expected patterns or historical baselines.
               </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'thresholds' && (
+        <div className="card">
+          <h3 className="card-title">Value Setup - Anomaly Thresholds</h3>
+          <p style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
+            Configure absolute value thresholds for each account code. If the change in value exceeds the threshold, 
+            the field will appear in anomalies. Fields without custom thresholds use the global default.
+          </p>
+
+          {/* Document Type Filter */}
+          <div style={{ 
+            marginBottom: '1.5rem', 
+            padding: '1rem', 
+            backgroundColor: '#f9fafb', 
+            borderRadius: '8px',
+            border: '1px solid #e5e7eb'
+          }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#374151' }}>
+              Filter by Document Type
+            </label>
+            <select
+              value={selectedDocumentType}
+              onChange={(e) => setSelectedDocumentType(e.target.value)}
+              style={{
+                padding: '0.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                width: '250px',
+                fontSize: '0.875rem',
+                backgroundColor: 'white',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">All Document Types</option>
+              <option value="income_statement">Income Statement</option>
+              <option value="balance_sheet">Balance Sheet</option>
+              <option value="cash_flow">Cash Flow Statement</option>
+              <option value="rent_roll">Rent Roll</option>
+            </select>
+            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.5rem' }}>
+              Showing {accountsWithThresholds.length} account{accountsWithThresholds.length !== 1 ? 's' : ''} 
+              {selectedDocumentType !== 'all' && ` for ${selectedDocumentType.replace('_', ' ')}`}
+            </p>
+          </div>
+
+          {/* Global Default Threshold */}
+          <div style={{ 
+            marginBottom: '2rem', 
+            padding: '1rem', 
+            backgroundColor: '#f9fafb', 
+            borderRadius: '8px',
+            border: '1px solid #e5e7eb'
+          }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#374151' }}>
+              Global Default Threshold
+            </label>
+            <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.75rem' }}>
+              This threshold will be used for all account codes that don't have a custom threshold set.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="number"
+                value={defaultThreshold}
+                onChange={(e) => setDefaultThreshold(parseFloat(e.target.value) || 0)}
+                style={{
+                  padding: '0.5rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  width: '200px',
+                  fontSize: '0.875rem'
+                }}
+                step="0.01"
+                min="0"
+              />
+              <button
+                onClick={() => handleSaveDefaultThreshold(defaultThreshold)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: '500'
+                }}
+              >
+                Save Default
+              </button>
+            </div>
+          </div>
+
+          {/* Thresholds Table */}
+          {thresholdsLoading ? (
+            <div className="empty-state">
+              <div className="spinner"></div>
+              <p>Loading thresholds...</p>
+            </div>
+          ) : accountsWithThresholds.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Account Code</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Account Name</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Threshold Value</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Status</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'center', fontWeight: '600', color: '#374151' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accountsWithThresholds.map((account) => {
+                    const isEditing = editingThreshold === account.account_code
+                    const displayValue = isEditing 
+                      ? (editingValue !== null ? editingValue : (account.threshold_value || account.default_threshold))
+                      : (account.threshold_value || account.default_threshold)
+                    
+                    return (
+                      <tr 
+                        key={account.account_code}
+                        style={{ 
+                          borderBottom: '1px solid #e5e7eb',
+                          backgroundColor: isEditing ? '#fef3c7' : 'white'
+                        }}
+                      >
+                        <td style={{ padding: '0.75rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
+                          {account.account_code}
+                        </td>
+                        <td style={{ padding: '0.75rem', fontSize: '0.875rem' }}>
+                          {account.account_name}
+                        </td>
+                        <td style={{ padding: '0.75rem' }}>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              value={displayValue}
+                              onChange={(e) => setEditingValue(parseFloat(e.target.value) || 0)}
+                              style={{
+                                padding: '0.5rem',
+                                border: '1px solid #3b82f6',
+                                borderRadius: '4px',
+                                width: '150px',
+                                fontSize: '0.875rem'
+                              }}
+                              step="0.01"
+                              min="0"
+                              autoFocus
+                            />
+                          ) : (
+                            <span style={{ fontSize: '0.875rem', color: account.is_custom ? '#374151' : '#6b7280' }}>
+                              {displayValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {!account.is_custom && (
+                                <span style={{ fontSize: '0.75rem', color: '#9ca3af', marginLeft: '0.5rem' }}>
+                                  (default)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '4px',
+                            backgroundColor: account.is_custom ? '#dbeafe' : '#f3f4f6',
+                            color: account.is_custom ? '#1e40af' : '#6b7280',
+                            fontWeight: '500'
+                          }}>
+                            {account.is_custom ? 'Custom' : 'Default'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                          {isEditing ? (
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => handleSaveThreshold(account.account_code, account.account_name, editingValue || account.default_threshold)}
+                                style={{
+                                  padding: '0.375rem 0.75rem',
+                                  backgroundColor: '#10b981',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingThreshold(null)
+                                  setEditingValue(null)
+                                }}
+                                style={{
+                                  padding: '0.375rem 0.75rem',
+                                  backgroundColor: '#6b7280',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingThreshold(account.account_code)
+                                setEditingValue(account.threshold_value || account.default_threshold)
+                              }}
+                              style={{
+                                padding: '0.375rem 0.75rem',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                fontWeight: '500'
+                              }}
+                            >
+                              {account.is_custom ? 'Edit' : 'Set Custom'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <p>No accounts found. Please ensure chart of accounts is populated.</p>
             </div>
           )}
         </div>

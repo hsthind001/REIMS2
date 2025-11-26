@@ -2,7 +2,7 @@
 Anomaly Detection API Endpoints
 Provides API access to anomaly detection and management.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
@@ -36,10 +36,112 @@ class AnomalyDetectionRequest(BaseModel):
     method: str = "statistical"  # statistical or ml
 
 
+@router.post("/detect/{upload_id}", response_model=dict)
+async def trigger_anomaly_detection(
+    upload_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Manually trigger anomaly detection for an existing document upload.
+    
+    Useful for:
+    - Re-running anomaly detection after threshold changes
+    - Running detection on documents uploaded before anomaly detection was implemented
+    - Testing anomaly detection logic
+    
+    Returns:
+    - Success status
+    - Number of anomalies detected
+    """
+    from app.models.document_upload import DocumentUpload
+    from app.models.financial_period import FinancialPeriod
+    from app.services.extraction_orchestrator import ExtractionOrchestrator
+    from app.services.anomaly_detector import StatisticalAnomalyDetector
+    
+    # Verify upload exists
+    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload {upload_id} not found"
+        )
+    
+    # Check if extraction is completed
+    if upload.extraction_status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot detect anomalies - extraction status is '{upload.extraction_status}'. Must be 'completed'."
+        )
+    
+    try:
+        # Get the period for this upload
+        period = db.query(FinancialPeriod).filter(
+            FinancialPeriod.id == upload.period_id
+        ).first()
+        
+        if not period:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Period not found for upload {upload_id}"
+            )
+        
+        # Delete existing anomalies for this upload (re-detection)
+        from sqlalchemy import text
+        deleted_count = db.execute(
+            text("DELETE FROM anomaly_detections WHERE document_id = :upload_id"),
+            {"upload_id": upload_id}
+        ).rowcount
+        db.commit()
+        
+        # Run anomaly detection
+        orchestrator = ExtractionOrchestrator(db)
+        detector = StatisticalAnomalyDetector(db)
+        
+        if upload.document_type == 'income_statement':
+            orchestrator._detect_income_statement_anomalies(upload, period, detector)
+        elif upload.document_type == 'balance_sheet':
+            orchestrator._detect_balance_sheet_anomalies(upload, period, detector)
+        elif upload.document_type == 'cash_flow':
+            orchestrator._detect_cash_flow_anomalies(upload, period, detector)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Anomaly detection not supported for document type: {upload.document_type}"
+            )
+        
+        db.commit()
+        
+        # Count new anomalies
+        new_anomaly_count = db.execute(
+            text("SELECT COUNT(*) FROM anomaly_detections WHERE document_id = :upload_id"),
+            {"upload_id": upload_id}
+        ).scalar()
+        
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "document_type": upload.document_type,
+            "deleted_old_anomalies": deleted_count,
+            "new_anomalies_detected": new_anomaly_count,
+            "message": f"Anomaly detection completed. {new_anomaly_count} anomalies detected."
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Anomaly detection failed: {str(e)}"
+        )
+
+
 @router.get("/", response_model=List[AnomalyResponse])
 async def list_anomalies(
     property_id: Optional[int] = Query(None),
     severity: Optional[str] = Query(None),
+    document_type: Optional[str] = Query(None, description="Filter by document type (income_statement, balance_sheet, cash_flow, rent_roll)"),
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db)
 ):
@@ -49,12 +151,14 @@ async def list_anomalies(
     Query Parameters:
     - property_id: Filter by property
     - severity: Filter by severity (critical, high, medium, low)
+    - document_type: Filter by document type (income_statement, balance_sheet, cash_flow, rent_roll)
     - limit: Maximum results (default: 100, max: 1000)
     """
     from sqlalchemy import text
     
     # Build SQL query (models don't exist yet, use direct SQL)
     # Include financial metrics to show underlying calculation data
+    # Include account name from chart_of_accounts
     sql = """
         SELECT 
             ad.id,
@@ -75,6 +179,8 @@ async def list_anomalies(
             du.file_name,
             du.document_type,
             du.upload_date,
+            -- Account name from chart_of_accounts
+            COALESCE(coa.account_name, ad.field_name) as account_name,
             -- Include underlying metrics for calculated fields
             fm.total_current_assets,
             fm.total_current_liabilities,
@@ -88,6 +194,7 @@ async def list_anomalies(
         JOIN document_uploads du ON ad.document_id = du.id
         JOIN properties p ON du.property_id = p.id
         JOIN financial_periods fp ON du.period_id = fp.id
+        LEFT JOIN chart_of_accounts coa ON coa.account_code = ad.field_name
         LEFT JOIN financial_metrics fm ON fm.property_id = p.id AND fm.period_id = fp.id
         WHERE 1=1
     """
@@ -101,6 +208,10 @@ async def list_anomalies(
     if severity:
         sql += " AND ad.severity = :severity"
         params['severity'] = severity
+    
+    if document_type:
+        sql += " AND du.document_type = :document_type"
+        params['document_type'] = document_type
     
     sql += " ORDER BY ad.detected_at DESC LIMIT :limit"
     params['limit'] = limit
@@ -133,12 +244,15 @@ async def list_anomalies(
                 'property_id': row.property_id,
                 'period': f"{row.period_year}/{row.period_month:02d}",
                 'period_id': row.period_id,
+                'period_year': row.period_year,
+                'period_month': row.period_month,
                 'document_id': row.document_id,
                 'file_name': row.file_name,
                 'document_type': row.document_type,
                 'upload_date': row.upload_date.isoformat() if row.upload_date else None,
                 'expected_value': row.expected_value,
                 'field_value': row.field_value,
+                'account_name': getattr(row, 'account_name', None) or row.field_name,
                 'z_score': safe_float(row.z_score),
                 'percentage_change': safe_float(row.percentage_change),
                 'confidence': safe_float(row.confidence) if row.confidence else None,

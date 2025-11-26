@@ -238,6 +238,32 @@ export interface ChartOfAccount {
   is_active: boolean;
 }
 
+// ===== Anomaly Thresholds =====
+
+export interface AnomalyThreshold {
+  id: number;
+  account_code: string;
+  account_name: string;
+  threshold_value: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface AccountWithThreshold {
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  threshold_value: number | null;
+  is_custom: boolean;
+  default_threshold: number;
+}
+
+export interface DefaultThreshold {
+  default_threshold: number;
+  description?: string;
+}
+
 // ===== Pagination =====
 
 export interface PaginatedResponse<T> {

@@ -5,7 +5,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -15,15 +15,18 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-# Create database views
+# Create database views (non-blocking - app will start even if views fail)
 try:
     views_result = create_database_views(engine)
     if views_result["success"]:
         print(f"✅ Created {views_result['total_views']} database views")
     else:
-        print(f"⚠️ View creation had errors: {views_result.get('errors', [])}")
+        print(f"⚠️ View creation had {len(views_result.get('errors', []))} errors (app will continue)")
+        if views_result.get('errors'):
+            for error in views_result['errors'][:5]:  # Show first 5 errors
+                print(f"   - {error}")
 except Exception as e:
-    print(f"⚠️ Failed to create views: {e}")
+    print(f"⚠️ Failed to create views: {e} (app will continue)")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -99,6 +102,9 @@ app.include_router(document_summary.router, prefix=settings.API_V1_STR, tags=["d
 
 # Concordance tables
 app.include_router(concordance.router, prefix=settings.API_V1_STR, tags=["concordance"])
+
+# Anomaly thresholds
+app.include_router(anomaly_thresholds.router, prefix=settings.API_V1_STR + "/anomaly-thresholds", tags=["anomaly-thresholds"])
 
 
 @app.get("/")

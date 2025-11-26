@@ -48,6 +48,9 @@ from app.models.document_chunk import DocumentChunk
 # Concordance models
 from app.models.concordance_table import ConcordanceTable
 
+# Anomaly threshold models
+from app.models.anomaly_threshold import AnomalyThreshold, SystemConfig
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -92,4 +95,7 @@ __all__ = [
     "DocumentChunk",
     # Concordance
     "ConcordanceTable",
+    # Anomaly thresholds
+    "AnomalyThreshold",
+    "SystemConfig",
 ]

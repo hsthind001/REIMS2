@@ -133,18 +133,21 @@ class AnomalyDetectionService:
                 curr_value = values[i]
                 
                 if prev_value != 0:
-                    pct_change = abs((curr_value - prev_value) / prev_value * 100)
+                    # Calculate percentage change preserving the sign (positive = increase, negative = decrease)
+                    pct_change = (curr_value - prev_value) / prev_value * 100
+                    pct_change_abs = abs(pct_change)
                     
-                    if pct_change > self.PERCENTAGE_CHANGE_THRESHOLD:
+                    # Check threshold using absolute value, but store the signed value
+                    if pct_change_abs > self.PERCENTAGE_CHANGE_THRESHOLD:
                         anomalies.append({
                             'type': 'percentage_change',
-                            'severity': 'high' if pct_change > 100 else 'medium',
+                            'severity': 'high' if pct_change_abs > 100 else 'medium',
                             'record_id': records[i].id,
                             'field_name': field,
                             'value': curr_value,
                             'previous_value': prev_value,
-                            'percentage_change': round(pct_change, 2),
-                            'message': f'{field} changed by {pct_change:.1f}% from {prev_value:,.2f} to {curr_value:,.2f}'
+                            'percentage_change': round(pct_change, 2),  # Preserve sign: positive for increase, negative for decrease
+                            'message': f'{field} changed by {pct_change:+.1f}% from {prev_value:,.2f} to {curr_value:,.2f}'
                         })
         
         return anomalies

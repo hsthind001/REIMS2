@@ -8,9 +8,17 @@ from typing import List, Optional
 from decimal import Decimal
 from datetime import datetime, date
 from io import BytesIO
-from weasyprint import HTML, CSS
 from sqlalchemy.orm import Session
 import logging
+
+# Optional import for weasyprint (PDF generation)
+try:
+    from weasyprint import HTML, CSS
+    WEASYPRINT_AVAILABLE = True
+except ImportError:
+    WEASYPRINT_AVAILABLE = False
+    HTML = None
+    CSS = None
 
 from app.models.income_statement_data import IncomeStatementData
 from app.models.income_statement_header import IncomeStatementHeader
@@ -18,6 +26,9 @@ from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 
 logger = logging.getLogger(__name__)
+
+if not WEASYPRINT_AVAILABLE:
+    logger.warning("weasyprint not available - PDF generation will be disabled")
 
 
 class PDFGeneratorService:
@@ -38,6 +49,9 @@ class PDFGeneratorService:
         Returns:
             BytesIO: PDF file as bytes
         """
+        if not WEASYPRINT_AVAILABLE:
+            raise ImportError("weasyprint is not installed. Install it with: pip install weasyprint")
+        
         try:
             # Get header with property and period info
             header = db.query(IncomeStatementHeader).filter(

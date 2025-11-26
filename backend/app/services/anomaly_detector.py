@@ -27,10 +27,18 @@ class StatisticalAnomalyDetector:
         document_id: int,
         field_name: str,
         current_value: float,
-        historical_values: List[float]
+        historical_values: List[float],
+        threshold_value: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Detect anomalies using multiple statistical methods.
+        
+        Args:
+            document_id: Document ID
+            field_name: Field/account code name
+            current_value: Current period value
+            historical_values: List of historical values for comparison
+            threshold_value: Absolute value threshold (if None, uses default percentage-based logic)
         
         Returns:
             Dict with anomaly detection results
@@ -46,10 +54,17 @@ class StatisticalAnomalyDetector:
             if z_anomaly:
                 anomalies.append(z_anomaly)
         
-        # Percentage change detection (works with 1+ values)
-        pct_anomaly = self._detect_percentage_change(current_value, historical_values)
-        if pct_anomaly:
-            anomalies.append(pct_anomaly)
+        # Absolute value or percentage change detection (works with 1+ values)
+        if threshold_value is not None:
+            # Use absolute value threshold
+            abs_anomaly = self._detect_absolute_value_anomaly(current_value, historical_values, threshold_value)
+            if abs_anomaly:
+                anomalies.append(abs_anomaly)
+        else:
+            # Fallback to percentage-based detection (for backward compatibility)
+            pct_anomaly = self._detect_percentage_change(current_value, historical_values)
+            if pct_anomaly:
+                anomalies.append(pct_anomaly)
         
         return {
             "anomalies": anomalies,
@@ -84,12 +99,58 @@ class StatisticalAnomalyDetector:
         
         return None
     
+    def _detect_absolute_value_anomaly(
+        self,
+        value: float,
+        historical_values: List[float],
+        threshold_value: float
+    ) -> Optional[Dict]:
+        """
+        Detect anomaly using absolute value threshold.
+        
+        Anomaly is detected if: abs(current_value - expected_value) > threshold_value
+        """
+        if not historical_values:
+            return None
+        
+        # Use average of all historical values (or single value if only one)
+        recent_avg = statistics.mean(historical_values) if len(historical_values) > 0 else None
+        
+        if recent_avg is None:
+            return None
+        
+        # Calculate absolute difference
+        absolute_difference = abs(value - recent_avg)
+        
+        # Check if difference exceeds threshold
+        if absolute_difference > threshold_value:
+            # Calculate percentage change for display purposes
+            if recent_avg != 0:
+                pct_change = ((value - recent_avg) / recent_avg) * 100
+            else:
+                pct_change = 0.0
+            
+            # Determine severity based on how much the threshold is exceeded
+            threshold_exceeded_ratio = absolute_difference / threshold_value if threshold_value > 0 else 0
+            
+            severity = "critical" if threshold_exceeded_ratio > 3.0 else "high" if threshold_exceeded_ratio > 2.0 else "medium"
+            
+            return {
+                "type": "absolute_value_change",
+                "absolute_difference": round(absolute_difference, 2),
+                "percentage_change": round(pct_change, 2),  # For display purposes
+                "threshold_value": threshold_value,
+                "severity": severity
+            }
+        
+        return None
+    
     def _detect_percentage_change(
         self,
         value: float,
         historical_values: List[float]
     ) -> Optional[Dict]:
-        """Detect anomaly using percentage change"""
+        """Detect anomaly using percentage change (legacy method for backward compatibility)"""
         if not historical_values:
             return None
         
@@ -99,13 +160,16 @@ class StatisticalAnomalyDetector:
         if recent_avg is None or recent_avg == 0:
             return None
         
-        pct_change = abs((value - recent_avg) / recent_avg)
+        # Calculate percentage change preserving the sign (positive = increase, negative = decrease)
+        pct_change = (value - recent_avg) / recent_avg
+        pct_change_abs = abs(pct_change)
         
-        if pct_change > self.percentage_change_threshold:
+        # Check threshold using absolute value, but store the signed value
+        if pct_change_abs > self.percentage_change_threshold:
             return {
                 "type": "percentage_change",
-                "percentage_change": round(pct_change * 100, 2),
-                "severity": "critical" if pct_change > 0.5 else "high" if pct_change > 0.25 else "medium"
+                "percentage_change": round(pct_change * 100, 2),  # Preserve sign: positive for increase, negative for decrease
+                "severity": "critical" if pct_change_abs > 0.5 else "high" if pct_change_abs > 0.25 else "medium"
             }
         
         return None

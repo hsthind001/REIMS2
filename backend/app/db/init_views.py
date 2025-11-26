@@ -51,20 +51,34 @@ def create_database_views(engine: Engine) -> dict:
         if current_statement:
             view_statements.append('\n'.join(current_statement))
         
-        # Execute each view creation
+        # Execute each view creation with proper error handling
         with engine.connect() as conn:
             for statement in view_statements:
                 if 'CREATE OR REPLACE VIEW' in statement:
                     try:
+                        # Extract view name first
+                        view_name = statement.split('VIEW')[1].split('AS')[0].strip()
+                        
+                        # Drop view first if it exists (to avoid column drop errors)
+                        try:
+                            conn.execute(text(f"DROP VIEW IF EXISTS {view_name} CASCADE"))
+                            conn.commit()
+                        except Exception as drop_error:
+                            # Ignore drop errors, view might not exist
+                            conn.rollback()
+                        
+                        # Now create/replace the view
                         conn.execute(text(statement))
                         conn.commit()
-                        
-                        # Extract view name
-                        view_name = statement.split('VIEW')[1].split('AS')[0].strip()
                         views_created.append(view_name)
                         
                     except Exception as e:
-                        error_msg = f"Failed to create view: {str(e)[:100]}"
+                        # Rollback transaction on error
+                        try:
+                            conn.rollback()
+                        except:
+                            pass
+                        error_msg = f"Failed to create view {view_name if 'view_name' in locals() else 'unknown'}: {str(e)[:100]}"
                         errors.append(error_msg)
                         print(f"Error creating view: {e}")
         

@@ -1,13 +1,15 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 import logging
 from app.utils.engines.pymupdf_engine import PyMuPDFEngine
 from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
 from app.utils.engines.base_extractor import ExtractionResult
 from app.utils.pdf_classifier import PDFClassifier, DocumentType
 from app.utils.quality_validator import QualityValidator
-from app.services.model_scoring_service import ModelScoringService, ScoringFactors
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+
+if TYPE_CHECKING:
+    from app.services.model_scoring_service import ScoringFactors
 
 # Optional engines with heavy dependencies - import gracefully
 logger = logging.getLogger(__name__)
@@ -49,7 +51,10 @@ class MultiEngineExtractor:
     validates results, and provides quality scores
     """
     
-    def __init__(self, scoring_factors: Optional[ScoringFactors] = None):
+    def __init__(self, scoring_factors: Optional['ScoringFactors'] = None):
+        # Import here to avoid circular import
+        from app.services.model_scoring_service import ModelScoringService
+        
         # Initialize core engines (always available)
         self.pymupdf = PyMuPDFEngine()
         self.pdfplumber = PDFPlumberEngine()
