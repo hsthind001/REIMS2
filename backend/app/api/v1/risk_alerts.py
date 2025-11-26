@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 class AlertAcknowledgeRequest(BaseModel):
     acknowledged_by: int
+    email: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class AlertResolveRequest(BaseModel):
@@ -231,7 +233,7 @@ def acknowledge_alert(
     db: Session = Depends(get_db)
 ):
     """
-    Acknowledge an alert
+    Acknowledge an alert and optionally send email notification
     """
     alert = db.query(CommitteeAlert).filter(CommitteeAlert.id == alert_id).first()
     if not alert:
@@ -243,6 +245,7 @@ def acknowledge_alert(
             detail=f"Alert is not active (current status: {alert.status.value})"
         )
 
+    # Update alert status
     alert.status = AlertStatus.ACKNOWLEDGED
     alert.acknowledged_at = datetime.utcnow()
     alert.acknowledged_by = request.acknowledged_by
@@ -253,10 +256,42 @@ def acknowledge_alert(
 
     logger.info(f"Alert {alert_id} acknowledged by user {request.acknowledged_by}")
 
+    # Send email if provided
+    email_sent = False
+    email_error = None
+    development_mode = False
+    if request.email:
+        try:
+            from app.services.committee_notification_service import CommitteeNotificationService
+            notification_service = CommitteeNotificationService(db)
+            
+            # Get comprehensive alert details for email
+            email_result = notification_service.send_alert_acknowledgment_email(
+                alert=alert,
+                recipient_email=request.email
+            )
+            
+            if email_result.get("success"):
+                email_sent = True
+                development_mode = email_result.get("development_mode", False)
+                if development_mode:
+                    logger.info(f"Alert acknowledgment email logged (development mode) for {request.email}")
+                else:
+                    logger.info(f"Alert acknowledgment email sent to {request.email}")
+            else:
+                email_error = email_result.get("error", "Unknown error")
+                logger.warning(f"Failed to send acknowledgment email: {email_error}")
+        except Exception as e:
+            email_error = str(e)
+            logger.error(f"Exception sending acknowledgment email: {str(e)}", exc_info=True)
+
     return {
         "success": True,
         "alert": alert.to_dict(),
-        "message": "Alert acknowledged"
+        "message": "Alert acknowledged",
+        "email_sent": email_sent,
+        "email_error": email_error,
+        "development_mode": development_mode
     }
 
 

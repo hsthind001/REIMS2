@@ -104,6 +104,10 @@ export default function RiskManagement() {
   } | null>(null)
   const [showTooltip, setShowTooltip] = useState<string | null>(null)
   const [propertyDSCRHealthy, setPropertyDSCRHealthy] = useState<boolean>(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
+  const [emailAddress, setEmailAddress] = useState('')
+  const [emailError, setEmailError] = useState('')
 
   useEffect(() => {
     fetchProperties()
@@ -365,18 +369,70 @@ export default function RiskManagement() {
   }
 
   const acknowledgeAlert = async (alertId: number) => {
+    // Show email modal instead of directly acknowledging
+    setSelectedAlertId(alertId)
+    setShowEmailModal(true)
+    setEmailAddress('')
+    setEmailError('')
+  }
+
+  const handleEmailSubmit = async () => {
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailAddress || !emailRegex.test(emailAddress)) {
+      setEmailError('Please enter a valid email address')
+      return
+    }
+
+    if (!selectedAlertId) return
+
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${alertId}/acknowledge`, {
+      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${selectedAlertId}/acknowledge`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acknowledged_by: 1, notes: 'Acknowledged from UI' })
+        body: JSON.stringify({ 
+          acknowledged_by: 1, 
+          email: emailAddress,
+          notes: 'Acknowledged from UI' 
+        })
       })
-      if (response.ok && selectedProperty) {
-        fetchAlerts(selectedProperty)
+      
+      if (response.ok) {
+        const data = await response.json()
+        
+        // Always acknowledge the alert even if email fails
+        setShowEmailModal(false)
+        setSelectedAlertId(null)
+        setEmailAddress('')
+        setEmailError('')
+        if (selectedProperty) {
+          fetchAlerts(selectedProperty)
+        }
+        
+        // Show success message based on email status
+        if (data.email_sent) {
+          if (data.development_mode) {
+            alert('✅ Alert acknowledged! Email logged (SMTP server not configured - check backend logs for email content).')
+          } else {
+            alert('✅ Alert acknowledged and email sent successfully!')
+          }
+        } else if (data.email_error) {
+          // Alert was acknowledged but email failed - still show success for acknowledgment
+          alert(`✅ Alert acknowledged successfully!\n\n⚠️ Note: Email could not be sent: ${data.email_error}\n\nYou can check the alert details in the system.`)
+        } else {
+          alert('✅ Alert acknowledged successfully!')
+        }
+      } else {
+        // Only show error if the acknowledgment itself failed
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to acknowledge alert' }))
+        const errorMessage = errorData.detail || 'Failed to acknowledge alert. Please try again.'
+        setEmailError(errorMessage)
+        console.error('Acknowledge alert error:', errorData)
       }
     } catch (err) {
       console.error('Failed to acknowledge alert:', err)
+      setEmailError('Failed to send email. Please try again.')
     }
   }
 
@@ -1448,6 +1504,97 @@ export default function RiskManagement() {
           <div className="loading-state">
             <div className="spinner"></div>
             <p>Loading risk data...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Enter Email Address</h3>
+            <p style={{ marginBottom: '1rem', color: '#6b7280' }}>
+              Please provide an email address where you would like to receive the alert details.
+            </p>
+            <input
+              type="email"
+              value={emailAddress}
+              onChange={(e) => {
+                setEmailAddress(e.target.value)
+                setEmailError('')
+              }}
+              placeholder="your.email@example.com"
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: `1px solid ${emailError ? '#dc3545' : '#d1d5db'}`,
+                borderRadius: '4px',
+                fontSize: '1rem',
+                marginBottom: '0.5rem'
+              }}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleEmailSubmit()
+                }
+              }}
+            />
+            {emailError && (
+              <div style={{ color: '#dc3545', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                {emailError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false)
+                  setSelectedAlertId(null)
+                  setEmailAddress('')
+                  setEmailError('')
+                }}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#6b7280',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEmailSubmit}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Send Email & Acknowledge
+              </button>
+            </div>
           </div>
         </div>
       )}
