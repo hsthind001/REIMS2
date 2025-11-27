@@ -12,6 +12,9 @@ from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.services.anomaly_detection_service import AnomalyDetectionService
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -343,4 +346,182 @@ async def acknowledge_anomaly(
         "acknowledged_by": current_user.id,
         "acknowledged_at": datetime.utcnow().isoformat()
     }
+
+
+class FieldCoordinatesResponse(BaseModel):
+    """Response for field coordinates endpoint."""
+    has_coordinates: bool
+    coordinates: Optional[dict] = None
+    pdf_url: Optional[str] = None
+    explanation: str
+
+
+@router.get("/{anomaly_id}/field-coordinates", response_model=FieldCoordinatesResponse)
+async def get_field_coordinates(
+    anomaly_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get field coordinates and PDF URL for an anomaly.
+    
+    Returns:
+    - has_coordinates: Whether coordinates exist in database
+    - coordinates: Field coordinates (x0, y0, x1, y1, page_number) if available
+    - pdf_url: Presigned URL for PDF document
+    - explanation: Explanation message for user
+    """
+    from sqlalchemy import text, and_
+    from app.models.document_upload import DocumentUpload
+    from app.models.property import Property
+    from app.models.financial_period import FinancialPeriod
+    from app.models.balance_sheet_data import BalanceSheetData
+    from app.models.income_statement_data import IncomeStatementData
+    from app.models.cash_flow_data import CashFlowData
+    from app.models.rent_roll_data import RentRollData
+    from app.db.minio_client import get_file_url
+    from app.core.config import settings
+    
+    # Get anomaly details
+    anomaly_query = text("""
+        SELECT 
+            ad.id,
+            ad.document_id,
+            ad.field_name,
+            du.file_name,
+            du.document_type,
+            du.file_path,
+            du.property_id,
+            du.period_id,
+            p.property_code,
+            fp.period_year,
+            fp.period_month
+        FROM anomaly_detections ad
+        JOIN document_uploads du ON ad.document_id = du.id
+        JOIN properties p ON du.property_id = p.id
+        JOIN financial_periods fp ON du.period_id = fp.id
+        WHERE ad.id = :anomaly_id
+    """)
+    
+    result = db.execute(anomaly_query, {"anomaly_id": anomaly_id}).first()
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anomaly {anomaly_id} not found"
+        )
+    
+    document_id = result.document_id
+    field_name = result.field_name  # This is the account_code
+    document_type = result.document_type
+    file_path = result.file_path
+    property_code = result.property_code
+    period_year = result.period_year
+    period_month = result.period_month
+    
+    # Query financial data tables for coordinates
+    coordinates = None
+    has_coordinates = False
+    
+    # Try each table based on document type
+    if document_type == 'balance_sheet':
+        record = db.query(BalanceSheetData).filter(
+            and_(
+                BalanceSheetData.upload_id == document_id,
+                BalanceSheetData.account_code == field_name
+            )
+        ).first()
+        
+        if record and record.extraction_x0 is not None:
+            coordinates = {
+                "x0": float(record.extraction_x0),
+                "y0": float(record.extraction_y0),
+                "x1": float(record.extraction_x1),
+                "y1": float(record.extraction_y1),
+                "page_number": record.page_number or 1
+            }
+            has_coordinates = True
+    
+    elif document_type == 'income_statement':
+        record = db.query(IncomeStatementData).filter(
+            and_(
+                IncomeStatementData.upload_id == document_id,
+                IncomeStatementData.account_code == field_name
+            )
+        ).first()
+        
+        if record and record.extraction_x0 is not None:
+            coordinates = {
+                "x0": float(record.extraction_x0),
+                "y0": float(record.extraction_y0),
+                "x1": float(record.extraction_x1),
+                "y1": float(record.extraction_y1),
+                "page_number": record.page_number or 1
+            }
+            has_coordinates = True
+    
+    elif document_type == 'cash_flow':
+        record = db.query(CashFlowData).filter(
+            and_(
+                CashFlowData.upload_id == document_id,
+                CashFlowData.account_code == field_name
+            )
+        ).first()
+        
+        if record and record.extraction_x0 is not None:
+            coordinates = {
+                "x0": float(record.extraction_x0),
+                "y0": float(record.extraction_y0),
+                "x1": float(record.extraction_x1),
+                "y1": float(record.extraction_y1),
+                "page_number": record.page_number or 1
+            }
+            has_coordinates = True
+    
+    elif document_type == 'rent_roll':
+        # For rent_roll, field_name might be a field name (monthly_rent, annual_rent, etc.)
+        # We need to find any record with coordinates for this document
+        # Since rent_roll anomalies are typically aggregate metrics, coordinates may not be available
+        # Try to find a record with coordinates (any record from this document)
+        record = db.query(RentRollData).filter(
+            and_(
+                RentRollData.upload_id == document_id,
+                RentRollData.extraction_x0.isnot(None)
+            )
+        ).first()
+        
+        if record and record.extraction_x0 is not None:
+            coordinates = {
+                "x0": float(record.extraction_x0),
+                "y0": float(record.extraction_y0),
+                "x1": float(record.extraction_x1),
+                "y1": float(record.extraction_y1),
+                "page_number": record.page_number or 1
+            }
+            has_coordinates = True
+    
+    # Get PDF URL
+    pdf_url = None
+    if file_path:
+        try:
+            pdf_url = get_file_url(
+                object_name=file_path,
+                bucket_name=settings.MINIO_BUCKET_NAME,
+                expires_seconds=3600  # 1 hour
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate PDF URL: {e}")
+    
+    # Generate explanation
+    if has_coordinates:
+        explanation = f"This value was extracted from the {document_type.replace('_', ' ')} document at the location shown in the PDF."
+    else:
+        explanation = f"This is a calculated metric derived from multiple line items in the {document_type.replace('_', ' ')}. The specific field location is not available because it is computed from other values in the document."
+    
+    return FieldCoordinatesResponse(
+        has_coordinates=has_coordinates,
+        coordinates=coordinates,
+        pdf_url=pdf_url,
+        explanation=explanation
+    )
 

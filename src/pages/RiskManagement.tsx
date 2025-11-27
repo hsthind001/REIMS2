@@ -7,6 +7,7 @@ import {
   setDefaultThreshold,
   saveThreshold
 } from '../lib/anomalyThresholds'
+import { AnomalyFieldViewer } from '../components/AnomalyFieldViewer'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 
@@ -95,6 +96,10 @@ export default function RiskManagement() {
     properties_with_good_dscr: 0
   })
   const [propertiesLoading, setPropertiesLoading] = useState(true)
+  // Side panel state for field viewer
+  const [fieldViewerOpen, setFieldViewerOpen] = useState(false)
+  const [selectedAnomalyForViewer, setSelectedAnomalyForViewer] = useState<Anomaly | null>(null)
+  const [fieldViewerType, setFieldViewerType] = useState<'actual' | 'expected'>('actual')
   const [dscrCalculationDetails, setDscrCalculationDetails] = useState<{
     noi?: number
     totalDebtService?: number
@@ -1153,7 +1158,22 @@ export default function RiskManagement() {
                             return year ? `${accountName} (${year})` : accountName
                           })()}
                         </div>
-                        <div style={{ fontSize: '1.125rem', fontWeight: '600', color: '#856404' }}>
+                        <div 
+                          style={{ 
+                            fontSize: '1.125rem', 
+                            fontWeight: '600', 
+                            color: '#856404',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            textDecorationStyle: 'dotted'
+                          }}
+                          onClick={() => {
+                            setSelectedAnomalyForViewer(anomaly)
+                            setFieldViewerType('actual')
+                            setFieldViewerOpen(true)
+                          }}
+                          title="Click to view this value in the PDF"
+                        >
                           {anomaly.details.field_value || (anomaly.value !== undefined && anomaly.value !== null
                             ? typeof anomaly.value === 'number'
                               ? anomaly.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -1186,7 +1206,22 @@ export default function RiskManagement() {
                             return year ? `${accountName} (${year})` : accountName
                           })()}
                         </div>
-                        <div style={{ fontSize: '1.125rem', fontWeight: '600', color: '#0c5460' }}>
+                        <div 
+                          style={{ 
+                            fontSize: '1.125rem', 
+                            fontWeight: '600', 
+                            color: '#0c5460',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            textDecorationStyle: 'dotted'
+                          }}
+                          onClick={() => {
+                            setSelectedAnomalyForViewer(anomaly)
+                            setFieldViewerType('expected')
+                            setFieldViewerOpen(true)
+                          }}
+                          title="Click to view expected value location in the PDF"
+                        >
                           {anomaly.details.expected_value || 'Normal range'}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: '#0c5460', marginTop: '0.25rem' }}>
@@ -1597,6 +1632,19 @@ export default function RiskManagement() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Anomaly Field Viewer Side Panel */}
+      {selectedAnomalyForViewer && (
+        <AnomalyFieldViewer
+          anomaly={selectedAnomalyForViewer}
+          fieldType={fieldViewerType}
+          isOpen={fieldViewerOpen}
+          onClose={() => {
+            setFieldViewerOpen(false)
+            setSelectedAnomalyForViewer(null)
+          }}
+        />
       )}
     </div>
   )
