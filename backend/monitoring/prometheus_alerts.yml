@@ -1,0 +1,169 @@
+groups:
+  - name: nlq_system
+    interval: 30s
+    rules:
+      # High Error Rate
+      - alert: NLQHighErrorRate
+        expr: rate(nlq_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High NLQ error rate detected"
+          description: "NLQ error rate is {{ $value }} errors/sec (threshold: 0.1/sec) for 5 minutes"
+
+      # Critical Error Rate
+      - alert: NLQCriticalErrorRate
+        expr: rate(nlq_errors_total{severity="critical"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: nlq
+        annotations:
+          summary: "Critical NLQ error rate"
+          description: "Critical error rate is {{ $value }} errors/sec (threshold: 0.05/sec) for 2 minutes"
+
+      # High Query Latency
+      - alert: NLQHighQueryLatency
+        expr: histogram_quantile(0.95, sum(rate(nlq_query_latency_seconds_bucket[5m])) by (le)) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High NLQ query latency"
+          description: "P95 query latency is {{ $value }}s (threshold: 5s) for 5 minutes"
+
+      # Very High Query Latency
+      - alert: NLQVeryHighQueryLatency
+        expr: histogram_quantile(0.95, sum(rate(nlq_query_latency_seconds_bucket[5m])) by (le)) > 10
+        for: 2m
+        labels:
+          severity: critical
+          component: nlq
+        annotations:
+          summary: "Very high NLQ query latency"
+          description: "P95 query latency is {{ $value }}s (threshold: 10s) for 2 minutes"
+
+      # Low Cache Hit Rate
+      - alert: NLQLowCacheHitRate
+        expr: nlq_cache_hit_rate < 0.3
+        for: 10m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "Low NLQ cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 30%) for 10 minutes"
+
+      # Very Low Cache Hit Rate
+      - alert: NLQVeryLowCacheHitRate
+        expr: nlq_cache_hit_rate < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: nlq
+        annotations:
+          summary: "Very low NLQ cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 10%) for 5 minutes"
+
+      # High Retrieval Latency
+      - alert: NLQHighRetrievalLatency
+        expr: histogram_quantile(0.95, sum(rate(nlq_retrieval_latency_seconds_bucket[5m])) by (le, stage)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High NLQ retrieval latency"
+          description: "P95 retrieval latency for {{ $labels.stage }} is {{ $value }}s (threshold: 2s) for 5 minutes"
+
+      # Low Retrieval Precision
+      - alert: NLQLowRetrievalPrecision
+        expr: nlq_retrieval_precision{k="5"} < 0.7
+        for: 15m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "Low NLQ retrieval precision"
+          description: "Precision@5 is {{ $value | humanizePercentage }} (threshold: 70%) for 15 minutes"
+
+      # High LLM Latency
+      - alert: NLQHighLLMLatency
+        expr: histogram_quantile(0.95, sum(rate(nlq_llm_latency_seconds_bucket[5m])) by (le, model)) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High LLM latency"
+          description: "P95 LLM latency for {{ $labels.model }} is {{ $value }}s (threshold: 10s) for 5 minutes"
+
+      # High LLM Token Usage
+      - alert: NLQHighLLMTokenUsage
+        expr: rate(nlq_llm_tokens_total[5m]) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High LLM token usage"
+          description: "LLM token usage rate is {{ $value }} tokens/sec (threshold: 10k/sec) for 10 minutes"
+
+      # High Hallucination Rate
+      - alert: NLQHighHallucinationRate
+        expr: rate(nlq_hallucination_detections_total{verified="false"}[5m]) / rate(nlq_hallucination_detections_total[5m]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High NLQ hallucination rate"
+          description: "Unverified hallucination rate is {{ $value | humanizePercentage }} (threshold: 10%) for 15 minutes"
+
+      # No Queries Received
+      - alert: NLQNoQueries
+        expr: rate(nlq_queries_total[10m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "No NLQ queries received"
+          description: "No queries have been received for 15 minutes. Service may be down or unreachable."
+
+      # High Active Conversations
+      - alert: NLQHighActiveConversations
+        expr: nlq_active_conversations > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: nlq
+        annotations:
+          summary: "High number of active conversations"
+          description: "Active conversations: {{ $value }} (threshold: 1000) for 5 minutes"
+
+      # Embedding Generation Failure
+      - alert: NLQEmbeddingGenerationFailure
+        expr: rate(nlq_errors_total{error_type=~".*embedding.*", service="embedding_service"}[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          component: nlq
+        annotations:
+          summary: "Embedding generation failures"
+          description: "Embedding generation error rate is {{ $value }} errors/sec (threshold: 0.01/sec) for 5 minutes"
+
+      # Retrieval Service Down
+      - alert: NLQRetrievalServiceDown
+        expr: rate(nlq_errors_total{error_type=~".*retrieval.*", service="rag_service"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: nlq
+        annotations:
+          summary: "Retrieval service errors"
+          description: "Retrieval service error rate is {{ $value }} errors/sec (threshold: 0.05/sec) for 2 minutes"
+

@@ -1,0 +1,240 @@
+{
+  "dashboard": {
+    "title": "NLQ System Metrics",
+    "tags": ["nlq", "prometheus", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Query Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(nlq_queries_total[5m])",
+            "legendFormat": "{{method}} - {{intent}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Queries/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "nlq_cache_hit_rate",
+            "legendFormat": "Hit Rate",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "min": 0, "max": 1},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Query Latency (P50, P95, P99)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(nlq_query_latency_seconds_bucket[5m])) by (le, method))",
+            "legendFormat": "P50 - {{method}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(nlq_query_latency_seconds_bucket[5m])) by (le, method))",
+            "legendFormat": "P95 - {{method}}",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(nlq_query_latency_seconds_bucket[5m])) by (le, method))",
+            "legendFormat": "P99 - {{method}}",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Latency"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Retrieval Stage Latency",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(nlq_retrieval_latency_seconds_bucket[5m])) by (le, stage))",
+            "legendFormat": "P95 - {{stage}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Latency"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "LLM Token Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(nlq_llm_tokens_total[5m])",
+            "legendFormat": "{{model}} - {{operation}} - {{type}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Tokens/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Error Rate by Type",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(nlq_errors_total[5m])",
+            "legendFormat": "{{error_type}} - {{service}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Errors/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Retrieval Precision@K",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "nlq_retrieval_precision",
+            "legendFormat": "Precision@{{k}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "min": 0, "max": 1},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Retrieval Recall@K",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "nlq_retrieval_recall",
+            "legendFormat": "Recall@{{k}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "min": 0, "max": 1},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Active Conversations",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "nlq_active_conversations",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Hallucination Detections",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 32},
+        "targets": [
+          {
+            "expr": "rate(nlq_hallucination_detections_total[5m])",
+            "legendFormat": "{{claim_type}} - verified={{verified}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Detections/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Citations Extracted",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+        "targets": [
+          {
+            "expr": "rate(nlq_citations_extracted_total[5m])",
+            "legendFormat": "{{source_type}} - {{document_type}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Citations/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 12,
+        "title": "LLM Latency by Model",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(nlq_llm_latency_seconds_bucket[5m])) by (le, model))",
+            "legendFormat": "P95 - {{model}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Latency"},
+          {"format": "short"}
+        ]
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+    }
+  }
+}
+

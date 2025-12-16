@@ -1,0 +1,80 @@
+{
+  "index_patterns": ["reims2-logs-*"],
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "index.lifecycle.name": "reims2-logs-policy",
+    "index.lifecycle.rollover_alias": "reims2-logs"
+  },
+  "mappings": {
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "timestamp": {
+        "type": "date"
+      },
+      "level": {
+        "type": "keyword"
+      },
+      "message": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "correlation_id": {
+        "type": "keyword"
+      },
+      "user_id": {
+        "type": "integer"
+      },
+      "query_id": {
+        "type": "integer"
+      },
+      "conversation_id": {
+        "type": "keyword"
+      },
+      "property_id": {
+        "type": "integer"
+      },
+      "question": {
+        "type": "text"
+      },
+      "intent": {
+        "type": "keyword"
+      },
+      "method": {
+        "type": "keyword"
+      },
+      "from_cache": {
+        "type": "boolean"
+      },
+      "execution_time_ms": {
+        "type": "float"
+      },
+      "confidence": {
+        "type": "float"
+      },
+      "success": {
+        "type": "boolean"
+      },
+      "retrieval_results": {
+        "type": "integer"
+      },
+      "llm_tokens": {
+        "type": "integer"
+      },
+      "service": {
+        "type": "keyword"
+      },
+      "environment": {
+        "type": "keyword"
+      }
+    }
+  }
+}
+

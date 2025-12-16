@@ -1,0 +1,180 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reims2-celery
+  namespace: reims2
+  labels:
+    app: reims2-celery
+    component: worker
+spec:
+  replicas: 2  # Start with 2 workers
+  selector:
+    matchLabels:
+      app: reims2-celery
+  template:
+    metadata:
+      labels:
+        app: reims2-celery
+        component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5555"
+    spec:
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z postgres-service 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+      - name: wait-for-redis
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z redis-service 6379; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+      containers:
+      - name: celery-worker
+        image: reims2-backend:latest  # Same image as backend
+        imagePullPolicy: Always
+        command:
+        - celery
+        - -A
+        - celery_worker.celery_app
+        - worker
+        - --loglevel=info
+        - --concurrency=4
+        - --max-tasks-per-child=1000
+        - --time-limit=3600
+        - --soft-time-limit=3000
+        env:
+        # Database
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: reims2-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: reims2-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_SERVER
+          value: "postgres-service"
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: reims2-config
+              key: POSTGRES_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: reims2-config
+              key: POSTGRES_DB
+        # Redis
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: reims2-config
+              key: REDIS_PORT
+        - name: REDIS_DB
+          valueFrom:
+            configMapKeyRef:
+              name: reims2-config
+              key: REDIS_DB
+        # MinIO
+        - name: MINIO_ENDPOINT
+          value: "minio-service:9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: reims2-secrets
+              key: MINIO_ROOT_USER
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: reims2-secrets
+              key: MINIO_ROOT_PASSWORD
+        # LLM
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: reims2-secrets
+              key: OPENAI_API_KEY
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: reims2-secrets
+              key: ANTHROPIC_API_KEY
+        - name: WORKER_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: reims2-config
+              key: WORKER_CONCURRENCY
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+        livenessProbe:
+          exec:
+            command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - inspect
+            - ping
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - inspect
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: reims2-celery-hpa
+  namespace: reims2
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: reims2-celery
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+

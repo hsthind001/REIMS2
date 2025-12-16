@@ -4,7 +4,7 @@ import { documentService } from '../lib/document';
 import { reviewService } from '../lib/review';
 import type { Property, DocumentUpload } from '../types/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 export default function Dashboard() {
   const [properties, setProperties] = useState<Property[]>([]);

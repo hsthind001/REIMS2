@@ -396,8 +396,18 @@ Respond in JSON format:
             # Retrieve structured data if needed
             if needs_structured:
                 # Check for rent roll area queries FIRST
+                # Match both phrase and individual words (e.g., "area vacant" or "vacant area")
+                question_lower = question.lower()
                 rent_roll_keywords = ['rent roll', 'occupied area', 'vacant area', 'lease area', 'total area']
-                if any(keyword in question.lower() for keyword in rent_roll_keywords):
+                rent_roll_word_combos = [
+                    ('area', 'vacant'), ('vacant', 'area'), ('area', 'occupied'), ('occupied', 'area'),
+                    ('vacant', 'space'), ('empty', 'area'), ('unoccupied', 'area')
+                ]
+                is_rent_roll_query = (
+                    any(keyword in question_lower for keyword in rent_roll_keywords) or
+                    any(word1 in question_lower and word2 in question_lower for word1, word2 in rent_roll_word_combos)
+                )
+                if is_rent_roll_query:
                     data, sql_query = self._query_rent_roll_metrics(entities, question)
                 # Use understanding to build query
                 elif 'loss' in query_type or (entities.get('filters', {}).get('loss')):
@@ -1322,9 +1332,13 @@ Answer:"""
             Property, RentRollData.property_id == Property.id
         )
         
-        # Apply filters - try property code first, then name
+        # Apply filters - try property code first (with partial matching), then name
         if property_code:
-            query = query.filter(Property.property_code == property_code)
+            # Support partial property code matching (e.g., "ESP" matches "ESP001")
+            if len(property_code) < 6:  # Short code, try partial match
+                query = query.filter(Property.property_code.like(f"{property_code}%"))
+            else:
+                query = query.filter(Property.property_code == property_code)
         elif property_name:
             query = query.filter(Property.property_name == property_name)
         elif properties:
@@ -1336,6 +1350,9 @@ Answer:"""
             query = query.filter(FinancialPeriod.period_month == period_month)
         
         records = query.all()
+        
+        # Debug logging
+        logger.info(f"Rent roll query: property_code={property_code}, property_name={property_name}, records_found={len(records)}")
         
         # Aggregate data
         total_area = 0
@@ -1360,8 +1377,8 @@ Answer:"""
         else:
             occupancy_rate = 0
         
-        # Build result
-        if total_area > 0:
+        # Build result - always return result if we have records, even if total_area is 0
+        if records:
             result = [{
                 'property_name': records[0].property_name if records else None,
                 'property_code': records[0].property_code if records else None,
@@ -1422,8 +1439,17 @@ Answer:"""
             return self._generate_loss_profit_answer(question, data, intent)
         
         # Check if this is a rent roll area query - use specialized answer generator
+        # Match both phrase and individual words (e.g., "area vacant" or "vacant area")
         rent_roll_area_keywords = ['occupied area', 'vacant area', 'lease area', 'total area', 'rent roll']
-        if any(keyword in question_lower for keyword in rent_roll_area_keywords) and data:
+        rent_roll_word_combos = [
+            ('area', 'vacant'), ('vacant', 'area'), ('area', 'occupied'), ('occupied', 'area'),
+            ('vacant', 'space'), ('empty', 'area'), ('unoccupied', 'area')
+        ]
+        is_rent_roll_query = (
+            any(keyword in question_lower for keyword in rent_roll_area_keywords) or
+            any(word1 in question_lower and word2 in question_lower for word1, word2 in rent_roll_word_combos)
+        )
+        if is_rent_roll_query and data:
             return self._generate_rent_roll_area_answer(question, data, intent)
         
         if not self.llm_client:

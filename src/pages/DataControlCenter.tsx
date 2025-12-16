@@ -20,7 +20,7 @@ import { DocumentUpload } from '../components/DocumentUpload';
 import { documentService } from '../lib/document';
 import type { DocumentUpload as DocumentUploadType } from '../types/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 type ControlTab = 'quality' | 'tasks' | 'validation' | 'import' | 'review' | 'documents';
 

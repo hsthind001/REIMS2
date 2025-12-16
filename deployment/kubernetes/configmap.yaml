@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reims2-config
+  namespace: reims2
+data:
+  # Application Settings
+  API_V1_STR: "/api/v1"
+  PROJECT_NAME: "REIMS API"
+  POSTGRES_DB: "reims"
+  POSTGRES_PORT: "5432"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  MINIO_BUCKET_NAME: "reims"
+  MINIO_SECURE: "false"
+  
+  # CORS
+  BACKEND_CORS_ORIGINS: "https://reims2.example.com,https://www.reims2.example.com"
+  
+  # LLM Settings
+  LLM_PROVIDER: "openai"
+  LLM_MODEL: "gpt-4-turbo-preview"
+  LLM_TEMPERATURE: "0.3"
+  LLM_MAX_TOKENS: "4000"
+  
+  # Pinecone Settings
+  PINECONE_ENVIRONMENT: "us-east-1-aws"
+  PINECONE_INDEX_NAME: "reims2-documents"
+  PINECONE_DIMENSION: "1536"
+  PINECONE_METRIC: "cosine"
+  PINECONE_TIMEOUT: "30"
+  
+  # Cache Settings
+  ENABLE_SEMANTIC_CACHE: "true"
+  SIMILARITY_THRESHOLD: "0.95"
+  CACHE_TTL_HOURS: "24"
+  
+  # Monitoring
+  PROMETHEUS_MULTIPROC_DIR: "/tmp/prometheus"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
+  
+  # Performance
+  WORKERS: "4"
+  WORKER_CONCURRENCY: "4"
+  MAX_TASKS_PER_CHILD: "1000"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: reims2
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 10s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'reims2-production'
+        environment: 'production'
+    
+    rule_files:
+      - /etc/prometheus/alerts/*.yml
+    
+    scrape_configs:
+      - job_name: 'reims2-backend'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - reims2
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: reims2-backend
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      - job_name: 'reims2-celery'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - reims2
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: reims2-celery
+      
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['postgres-service:5432']
+            labels:
+              service: 'postgres'
+      
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis-service:6379']
+            labels:
+              service: 'redis'
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: reims2
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-service:9090
+        isDefault: true
+        editable: true
+

@@ -22,8 +22,8 @@ COPY celery-entrypoint.sh /celery-entrypoint.sh
 COPY flower-entrypoint.sh /flower-entrypoint.sh
 RUN chmod +x /entrypoint.sh /celery-entrypoint.sh /flower-entrypoint.sh
 
-# Create directory for temp files and set ownership
-RUN mkdir -p /tmp && chown -R appuser:appgroup /app /tmp
+# Create directories for temp files and logs, set ownership
+RUN mkdir -p /tmp /var/log/reims2 && chown -R appuser:appgroup /app /tmp /var/log/reims2
 
 # Switch to non-root user
 USER appuser

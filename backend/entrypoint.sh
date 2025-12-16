@@ -69,6 +69,23 @@ else
   echo "ℹ️  Migrations disabled (RUN_MIGRATIONS=false), skipping..."
 fi
 
+# Validate Python imports before starting (catch errors early)
+echo "🔍 Validating application imports..."
+if [ -f /app/scripts/validate_startup.py ]; then
+    python3 /app/scripts/validate_startup.py || {
+        echo "⚠️  Import validation found issues (see above). Application will attempt to start anyway."
+    }
+else
+    # Fallback validation
+    if ! python3 -c "from app.main import app" 2>/dev/null; then
+        echo "❌ ERROR: Failed to import application. Checking details..."
+        python3 -c "from app.main import app" 2>&1 | head -20
+        echo "⚠️  Application will attempt to start anyway, but errors above may cause failures."
+    else
+        echo "✅ Basic import validation passed"
+    fi
+fi
+
 # Start the application
 echo "🎯 Starting FastAPI application..."
 exec "$@"

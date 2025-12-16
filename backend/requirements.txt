@@ -109,9 +109,9 @@ chromadb==0.4.22
 
 # NLP & Embeddings
 sentence-transformers==2.5.1
-langchain==0.1.9
-langchain-openai==0.0.5
-langchain-anthropic==0.1.1
+# langchain==0.1.9  # Commented out - conflicts with numpy 2.x, install separately if needed
+# langchain-openai==0.0.5
+# langchain-anthropic==0.1.1
 
 # Image Processing for PDF Quality Enhancement
 scikit-image==0.24.0
@@ -131,3 +131,6 @@ scikit-learn==1.5.1
 beautifulsoup4==4.12.3
 lxml==5.3.0
 scipy==1.14.1
+
+# Structured Logging
+structlog==22.3.0

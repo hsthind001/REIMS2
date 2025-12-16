@@ -23,7 +23,7 @@ import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/expor
 import type { Property, PropertyCreate, DocumentUpload as DocumentUploadType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 interface PropertyMetrics {
   value: number;
