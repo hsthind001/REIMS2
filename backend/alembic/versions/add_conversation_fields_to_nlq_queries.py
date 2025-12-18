@@ -11,32 +11,63 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_conversation_fields'
-down_revision = None  # Update with actual previous revision
+down_revision = '20251126_1500_semantic_cache'  # Points to semantic cache migration
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     """Add conversation_id and turn_number columns to nlq_queries table"""
-    # Add conversation_id column
-    op.add_column('nlq_queries', sa.Column('conversation_id', sa.String(64), nullable=True))
+    # Check if nlq_queries table exists before modifying it
+    connection = op.get_bind()
+    result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM information_schema.tables 
+        WHERE table_name = 'nlq_queries'
+    """))
     
-    # Add turn_number column
-    op.add_column('nlq_queries', sa.Column('turn_number', sa.Integer(), nullable=True))
+    if result.scalar() == 0:
+        print("⚠️  nlq_queries table does not exist. Skipping conversation fields migration.")
+        return
     
-    # Create index on conversation_id for faster lookups
-    op.create_index(
-        'idx_nlq_queries_conversation_id',
-        'nlq_queries',
-        ['conversation_id']
-    )
+    # Check if columns already exist
+    columns_result = connection.execute(sa.text("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'nlq_queries' 
+        AND column_name IN ('conversation_id', 'turn_number')
+    """))
+    existing_columns = {row[0] for row in columns_result}
     
-    # Create composite index for conversation queries
-    op.create_index(
-        'idx_nlq_queries_conv_turn',
-        'nlq_queries',
-        ['conversation_id', 'turn_number']
-    )
+    # Add conversation_id column if it doesn't exist
+    if 'conversation_id' not in existing_columns:
+        op.add_column('nlq_queries', sa.Column('conversation_id', sa.String(64), nullable=True))
+    
+    # Add turn_number column if it doesn't exist
+    if 'turn_number' not in existing_columns:
+        op.add_column('nlq_queries', sa.Column('turn_number', sa.Integer(), nullable=True))
+    
+    # Create index on conversation_id for faster lookups (if it doesn't exist)
+    try:
+        op.create_index(
+            'idx_nlq_queries_conversation_id',
+            'nlq_queries',
+            ['conversation_id']
+        )
+    except Exception:
+        # Index might already exist
+        pass
+    
+    # Create composite index for conversation queries (if it doesn't exist)
+    try:
+        op.create_index(
+            'idx_nlq_queries_conv_turn',
+            'nlq_queries',
+            ['conversation_id', 'turn_number']
+        )
+    except Exception:
+        # Index might already exist
+        pass
 
 
 def downgrade():

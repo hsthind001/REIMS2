@@ -86,12 +86,14 @@ def upgrade() -> None:
             name='fk_metadata_document',
             ondelete='CASCADE'
         ),
-        sa.ForeignKeyConstraint(
-            ['reviewed_by'], 
-            ['users.id'], 
-            name='fk_metadata_reviewer',
-            ondelete='SET NULL'
-        )
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # TODO: Add foreign key in a later migration after users table is created
+        # sa.ForeignKeyConstraint(
+        #     ['reviewed_by'], 
+        #     ['users.id'], 
+        #     name='fk_metadata_reviewer',
+        #     ondelete='SET NULL'
+        # )
     )
     
     # Create performance indexes

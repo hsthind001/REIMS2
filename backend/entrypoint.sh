@@ -22,7 +22,7 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
   
   if [ "$MIGRATION_CHECK" -eq "0" ]; then
     echo "🔄 Database not initialized, running migrations..."
-    alembic upgrade head
+    alembic upgrade heads
     echo "✅ Migrations complete!"
   else
     # Check if migrations are pending
@@ -31,7 +31,7 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
     
     # Try to upgrade if behind
     echo "🔄 Checking for pending migrations..."
-    alembic upgrade head || echo "⚠️  Migrations already current or failed (non-critical)"
+    alembic upgrade heads || echo "⚠️  Migrations already current or failed (non-critical)"
   fi
   
   # Seed database (only if not already seeded)

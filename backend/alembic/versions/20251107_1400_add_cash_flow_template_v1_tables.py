@@ -236,27 +236,71 @@ def upgrade() -> None:
                          ['header_id'], ['id'], ondelete='CASCADE')
     op.create_index('ix_cash_flow_data_header_id', 'cash_flow_data', ['header_id'])
     
-    # Add Template v1.0 classification fields
-    op.add_column('cash_flow_data', sa.Column('line_section', sa.String(length=50), nullable=True))
-    op.add_column('cash_flow_data', sa.Column('line_category', sa.String(length=100), nullable=True))
-    op.add_column('cash_flow_data', sa.Column('line_subcategory', sa.String(length=100), nullable=True))
+    # Add Template v1.0 classification fields (check if they exist first)
+    connection = op.get_bind()
+    result = connection.execute(sa.text("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'cash_flow_data' 
+        AND column_name IN ('line_section', 'line_category', 'line_subcategory', 
+                           'line_number', 'is_subtotal', 'is_total', 'parent_line_id', 'page_number')
+    """))
+    existing_columns = {row[0] for row in result}
+    
+    if 'line_section' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('line_section', sa.String(length=50), nullable=True))
+    if 'line_category' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('line_category', sa.String(length=100), nullable=True))
+    if 'line_subcategory' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('line_subcategory', sa.String(length=100), nullable=True))
     
     # Add hierarchical structure fields
-    op.add_column('cash_flow_data', sa.Column('line_number', sa.Integer(), nullable=True))
-    op.add_column('cash_flow_data', sa.Column('is_subtotal', sa.Boolean(), nullable=True, server_default='false'))
-    op.add_column('cash_flow_data', sa.Column('is_total', sa.Boolean(), nullable=True, server_default='false'))
-    op.add_column('cash_flow_data', sa.Column('parent_line_id', sa.Integer(), nullable=True))
+    if 'line_number' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('line_number', sa.Integer(), nullable=True))
+    if 'is_subtotal' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('is_subtotal', sa.Boolean(), nullable=True, server_default='false'))
+    if 'is_total' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('is_total', sa.Boolean(), nullable=True, server_default='false'))
+    if 'parent_line_id' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('parent_line_id', sa.Integer(), nullable=True))
     
     # Add page tracking
-    op.add_column('cash_flow_data', sa.Column('page_number', sa.Integer(), nullable=True))
+    if 'page_number' not in existing_columns:
+        op.add_column('cash_flow_data', sa.Column('page_number', sa.Integer(), nullable=True))
     
-    # Create indexes
-    op.create_index('ix_cash_flow_data_line_section', 'cash_flow_data', ['line_section'])
-    op.create_index('ix_cash_flow_data_line_category', 'cash_flow_data', ['line_category'])
+    # Create indexes (check if they exist first)
+    index_result = connection.execute(sa.text("""
+        SELECT indexname 
+        FROM pg_indexes 
+        WHERE tablename = 'cash_flow_data' 
+        AND indexname IN ('ix_cash_flow_data_line_section', 'ix_cash_flow_data_line_category')
+    """))
+    existing_indexes = {row[0] for row in index_result}
     
-    # Add self-referential foreign key for parent_line_id
-    op.create_foreign_key('cash_flow_data_parent_line_id_fkey', 'cash_flow_data', 'cash_flow_data',
-                         ['parent_line_id'], ['id'], ondelete='SET NULL')
+    if 'ix_cash_flow_data_line_section' not in existing_indexes:
+        try:
+            op.create_index('ix_cash_flow_data_line_section', 'cash_flow_data', ['line_section'])
+        except Exception:
+            pass
+    if 'ix_cash_flow_data_line_category' not in existing_indexes:
+        try:
+            op.create_index('ix_cash_flow_data_line_category', 'cash_flow_data', ['line_category'])
+        except Exception:
+            pass
+    
+    # Add self-referential foreign key for parent_line_id (check if it exists first)
+    fk_result = connection.execute(sa.text("""
+        SELECT constraint_name 
+        FROM information_schema.table_constraints 
+        WHERE table_name = 'cash_flow_data' 
+        AND constraint_name = 'cash_flow_data_parent_line_id_fkey'
+    """))
+    if fk_result.scalar() is None:
+        try:
+            op.create_foreign_key('cash_flow_data_parent_line_id_fkey', 'cash_flow_data', 'cash_flow_data',
+                                 ['parent_line_id'], ['id'], ondelete='SET NULL')
+        except Exception:
+            pass
     
     # Make account_id nullable (for unmatched accounts)
     op.alter_column('cash_flow_data', 'account_id', nullable=True)

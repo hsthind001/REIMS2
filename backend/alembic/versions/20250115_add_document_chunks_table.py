@@ -35,8 +35,6 @@ def upgrade():
         sa.Column('document_type', sa.String(length=50), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(['document_id'], ['document_uploads.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['extraction_log_id'], ['extraction_logs.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['period_id'], ['financial_periods.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')

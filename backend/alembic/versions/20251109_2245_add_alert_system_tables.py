@@ -101,18 +101,20 @@ def upgrade() -> None:
             name='fk_alert_document',
             ondelete='CASCADE'
         ),
-        sa.ForeignKeyConstraint(
-            ['acknowledged_by'],
-            ['users.id'],
-            name='fk_alert_acknowledged_user',
-            ondelete='SET NULL'
-        ),
-        sa.ForeignKeyConstraint(
-            ['resolved_by'],
-            ['users.id'],
-            name='fk_alert_resolved_user',
-            ondelete='SET NULL'
-        )
+        # NOTE: Foreign keys to users table removed - users table doesn't exist yet
+        # TODO: Add foreign keys in a later migration after users table is created
+        # sa.ForeignKeyConstraint(
+        #     ['acknowledged_by'],
+        #     ['users.id'],
+        #     name='fk_alert_acknowledged_user',
+        #     ondelete='SET NULL'
+        # ),
+        # sa.ForeignKeyConstraint(
+        #     ['resolved_by'],
+        #     ['users.id'],
+        #     name='fk_alert_resolved_user',
+        #     ondelete='SET NULL'
+        # )
     )
     
     op.create_index('ix_alerts_status', 'alerts', ['status'])

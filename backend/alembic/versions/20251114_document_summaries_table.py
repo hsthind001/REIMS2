@@ -17,20 +17,58 @@ depends_on = None
 
 
 def upgrade():
-    # Create DocumentType enum
+    # Create DocumentType enum (check if it exists first)
+    connection = op.get_bind()
+    result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM pg_type 
+        WHERE typname = 'documenttype'
+    """))
+    
+    if result.scalar() == 0:
+        # Use raw SQL to create enum
+        try:
+            connection.execute(sa.text("""
+                CREATE TYPE documenttype AS ENUM ('LEASE', 'OFFERING_MEMORANDUM', 'FINANCIAL_STATEMENT',
+                    'APPRAISAL', 'INSPECTION_REPORT', 'LEGAL_DOCUMENT', 'OTHER')
+            """))
+        except Exception as e:
+            # Enum might have been created by another migration
+            if 'already exists' not in str(e).lower():
+                raise
+    
+    # Get the enum type for use in table creation
     document_type = postgresql.ENUM(
         'LEASE', 'OFFERING_MEMORANDUM', 'FINANCIAL_STATEMENT',
         'APPRAISAL', 'INSPECTION_REPORT', 'LEGAL_DOCUMENT', 'OTHER',
-        name='documenttype'
+        name='documenttype',
+        create_type=False  # Don't try to create it, it already exists or was created above
     )
-    document_type.create(op.get_bind())
 
-    # Create SummaryStatus enum
+    # Create SummaryStatus enum (check if it exists first)
+    result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM pg_type 
+        WHERE typname = 'summarystatus'
+    """))
+    
+    if result.scalar() == 0:
+        # Use raw SQL to create enum
+        try:
+            connection.execute(sa.text("""
+                CREATE TYPE summarystatus AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')
+            """))
+        except Exception as e:
+            # Enum might have been created by another migration
+            if 'already exists' not in str(e).lower():
+                raise
+    
+    # Get the enum type for use in table creation
     summary_status = postgresql.ENUM(
         'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED',
-        name='summarystatus'
+        name='summarystatus',
+        create_type=False  # Don't try to create it, it already exists or was created above
     )
-    summary_status.create(op.get_bind())
 
     # Create document_summaries table
     op.create_table(
@@ -63,10 +101,28 @@ def upgrade():
         sa.Column('processed_at', sa.DateTime(), nullable=True),
         sa.Column('created_by', sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
-        sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ),
-        sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
+    
+    # Add foreign key to documents table if it exists
+    documents_result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM information_schema.tables 
+        WHERE table_name = 'documents'
+    """))
+    if documents_result.scalar() > 0:
+        try:
+            op.create_foreign_key(
+                'fk_document_summaries_document_id',
+                'document_summaries',
+                'documents',
+                ['document_id'],
+                ['id']
+            )
+        except Exception:
+            pass  # Foreign key might already exist
 
     # Create indexes
     op.create_index(op.f('ix_document_summaries_property_id'), 'document_summaries', ['property_id'], unique=False)

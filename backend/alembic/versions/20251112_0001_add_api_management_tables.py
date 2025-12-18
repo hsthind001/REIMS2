@@ -20,7 +20,8 @@ def upgrade() -> None:
     op.create_table(
         'api_keys',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        sa.Column('user_id', sa.Integer(), nullable=False),  # sa.ForeignKey('users.id', ondelete='CASCADE')
         sa.Column('name', sa.String(100), nullable=False),
         sa.Column('key_hash', sa.String(64), nullable=False, unique=True),  # SHA256 hash
         sa.Column('key_prefix', sa.String(12), nullable=False),  # First 12 chars for identification
@@ -57,7 +58,8 @@ def upgrade() -> None:
     op.create_table(
         'webhooks',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        sa.Column('user_id', sa.Integer(), nullable=False),  # sa.ForeignKey('users.id', ondelete='CASCADE')
         sa.Column('url', sa.String(500), nullable=False),
         sa.Column('events_json', postgresql.JSONB, nullable=False),  # List of event types
         sa.Column('secret', sa.String(100), nullable=False),  # For signature verification
@@ -92,7 +94,8 @@ def upgrade() -> None:
     op.create_table(
         'notifications',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=True),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        sa.Column('user_id', sa.Integer(), nullable=True),  # sa.ForeignKey('users.id', ondelete='CASCADE')
         sa.Column('type', sa.String(50), nullable=False),  # alert, anomaly, system, etc.
         sa.Column('severity', sa.String(20), nullable=False),  # critical, high, medium, low
         sa.Column('title', sa.String(200), nullable=False),

@@ -17,12 +17,31 @@ depends_on = None
 
 
 def upgrade():
-    # Create BudgetStatus enum
+    # Create BudgetStatus enum (check if it exists first)
+    connection = op.get_bind()
+    result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM pg_type 
+        WHERE typname = 'budgetstatus'
+    """))
+    
+    if result.scalar() == 0:
+        # Use raw SQL to create enum with IF NOT EXISTS equivalent
+        try:
+            connection.execute(sa.text("""
+                CREATE TYPE budgetstatus AS ENUM ('DRAFT', 'APPROVED', 'ACTIVE', 'REVISED', 'ARCHIVED')
+            """))
+        except Exception as e:
+            # Enum might have been created by another migration
+            if 'already exists' not in str(e).lower():
+                raise
+    
+    # Get the enum type for use in table creation
     budget_status = postgresql.ENUM(
         'DRAFT', 'APPROVED', 'ACTIVE', 'REVISED', 'ARCHIVED',
-        name='budgetstatus'
+        name='budgetstatus',
+        create_type=False  # Don't try to create it, it already exists or was created above
     )
-    budget_status.create(op.get_bind())
 
     # Create budgets table
     op.create_table(
@@ -49,8 +68,10 @@ def upgrade():
         sa.Column('created_by', sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
         sa.ForeignKeyConstraint(['financial_period_id'], ['financial_periods.id'], ),
-        sa.ForeignKeyConstraint(['approved_by'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['approved_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_budgets_property_id'), 'budgets', ['property_id'], unique=False)
@@ -85,7 +106,8 @@ def upgrade():
         sa.Column('created_by', sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
         sa.ForeignKeyConstraint(['financial_period_id'], ['financial_periods.id'], ),
-        sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_forecasts_property_id'), 'forecasts', ['property_id'], unique=False)

@@ -17,37 +17,72 @@ depends_on = None
 
 
 def upgrade():
+    # Check if nlq_queries table exists before modifying it
+    connection = op.get_bind()
+    result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM information_schema.tables 
+        WHERE table_name = 'nlq_queries'
+    """))
+    
+    if result.scalar() == 0:
+        print("⚠️  nlq_queries table does not exist. Skipping semantic cache fields migration.")
+        return
+    
     # Add question_embedding column (FLOAT array for 1536 dimensions)
-    op.add_column(
-        'nlq_queries',
-        sa.Column('question_embedding', postgresql.ARRAY(sa.Float()), nullable=True)
-    )
+    try:
+        op.add_column(
+            'nlq_queries',
+            sa.Column('question_embedding', postgresql.ARRAY(sa.Float()), nullable=True)
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  question_embedding column already exists, skipping...")
     
     # Add question_hash column (VARCHAR(64) for SHA256 hash)
-    op.add_column(
-        'nlq_queries',
-        sa.Column('question_hash', sa.String(length=64), nullable=True)
-    )
+    try:
+        op.add_column(
+            'nlq_queries',
+            sa.Column('question_hash', sa.String(length=64), nullable=True)
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  question_hash column already exists, skipping...")
     
     # Add from_cache column (BOOLEAN)
-    op.add_column(
-        'nlq_queries',
-        sa.Column('from_cache', sa.Boolean(), nullable=False, server_default=sa.text('false'))
-    )
+    try:
+        op.add_column(
+            'nlq_queries',
+            sa.Column('from_cache', sa.Boolean(), nullable=False, server_default=sa.text('false'))
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  from_cache column already exists, skipping...")
     
     # Add cache_similarity column (DECIMAL(5,2) for similarity score)
-    op.add_column(
-        'nlq_queries',
-        sa.Column('cache_similarity', sa.Numeric(5, 2), nullable=True)
-    )
+    try:
+        op.add_column(
+            'nlq_queries',
+            sa.Column('cache_similarity', sa.Numeric(5, 2), nullable=True)
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  cache_similarity column already exists, skipping...")
     
     # Create indexes for performance
-    op.create_index(
-        'idx_nlq_queries_question_hash',
-        'nlq_queries',
-        ['question_hash'],
-        unique=False
-    )
+    try:
+        op.create_index(
+            'idx_nlq_queries_question_hash',
+            'nlq_queries',
+            ['question_hash'],
+            unique=False
+        )
+    except Exception:
+        pass  # Index might already exist
     
     # Index on created_at already exists (idx_nlq_date), but ensure it's there
     # Check if index exists, if not create it
@@ -58,7 +93,7 @@ def upgrade():
             ['created_at'],
             unique=False
         )
-    except:
+    except Exception:
         # Index might already exist, that's okay
         pass
 

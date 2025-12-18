@@ -17,50 +17,86 @@ depends_on = None
 
 
 def upgrade():
-    # Add chunk_type column
-    op.add_column(
-        'document_chunks',
-        sa.Column('chunk_type', sa.String(length=20), nullable=True)
-    )
+    # Check if document_chunks table exists before modifying it
+    connection = op.get_bind()
+    result = connection.execute(sa.text("""
+        SELECT COUNT(*) 
+        FROM information_schema.tables 
+        WHERE table_name = 'document_chunks'
+    """))
     
-    # Add parent_chunk_id column (self-referencing FK)
-    op.add_column(
-        'document_chunks',
-        sa.Column('parent_chunk_id', sa.Integer(), nullable=True)
-    )
+    if result.scalar() == 0:
+        print("⚠️  document_chunks table does not exist. Skipping chunk enhancements migration.")
+        return
     
-    # Add foreign key constraint for parent_chunk_id
-    op.create_foreign_key(
-        'fk_document_chunks_parent_chunk',
-        'document_chunks',
-        'document_chunks',
-        ['parent_chunk_id'],
-        ['id'],
-        ondelete='SET NULL'
-    )
+    # Add chunk_type column (if it doesn't already exist)
+    try:
+        op.add_column(
+            'document_chunks',
+            sa.Column('chunk_type', sa.String(length=20), nullable=True)
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  chunk_type column already exists, skipping...")
     
-    # Create indexes for performance
-    op.create_index(
-        'ix_document_chunks_chunk_type',
-        'document_chunks',
-        ['chunk_type'],
-        unique=False
-    )
+    # Add parent_chunk_id column (if it doesn't already exist)
+    try:
+        op.add_column(
+            'document_chunks',
+            sa.Column('parent_chunk_id', sa.Integer(), nullable=True)
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  parent_chunk_id column already exists, skipping...")
     
-    op.create_index(
-        'ix_document_chunks_parent_chunk_id',
-        'document_chunks',
-        ['parent_chunk_id'],
-        unique=False
-    )
+    # Add foreign key constraint for parent_chunk_id (if it doesn't already exist)
+    try:
+        op.create_foreign_key(
+            'fk_document_chunks_parent_chunk',
+            'document_chunks',
+            'document_chunks',
+            ['parent_chunk_id'],
+            ['id'],
+            ondelete='SET NULL'
+        )
+    except Exception as e:
+        if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+            raise
+        print("ℹ️  Foreign key constraint already exists, skipping...")
     
-    # Create composite index for common queries
-    op.create_index(
-        'idx_chunk_type_document',
-        'document_chunks',
-        ['document_id', 'chunk_type'],
-        unique=False
-    )
+    # Create indexes for performance (if they don't already exist)
+    try:
+        op.create_index(
+            'ix_document_chunks_chunk_type',
+            'document_chunks',
+            ['chunk_type'],
+            unique=False
+        )
+    except Exception:
+        pass  # Index might already exist
+    
+    try:
+        op.create_index(
+            'ix_document_chunks_parent_chunk_id',
+            'document_chunks',
+            ['parent_chunk_id'],
+            unique=False
+        )
+    except Exception:
+        pass  # Index might already exist
+    
+    # Create composite index for common queries (if it doesn't already exist)
+    try:
+        op.create_index(
+            'idx_chunk_type_document',
+            'document_chunks',
+            ['document_id', 'chunk_type'],
+            unique=False
+        )
+    except Exception:
+        pass  # Index might already exist
 
 
 def downgrade():

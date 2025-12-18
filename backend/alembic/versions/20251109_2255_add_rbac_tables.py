@@ -39,10 +39,12 @@ def upgrade() -> None:
     # Create user_roles table
     op.create_table(
         'user_roles',
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+        # NOTE: Foreign keys to users table removed - users table doesn't exist yet
+        # TODO: Add foreign keys in a later migration after users table is created
+        sa.Column('user_id', sa.Integer(), nullable=False),  # sa.ForeignKey('users.id', ondelete='CASCADE')
         sa.Column('role_id', sa.Integer(), sa.ForeignKey('roles.id', ondelete='CASCADE'), nullable=False),
         sa.Column('assigned_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
-        sa.Column('assigned_by', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
+        sa.Column('assigned_by', sa.Integer(), nullable=True),  # sa.ForeignKey('users.id', ondelete='SET NULL')
         sa.PrimaryKeyConstraint('user_id', 'role_id')
     )
     

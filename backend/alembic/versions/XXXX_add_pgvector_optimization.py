@@ -27,7 +27,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'XXXX_add_pgvector'
-down_revision = '<previous_revision>'  # Update with actual previous revision
+down_revision = '20251126_1500_semantic_cache'  # Points to semantic cache migration
 branch_labels = None
 depends_on = None
 
@@ -40,17 +40,27 @@ def upgrade():
     but performance will be significantly better with pgvector.
     """
     
-    # Step 1: Enable pgvector extension
-    # This requires superuser privileges
+    # Step 1: Check if pgvector extension is available using a savepoint
+    # This allows us to test without aborting the main transaction
+    connection = op.get_bind()
+    
+    # Use a savepoint to test if pgvector is available
+    savepoint = connection.begin_nested()
     try:
-        op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        # Try to create the extension in a savepoint
+        connection.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        savepoint.commit()
         print("✅ pgvector extension enabled")
     except Exception as e:
-        print(f"⚠️  Warning: Could not enable pgvector extension: {e}")
+        # Rollback the savepoint (not the main transaction)
+        savepoint.rollback()
+        print(f"⚠️  pgvector extension not available: {e}")
+        print("   Skipping pgvector optimization migration.")
         print("   The optimized service will use NumPy fallback for similarity search.")
-        print("   To enable pgvector, run as superuser:")
+        print("   To enable pgvector, install it on the PostgreSQL server and run:")
         print("   CREATE EXTENSION IF NOT EXISTS vector;")
-        return  # Skip remaining steps if extension not available
+        # Return early - this migration does nothing if pgvector isn't available
+        return
     
     # Step 2: Check if embedding column exists and has data
     connection = op.get_bind()
