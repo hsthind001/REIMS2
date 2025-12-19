@@ -12,6 +12,7 @@ import type { Property, DocumentUploadRequest } from '../types/api';
 import { useEffect } from 'react';
 import { extractErrorMessage } from '../utils/errorHandling';
 import { SafeErrorDisplay } from './SafeErrorDisplay';
+import { useExtractionStatus } from '../hooks/useExtractionStatus';
 
 interface DocumentUploadProps {
   onUploadSuccess?: () => void;
@@ -31,7 +32,11 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [uploadId, setUploadId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Monitor extraction status in real-time
+  const { status: extractionStatus, progress: extractionProgress, recordsLoaded, error: extractionError } = useExtractionStatus(uploadId);
 
   useEffect(() => {
     loadProperties();
@@ -125,17 +130,18 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
       clearInterval(progressInterval);
       setProgress(100);
 
-      setSuccess(`Upload successful! Task ID: ${result.task_id}`);
+      setSuccess(`Upload successful! Upload ID: ${result.upload_id}`);
+      setUploadId(result.upload_id); // Start monitoring extraction
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
       
+      // Reset after showing success message (extraction status will show separately)
       setTimeout(() => {
         setSuccess('');
         setProgress(0);
-        onUploadSuccess?.();
-      }, 2000);
+      }, 3000);
 
     } catch (err: any) {
       // Use intelligent error extraction utility - ensures we always get a string
@@ -152,6 +158,67 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
 
       {error && <SafeErrorDisplay error={error} alert variant="error" />}
       {success && <div className="alert alert-success">{success}</div>}
+      
+      {/* Real-time extraction status */}
+      {uploadId && extractionStatus && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded" style={{ marginBottom: '1rem' }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-medium text-blue-900">Extraction Status:</span>
+            <span className={`px-2 py-1 rounded text-sm ${
+              extractionStatus === 'completed' ? 'bg-green-100 text-green-800' :
+              extractionStatus === 'failed' ? 'bg-red-100 text-red-800' :
+              extractionStatus === 'processing' ? 'bg-yellow-100 text-yellow-800' :
+              'bg-gray-100 text-gray-800'
+            }`}>
+              {extractionStatus === 'completed' ? '✅ Completed' :
+               extractionStatus === 'failed' ? '❌ Failed' :
+               extractionStatus === 'processing' ? '⏳ Processing' :
+               extractionStatus === 'pending' ? '⏸️ Queued' :
+               extractionStatus}
+            </span>
+          </div>
+          
+          {extractionStatus === 'processing' && extractionProgress > 0 && (
+            <div className="mt-2">
+              <div className="flex justify-between text-sm text-blue-700 mb-1">
+                <span>Progress</span>
+                <span>{extractionProgress}%</span>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${extractionProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+          
+          {extractionStatus === 'completed' && recordsLoaded > 0 && (
+            <div className="mt-2 text-sm text-green-700">
+              ✅ {recordsLoaded} records loaded successfully
+            </div>
+          )}
+          
+          {extractionStatus === 'failed' && extractionError && (
+            <div className="mt-2 text-sm text-red-700">
+              ❌ Error: {extractionError}
+            </div>
+          )}
+          
+          {extractionStatus === 'completed' && (
+            <button
+              onClick={() => {
+                setUploadId(null);
+                onUploadSuccess?.();
+              }}
+              className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              Upload another file
+            </button>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <div className="form-row">

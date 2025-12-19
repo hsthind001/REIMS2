@@ -195,15 +195,25 @@ async def upload_document(
                 extraction_status="completed"
             )
         
-        # Trigger Celery extraction task
-        task = extract_document.delay(result["upload_id"])
+        # Trigger Celery extraction task with error handling
+        try:
+            task = extract_document.delay(result["upload_id"])
+            task_id = task.id
+            extraction_status = "pending"
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to queue extraction for upload_id={result['upload_id']}: {e}")
+            # Don't fail the upload - file is in MinIO, extraction will be recovered
+            task_id = None
+            extraction_status = "pending"  # Background task will pick it up
         
         return DocumentUploadResponse(
             upload_id=result["upload_id"],
-            task_id=task.id,
+            task_id=task_id,
             message=result["message"],
             file_path=result["file_path"],
-            extraction_status="pending"
+            extraction_status=extraction_status
         )
     
     except HTTPException:
@@ -213,6 +223,127 @@ async def upload_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Upload failed: {str(e)}"
         )
+
+
+@router.post("/documents/bulk-upload", status_code=status.HTTP_201_CREATED)
+async def bulk_upload_documents(
+    property_code: str = Form(..., description="Property code (e.g., WEND001)"),
+    year: int = Form(..., ge=2000, le=2100, description="Year for all documents"),
+    files: List[UploadFile] = File(..., description="Multiple files to upload (PDF, CSV, Excel, DOC)"),
+    uploaded_by: Optional[int] = Form(None, description="User ID (optional)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk upload multiple documents for a year.
+    
+    **Features:**
+    - Auto-detects document type from filename
+    - Auto-detects month from filename (defaults to January if not found)
+    - Supports PDF, CSV, Excel (.xlsx, .xls), DOC (.doc, .docx)
+    - Intelligently organizes files in MinIO buckets
+    - Queues extraction tasks automatically
+    
+    **Filename Patterns:**
+    - Document type: *balance*sheet*, *income*statement*, *cash*flow*, *rent*roll*
+    - Month: Numeric (1-12), month name (January-December), quarter (Q1-Q4)
+    
+    **Returns:**
+    - Results per file with status, upload_id, and any errors
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No files provided"
+        )
+    
+    if len(files) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 100 files allowed per bulk upload"
+        )
+    
+    try:
+        # Create document service
+        doc_service = DocumentService(db)
+        
+        # Bulk upload documents
+        result = await doc_service.bulk_upload_documents(
+            property_code=property_code,
+            year=year,
+            files=files,
+            uploaded_by=uploaded_by
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Bulk upload failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Bulk upload failed: {str(e)}"
+        )
+
+
+@router.get("/documents/queue-status")
+async def get_queue_status(db: Session = Depends(get_db)):
+    """Get Celery queue status and pending extractions"""
+    from celery import current_app
+    from app.models.document_upload import DocumentUpload
+    
+    try:
+        # Get Celery inspect object
+        inspect = current_app.control.inspect()
+        
+        # Get active, scheduled, and reserved tasks
+        active = inspect.active() or {}
+        scheduled = inspect.scheduled() or {}
+        reserved = inspect.reserved() or {}
+        
+        # Count extraction tasks across all workers
+        extraction_tasks = 0
+        for worker_tasks in [active, scheduled, reserved].values():
+            if worker_tasks:
+                for tasks in worker_tasks.values():
+                    extraction_tasks += len([
+                        t for t in tasks 
+                        if 'extract_document' in t.get('name', '') or 
+                           'extract_document' in str(t.get('task', ''))
+                    ])
+        
+        # Get worker stats
+        stats = inspect.stats() or {}
+        workers_available = len(stats)
+        
+        # Count pending uploads
+        pending_uploads = db.query(DocumentUpload).filter(
+            DocumentUpload.extraction_status == 'pending'
+        ).count()
+        
+        return {
+            "queue_depth": extraction_tasks,
+            "workers_available": workers_available,
+            "pending_uploads": pending_uploads,
+            "workers": list(stats.keys()) if stats else []
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to get queue status: {e}")
+        # Return safe defaults if Celery is unavailable
+        pending_uploads = db.query(DocumentUpload).filter(
+            DocumentUpload.extraction_status == 'pending'
+        ).count()
+        return {
+            "queue_depth": 0,
+            "workers_available": 0,
+            "pending_uploads": pending_uploads,
+            "workers": [],
+            "error": "Celery unavailable"
+        }
 
 
 @router.get("/documents/uploads", response_model=DocumentListResponse)

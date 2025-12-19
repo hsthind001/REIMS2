@@ -31,6 +31,7 @@ class DocumentUpload(Base):
     extraction_started_at = Column(DateTime(timezone=True))
     extraction_completed_at = Column(DateTime(timezone=True))
     extraction_id = Column(Integer, ForeignKey('extraction_logs.id'))  # Link to extraction quality tracking
+    extraction_task_id = Column(String(255), nullable=True, index=True)  # Celery task ID for tracking
     
     # Versioning
     version = Column(Integer, default=1)

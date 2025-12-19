@@ -29,6 +29,7 @@ from app.services.anomaly_detector import StatisticalAnomalyDetector
 from app.services.concordance_service import ConcordanceService
 from app.db.minio_client import download_file
 from app.core.config import settings
+from app.services.deduplication_service import get_deduplication_service
 
 
 class ExtractionOrchestrator:
@@ -516,47 +517,46 @@ class ExtractionOrchestrator:
         if deleted_count > 0:
             print(f"🗑️  Deleted {deleted_count} existing balance sheet records for property {upload.property_id}, period {upload.period_id}")
         
-        # Smart deduplication: Only deduplicate totals/subtotals, keep ALL detail lines
-        # This preserves granular data while preventing duplicate summary lines
-        seen_totals = {}  # Track totals/subtotals by account_code
-        detail_items = []  # Keep all detail lines
+        # INTELLIGENT DEDUPLICATION - Prevents duplicate constraint violations
+        # Constraint: (property_id, period_id, account_code)
+        # We must ensure no duplicate account_codes exist in the same batch
         
+        dedup_service = get_deduplication_service()
+        
+        # Add line_number for tracking if not present
         for idx, item in enumerate(items):
-            # Get account info - use matched if available, original if not
-            account_code = item.get("matched_account_code") or item.get("account_code", "")
-            account_name = item.get("matched_account_name") or item.get("account_name", "")
-            
-            # Add line_number for tracking
-            item['line_number'] = idx + 1
-            
-            # Skip only if we have absolutely no identifying information
-            if not account_name and not account_code:
-                continue
-            
-            is_subtotal = item.get("is_subtotal", False)
-            is_total = item.get("is_total", False)
-            
-            # If it's a total or subtotal, deduplicate by account_code
-            # (Only if we have a valid account_code to deduplicate on)
-            if (is_subtotal or is_total) and account_code:
-                if account_code in seen_totals:
-                    # Keep the one with highest amount (likely the correct total)
-                    existing_item = seen_totals[account_code]
-                    existing_amount = abs(existing_item.get("amount", 0.0))
-                    current_amount = abs(item.get("amount", 0.0))
-                    
-                    if current_amount > existing_amount:
-                        seen_totals[account_code] = item
-                else:
-                    seen_totals[account_code] = item
-            else:
-                # It's a detail line - keep ALL detail lines (even unmatched)
-                detail_items.append(item)
+            if not item.get("line_number"):
+                item['line_number'] = idx + 1
         
-        # Combine detail items with deduplicated totals
-        deduplicated_items = detail_items + list(seen_totals.values())
+        # Use constraint-aware deduplication: (account_code)
+        dedup_result = dedup_service.deduplicate_items(
+            items=items,
+            constraint_columns=['account_code'],
+            selection_strategy='confidence',  # Default, but will use 'amount' for totals/subtotals
+            document_type='balance_sheet',
+            is_total_or_subtotal=lambda item: item.get("is_subtotal", False) or item.get("is_total", False)
+        )
         
-        print(f"📊 Balance Sheet extraction: {len(items)} raw items → {len(detail_items)} detail lines + {len(seen_totals)} totals/subtotals = {len(deduplicated_items)} records")
+        deduplicated_items = dedup_result['deduplicated_items']
+        stats = dedup_result['statistics']
+        
+        # Count totals/subtotals for logging
+        totals_count = sum(1 for item in deduplicated_items if item.get("is_subtotal") or item.get("is_total"))
+        detail_count = len(deduplicated_items) - totals_count
+        
+        if stats['duplicates_removed'] > 0:
+            print(f"📊 Balance Sheet extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals, {stats['duplicates_removed']} duplicates removed)")
+        else:
+            print(f"📊 Balance Sheet extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals)")
+        
+        # PRE-INSERTION VALIDATION: Ensure no duplicate constraint keys (safety check)
+        is_valid, error_msg = dedup_service.validate_no_duplicates(
+            items=deduplicated_items,
+            constraint_columns=['account_code'],
+            context=f"balance_sheet insertion (upload_id={upload.id})"
+        )
+        if not is_valid:
+            raise ValueError(f"Pre-insertion validation failed: {error_msg}")
         
         # INSERT all new records (including unmatched accounts for complete reconciliation)
         for item in deduplicated_items:
@@ -708,42 +708,37 @@ class ExtractionOrchestrator:
         self.db.add(header)
         self.db.flush()  # Get header.id
         
-        # Step 4: Smart deduplication for income statement line items
-        # Only deduplicate totals/subtotals, keep ALL detail lines (even unmatched)
-        seen_totals = {}
-        detail_items = []
+        # Step 4: INTELLIGENT DEDUPLICATION - Prevents duplicate constraint violations
+        # Constraint: (property_id, period_id, account_code, account_name)
+        # We must ensure no duplicate (account_code, account_name) combinations exist
         
+        dedup_service = get_deduplication_service()
+        
+        # Add line_number for tracking if not present
         for idx, item in enumerate(items):
-            # Get account info - use matched if available, original if not
-            account_code = item.get("matched_account_code") or item.get("account_code", "")
-            account_name = item.get("matched_account_name") or item.get("account_name", "")
-            
-            # Add line_number for tracking
             if not item.get("line_number"):
                 item['line_number'] = idx + 1
-            
-            # Skip only if absolutely no info
-            if not account_name and not account_code:
-                continue
-            
-            is_subtotal = item.get("is_subtotal", False)
-            is_total = item.get("is_total", False)
-            
-            # Deduplicate only totals/subtotals (and only if we have account_code)
-            if (is_subtotal or is_total) and account_code:
-                if account_code in seen_totals:
-                    existing_amount = abs(seen_totals[account_code].get("period_amount", 0.0))
-                    current_amount = abs(item.get("period_amount", 0.0))
-                    if current_amount > existing_amount:
-                        seen_totals[account_code] = item
-                else:
-                    seen_totals[account_code] = item
-            else:
-                # Keep ALL detail lines (even unmatched)
-                detail_items.append(item)
         
-        deduplicated_items = detail_items + list(seen_totals.values())
-        print(f"📊 Income Statement extraction: {len(items)} raw items → {len(detail_items)} detail lines + {len(seen_totals)} totals/subtotals = {len(deduplicated_items)} records")
+        # Use constraint-aware deduplication: (account_code, account_name)
+        dedup_result = dedup_service.deduplicate_items(
+            items=items,
+            constraint_columns=['account_code', 'account_name'],
+            selection_strategy='confidence',  # Default, but will use 'amount' for totals/subtotals
+            document_type='income_statement',
+            is_total_or_subtotal=lambda item: item.get("is_subtotal", False) or item.get("is_total", False)
+        )
+        
+        deduplicated_items = dedup_result['deduplicated_items']
+        stats = dedup_result['statistics']
+        
+        # Count totals/subtotals for logging
+        totals_count = sum(1 for item in deduplicated_items if item.get("is_subtotal") or item.get("is_total"))
+        detail_count = len(deduplicated_items) - totals_count
+        
+        if stats['duplicates_removed'] > 0:
+            print(f"📊 Income Statement extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals, {stats['duplicates_removed']} duplicates removed)")
+        else:
+            print(f"📊 Income Statement extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals)")
         
         # Step 5: Insert line items with full categorization (including unmatched)
         for item in deduplicated_items:
@@ -1041,42 +1036,48 @@ class ExtractionOrchestrator:
         self.db.add(header)
         self.db.flush()  # Get header.id
         
-        # Step 4: Smart deduplication for cash flow line items
-        # Only deduplicate totals/subtotals, keep ALL detail lines (even unmatched)
-        seen_totals = {}
-        detail_items = []
+        # Step 4: INTELLIGENT DEDUPLICATION - Prevents duplicate constraint violations
+        # Constraints: 
+        #   - uq_cf_property_period_account: (property_id, period_id, account_code)
+        #   - uq_cf_property_period_account_name_line: (property_id, period_id, account_code, account_name, line_number)
+        # We use the more specific constraint: (account_code, account_name, line_number)
         
+        dedup_service = get_deduplication_service()
+        
+        # Add line_number for tracking if not present
         for idx, item in enumerate(items):
-            # Get account info - use matched if available, original if not
-            account_code = item.get("matched_account_code") or item.get("account_code", "")
-            account_name = item.get("matched_account_name") or item.get("account_name", "")
-            
-            # Add line_number for tracking
             if not item.get("line_number"):
                 item['line_number'] = idx + 1
-            
-            # Skip only if absolutely no info
-            if not account_name and not account_code:
-                continue
-            
-            is_subtotal = item.get("is_subtotal", False)
-            is_total = item.get("is_total", False)
-            
-            # Deduplicate only totals/subtotals (and only if we have account_code)
-            if (is_subtotal or is_total) and account_code:
-                if account_code in seen_totals:
-                    existing_amount = abs(seen_totals[account_code].get("period_amount", 0.0))
-                    current_amount = abs(item.get("period_amount", 0.0))
-                    if current_amount > existing_amount:
-                        seen_totals[account_code] = item
-                else:
-                    seen_totals[account_code] = item
-            else:
-                # Keep ALL detail lines (even unmatched)
-                detail_items.append(item)
         
-        deduplicated_items = detail_items + list(seen_totals.values())
-        print(f"📊 Cash Flow extraction: {len(items)} raw items → {len(detail_items)} detail lines + {len(seen_totals)} totals/subtotals = {len(deduplicated_items)} records")
+        # Use constraint-aware deduplication: (account_code, account_name, line_number)
+        dedup_result = dedup_service.deduplicate_items(
+            items=items,
+            constraint_columns=['account_code', 'account_name', 'line_number'],
+            selection_strategy='confidence',  # Default, but will use 'amount' for totals/subtotals
+            document_type='cash_flow',
+            is_total_or_subtotal=lambda item: item.get("is_subtotal", False) or item.get("is_total", False)
+        )
+        
+        deduplicated_items = dedup_result['deduplicated_items']
+        stats = dedup_result['statistics']
+        
+        # Count totals/subtotals for logging
+        totals_count = sum(1 for item in deduplicated_items if item.get("is_subtotal") or item.get("is_total"))
+        detail_count = len(deduplicated_items) - totals_count
+        
+        if stats['duplicates_removed'] > 0:
+            print(f"📊 Cash Flow extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals, {stats['duplicates_removed']} duplicates removed)")
+        else:
+            print(f"📊 Cash Flow extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals)")
+        
+        # PRE-INSERTION VALIDATION: Ensure no duplicate constraint keys (safety check)
+        is_valid, error_msg = dedup_service.validate_no_duplicates(
+            items=deduplicated_items,
+            constraint_columns=['account_code', 'account_name', 'line_number'],
+            context=f"cash_flow insertion (upload_id={upload.id})"
+        )
+        if not is_valid:
+            raise ValueError(f"Pre-insertion validation failed: {error_msg}")
         
         # Step 5: Insert line items with full categorization (including unmatched)
         for item in deduplicated_items:

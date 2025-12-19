@@ -43,6 +43,13 @@ celery_app.conf.beat_schedule = {
             'expires': 3600,  # Task expires after 1 hour if not picked up
         }
     },
+    'recover-stuck-extractions': {
+        'task': 'app.tasks.extraction_tasks.recover_stuck_extractions',
+        'schedule': crontab(minute='*'),  # Every minute
+        'options': {
+            'expires': 60,  # Task expires after 1 minute if not picked up
+        }
+    },
 }
 
 # Task routing (optional - for multiple queues)

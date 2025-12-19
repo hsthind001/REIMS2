@@ -214,6 +214,68 @@ def retry_failed_extraction(upload_id: int):
     }
 
 
+@celery_app.task(name="app.tasks.extraction_tasks.recover_stuck_extractions")
+def recover_stuck_extractions():
+    """
+    Find files in uploaded_to_minio or pending status and trigger extraction.
+    
+    This task runs every minute via Celery Beat to recover files that:
+    - Were uploaded to MinIO but extraction wasn't queued (Celery was down)
+    - Are stuck in pending status without a task_id
+    
+    Returns:
+        dict: Recovery statistics
+    """
+    from datetime import datetime, timedelta
+    from app.db.database import SessionLocal
+    from app.models.document_upload import DocumentUpload
+    
+    db = SessionLocal()
+    recovered_count = 0
+    error_count = 0
+    
+    try:
+        # Find files stuck in uploaded_to_minio or pending without task_id
+        stuck_uploads = db.query(DocumentUpload).filter(
+            DocumentUpload.extraction_status.in_(['uploaded_to_minio', 'pending']),
+            DocumentUpload.extraction_task_id.is_(None),  # No task ID means never queued
+            DocumentUpload.upload_date > datetime.utcnow() - timedelta(hours=24)  # Only recent files
+        ).limit(50).all()
+        
+        logger.info(f"Recovery task: Found {len(stuck_uploads)} stuck upload(s)")
+        
+        for upload in stuck_uploads:
+            try:
+                # Try to queue extraction
+                task = extract_document.delay(upload.id)
+                upload.extraction_status = 'pending'
+                upload.extraction_task_id = task.id
+                db.commit()
+                recovered_count += 1
+                logger.info(f"✅ Recovered upload_id={upload.id}, task_id={task.id}")
+            except Exception as e:
+                error_count += 1
+                logger.error(f"❌ Failed to recover upload_id={upload.id}: {e}")
+                # Update notes but don't fail the whole task
+                upload.notes = f"Recovery attempt failed: {str(e)}"
+                db.commit()
+        
+        return {
+            "recovered": recovered_count,
+            "errors": error_count,
+            "total_found": len(stuck_uploads)
+        }
+    except Exception as e:
+        logger.error(f"Recovery task failed: {e}")
+        return {
+            "recovered": recovered_count,
+            "errors": error_count,
+            "error": str(e)
+        }
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.tasks.extraction_tasks.batch_extract_documents")
 def batch_extract_documents(upload_ids: list):
     """

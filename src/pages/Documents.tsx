@@ -22,6 +22,7 @@ const formatExtractionStatus = (status: string): string => {
 
 const Documents = () => {
   const [uploading, setUploading] = useState(false)
+  const [queueStatus, setQueueStatus] = useState({ depth: 0, workers: 0, pending_uploads: 0 })
   const [selectedProperty, setSelectedProperty] = useState('')
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
@@ -240,6 +241,33 @@ const Documents = () => {
         <div>
           <h2>Documents</h2>
           <p className="page-subtitle">Upload and manage financial documents</p>
+        </div>
+      </div>
+      
+      {/* Queue Status Display */}
+      <div className="card mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Extraction Queue Status</h3>
+            <div className="flex gap-6 text-sm">
+              <span className="text-gray-600">
+                Queue Depth: <span className="font-semibold text-gray-900">{queueStatus.depth}</span>
+              </span>
+              <span className="text-gray-600">
+                Workers: <span className="font-semibold text-gray-900">{queueStatus.workers}</span>
+              </span>
+              <span className="text-gray-600">
+                Pending Uploads: <span className="font-semibold text-gray-900">{queueStatus.pending_uploads}</span>
+              </span>
+            </div>
+          </div>
+          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+            queueStatus.workers > 0 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-red-100 text-red-800'
+          }`}>
+            {queueStatus.workers > 0 ? '🟢 Active' : '🔴 No Workers'}
+          </div>
         </div>
       </div>
 

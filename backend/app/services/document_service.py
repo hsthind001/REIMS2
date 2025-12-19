@@ -3,7 +3,7 @@ Document Service - Business logic for document upload workflow
 """
 from sqlalchemy.orm import Session
 from fastapi import UploadFile, HTTPException, status
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, List
 from datetime import datetime, date
 import hashlib
 import os
@@ -13,6 +13,8 @@ from app.models.financial_period import FinancialPeriod
 from app.models.document_upload import DocumentUpload
 from app.db.minio_client import upload_file, get_minio_client
 from app.core.config import settings
+from app.services.document_type_detector import DocumentTypeDetector
+from app.tasks.extraction_tasks import extract_document
 
 
 # Property name mapping for MinIO folder structure
@@ -193,9 +195,9 @@ class DocumentService:
         file_path = await self.generate_file_path(
             property_obj,
             period_year,
-            period_month,
             document_type,
-            file.filename
+            file.filename,
+            period_month=period_month
         )
         
         # Check if file already exists at this path (not hash duplicate)
@@ -245,6 +247,24 @@ class DocumentService:
         self.db.commit()
         self.db.refresh(upload)
         
+        # Step 7: Automatically trigger extraction with error handling
+        try:
+            from app.tasks.extraction_tasks import extract_document
+            task = extract_document.delay(upload.id)
+            upload.extraction_status = 'pending'
+            upload.extraction_task_id = task.id
+            self.db.commit()
+            print(f"✅ Extraction task queued: task_id={task.id} for upload_id={upload.id}")
+        except Exception as e:
+            # If Celery unavailable, mark for background processing
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to queue extraction for upload_id={upload.id}: {e}")
+            upload.extraction_status = 'pending'  # Will be picked up by background task
+            upload.notes = f"Extraction queuing failed, will retry: {str(e)}"
+            self.db.commit()
+            print(f"⚠️  Extraction queuing failed for upload_id={upload.id}, will be recovered by background task")
+        
         return {
             "is_duplicate": False,
             "upload_id": upload.id,
@@ -253,10 +273,27 @@ class DocumentService:
         }
     
     def get_property_by_code(self, property_code: str) -> Optional[Property]:
-        """Get property by code"""
-        return self.db.query(Property).filter(
+        """
+        Get property by code or ID.
+        
+        Intelligently handles both property_code (e.g., "WEND001") and numeric ID.
+        """
+        # Try as property_code first
+        property_obj = self.db.query(Property).filter(
             Property.property_code == property_code
         ).first()
+        
+        # If not found and looks like a numeric ID, try as ID
+        if not property_obj and property_code.isdigit():
+            try:
+                property_id = int(property_code)
+                property_obj = self.db.query(Property).filter(
+                    Property.id == property_id
+                ).first()
+            except ValueError:
+                pass
+        
+        return property_obj
     
     def get_or_create_period(
         self,
@@ -345,26 +382,31 @@ class DocumentService:
         self,
         property_obj: Property,
         period_year: int,
-        period_month: int,
         document_type: str,
-        original_filename: str
+        original_filename: str,
+        period_month: Optional[int] = None
     ) -> str:
         """
         Generate MinIO file path using new organized structure
         
-        Path format: {property_code}-{property_name}/{year}/{doc_type}/{standardized_file}.pdf
-        Example: ESP001-Eastern-Shore-Plaza/2025/rent-roll/ESP_2025_Rent_Roll_April.pdf
+        Path format: {property_code}-{property_name}/{year}/{doc_type}/{filename}
+        Example: ESP001-Eastern-Shore-Plaza/2025/balance-sheet/ESP_2025_12_Balance_Sheet.pdf
+        Example (no month): ESP001-Eastern-Shore-Plaza/2025/balance-sheet/ESP_2025_Balance_Sheet.pdf
         
         Args:
             property_obj: Property object (includes code and name)
             period_year: Year
-            period_month: Month
             document_type: Document type
-            original_filename: Original filename
+            original_filename: Original filename (preserves extension)
+            period_month: Month (optional, defaults to 1 if not provided)
         
         Returns:
             str: Standardized file path for MinIO
         """
+        # Default month to 1 if not provided
+        if period_month is None:
+            period_month = 1
+        
         # Get property folder name
         property_code = property_obj.property_code
         prop_folder = PROPERTY_NAME_MAPPING.get(property_code, property_obj.property_name.replace(' ', '-'))
@@ -378,6 +420,12 @@ class DocumentService:
         }
         doc_folder = doc_type_folders.get(document_type, document_type)
         
+        # Get file extension from original filename
+        import os
+        _, ext = os.path.splitext(original_filename)
+        if not ext:
+            ext = '.pdf'  # Default to PDF if no extension
+        
         # Generate standardized filename
         prop_abbr = property_code[:property_code.find('0')] if '0' in property_code else property_code[:4]
 
@@ -386,7 +434,7 @@ class DocumentService:
 
         # Format filename with month to prevent overwrites
         if document_type == 'rent_roll':
-            filename = f"{prop_abbr}_{period_year}_Rent_Roll_{month_name}.pdf"
+            filename = f"{prop_abbr}_{period_year}_Rent_Roll_{month_name}{ext}"
         else:
             doc_type_map = {
                 'balance_sheet': 'Balance_Sheet',
@@ -396,7 +444,7 @@ class DocumentService:
             type_name = doc_type_map.get(document_type, document_type)
             # Include month in filename to avoid overwrites (month number format: 01-12)
             month_num = f"{period_month:02d}"
-            filename = f"{prop_abbr}_{period_year}_{month_num}_{type_name}.pdf"
+            filename = f"{prop_abbr}_{period_year}_{month_num}_{type_name}{ext}"
         
         # Build structured path
         file_path = f"{property_code}-{prop_folder}/{period_year}/{doc_folder}/{filename}"
@@ -469,4 +517,270 @@ class DocumentService:
         
         self.db.commit()
         return True
+    
+    def _validate_file_format(self, file: UploadFile) -> Dict[str, Any]:
+        """
+        Validate file format and return file type.
+        
+        Returns:
+            {
+                "valid": bool,
+                "file_type": "pdf" | "csv" | "excel" | "doc" | None,
+                "error": str | None
+            }
+        """
+        filename_lower = file.filename.lower() if file.filename else ""
+        content_type = file.content_type or ""
+        
+        # Check by extension
+        if filename_lower.endswith('.pdf'):
+            return {"valid": True, "file_type": "pdf", "error": None}
+        elif filename_lower.endswith(('.csv',)):
+            return {"valid": True, "file_type": "csv", "error": None}
+        elif filename_lower.endswith(('.xlsx', '.xls')):
+            return {"valid": True, "file_type": "excel", "error": None}
+        elif filename_lower.endswith(('.doc', '.docx')):
+            return {"valid": True, "file_type": "doc", "error": None}
+        
+        # Check by content type
+        if 'pdf' in content_type:
+            return {"valid": True, "file_type": "pdf", "error": None}
+        elif 'csv' in content_type or 'text/csv' in content_type:
+            return {"valid": True, "file_type": "csv", "error": None}
+        elif 'spreadsheet' in content_type or 'excel' in content_type:
+            return {"valid": True, "file_type": "excel", "error": None}
+        elif 'msword' in content_type or 'wordprocessingml' in content_type:
+            return {"valid": True, "file_type": "doc", "error": None}
+        
+        return {
+            "valid": False,
+            "file_type": None,
+            "error": f"Unsupported file format. Supported: PDF, CSV, Excel (.xlsx, .xls), DOC (.doc, .docx)"
+        }
+    
+    async def bulk_upload_documents(
+        self,
+        property_code: str,
+        year: int,
+        files: List[UploadFile],
+        uploaded_by: Optional[int] = None
+    ) -> Dict:
+        """
+        Bulk upload multiple documents for a year.
+        
+        For each file:
+        1. Detect document type from filename
+        2. Detect month from filename (or default to 1)
+        3. Validate file format
+        4. Generate MinIO path
+        5. Upload to MinIO
+        6. Create DocumentUpload record
+        7. Queue extraction/import task
+        
+        Args:
+            property_code: Property code (e.g., WEND001)
+            year: Year for all documents
+            files: List of files to upload
+            uploaded_by: User ID (optional)
+        
+        Returns:
+            {
+                "success": bool,
+                "total_files": int,
+                "uploaded": int,
+                "failed": int,
+                "results": [
+                    {
+                        "filename": str,
+                        "document_type": str,
+                        "month": int | None,
+                        "file_type": str,
+                        "status": "success" | "failed",
+                        "upload_id": int | None,
+                        "file_path": str | None,
+                        "error": str | None
+                    }
+                ]
+            }
+        """
+        detector = DocumentTypeDetector()
+        results = []
+        uploaded_count = 0
+        failed_count = 0
+        
+        # Validate property exists
+        property_obj = self.get_property_by_code(property_code)
+        if not property_obj:
+            return {
+                "success": False,
+                "total_files": len(files),
+                "uploaded": 0,
+                "failed": len(files),
+                "error": f"Property '{property_code}' not found",
+                "results": []
+            }
+        
+        for file in files:
+            result = {
+                "filename": file.filename or "unknown",
+                "document_type": "unknown",
+                "month": None,
+                "file_type": None,
+                "status": "failed",
+                "upload_id": None,
+                "file_path": None,
+                "error": None
+            }
+            
+            try:
+                # Step 1: Validate file format
+                format_validation = self._validate_file_format(file)
+                if not format_validation["valid"]:
+                    result["error"] = format_validation["error"]
+                    results.append(result)
+                    failed_count += 1
+                    continue
+                
+                result["file_type"] = format_validation["file_type"]
+                
+                # Step 2: Detect document type from filename
+                type_detection = detector.detect_from_filename(file.filename or "")
+                detected_type = type_detection.get("document_type", "unknown")
+                
+                if detected_type == "unknown":
+                    result["error"] = "Could not detect document type from filename"
+                    results.append(result)
+                    failed_count += 1
+                    continue
+                
+                result["document_type"] = detected_type
+                
+                # Step 3: Detect month from filename
+                detected_month = detector.detect_month_from_filename(file.filename or "", year)
+                if detected_month is None:
+                    detected_month = 1  # Default to January
+                
+                result["month"] = detected_month
+                
+                # Step 4: Get or create period
+                period = self.get_or_create_period(
+                    property_obj.id,
+                    year,
+                    detected_month
+                )
+                
+                # Step 5: Read file content
+                file_content = await file.read()
+                file.file.seek(0)  # Reset for potential reuse
+                
+                # Step 6: Calculate file hash
+                file_hash = hashlib.md5(file_content).hexdigest()
+                
+                # Step 7: Check for duplicate
+                duplicate = self.check_duplicate(
+                    property_obj.id,
+                    period.id,
+                    detected_type,
+                    file_hash
+                )
+                
+                if duplicate:
+                    # Auto-delete old upload
+                    try:
+                        from app.db.minio_client import delete_file
+                        if duplicate.file_path:
+                            delete_file(duplicate.file_path, settings.MINIO_BUCKET_NAME)
+                        self.db.delete(duplicate)
+                        self.db.commit()
+                    except Exception as e:
+                        print(f"⚠️  Warning: Could not delete old file: {e}")
+                
+                # Step 8: Generate file path
+                file_path = await self.generate_file_path(
+                    property_obj,
+                    year,
+                    detected_type,
+                    file.filename or "document",
+                    period_month=detected_month
+                )
+                
+                # Step 9: Determine content type
+                content_type_map = {
+                    "pdf": "application/pdf",
+                    "csv": "text/csv",
+                    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "doc": "application/msword"
+                }
+                content_type = content_type_map.get(format_validation["file_type"], "application/octet-stream")
+                
+                # Step 10: Upload to MinIO
+                upload_success = upload_file(
+                    file_data=file_content,
+                    object_name=file_path,
+                    content_type=content_type,
+                    bucket_name=settings.MINIO_BUCKET_NAME
+                )
+                
+                if not upload_success:
+                    result["error"] = "Failed to upload file to MinIO"
+                    results.append(result)
+                    failed_count += 1
+                    continue
+                
+                # Step 11: Create DocumentUpload record
+                upload_record = DocumentUpload(
+                    property_id=property_obj.id,
+                    period_id=period.id,
+                    document_type=detected_type,
+                    file_name=file.filename or "unknown",
+                    file_path=file_path,
+                    file_hash=file_hash,
+                    file_size=len(file_content),
+                    uploaded_by=uploaded_by,
+                    upload_date=datetime.now(),
+                    extraction_status='uploaded_to_minio'
+                )
+                
+                self.db.add(upload_record)
+                self.db.commit()
+                self.db.refresh(upload_record)
+                
+                result["upload_id"] = upload_record.id
+                result["file_path"] = file_path
+                result["status"] = "success"
+                
+                # Step 12: Queue extraction/import task
+                try:
+                    if format_validation["file_type"] in ["pdf", "doc"]:
+                        # Queue extraction task for PDF/DOC
+                        task = extract_document.delay(upload_record.id)
+                        upload_record.extraction_status = 'pending'
+                        upload_record.extraction_task_id = task.id
+                    elif format_validation["file_type"] in ["csv", "excel"]:
+                        # For CSV/Excel, mark as ready for import
+                        # The bulk import service will handle these
+                        upload_record.extraction_status = 'pending'
+                    self.db.commit()
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to queue extraction task: {e}")
+                    upload_record.extraction_status = 'pending'
+                    upload_record.notes = f"Extraction queuing failed, will retry: {str(e)}"
+                    self.db.commit()
+                
+                uploaded_count += 1
+                
+            except Exception as e:
+                result["error"] = str(e)
+                failed_count += 1
+                print(f"❌ Error processing file {file.filename}: {e}")
+            
+            results.append(result)
+        
+        return {
+            "success": uploaded_count > 0,
+            "total_files": len(files),
+            "uploaded": uploaded_count,
+            "failed": failed_count,
+            "results": results
+        }
 

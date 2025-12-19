@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, lazy, Suspense, useEffect } from 'react'
 import './App.css'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { LoginForm } from './components/LoginForm'
@@ -11,6 +11,7 @@ const FinancialCommand = lazy(() => import('./pages/FinancialCommand'))
 const DataControlCenter = lazy(() => import('./pages/DataControlCenter'))
 const AdminHub = lazy(() => import('./pages/AdminHub'))
 const RiskManagement = lazy(() => import('./pages/RiskManagement'))
+const BulkImport = lazy(() => import('./pages/BulkImport'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -28,9 +29,29 @@ function AppContent() {
   console.log('🎨 AppContent: Component rendering');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [hashRoute, setHashRoute] = useState<string>('')
   const { user, logout, isAuthenticated, loading } = useAuth()
 
   console.log('🎨 AppContent: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated);
+
+  // Handle hash-based routing
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1) // Remove the #
+      setHashRoute(hash)
+      // If navigating to bulk-import, ensure we're on operations page
+      if (hash === 'bulk-import' && currentPage !== 'operations') {
+        setCurrentPage('operations')
+      }
+    }
+
+    // Check initial hash
+    handleHashChange()
+
+    // Listen for hash changes
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [currentPage])
 
   // Show loading state while checking authentication
   if (loading) {
@@ -190,7 +211,13 @@ function AppContent() {
 
         {/* Main Content */}
         <main className="content">
-          {renderPage()}
+          {hashRoute === 'bulk-import' ? (
+            <Suspense fallback={<PageLoader />}>
+              <BulkImport />
+            </Suspense>
+          ) : (
+            renderPage()
+          )}
         </main>
       </div>
     </div>
