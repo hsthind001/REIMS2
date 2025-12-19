@@ -62,11 +62,14 @@ def upgrade():
         sa.Column('br_id', sa.String(length=20), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(['acknowledged_by'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['dismissed_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['acknowledged_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['dismissed_by'], ['users.id'], ),
         sa.ForeignKeyConstraint(['financial_period_id'], ['financial_periods.id'], ),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
-        sa.ForeignKeyConstraint(['resolved_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['resolved_by'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_committee_alerts_id'), 'committee_alerts', ['id'], unique=False)
@@ -117,11 +120,15 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(['alert_id'], ['committee_alerts.id'], ),
-        sa.ForeignKeyConstraint(['approved_by'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['locked_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['approved_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['locked_by'], ['users.id'], ),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
-        sa.ForeignKeyConstraint(['rejected_by'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['unlocked_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['rejected_by'], ['users.id'], ),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['unlocked_by'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_workflow_locks_id'), 'workflow_locks', ['id'], unique=False)

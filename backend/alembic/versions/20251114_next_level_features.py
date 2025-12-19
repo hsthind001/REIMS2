@@ -78,7 +78,8 @@ def upgrade():
         sa.Column('pattern_detected', JSONB, nullable=True),
         sa.Column('applied_to_future', sa.Boolean(), server_default='false'),
         sa.ForeignKeyConstraint(['field_metadata_id'], ['extraction_field_metadata.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['corrected_by'], ['users.id']),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['corrected_by'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_corrections_type', 'extraction_corrections', ['correction_type'])
@@ -99,7 +100,8 @@ def upgrade():
         sa.Column('sql_query', sa.Text(), nullable=True),
         sa.Column('execution_time_ms', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id']),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['user_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_nlq_user', 'nlq_queries', ['user_id'])
@@ -121,7 +123,8 @@ def upgrade():
         sa.Column('approved', sa.Boolean(), server_default='false'),
         sa.Column('approved_by', sa.Integer(), nullable=True),
         sa.Column('approved_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['approved_by'], ['users.id']),
+        # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['approved_by'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_audits_report', 'report_audits', ['report_id', 'report_type'])

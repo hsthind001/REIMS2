@@ -1251,13 +1251,13 @@ export default function CommandCenter() {
                       >
                         <td className="py-3 px-4 font-medium">{prop.name}</td>
                         <td className="py-3 px-4 text-right">
-                          ${(prop.value / 1000000).toFixed(1)}M
+                          ${prop.value ? (prop.value / 1000000).toFixed(1) : '0.0'}M
                         </td>
                         <td className="py-3 px-4 text-right">
-                          ${((prop.noi / 1000).toFixed(1))}K
+                          ${prop.noi ? (prop.noi / 1000).toFixed(1) : '0.0'}K
                         </td>
-                        <td className="py-3 px-4 text-right">{prop.dscr.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right">{prop.ltv.toFixed(1)}%</td>
+                        <td className="py-3 px-4 text-right">{prop.dscr ? prop.dscr.toFixed(2) : 'N/A'}</td>
+                        <td className="py-3 px-4 text-right">{prop.ltv ? prop.ltv.toFixed(1) : 'N/A'}%</td>
                         <td className="py-3 px-4">
                           <div className="h-6 w-24 flex items-end gap-0.5">
                             {prop.trends.noi.slice(-12).map((val, i) => {

@@ -380,11 +380,12 @@ class DocumentService:
         
         # Generate standardized filename
         prop_abbr = property_code[:property_code.find('0')] if '0' in property_code else property_code[:4]
-        
-        # Month name for rent rolls
-        month_name = datetime(period_year, period_month, 1).strftime('%B') if document_type == 'rent_roll' else ''
-        
-        if document_type == 'rent_roll' and month_name:
+
+        # Get month name for all document types to ensure unique filenames
+        month_name = datetime(period_year, period_month, 1).strftime('%B')
+
+        # Format filename with month to prevent overwrites
+        if document_type == 'rent_roll':
             filename = f"{prop_abbr}_{period_year}_Rent_Roll_{month_name}.pdf"
         else:
             doc_type_map = {
@@ -393,7 +394,9 @@ class DocumentService:
                 'cash_flow': 'Cash_Flow_Statement'
             }
             type_name = doc_type_map.get(document_type, document_type)
-            filename = f"{prop_abbr}_{period_year}_{type_name}.pdf"
+            # Include month in filename to avoid overwrites (month number format: 01-12)
+            month_num = f"{period_month:02d}"
+            filename = f"{prop_abbr}_{period_year}_{month_num}_{type_name}.pdf"
         
         # Build structured path
         file_path = f"{property_code}-{prop_folder}/{period_year}/{doc_folder}/{filename}"

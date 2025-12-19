@@ -448,7 +448,8 @@ class ExtractionOrchestrator:
             # Step 4: Intelligent account matching
             if parsed_data.get("line_items"):
                 parsed_data["line_items"] = self._match_accounts_intelligent(
-                    parsed_data["line_items"]
+                    parsed_data["line_items"],
+                    document_type=upload.document_type
                 )
             
             # Step 5: Insert based on document type
@@ -2087,10 +2088,10 @@ class ExtractionOrchestrator:
                 "error": f"Table extraction failed: {str(e)}"
             }
     
-    def _match_accounts_intelligent(self, extracted_items: List[Dict]) -> List[Dict]:
+    def _match_accounts_intelligent(self, extracted_items: List[Dict], document_type: str = None) -> List[Dict]:
         """
         Intelligent account matching with multiple strategies (Template v1.0 compliant)
-        
+
         Strategies (in order):
         1. Exact code match
         2. Fuzzy code match (handles OCR errors - 90%+ similarity)
@@ -2098,7 +2099,11 @@ class ExtractionOrchestrator:
         4. Fuzzy name match (85%+ similarity - Template v1.0 requirement)
         5. Partial name match with category filtering (85%+)
         6. Log unmapped for review
-        
+
+        Args:
+            extracted_items: List of extracted line items from PDF
+            document_type: Type of document being processed (for auto-account creation)
+
         Returns: enhanced items with matched_account_id
         """
         from fuzzywuzzy import fuzz
@@ -2227,12 +2232,35 @@ class ExtractionOrchestrator:
                 # Flag for review if confidence < 95% (Template v1.0 recommendation)
                 enhanced_item["needs_review"] = match_confidence < 95.0
             else:
-                # Log unmapped account
-                enhanced_item["matched_account_id"] = None
-                enhanced_item["match_method"] = "unmapped"
-                enhanced_item["match_confidence"] = 0.0
-                enhanced_item["needs_review"] = True
-            
+                # AUTO-CREATE missing account for intelligent system
+                if account_name and account_name.strip():
+                    print(f"🔧 Auto-creating missing account: {account_name} (code: {account_code or 'auto-generated'})")
+                    new_account = self._auto_create_account(
+                        account_name=account_name,
+                        account_code=account_code,
+                        document_type=document_type
+                    )
+                    if new_account:
+                        enhanced_item["matched_account_id"] = new_account.id
+                        enhanced_item["matched_account_code"] = new_account.account_code
+                        enhanced_item["matched_account_name"] = new_account.account_name
+                        enhanced_item["match_method"] = "auto_created"
+                        enhanced_item["match_confidence"] = 100.0
+                        enhanced_item["needs_review"] = True  # Always review auto-created accounts
+                        print(f"✅ Auto-created account: {new_account.account_code} - {new_account.account_name}")
+                    else:
+                        # Fallback if auto-creation fails
+                        enhanced_item["matched_account_id"] = None
+                        enhanced_item["match_method"] = "unmapped"
+                        enhanced_item["match_confidence"] = 0.0
+                        enhanced_item["needs_review"] = True
+                else:
+                    # No account name to create from
+                    enhanced_item["matched_account_id"] = None
+                    enhanced_item["match_method"] = "unmapped"
+                    enhanced_item["match_confidence"] = 0.0
+                    enhanced_item["needs_review"] = True
+
             enhanced_items.append(enhanced_item)
         
         return enhanced_items
@@ -2394,6 +2422,192 @@ class ExtractionOrchestrator:
                 "metadata_saved": False
             }
     
+    def _auto_create_account(self, account_name: str, account_code: str = None, document_type: str = None) -> ChartOfAccounts:
+        """
+        Automatically create a missing account in the chart of accounts
+
+        This makes the system intelligent and self-maintaining - new accounts are
+        automatically added when encountered in PDFs.
+
+        Args:
+            account_name: Name of the account from PDF
+            account_code: Account code from PDF (optional, will be auto-generated if missing)
+            document_type: Type of document (helps determine account type)
+
+        Returns:
+            ChartOfAccounts object or None if creation fails
+        """
+        try:
+            # DEFENSIVE: Validate required parameters
+            if not account_name or not isinstance(account_name, str):
+                print(f"❌ Auto-create failed: Invalid account_name parameter: {account_name}")
+                return None
+
+            if not account_name.strip():
+                print(f"❌ Auto-create failed: Empty account_name after stripping")
+                return None
+
+            # Log detailed context for debugging
+            print(f"🔧 Auto-creating account with context:")
+            print(f"   - Account Name: {account_name}")
+            print(f"   - Account Code: {account_code or 'auto-generate'}")
+            print(f"   - Document Type: {document_type or 'not specified'}")
+
+            # Determine account type and category from name patterns
+            account_type, category = self._infer_account_type_category(account_name, document_type)
+
+            # Generate account code if not provided
+            if not account_code or account_code == "UNMATCHED":
+                account_code = self._generate_account_code(account_name, account_type)
+
+            # Check if account already exists with this code (race condition protection)
+            existing = self.db.query(ChartOfAccounts).filter(
+                ChartOfAccounts.account_code == account_code
+            ).first()
+
+            if existing:
+                print(f"   ℹ️  Account already exists with code {account_code}, using existing")
+                return existing
+
+            # Create new account
+            new_account = ChartOfAccounts(
+                account_code=account_code,
+                account_name=account_name.strip(),
+                account_type=account_type,
+                category=category,
+                is_active=True,
+                is_calculated=False,
+                display_order=9999,  # Put auto-created accounts at the end
+                notes=f"Auto-created from {document_type or 'document'} extraction"
+            )
+
+            self.db.add(new_account)
+            self.db.flush()  # Get the ID without committing yet
+
+            return new_account
+
+        except Exception as e:
+            print(f"❌ Failed to auto-create account '{account_name}': {e}")
+            return None
+
+    def _infer_account_type_category(self, account_name: str, document_type: str = None) -> tuple:
+        """
+        Infer account type and category from account name patterns
+
+        Args:
+            account_name: Name of the account to analyze
+            document_type: Optional document type for context-aware inference
+
+        Returns: (account_type, category) tuple
+
+        Raises:
+            ValueError: If account_name is invalid
+        """
+        # DEFENSIVE: Validate input
+        if not account_name or not isinstance(account_name, str):
+            raise ValueError(f"Invalid account_name: {account_name}")
+
+        name_lower = account_name.lower().strip()
+
+        if not name_lower:
+            raise ValueError("Account name is empty after stripping")
+
+        # Asset patterns
+        if any(word in name_lower for word in ['cash', 'bank', 'receivable', 'a/r', 'deposit', 'prepaid', 'asset']):
+            return ('asset', 'current_asset')
+        elif any(word in name_lower for word in ['land', 'building', 'equipment', 'improvement', 'property']):
+            return ('asset', 'fixed_asset')
+        elif any(word in name_lower for word in ['accumulated', 'depreciation', 'amortization']):
+            return ('asset', 'contra_asset')
+
+        # Liability patterns
+        elif any(word in name_lower for word in ['payable', 'a/p', 'accrued', 'loan', 'mortgage', 'note', 'liability']):
+            if any(word in name_lower for word in ['long', 'term', 'mortgage', 'note']):
+                return ('liability', 'long_term_liability')
+            return ('liability', 'current_liability')
+
+        # Equity patterns
+        elif any(word in name_lower for word in ['equity', 'capital', 'contribution', 'distribution', 'retained', 'earnings']):
+            return ('equity', 'capital')
+
+        # Income patterns (from income statement)
+        elif any(word in name_lower for word in ['income', 'revenue', 'rent', 'rental', 'reimbursement', 'sales']):
+            return ('income', 'rental_income')
+
+        # Expense patterns (from income statement)
+        elif any(word in name_lower for word in ['expense', 'cost', 'fee', 'tax', 'insurance', 'utility', 'maintenance', 'repair']):
+            return ('expense', 'operating_expense')
+
+        # Default based on document type
+        elif document_type == 'balance_sheet':
+            return ('asset', 'other_asset')  # Default to asset for balance sheet
+        elif document_type == 'income_statement':
+            return ('expense', 'operating_expense')  # Default to expense for income statement
+        else:
+            return ('asset', 'other_asset')  # Ultimate fallback
+
+    def _generate_account_code(self, account_name: str, account_type: str) -> str:
+        """
+        Generate an account code for auto-created accounts
+
+        Uses the naming convention: [type_prefix][sequential_number]
+        - Assets: 0xxx-0000
+        - Liabilities: 2xxx-0000
+        - Equity: 3xxx-0000
+        - Income: 4xxx-0000
+        - Expense: 5xxx-0000
+
+        Args:
+            account_name: Name of the account (for logging)
+            account_type: Type of account (asset, liability, equity, income, expense)
+
+        Returns:
+            Generated account code string
+
+        Raises:
+            ValueError: If account_type is invalid
+        """
+        # DEFENSIVE: Validate inputs
+        if not account_type or not isinstance(account_type, str):
+            raise ValueError(f"Invalid account_type: {account_type}")
+
+        account_type = account_type.lower().strip()
+
+        # Determine prefix based on account type
+        type_prefixes = {
+            'asset': '0',
+            'liability': '2',
+            'equity': '3',
+            'income': '4',
+            'expense': '5'
+        }
+
+        if account_type not in type_prefixes:
+            print(f"⚠️  Unknown account type '{account_type}' for '{account_name}', using fallback prefix '9'")
+
+        prefix = type_prefixes.get(account_type, '9')  # 9xxx for unknown
+
+        # Find the next available code in this range
+        # Query for highest code in this prefix range
+        highest_code = self.db.query(ChartOfAccounts.account_code).filter(
+            ChartOfAccounts.account_code.like(f'{prefix}%')
+        ).order_by(ChartOfAccounts.account_code.desc()).first()
+
+        if highest_code and highest_code[0]:
+            # Extract number and increment
+            try:
+                code_num = int(highest_code[0].split('-')[0])
+                next_num = code_num + 1
+            except:
+                # Fallback: use 9900 series for auto-created
+                next_num = int(f'{prefix}900')
+        else:
+            # No existing codes in this range, start at X900
+            next_num = int(f'{prefix}900')
+
+        # Format as XXXX-0000
+        return f'{next_num:04d}-0000'
+
     def _determine_cash_flow_category(self, account_code: str, line_section: str) -> str:
         """
         Determine cash flow category (operating/investing/financing) based on account code

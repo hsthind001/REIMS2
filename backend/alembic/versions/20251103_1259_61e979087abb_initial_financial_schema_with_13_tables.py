@@ -113,7 +113,8 @@ def upgrade() -> None:
     sa.Column('created_by', sa.Integer(), nullable=True),
     # NOTE: Foreign key to users table removed - users table doesn't exist yet
     # TODO: Add foreign key in a later migration after users table is created
-    # sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+    # # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_properties_id'), 'properties', ['id'], unique=False)
@@ -241,7 +242,8 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['account_id'], ['chart_of_accounts.id'], ),
     sa.ForeignKeyConstraint(['period_id'], ['financial_periods.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='CASCADE'),
-#    # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
+#    # # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['upload_id'], ['document_uploads.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('property_id', 'period_id', 'account_code', name='uq_bs_property_period_account')
@@ -278,7 +280,8 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['account_id'], ['chart_of_accounts.id'], ),
     sa.ForeignKeyConstraint(['period_id'], ['financial_periods.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='CASCADE'),
-#    # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
+#    # # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['upload_id'], ['document_uploads.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('property_id', 'period_id', 'account_code', name='uq_cf_property_period_account')
@@ -313,7 +316,8 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['account_id'], ['chart_of_accounts.id'], ),
     sa.ForeignKeyConstraint(['period_id'], ['financial_periods.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='CASCADE'),
-#    # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
+#    # # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['upload_id'], ['document_uploads.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('property_id', 'period_id', 'account_code', name='uq_is_property_period_account')
@@ -358,7 +362,8 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['period_id'], ['financial_periods.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='CASCADE'),
-#    # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
+#    # # NOTE: Foreign key to users table removed - users table doesn't exist yet
+        # sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['upload_id'], ['document_uploads.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('property_id', 'period_id', 'unit_number', name='uq_rr_property_period_unit')
