@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dmesg:*)",
+      "Bash(swapon:*)",
+      "Bash(sudo dmesg:*)",
+      "Bash(ps aux:*)",
+      "Bash(systemctl status:*)",
+      "Bash(sudo journalctl:*)",
+      "Bash(zramctl:*)",
+      "Bash(sudo bash:*)",
+      "Bash(chmod:*)",
+      "Bash(sudo systemctl restart:*)",
+      "Bash(sudo cp:*)",
+      "Bash(sudo chmod:*)",
+      "Bash(/usr/local/bin/memory-monitor:*)",
+      "Bash(sudo mkdir:*)",
+      "Bash(sudo systemctl status:*)",
+      "Bash(sysctl:*)",
+      "Bash(bash:*)",
+      "Bash(ulimit:*)",
+      "Bash(memory-monitor:*)",
+      "Bash(sudo systemctl:*)",
+      "Bash(systemctl cat:*)",
+      "Bash(cat:*)",
+      "Bash(sudo whoami:*)",
+      "Bash(sudo cat:*)",
+      "Bash(pkill:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(docker build:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(wget:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}
