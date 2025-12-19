@@ -37,7 +37,8 @@
       "Bash(wget:*)",
       "Bash(python -m pytest:*)",
       "Bash(python3 -m pytest:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(wc:*)"
     ]
   }
 }
