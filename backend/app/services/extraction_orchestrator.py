@@ -2477,8 +2477,7 @@ class ExtractionOrchestrator:
                 category=category,
                 is_active=True,
                 is_calculated=False,
-                display_order=9999,  # Put auto-created accounts at the end
-                notes=f"Auto-created from {document_type or 'document'} extraction"
+                display_order=9999  # Put auto-created accounts at the end
             )
 
             self.db.add(new_account)
