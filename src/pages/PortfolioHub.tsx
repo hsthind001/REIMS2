@@ -1271,7 +1271,7 @@ export default function PortfolioHub() {
                             </span>
                           </div>
                           <ProgressBar
-                            value={((metrics?.noi || 0) / ((metrics?.noi || 0) * 1.25)) * 100}
+                            value={metrics?.noi && metrics.noi > 0 ? ((metrics.noi / (metrics.noi * 1.25)) * 100) : 0}
                             max={100}
                             variant="success"
                             height="md"

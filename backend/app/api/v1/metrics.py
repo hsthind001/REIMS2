@@ -18,7 +18,9 @@ from app.models.rent_roll_data import RentRollData
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.document_upload import DocumentUpload
+import logging
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -871,36 +873,56 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
         
         # Calculate DSCR for each property using the latest period that has data
         for property in properties:
-            # Get period for this property (use latest period with data)
-            period = db.query(FinancialPeriod).filter(
-                FinancialPeriod.property_id == property.id,
-                FinancialPeriod.period_year == current_year,
-                FinancialPeriod.period_month == current_month
-            ).first()
-            
-            if not period:
+            try:
+                # Get period for this property (use latest period with data)
+                period = db.query(FinancialPeriod).filter(
+                    FinancialPeriod.property_id == property.id,
+                    FinancialPeriod.period_year == current_year,
+                    FinancialPeriod.period_month == current_month
+                ).first()
+                
+                if not period:
+                    continue
+                
+                # Calculate DSCR (catch errors for individual properties)
+                try:
+                    dscr_result = dscr_service.calculate_dscr(property.id, period.id)
+                except Exception as prop_err:
+                    # Rollback any failed transaction to prevent cascade failures
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass  # Ignore rollback errors
+                    # Log but continue with other properties
+                    logger.warning(f"Failed to calculate DSCR for property {property.id}: {str(prop_err)}")
+                    continue
+                
+                if dscr_result.get("success"):
+                    dscr = Decimal(str(dscr_result["dscr"]))
+                    noi = Decimal(str(dscr_result["noi"]))
+                    debt_service = Decimal(str(dscr_result["total_debt_service"]))
+                    
+                    total_noi += noi
+                    total_debt_service += debt_service
+                    
+                    property_dscrs.append({
+                        "property_id": property.id,
+                        "property_code": property.property_code,
+                        "dscr": float(dscr),
+                        "noi": float(noi),
+                        "debt_service": float(debt_service),
+                        "weight": float(debt_service) if total_debt_service > 0 else 0,
+                        "status": dscr_result.get("status", "unknown")
+                    })
+            except Exception as prop_err:
+                # Rollback any failed transaction to prevent cascade failures
+                try:
+                    db.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
+                # Log but continue with other properties
+                logger.warning(f"Error processing property {property.id} for portfolio DSCR: {str(prop_err)}")
                 continue
-            
-            # Calculate DSCR
-            dscr_result = dscr_service.calculate_dscr(property.id, period.id)
-            
-            if dscr_result.get("success"):
-                dscr = Decimal(str(dscr_result["dscr"]))
-                noi = Decimal(str(dscr_result["noi"]))
-                debt_service = Decimal(str(dscr_result["total_debt_service"]))
-                
-                total_noi += noi
-                total_debt_service += debt_service
-                
-                property_dscrs.append({
-                    "property_id": property.id,
-                    "property_code": property.property_code,
-                    "dscr": float(dscr),
-                    "noi": float(noi),
-                    "debt_service": float(debt_service),
-                    "weight": float(debt_service) if total_debt_service > 0 else 0,
-                    "status": dscr_result.get("status", "unknown")
-                })
         
         # Calculate portfolio DSCR (weighted average)
         if total_debt_service > 0:
@@ -941,17 +963,37 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
         prev_total_debt_service = Decimal('0')
         
         for property in properties:
-            prev_period = db.query(FinancialPeriod).filter(
-                FinancialPeriod.property_id == property.id,
-                FinancialPeriod.period_year == prev_year,
-                FinancialPeriod.period_month == prev_month
-            ).first()
-            
-            if prev_period:
-                prev_dscr_result = dscr_service.calculate_dscr(property.id, prev_period.id)
-                if prev_dscr_result.get("success"):
-                    prev_total_noi += Decimal(str(prev_dscr_result["noi"]))
-                    prev_total_debt_service += Decimal(str(prev_dscr_result["total_debt_service"]))
+            try:
+                prev_period = db.query(FinancialPeriod).filter(
+                    FinancialPeriod.property_id == property.id,
+                    FinancialPeriod.period_year == prev_year,
+                    FinancialPeriod.period_month == prev_month
+                ).first()
+                
+                if prev_period:
+                    try:
+                        prev_dscr_result = dscr_service.calculate_dscr(property.id, prev_period.id)
+                        if prev_dscr_result.get("success"):
+                            prev_total_noi += Decimal(str(prev_dscr_result["noi"]))
+                            prev_total_debt_service += Decimal(str(prev_dscr_result["total_debt_service"]))
+                    except Exception as prop_err:
+                        # Rollback any failed transaction to prevent cascade failures
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass  # Ignore rollback errors
+                        # Log but continue with other properties
+                        logger.warning(f"Failed to calculate previous DSCR for property {property.id}: {str(prop_err)}")
+                        continue
+            except Exception as prop_err:
+                # Rollback any failed transaction to prevent cascade failures
+                try:
+                    db.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
+                # Log but continue with other properties
+                logger.warning(f"Error processing property {property.id} for previous DSCR: {str(prop_err)}")
+                continue
         
         prev_portfolio_dscr = 0.0
         if prev_total_debt_service > 0:
@@ -1263,31 +1305,41 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
         prev_total_debt_service = Decimal('0')
         
         for property in properties:
-            # Current period DSCR
-            current_period_obj = db.query(FinancialPeriod).filter(
-                FinancialPeriod.property_id == property.id,
-                FinancialPeriod.period_year == current_year,
-                FinancialPeriod.period_month == current_month
-            ).first()
-            
-            if current_period_obj:
-                dscr_result = dscr_service.calculate_dscr(property.id, current_period_obj.id)
-                if dscr_result.get("success"):
-                    current_total_noi += Decimal(str(dscr_result["noi"]))
-                    current_total_debt_service += Decimal(str(dscr_result["total_debt_service"]))
-            
-            # Previous period DSCR
-            prev_period_obj = db.query(FinancialPeriod).filter(
-                FinancialPeriod.property_id == property.id,
-                FinancialPeriod.period_year == prev_year,
-                FinancialPeriod.period_month == prev_month
-            ).first()
-            
-            if prev_period_obj:
-                prev_dscr_result = dscr_service.calculate_dscr(property.id, prev_period_obj.id)
-                if prev_dscr_result.get("success"):
-                    prev_total_noi += Decimal(str(prev_dscr_result["noi"]))
-                    prev_total_debt_service += Decimal(str(prev_dscr_result["total_debt_service"]))
+            try:
+                # Current period DSCR
+                current_period_obj = db.query(FinancialPeriod).filter(
+                    FinancialPeriod.property_id == property.id,
+                    FinancialPeriod.period_year == current_year,
+                    FinancialPeriod.period_month == current_month
+                ).first()
+                
+                if current_period_obj:
+                    try:
+                        dscr_result = dscr_service.calculate_dscr(property.id, current_period_obj.id)
+                        if dscr_result.get("success"):
+                            current_total_noi += Decimal(str(dscr_result["noi"]))
+                            current_total_debt_service += Decimal(str(dscr_result["total_debt_service"]))
+                    except Exception as prop_err:
+                        logger.warning(f"Failed to calculate current DSCR for property {property.id}: {str(prop_err)}")
+                
+                # Previous period DSCR
+                prev_period_obj = db.query(FinancialPeriod).filter(
+                    FinancialPeriod.property_id == property.id,
+                    FinancialPeriod.period_year == prev_year,
+                    FinancialPeriod.period_month == prev_month
+                ).first()
+                
+                if prev_period_obj:
+                    try:
+                        prev_dscr_result = dscr_service.calculate_dscr(property.id, prev_period_obj.id)
+                        if prev_dscr_result.get("success"):
+                            prev_total_noi += Decimal(str(prev_dscr_result["noi"]))
+                            prev_total_debt_service += Decimal(str(prev_dscr_result["total_debt_service"]))
+                    except Exception as prop_err:
+                        logger.warning(f"Failed to calculate previous DSCR for property {property.id}: {str(prop_err)}")
+            except Exception as prop_err:
+                logger.warning(f"Error processing property {property.id} for portfolio changes: {str(prop_err)}")
+                continue
         
         if current_total_debt_service > 0:
             current_dscr = float(current_total_noi / current_total_debt_service)

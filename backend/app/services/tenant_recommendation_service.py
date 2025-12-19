@@ -370,8 +370,8 @@ class TenantRecommendationService:
         return [
             {
                 "name": t.tenant_name,
-                "space_sqft": t.square_footage,
-                "monthly_rent": t.monthly_rent
+                "space_sqft": float(t.unit_area_sqft) if t.unit_area_sqft else 0.0,
+                "monthly_rent": float(t.monthly_rent) if t.monthly_rent else 0.0
             }
             for t in tenants
         ]

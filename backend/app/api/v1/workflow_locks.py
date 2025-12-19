@@ -229,7 +229,25 @@ def get_property_locks(
     service = WorkflowLockService(db)
 
     try:
-        lock_status = LockStatus[status] if status else None
+        # Safely convert status string to LockStatus enum
+        lock_status = None
+        if status:
+            try:
+                # Convert to uppercase to match enum naming convention
+                status_upper = status.upper()
+                lock_status = LockStatus[status_upper]
+            except KeyError:
+                # Try to find matching enum value case-insensitively
+                valid_statuses = [s.name for s in LockStatus]
+                matching_status = next((s for s in valid_statuses if s.upper() == status_upper), None)
+                if matching_status:
+                    lock_status = LockStatus[matching_status]
+                else:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Invalid status: {status}. Valid values are: {', '.join(valid_statuses)}"
+                    )
+        
         locks = service.get_property_locks(property_id, lock_status)
 
         return {
@@ -240,11 +258,11 @@ def get_property_locks(
             "total": len(locks)
         }
 
-    except KeyError:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
-        logger.error(f"Failed to get property locks: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to get property locks: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get property locks: {str(e)}")
 
 
 @router.get("/pending-approvals")

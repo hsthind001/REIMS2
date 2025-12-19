@@ -39,7 +39,7 @@ class AlertDismissRequest(BaseModel):
 @router.post("/properties/{property_id}/dscr/calculate")
 def calculate_dscr(
     property_id: int,
-    financial_period_id: Optional[int] = None,
+    financial_period_id: Optional[int] = Query(None, description="Financial period ID"),
     db: Session = Depends(get_db)
 ):
     """
@@ -57,13 +57,35 @@ def calculate_dscr(
         result = service.calculate_dscr(property_id, financial_period_id)
 
         if not result.get("success"):
-            raise HTTPException(status_code=400, detail=result.get("error"))
+            # Return error response instead of raising exception to allow frontend to handle gracefully
+            return {
+                "success": False,
+                "error": result.get("error", "DSCR calculation failed"),
+                "property_id": property_id,
+                "financial_period_id": financial_period_id,
+                "dscr": None,
+                "noi": None,
+                "total_debt_service": None,
+                "status": "error"
+            }
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"DSCR calculation failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"DSCR calculation failed for property {property_id}: {str(e)}", exc_info=True)
+        # Return error response instead of raising 500 to allow frontend to handle
+        return {
+            "success": False,
+            "error": f"DSCR calculation failed: {str(e)}",
+            "property_id": property_id,
+            "financial_period_id": financial_period_id,
+            "dscr": None,
+            "noi": None,
+            "total_debt_service": None,
+            "status": "error"
+        }
 
 
 @router.get("/properties/{property_id}/dscr/history")
@@ -148,6 +170,69 @@ def monitor_all_properties(
     except Exception as e:
         logger.error(f"Failed to monitor properties: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("")
+@router.get("/")
+def get_risk_alerts(
+    priority: Optional[str] = Query(None, description="Filter by priority (critical, high, medium, low)"),
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    property_id: Optional[int] = None,
+    committee: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all risk alerts with optional filtering
+    Supports both /risk-alerts?priority=critical and /risk-alerts/alerts?severity=critical
+    """
+    # Map priority to severity if provided
+    if priority:
+        priority_map = {
+            'critical': AlertSeverity.CRITICAL,
+            'high': AlertSeverity.CRITICAL,
+            'medium': AlertSeverity.WARNING,
+            'low': AlertSeverity.INFO
+        }
+        severity = priority_map.get(priority.lower(), severity)
+
+    query = db.query(CommitteeAlert)
+
+    if status:
+        query = query.filter(CommitteeAlert.status == status)
+
+    if severity:
+        query = query.filter(CommitteeAlert.severity == severity)
+
+    if alert_type:
+        query = query.filter(CommitteeAlert.alert_type == alert_type)
+
+    if property_id:
+        query = query.filter(CommitteeAlert.property_id == property_id)
+
+    if committee:
+        query = query.filter(CommitteeAlert.assigned_committee == committee)
+
+    alerts = query.order_by(
+        CommitteeAlert.severity.desc(),
+        CommitteeAlert.triggered_at.desc()
+    ).limit(limit).all()
+
+    return {
+        "success": True,
+        "alerts": [alert.to_dict() for alert in alerts],
+        "total": len(alerts),
+        "filters": {
+            "priority": priority,
+            "status": status,
+            "severity": severity,
+            "alert_type": alert_type,
+            "property_id": property_id,
+            "committee": committee
+        }
+    }
 
 
 @router.get("/alerts")
@@ -383,41 +468,46 @@ def get_property_alerts(
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
-    # Query alerts table (the main alerts system)
-    sql = """
-        SELECT 
-            a.id,
-            a.alert_rule_id,
-            a.anomaly_detection_id,
-            a.document_id,
-            a.message,
-            a.severity,
-            a.status,
-            a.created_at,
-            a.acknowledged_at,
-            a.acknowledged_by,
-            a.resolved_at,
-            a.resolved_by,
-            du.file_name,
-            du.document_type,
-            ar.rule_name,
-            ar.field_name,
-            ar.threshold_value
-        FROM alerts a
-        JOIN document_uploads du ON a.document_id = du.id
-        LEFT JOIN alert_rules ar ON a.alert_rule_id = ar.id
-        WHERE du.property_id = :property_id
-    """
-    
-    params = {'property_id': property_id}
-    
-    if status:
-        sql += " AND a.status = :status"
-        params['status'] = status
-    
-    sql += " ORDER BY a.created_at DESC"
-    
-    results = db.execute(text(sql), params).fetchall()
+    try:
+        # Query alerts table (the main alerts system)
+        sql = """
+            SELECT 
+                a.id,
+                a.alert_rule_id,
+                a.anomaly_detection_id,
+                a.document_id,
+                a.message,
+                a.severity,
+                a.status,
+                a.created_at,
+                a.acknowledged_at,
+                a.acknowledged_by,
+                a.resolved_at,
+                a.resolved_by,
+                du.file_name,
+                du.document_type,
+                ar.rule_name,
+                ar.field_name,
+                ar.threshold_value
+            FROM alerts a
+            JOIN document_uploads du ON a.document_id = du.id
+            LEFT JOIN alert_rules ar ON a.alert_rule_id = ar.id
+            WHERE du.property_id = :property_id
+        """
+        
+        params = {'property_id': property_id}
+        
+        if status:
+            sql += " AND a.status = :status"
+            params['status'] = status
+        
+        sql += " ORDER BY a.created_at DESC"
+        
+        results = db.execute(text(sql), params).fetchall()
+    except Exception as e:
+        # If alerts table doesn't exist or query fails, fall back to committee_alerts only
+        logger.warning(f"Failed to query alerts table: {str(e)}, falling back to committee_alerts")
+        results = []
     
     # Convert to dict format matching frontend expectations
     alerts_list = []
@@ -634,4 +724,24 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
             "alerts_by_committee": alerts_by_committee,
             "alerts_by_type": alerts_by_type,
         }
+    }
+
+
+@router.get("/exit-strategy/{property_id}")
+def get_exit_strategy(
+    property_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get exit strategy analysis for a property"""
+    property = db.query(Property).filter(Property.id == property_id).first()
+    if not property:
+        raise HTTPException(status_code=404, detail="Property not found")
+    
+    # Return placeholder response - can be enhanced with actual exit strategy analysis
+    return {
+        "success": True,
+        "property_id": property_id,
+        "property_code": property.property_code,
+        "strategies": [],
+        "message": "Exit strategy analysis endpoint - implementation pending"
     }

@@ -21,7 +21,10 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   height = 'md',
   className = '',
 }) => {
-  const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
+  // Ensure value and max are valid numbers, defaulting to 0 if NaN/null/undefined
+  const safeValue = isNaN(value) || value === null || value === undefined ? 0 : Number(value);
+  const safeMax = isNaN(max) || max === null || max === undefined || max === 0 ? 100 : Number(max);
+  const percentage = safeMax > 0 ? Math.min(Math.max((safeValue / safeMax) * 100, 0), 100) : 0;
 
   const classes = [
     styles.progressBar,

@@ -2,7 +2,7 @@
 RBAC Management API Endpoints
 Role-Based Access Control management for administrators.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Set, Optional
 from pydantic import BaseModel
@@ -154,4 +154,15 @@ async def check_permission(
         "permission": request.permission,
         "has_permission": has_permission
     }
+
+
+@router.get("/audit")
+async def get_audit_logs(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get RBAC audit logs"""
+    # Return empty array for now, implement audit logging later
+    return {"logs": [], "total": 0}
 

@@ -297,3 +297,17 @@ def get_portfolio_insights(
             "total": 1,
             "generated_at": datetime.now().isoformat()
         }
+
+
+@router.get("/insights/fallback")
+def get_fallback_insights(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Fallback insights when main NLQ fails"""
+    return {
+        "success": True,
+        "insights": [],
+        "message": "Fallback insights endpoint",
+        "generated_at": datetime.now().isoformat()
+    }

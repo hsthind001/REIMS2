@@ -14,7 +14,11 @@ export interface ApiError {
   message: string;
   status: number;
   detail?: string | any;
+  category?: 'network' | 'auth' | 'server' | 'client' | 'unknown';
+  retryable?: boolean;
 }
+
+export type ErrorCategory = 'network' | 'auth' | 'server' | 'client' | 'unknown';
 
 export class ApiClient {
   private baseURL: string;
@@ -24,11 +28,67 @@ export class ApiClient {
   }
 
   /**
-   * Generic request handler with error handling
+   * Categorize error and determine if retryable
+   */
+  private categorizeError(status: number, error?: any): { category: ErrorCategory; retryable: boolean; message: string } {
+    if (status === 0) {
+      return {
+        category: 'network',
+        retryable: true,
+        message: 'Network error - please check your connection and try again'
+      };
+    }
+    
+    if (status >= 500) {
+      return {
+        category: 'server',
+        retryable: true,
+        message: 'Server error - please try again in a moment'
+      };
+    }
+    
+    if (status === 401 || status === 403) {
+      return {
+        category: 'auth',
+        retryable: false,
+        message: 'Authentication required - please log in again'
+      };
+    }
+    
+    if (status >= 400 && status < 500) {
+      return {
+        category: 'client',
+        retryable: false,
+        message: 'Invalid request - please check your input'
+      };
+    }
+    
+    return {
+      category: 'unknown',
+      retryable: false,
+      message: 'An unexpected error occurred'
+    };
+  }
+
+  /**
+   * Get user-friendly error message
+   */
+  private getUserFriendlyMessage(error: ApiError): string {
+    if (error.message && error.message !== 'An error occurred') {
+      return error.message;
+    }
+    
+    const categorized = this.categorizeError(error.status, error.detail);
+    return categorized.message;
+  }
+
+  /**
+   * Generic request handler with error handling and retry logic
    */
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retries: number = 2
   ): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
     
@@ -41,48 +101,100 @@ export class ApiClient {
       ...options,
     };
 
-    try {
-      const response = await fetch(url, defaultOptions);
+    let lastError: ApiError | null = null;
 
-      // Handle non-OK responses
-      if (!response.ok) {
-        let error: ApiError;
-        
-        try {
-          const errorData = await response.json();
-          error = {
-            message: errorData.detail || errorData.message || 'An error occurred',
-            status: response.status,
-            detail: errorData,
-          };
-        } catch {
-          error = {
-            message: response.statusText || 'An error occurred',
-            status: response.status,
-          };
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, defaultOptions);
+
+        // Handle non-OK responses
+        if (!response.ok) {
+          let error: ApiError;
+          
+          try {
+            const errorData = await response.json();
+            const categorized = this.categorizeError(response.status, errorData);
+            error = {
+              message: errorData.detail || errorData.message || categorized.message,
+              status: response.status,
+              detail: errorData,
+              category: categorized.category,
+              retryable: categorized.retryable,
+            };
+          } catch {
+            const categorized = this.categorizeError(response.status);
+            error = {
+              message: response.statusText || categorized.message,
+              status: response.status,
+              category: categorized.category,
+              retryable: categorized.retryable,
+            };
+          }
+          
+          // If not retryable or last attempt, throw error
+          if (!error.retryable || attempt === retries) {
+            error.message = this.getUserFriendlyMessage(error);
+            throw error;
+          }
+          
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+          lastError = error;
+          continue;
+        }
+
+        // Handle 204 No Content
+        if (response.status === 204) {
+          return {} as T;
+        }
+
+        return await response.json();
+      } catch (error) {
+        if ((error as ApiError).status !== undefined) {
+          // API error - check if retryable
+          const apiError = error as ApiError;
+          if (!apiError.retryable || attempt === retries) {
+            apiError.message = this.getUserFriendlyMessage(apiError);
+            throw apiError;
+          }
+          lastError = apiError;
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+          continue;
         }
         
-        throw error;
+        // Network or other errors
+        const networkError: ApiError = {
+          message: 'Network error or server unavailable',
+          status: 0,
+          detail: error,
+          category: 'network',
+          retryable: true,
+        };
+        
+        if (attempt === retries) {
+          networkError.message = this.getUserFriendlyMessage(networkError);
+          throw networkError;
+        }
+        
+        lastError = networkError;
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
       }
-
-      // Handle 204 No Content
-      if (response.status === 204) {
-        return {} as T;
-      }
-
-      return await response.json();
-    } catch (error) {
-      if ((error as ApiError).status) {
-        throw error; // Re-throw API errors
-      }
-      
-      // Network or other errors
-      throw {
-        message: 'Network error or server unavailable',
-        status: 0,
-        detail: error,
-      } as ApiError;
     }
+
+    // Should never reach here, but TypeScript needs it
+    if (lastError) {
+      lastError.message = this.getUserFriendlyMessage(lastError);
+      throw lastError;
+    }
+    
+    throw {
+      message: 'Request failed after retries',
+      status: 0,
+      category: 'unknown',
+      retryable: false,
+    } as ApiError;
   }
 
   /**

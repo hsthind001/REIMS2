@@ -125,7 +125,7 @@ export default function FinancialCommand() {
   const loadFinancialData = async (propertyId: number) => {
     try {
       // Load variance data
-      const varianceRes = await fetch(`${API_BASE_URL}/variance_analysis?property_id=${propertyId}`, {
+      const varianceRes = await fetch(`${API_BASE_URL}/variance-analysis?property_id=${propertyId}`, {
         credentials: 'include'
       });
       if (varianceRes.ok) {

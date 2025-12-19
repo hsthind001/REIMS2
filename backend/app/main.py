@@ -1,11 +1,13 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket
+import logging
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -37,6 +39,39 @@ app = FastAPI(
 # Add rate limiter to app state and exception handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Global exception handler to ensure CORS headers are always sent, even on errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler that ensures CORS headers are always sent,
+    even when unhandled exceptions occur (500 errors).
+    """
+    import traceback
+    logger = logging.getLogger(__name__)
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    
+    # Create error response with CORS headers
+    # The CORS middleware should handle this, but we ensure it's explicit
+    # Check if DEBUG is available in settings, default to False
+    debug_mode = getattr(settings, 'DEBUG', False)
+    response = JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "error": str(exc) if debug_mode else "An unexpected error occurred"
+        }
+    )
+    
+    # Ensure CORS headers are present
+    origin = request.headers.get("origin")
+    if origin and origin in settings.BACKEND_CORS_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Cookie"
+    
+    return response
 
 # Configure CORS (add first, executes last)
 app.add_middleware(
@@ -74,7 +109,9 @@ app.include_router(documents.router, prefix=settings.API_V1_STR, tags=["document
 app.include_router(websocket.router, prefix=settings.API_V1_STR, tags=["websocket"])
 app.include_router(validations.router, prefix=settings.API_V1_STR, tags=["validations"])
 app.include_router(metrics.router, prefix=settings.API_V1_STR, tags=["metrics"])
+app.include_router(quality.router, prefix=settings.API_V1_STR, tags=["quality"])
 app.include_router(pdf_viewer.router, prefix=settings.API_V1_STR, tags=["pdf-viewer"])
+app.include_router(financial_data.router, prefix=settings.API_V1_STR, tags=["financial-data"])
 app.include_router(review.router, prefix=settings.API_V1_STR, tags=["review"])
 app.include_router(reports.router, prefix=settings.API_V1_STR, tags=["reports"])
 app.include_router(exports.router, prefix=settings.API_V1_STR, tags=["exports"])
@@ -87,6 +124,9 @@ app.include_router(public_api.router, prefix=settings.API_V1_STR + "/public", ta
 # Next-level AI features
 app.include_router(property_research.router, prefix=settings.API_V1_STR, tags=["property-research"])
 app.include_router(tenant_recommendations.router, prefix=settings.API_V1_STR, tags=["tenant-recommendations"])
+# Add alternative route for tenant recommendations
+if hasattr(tenant_recommendations, 'router_alt'):
+    app.include_router(tenant_recommendations.router_alt, prefix=settings.API_V1_STR, tags=["tenant-recommendations"])
 app.include_router(nlq.router, prefix=settings.API_V1_STR, tags=["natural-language-query"])
 
 # Risk management
