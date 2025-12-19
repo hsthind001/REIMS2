@@ -40,3 +40,7 @@ backups/
 # Task files
 # tasks.json
 # tasks/ 
+
+# Local environment files
+.env.local
+.git-credentials

@@ -286,3 +286,92 @@ export interface PropertySummary {
   metrics: FinancialMetrics;
 }
 
+// ===== Validation Rules =====
+
+export interface RuleStatisticsItem {
+  rule_id: number;
+  rule_name: string;
+  rule_description?: string;
+  document_type: string;
+  rule_type: string;
+  severity: string;
+  is_active: boolean;
+  total_tests: number;
+  passed_count: number;
+  failed_count: number;
+  pass_rate: number;
+  last_executed_at?: string;
+  created_at: string;
+}
+
+export interface RuleStatisticsSummary {
+  total_rules: number;
+  active_rules: number;
+  total_checks: number;
+  overall_pass_rate: number;
+  critical_failures: number;
+  warnings: number;
+  errors: number;
+}
+
+export interface RuleStatisticsResponse {
+  rules: RuleStatisticsItem[];
+  summary: RuleStatisticsSummary;
+}
+
+export interface RuleResultItem {
+  id: number;
+  rule_id: number;
+  rule_name?: string;
+  rule_description?: string;
+  passed: boolean;
+  expected_value?: number;
+  actual_value?: number;
+  difference?: number;
+  difference_percentage?: number;
+  error_message?: string;
+  severity: string;
+}
+
+// Validation Analytics Types (Phase 2)
+export interface PassRateTrend {
+  date: string;
+  pass_rate: number;
+  total_tests: number;
+}
+
+export interface FailureDistribution {
+  severity?: string;
+  document_type?: string;
+  count: number;
+  percentage: number;
+}
+
+export interface TopFailingRule {
+  rule_id: number;
+  rule_name: string;
+  document_type: string;
+  failure_count: number;
+  failure_rate: number;
+  total_tests: number;
+}
+
+export interface DocumentTypePerformance {
+  document_type: string;
+  total_rules: number;
+  total_tests: number;
+  pass_rate: number;
+  failure_count: number;
+}
+
+export interface ValidationAnalyticsResponse {
+  pass_rate_trends: {
+    '7d': PassRateTrend[];
+    '30d': PassRateTrend[];
+    '90d': PassRateTrend[];
+  };
+  failure_distribution: FailureDistribution[];
+  top_failing_rules: TopFailingRule[];
+  document_type_performance: DocumentTypePerformance[];
+}
+

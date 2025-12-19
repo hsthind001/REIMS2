@@ -14,7 +14,8 @@ from app.models.document_upload import DocumentUpload
 from app.db.minio_client import upload_file, get_minio_client
 from app.core.config import settings
 from app.services.document_type_detector import DocumentTypeDetector
-from app.tasks.extraction_tasks import extract_document
+# Lazy import to avoid circular dependency
+# from app.tasks.extraction_tasks import extract_document
 
 
 # Property name mapping for MinIO folder structure
@@ -563,42 +564,52 @@ class DocumentService:
         property_code: str,
         year: int,
         files: List[UploadFile],
-        uploaded_by: Optional[int] = None
+        uploaded_by: Optional[int] = None,
+        duplicate_strategy: str = "skip"
     ) -> Dict:
         """
-        Bulk upload multiple documents for a year.
-        
+        Bulk upload multiple documents for a year with intelligent duplicate handling.
+
         For each file:
         1. Detect document type from filename
         2. Detect month from filename (or default to 1)
         3. Validate file format
-        4. Generate MinIO path
-        5. Upload to MinIO
-        6. Create DocumentUpload record
-        7. Queue extraction/import task
-        
+        4. Check for duplicates and apply strategy
+        5. Generate MinIO path
+        6. Upload to MinIO
+        7. Create DocumentUpload record
+        8. Queue extraction/import task
+
         Args:
             property_code: Property code (e.g., WEND001)
             year: Year for all documents
             files: List of files to upload
             uploaded_by: User ID (optional)
-        
+            duplicate_strategy: How to handle duplicates:
+                - "skip": Skip files that already exist (default)
+                - "replace": Replace existing files with new ones
+                - "version": Create new version (keep both)
+
         Returns:
             {
                 "success": bool,
                 "total_files": int,
                 "uploaded": int,
+                "skipped": int,
+                "replaced": int,
                 "failed": int,
+                "duplicates_found": int,
                 "results": [
                     {
                         "filename": str,
                         "document_type": str,
                         "month": int | None,
                         "file_type": str,
-                        "status": "success" | "failed",
+                        "status": "success" | "skipped" | "replaced" | "failed",
                         "upload_id": int | None,
                         "file_path": str | None,
-                        "error": str | None
+                        "error": str | None,
+                        "message": str | None
                     }
                 ]
             }
@@ -606,8 +617,26 @@ class DocumentService:
         detector = DocumentTypeDetector()
         results = []
         uploaded_count = 0
+        skipped_count = 0
+        replaced_count = 0
         failed_count = 0
-        
+        duplicates_found = 0
+
+        # Validate duplicate_strategy
+        valid_strategies = ["skip", "replace", "version"]
+        if duplicate_strategy not in valid_strategies:
+            return {
+                "success": False,
+                "total_files": len(files),
+                "uploaded": 0,
+                "skipped": 0,
+                "replaced": 0,
+                "failed": len(files),
+                "duplicates_found": 0,
+                "error": f"Invalid duplicate_strategy '{duplicate_strategy}'. Valid options: {', '.join(valid_strategies)}",
+                "results": []
+            }
+
         # Validate property exists
         property_obj = self.get_property_by_code(property_code)
         if not property_obj:
@@ -615,7 +644,10 @@ class DocumentService:
                 "success": False,
                 "total_files": len(files),
                 "uploaded": 0,
+                "skipped": 0,
+                "replaced": 0,
                 "failed": len(files),
+                "duplicates_found": 0,
                 "error": f"Property '{property_code}' not found",
                 "results": []
             }
@@ -672,28 +704,141 @@ class DocumentService:
                 # Step 5: Read file content
                 file_content = await file.read()
                 file.file.seek(0)  # Reset for potential reuse
-                
+
+                # Step 5.5: INTELLIGENT PDF CONTENT ANALYSIS (if PDF)
+                anomalies = []
+                pdf_detected_type = None
+                pdf_detected_year = None
+                pdf_detected_month = None
+
+                if format_validation["file_type"] == "pdf":
+                    try:
+                        from app.utils.extraction_engine import MultiEngineExtractor
+                        content_detector = MultiEngineExtractor()
+
+                        # Detect document type from PDF content
+                        pdf_type_detection = content_detector.detect_document_type(file_content)
+                        pdf_detected_type = pdf_type_detection.get("detected_type")
+                        pdf_type_confidence = pdf_type_detection.get("confidence", 0)
+
+                        # Detect year and period from PDF content
+                        pdf_period_detection = content_detector.detect_year_and_period(file_content)
+                        pdf_detected_year = pdf_period_detection.get("year")
+                        pdf_detected_month = pdf_period_detection.get("month")
+                        pdf_period_confidence = pdf_period_detection.get("confidence", 0)
+
+                        # ANOMALY DETECTION: Compare filename vs PDF content
+                        # Type mismatch
+                        if pdf_detected_type and pdf_detected_type != detected_type and pdf_type_confidence >= 30:
+                            anomalies.append(f"Document type mismatch: Filename suggests '{detected_type}' but PDF content indicates '{pdf_detected_type}' (confidence: {pdf_type_confidence}%)")
+
+                        # Year mismatch
+                        if pdf_detected_year and pdf_detected_year != year:
+                            anomalies.append(f"Year mismatch: Expected {year} but PDF content shows {pdf_detected_year}")
+
+                        # Month mismatch
+                        if pdf_detected_month and pdf_detected_month != detected_month and pdf_period_confidence >= 30:
+                            anomalies.append(f"Month mismatch: Filename suggests month {detected_month} but PDF content indicates month {pdf_detected_month} (confidence: {pdf_period_confidence}%)")
+
+                        # Use PDF content detection if higher confidence
+                        if pdf_detected_type and pdf_type_confidence > 60:
+                            detected_type = pdf_detected_type
+                            result["document_type"] = detected_type
+                            print(f"✅ Using PDF content detection for type: {detected_type} (confidence: {pdf_type_confidence}%)")
+
+                        if pdf_detected_month and pdf_period_confidence > 50:
+                            detected_month = pdf_detected_month
+                            result["month"] = detected_month
+                            # Re-get period with corrected month
+                            period = self.get_or_create_period(property_obj.id, year, detected_month)
+                            print(f"✅ Using PDF content detection for month: {detected_month} (confidence: {pdf_period_confidence}%)")
+
+                        # Add anomalies to result
+                        if anomalies:
+                            result["anomalies"] = anomalies
+                            result["warning"] = " | ".join(anomalies)
+                            print(f"⚠️  Anomalies detected for {file.filename}: {anomalies}")
+
+                    except Exception as e:
+                        print(f"⚠️  PDF content analysis failed for {file.filename}: {e}")
+                        # Continue with filename-based detection
+
                 # Step 6: Calculate file hash
                 file_hash = hashlib.md5(file_content).hexdigest()
-                
-                # Step 7: Check for duplicate
-                duplicate = self.check_duplicate(
+
+                # Step 7: Intelligent duplicate handling with strategy
+                # Check for exact duplicate (same file hash)
+                duplicate_by_hash = self.check_duplicate(
                     property_obj.id,
                     period.id,
                     detected_type,
                     file_hash
                 )
-                
-                if duplicate:
-                    # Auto-delete old upload
-                    try:
-                        from app.db.minio_client import delete_file
-                        if duplicate.file_path:
-                            delete_file(duplicate.file_path, settings.MINIO_BUCKET_NAME)
-                        self.db.delete(duplicate)
-                        self.db.commit()
-                    except Exception as e:
-                        print(f"⚠️  Warning: Could not delete old file: {e}")
+
+                # Check for existing upload for same property/period/type (any version)
+                existing_upload = self.db.query(DocumentUpload).filter(
+                    DocumentUpload.property_id == property_obj.id,
+                    DocumentUpload.period_id == period.id,
+                    DocumentUpload.document_type == detected_type,
+                    DocumentUpload.is_active == True
+                ).order_by(DocumentUpload.version.desc()).first()
+
+                # Handle duplicate scenarios based on strategy
+                if duplicate_by_hash:
+                    # Exact same file (same hash) - always skip
+                    duplicates_found += 1
+                    result["status"] = "skipped"
+                    result["upload_id"] = duplicate_by_hash.id
+                    result["message"] = f"Identical file already exists (upload_id: {duplicate_by_hash.id})"
+                    results.append(result)
+                    skipped_count += 1
+                    continue
+
+                elif existing_upload:
+                    # Different file for same property/period/type
+                    duplicates_found += 1
+
+                    if duplicate_strategy == "skip":
+                        # Skip this upload
+                        result["status"] = "skipped"
+                        result["upload_id"] = existing_upload.id
+                        result["message"] = f"Document already exists (upload_id: {existing_upload.id}). Use 'replace' strategy to overwrite."
+                        results.append(result)
+                        skipped_count += 1
+                        continue
+
+                    elif duplicate_strategy == "replace":
+                        # Replace existing upload
+                        try:
+                            from app.db.minio_client import delete_file
+                            # Delete old file from MinIO
+                            if existing_upload.file_path:
+                                try:
+                                    delete_file(existing_upload.file_path, settings.MINIO_BUCKET_NAME)
+                                except Exception as e:
+                                    print(f"⚠️  Warning: Could not delete old MinIO file: {e}")
+
+                            old_upload_id = existing_upload.id
+                            # Delete associated data (cascades via relationships)
+                            self.db.delete(existing_upload)
+                            self.db.commit()
+                            print(f"✅ Replacing existing upload (id: {old_upload_id}) with new file")
+                            # Continue with upload - will mark as "replaced" later
+
+                        except Exception as e:
+                            result["error"] = f"Failed to replace existing upload: {str(e)}"
+                            result["status"] = "failed"
+                            results.append(result)
+                            failed_count += 1
+                            continue
+
+                    elif duplicate_strategy == "version":
+                        # Create new version (not implemented yet - future enhancement)
+                        result["error"] = "Version strategy not yet implemented. Use 'skip' or 'replace'."
+                        result["status"] = "failed"
+                        results.append(result)
+                        failed_count += 1
+                        continue
                 
                 # Step 8: Generate file path
                 file_path = await self.generate_file_path(
@@ -735,7 +880,7 @@ class DocumentService:
                     file_name=file.filename or "unknown",
                     file_path=file_path,
                     file_hash=file_hash,
-                    file_size=len(file_content),
+                    file_size_bytes=len(file_content),
                     uploaded_by=uploaded_by,
                     upload_date=datetime.now(),
                     extraction_status='uploaded_to_minio'
@@ -747,12 +892,21 @@ class DocumentService:
                 
                 result["upload_id"] = upload_record.id
                 result["file_path"] = file_path
-                result["status"] = "success"
-                
+
+                # Mark as replaced if we deleted an existing upload
+                if existing_upload and duplicate_strategy == "replace":
+                    result["status"] = "replaced"
+                    result["message"] = f"Replaced existing document (old upload_id: {old_upload_id})"
+                    replaced_count += 1
+                else:
+                    result["status"] = "success"
+                    uploaded_count += 1
+
                 # Step 12: Queue extraction/import task
                 try:
                     if format_validation["file_type"] in ["pdf", "doc"]:
                         # Queue extraction task for PDF/DOC
+                        from app.tasks.extraction_tasks import extract_document
                         task = extract_document.delay(upload_record.id)
                         upload_record.extraction_status = 'pending'
                         upload_record.extraction_task_id = task.id
@@ -767,8 +921,6 @@ class DocumentService:
                     upload_record.notes = f"Extraction queuing failed, will retry: {str(e)}"
                     self.db.commit()
                 
-                uploaded_count += 1
-                
             except Exception as e:
                 result["error"] = str(e)
                 failed_count += 1
@@ -777,10 +929,14 @@ class DocumentService:
             results.append(result)
         
         return {
-            "success": uploaded_count > 0,
+            "success": (uploaded_count + replaced_count + skipped_count) > 0,
             "total_files": len(files),
             "uploaded": uploaded_count,
+            "skipped": skipped_count,
+            "replaced": replaced_count,
             "failed": failed_count,
+            "duplicates_found": duplicates_found,
+            "duplicate_strategy": duplicate_strategy,
             "results": results
         }
 

@@ -14,7 +14,52 @@ router = APIRouter(prefix="/properties", tags=["tenant_recommendations"])
 logger = logging.getLogger(__name__)
 
 
+# Support both /tenant-recommendations/properties/{id} and /properties/{id}/tenant-recommendations
 @router.get("/{property_id}/tenant-recommendations")
+def get_tenant_recommendations(
+    property_id: int,
+    unit_identifier: Optional[str] = None,
+    space_sqft: Optional[int] = None,
+    top_n: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-powered tenant recommendations for vacant space
+
+    Analyzes:
+    - Current tenant mix
+    - Demographics
+    - Market trends
+    - Synergy potential
+    - Revenue estimates
+
+    Returns top N ranked recommendations with scores
+    """
+    property = db.query(Property).filter(Property.id == property_id).first()
+    if not property:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    service = TenantRecommendationService(db)
+
+    try:
+        result = service.recommend_tenants(
+            property_id=property_id,
+            unit_identifier=unit_identifier,
+            space_sqft=space_sqft,
+            top_n=top_n
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to get tenant recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Create a separate router for the alternative path
+router_alt = APIRouter(prefix="/tenant-recommendations", tags=["tenant_recommendations"])
+
+@router_alt.get("/properties/{property_id}")
 def get_tenant_recommendations(
     property_id: int,
     unit_identifier: Optional[str] = None,

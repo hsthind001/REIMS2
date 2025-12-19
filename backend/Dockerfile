@@ -12,15 +12,17 @@ RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 # Set working directory (already set in base, but explicit for clarity)
 WORKDIR /app
 
-# Copy application code (ONLY THIS LAYER CHANGES FREQUENTLY)
-# All system deps and Python packages are already in base image
-COPY . .
-
-# Copy and set entrypoint scripts
+# Copy entrypoint scripts first (rarely change, better caching)
+# These are copied before app code to leverage Docker layer caching
 COPY entrypoint.sh /entrypoint.sh
 COPY celery-entrypoint.sh /celery-entrypoint.sh
 COPY flower-entrypoint.sh /flower-entrypoint.sh
 RUN chmod +x /entrypoint.sh /celery-entrypoint.sh /flower-entrypoint.sh
+
+# Copy application code (ONLY THIS LAYER CHANGES FREQUENTLY)
+# All system deps and Python packages are already in base image
+# Copy in order: requirements first (if any), then app code
+COPY . .
 
 # Create directories for temp files and logs, set ownership
 RUN mkdir -p /tmp /var/log/reims2 && chown -R appuser:appgroup /app /tmp /var/log/reims2

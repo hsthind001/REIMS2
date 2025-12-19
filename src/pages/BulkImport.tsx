@@ -6,11 +6,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_
 interface FileWithMetadata {
   file: File
   detectedType: string
-  status: 'pending' | 'uploading' | 'success' | 'error'
+  status: 'pending' | 'uploading' | 'success' | 'skipped' | 'replaced' | 'error'
   uploadId?: number
   error?: string
+  message?: string
   month?: number
   fileType?: string
+  warning?: string
+  anomalies?: string[]
 }
 
 // Detect document type from filename (frontend version)
@@ -58,6 +61,8 @@ export default function BulkImport() {
   const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<string>('')
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+  const [duplicateStrategy, setDuplicateStrategy] = useState<string>('skip')
+  const [fileTypeFilter, setFileTypeFilter] = useState<string>('all')
   const [files, setFiles] = useState<FileWithMetadata[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -182,7 +187,8 @@ export default function BulkImport() {
       const formData = new FormData()
       formData.append('property_code', propertyCode)
       formData.append('year', selectedYear.toString())
-      
+      formData.append('duplicate_strategy', duplicateStrategy)
+
       // Append all files - FastAPI expects all files with the same field name 'files'
       files.forEach(fileWithMeta => {
         formData.append('files', fileWithMeta.file, fileWithMeta.file.name)
@@ -250,11 +256,14 @@ export default function BulkImport() {
           if (result) {
             return {
               ...fileWithMeta,
-              status: result.status === 'success' ? 'success' : 'error',
+              status: result.status || 'error',
               uploadId: result.upload_id,
+              message: result.message,
               error: result.error,
               month: result.month,
-              fileType: result.file_type
+              fileType: result.file_type,
+              warning: result.warning,
+              anomalies: result.anomalies
             }
           }
           return fileWithMeta
@@ -292,6 +301,10 @@ export default function BulkImport() {
     switch (status) {
       case 'success':
         return <span style={{ color: 'green', fontWeight: 'bold' }}>✅ Success</span>
+      case 'replaced':
+        return <span style={{ color: 'orange', fontWeight: 'bold' }}>🔄 Replaced</span>
+      case 'skipped':
+        return <span style={{ color: 'blue', fontWeight: 'bold' }}>⏭️ Skipped</span>
       case 'error':
         return <span style={{ color: 'red', fontWeight: 'bold' }}>❌ Failed</span>
       case 'uploading':
@@ -300,6 +313,11 @@ export default function BulkImport() {
         return <span style={{ color: 'gray' }}>⏳ Pending</span>
     }
   }
+
+  // Filter files based on selected document type
+  const filteredFiles = fileTypeFilter === 'all'
+    ? files
+    : files.filter(f => f.detectedType === fileTypeFilter)
 
   return (
     <div className="page-container">
@@ -394,6 +412,42 @@ export default function BulkImport() {
               max="2100"
             />
           </div>
+
+          <div className="form-group">
+            <label>If Duplicate Documents Exist *</label>
+            <select
+              className="form-input"
+              value={duplicateStrategy}
+              onChange={(e) => setDuplicateStrategy(e.target.value)}
+              disabled={loading}
+            >
+              <option value="skip">Skip - Keep existing documents</option>
+              <option value="replace">Replace - Overwrite with new files</option>
+            </select>
+            <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
+              {duplicateStrategy === 'skip' && '⏭️ Existing documents will be preserved'}
+              {duplicateStrategy === 'replace' && '⚠️ Existing documents will be deleted and replaced'}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Filter by Document Type</label>
+            <select
+              className="form-input"
+              value={fileTypeFilter}
+              onChange={(e) => setFileTypeFilter(e.target.value)}
+              disabled={loading}
+            >
+              <option value="all">All Document Types</option>
+              <option value="balance_sheet">Balance Sheet Only</option>
+              <option value="income_statement">Income Statement Only</option>
+              <option value="cash_flow">Cash Flow Only</option>
+              <option value="rent_roll">Rent Roll Only</option>
+            </select>
+            <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
+              {fileTypeFilter === 'all' ? '📄 All files will be shown' : `📊 Only ${fileTypeFilter.replace('_', ' ')} files will be shown`}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -422,7 +476,9 @@ export default function BulkImport() {
 
         {files.length > 0 && (
           <div style={{ marginTop: '1.5rem' }}>
-            <h4 style={{ marginBottom: '1rem' }}>Selected Files ({files.length}):</h4>
+            <h4 style={{ marginBottom: '1rem' }}>
+              Selected Files ({filteredFiles.length}{files.length !== filteredFiles.length ? ` of ${files.length}` : ''}):
+            </h4>
             <div style={{ 
               border: '1px solid #ddd', 
               borderRadius: '4px', 
@@ -441,7 +497,7 @@ export default function BulkImport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {files.map((fileWithMeta, index) => (
+                  {filteredFiles.map((fileWithMeta, index) => (
                     <tr key={index} style={{ borderBottom: '1px solid #eee' }}>
                       <td style={{ padding: '0.5rem' }}>{fileWithMeta.file.name}</td>
                       <td style={{ padding: '0.5rem' }}>
@@ -460,6 +516,22 @@ export default function BulkImport() {
                       </td>
                       <td style={{ padding: '0.5rem' }}>
                         {getStatusBadge(fileWithMeta.status)}
+                        {fileWithMeta.warning && (
+                          <div style={{ fontSize: '0.8rem', color: '#ff9800', marginTop: '0.25rem', display: 'flex', alignItems: 'flex-start', gap: '0.25rem' }}>
+                            <span>⚠️</span>
+                            <span>{fileWithMeta.warning}</span>
+                          </div>
+                        )}
+                        {fileWithMeta.anomalies && fileWithMeta.anomalies.length > 0 && (
+                          <div style={{ fontSize: '0.8rem', color: '#f57c00', marginTop: '0.25rem' }}>
+                            {fileWithMeta.anomalies.map((anomaly, idx) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.25rem', marginTop: idx > 0 ? '0.15rem' : 0 }}>
+                                <span>🔍</span>
+                                <span>{anomaly}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {fileWithMeta.error && (
                           <div style={{ fontSize: '0.8rem', color: 'red', marginTop: '0.25rem' }}>
                             {fileWithMeta.error}
@@ -508,17 +580,34 @@ export default function BulkImport() {
           <div className="result-stats">
             <div className="result-stat">
               <div className="stat-value">{result.uploaded || 0}</div>
-              <div className="stat-label">Files Uploaded</div>
+              <div className="stat-label">New Uploads</div>
             </div>
+            {(result.replaced || 0) > 0 && (
+              <div className="result-stat">
+                <div className="stat-value" style={{ color: 'orange' }}>{result.replaced}</div>
+                <div className="stat-label">Replaced</div>
+              </div>
+            )}
+            {(result.skipped || 0) > 0 && (
+              <div className="result-stat">
+                <div className="stat-value" style={{ color: 'blue' }}>{result.skipped}</div>
+                <div className="stat-label">Skipped</div>
+              </div>
+            )}
             <div className="result-stat">
-              <div className="stat-value">{result.failed || 0}</div>
-              <div className="stat-label">Files Failed</div>
+              <div className="stat-value" style={{ color: result.failed > 0 ? 'red' : 'inherit' }}>{result.failed || 0}</div>
+              <div className="stat-label">Failed</div>
             </div>
             <div className="result-stat">
               <div className="stat-value">{result.total_files || 0}</div>
               <div className="stat-label">Total Files</div>
             </div>
           </div>
+          {(result.duplicates_found || 0) > 0 && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#f0f9ff', borderRadius: '4px', fontSize: '0.9rem' }}>
+              ℹ️ Found {result.duplicates_found} duplicate document{result.duplicates_found > 1 ? 's' : ''} (Strategy: <strong>{result.duplicate_strategy}</strong>)
+            </div>
+          )}
 
           {result.results && result.results.length > 0 && (
             <div style={{ marginTop: '1.5rem' }}>
@@ -531,19 +620,35 @@ export default function BulkImport() {
                 overflowY: 'auto'
               }}>
                 {result.results.map((fileResult: any, index: number) => (
-                  <div key={index} style={{ 
-                    padding: '0.75rem', 
+                  <div key={index} style={{
+                    padding: '0.75rem',
                     marginBottom: '0.5rem',
                     backgroundColor: fileResult.status === 'success' ? '#e8f5e9' : '#ffebee',
-                    borderRadius: '4px'
+                    borderRadius: '4px',
+                    borderLeft: fileResult.anomalies && fileResult.anomalies.length > 0 ? '4px solid #ff9800' : 'none'
                   }}>
                     <div style={{ fontWeight: 'bold' }}>{fileResult.filename}</div>
                     <div style={{ fontSize: '0.9rem', marginTop: '0.25rem' }}>
-                      Type: {getDocumentTypeLabel(fileResult.document_type)} | 
-                      Month: {fileResult.month || 'N/A'} | 
-                      File Type: {fileResult.file_type || 'N/A'} | 
+                      Type: {getDocumentTypeLabel(fileResult.document_type)} |
+                      Month: {fileResult.month || 'N/A'} |
+                      File Type: {fileResult.file_type || 'N/A'} |
                       Status: {fileResult.status === 'success' ? '✅ Success' : '❌ Failed'}
                     </div>
+                    {fileResult.warning && (
+                      <div style={{ fontSize: '0.85rem', color: '#ff9800', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fff3e0', borderRadius: '4px' }}>
+                        <strong>⚠️ Warning:</strong> {fileResult.warning}
+                      </div>
+                    )}
+                    {fileResult.anomalies && fileResult.anomalies.length > 0 && (
+                      <div style={{ fontSize: '0.85rem', color: '#f57c00', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fff3e0', borderRadius: '4px' }}>
+                        <strong>🔍 Anomalies Detected:</strong>
+                        <ul style={{ margin: '0.25rem 0 0 1.25rem', paddingLeft: 0 }}>
+                          {fileResult.anomalies.map((anomaly: string, idx: number) => (
+                            <li key={idx} style={{ marginTop: '0.15rem' }}>{anomaly}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {fileResult.error && (
                       <div style={{ fontSize: '0.85rem', color: 'red', marginTop: '0.25rem' }}>
                         Error: {fileResult.error}

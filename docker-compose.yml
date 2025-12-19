@@ -1,3 +1,8 @@
+# Enable BuildKit for faster builds and better caching
+# Set via: export DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
+x-build-args: &build-args
+  BUILDKIT_INLINE_CACHE: 1
+
 services:
   # PostgreSQL Database
   postgres:
@@ -190,6 +195,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # Use BuildKit cache mounts for faster builds
+      cache_from:
+        - reims-base:latest
+      args:
+        <<: *build-args
     container_name: reims-backend
     restart: unless-stopped
     env_file:
@@ -318,6 +328,17 @@ services:
         condition: service_started
     networks:
       - reims-network
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_worker.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     command: celery -A celery_worker.celery_app worker --loglevel=info
 
   # Flower - Celery monitoring
@@ -357,6 +378,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      # Use BuildKit cache mounts for npm cache
+      args:
+        <<: *build-args
     container_name: reims-frontend
     restart: unless-stopped
     volumes:
@@ -377,6 +401,17 @@ services:
       - backend
     networks:
       - reims-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:

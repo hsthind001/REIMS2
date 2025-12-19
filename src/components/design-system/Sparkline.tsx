@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 
 export interface SparklineProps {
@@ -16,6 +16,37 @@ export const Sparkline: React.FC<SparklineProps> = ({
   showGradient = true,
   trend
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+
+  // Measure container width on mount and resize
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.offsetWidth;
+        if (width > 0) {
+          setContainerWidth(width);
+        }
+      }
+    };
+
+    // Initial measurement
+    updateWidth();
+
+    // Use ResizeObserver for accurate measurements
+    const resizeObserver = new ResizeObserver(() => {
+      updateWidth();
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   // Return null if no data
   if (!data || data.length === 0) {
     return null;
@@ -49,35 +80,47 @@ export const Sparkline: React.FC<SparklineProps> = ({
   const padding = range * 0.1; // 10% padding
 
   return (
-    <div style={{ width: '100%', height: `${height}px`, marginTop: '0.5rem' }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
-          <YAxis
-            domain={[minValue - padding, maxValue + padding]}
-            hide
-          />
-          {showGradient && (
-            <defs>
-              <linearGradient id={`sparkline-gradient-${lineColor.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={lineColor} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={lineColor} stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
-          )}
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke={lineColor}
-            strokeWidth={2}
-            dot={false}
-            activeDot={false}
-            isAnimationActive={true}
-            animationDuration={800}
-            animationEasing="ease-in-out"
-            fill={showGradient ? `url(#sparkline-gradient-${lineColor.replace('#', '')})` : 'none'}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div 
+      ref={containerRef}
+      style={{ 
+        width: '100%', 
+        height: `${height}px`, 
+        marginTop: '0.5rem',
+        minWidth: 0,
+        minHeight: `${height}px`,
+        position: 'relative'
+      }}
+    >
+      {containerWidth !== null && containerWidth > 0 && (
+        <ResponsiveContainer width={containerWidth} height={height}>
+          <LineChart data={chartData} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
+            <YAxis
+              domain={[minValue - padding, maxValue + padding]}
+              hide
+            />
+            {showGradient && (
+              <defs>
+                <linearGradient id={`sparkline-gradient-${lineColor.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={lineColor} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={lineColor} stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+            )}
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={lineColor}
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+              isAnimationActive={true}
+              animationDuration={800}
+              animationEasing="ease-in-out"
+              fill={showGradient ? `url(#sparkline-gradient-${lineColor.replace('#', '')})` : 'none'}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 };

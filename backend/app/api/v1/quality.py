@@ -135,7 +135,11 @@ async def get_document_quality(
         
         # Calculate metrics
         total_records = len(records)
-        matched_records = sum(1 for r in records if r.account_id is not None)
+        # Rent rolls don't have account_id
+        if upload.document_type == "rent_roll":
+            matched_records = total_records  # All rent roll records are considered "matched"
+        else:
+            matched_records = sum(1 for r in records if hasattr(r, 'account_id') and r.account_id is not None)
         match_rate = (matched_records / total_records * 100) if total_records > 0 else 0
         
         # Confidence metrics
@@ -155,30 +159,45 @@ async def get_document_quality(
             extraction_conf = float(record.extraction_confidence) if record.extraction_confidence else 0
             match_conf = float(getattr(record, 'match_confidence', 0)) if hasattr(record, 'match_confidence') and getattr(record, 'match_confidence') else 0
             match_strategy = getattr(record, 'match_strategy', 'unknown') if hasattr(record, 'match_strategy') else 'unknown'
-            is_matched = record.account_id is not None
-            
+
+            # Rent rolls don't have account_id
+            if upload.document_type == "rent_roll":
+                is_matched = True  # All rent roll records are considered matched
+                validation_score = float(record.validation_score) if hasattr(record, 'validation_score') and record.validation_score else 0
+            else:
+                is_matched = hasattr(record, 'account_id') and record.account_id is not None
+
             # Count match strategies
             match_strategy_counts[match_strategy] = match_strategy_counts.get(match_strategy, 0) + 1
-            
-            # Critical: extraction < 85% OR match < 95% OR unmatched
-            if extraction_conf < 85 or match_conf < 95 or not is_matched:
-                critical_count += 1
-                if not is_matched:
-                    unmatched_accounts.append({
-                        "account_code": getattr(record, "account_code", None),
-                        "account_name": getattr(record, "account_name", None),
-                        "amount": float(getattr(record, amount_field, 0)),
-                        "extraction_confidence": extraction_conf,
-                        "match_confidence": match_conf
-                    })
-            # Warning: extraction 85-95% AND match 95-100%
-            elif extraction_conf < 95:
-                warning_count += 1
-            # Info: extraction >= 95% AND match >= 95%
+
+            # For rent rolls, use validation_score instead
+            if upload.document_type == "rent_roll":
+                if validation_score < 85:
+                    critical_count += 1
+                elif 85 <= validation_score < 95:
+                    warning_count += 1
+                else:
+                    info_count += 1
             else:
-                info_count += 1
-        
-        needs_review_count = sum(1 for r in records if r.needs_review)
+                # Critical: extraction < 85% OR match < 95% OR unmatched
+                if extraction_conf < 85 or match_conf < 95 or not is_matched:
+                    critical_count += 1
+                    if not is_matched:
+                        unmatched_accounts.append({
+                            "account_code": getattr(record, "account_code", None),
+                            "account_name": getattr(record, "account_name", None),
+                            "amount": float(getattr(record, amount_field, 0)),
+                            "extraction_confidence": extraction_conf,
+                            "match_confidence": match_conf
+                        })
+                # Warning: extraction 85-95% AND match 95-100%
+                elif extraction_conf < 95:
+                    warning_count += 1
+                # Info: extraction >= 95% AND match >= 95%
+                else:
+                    info_count += 1
+
+        needs_review_count = sum(1 for r in records if hasattr(r, 'needs_review') and r.needs_review)
         
         # Calculate overall severity
         severity_level = calculate_severity_level(
@@ -303,22 +322,39 @@ async def get_quality_summary(
             for record in records:
                 total_records += 1
                 by_doc_type[doc_type]["total_records"] += 1
-                
-                if record.account_id is not None:
+
+                # Rent rolls don't have account_id, skip matching logic for them
+                if doc_type != "rent_roll":
+                    if hasattr(record, 'account_id') and record.account_id is not None:
+                        total_matched += 1
+                        by_doc_type[doc_type]["matched_records"] += 1
+                else:
+                    # For rent rolls, consider all as "matched"
                     total_matched += 1
                     by_doc_type[doc_type]["matched_records"] += 1
-                
+
                 conf = float(record.extraction_confidence) if record.extraction_confidence else 0
                 all_confidences.append(conf)
-                
-                if conf < 85 or record.account_id is None:
-                    total_critical += 1
-                elif 85 <= conf < 95:
-                    total_warning += 1
+
+                # For rent rolls, use validation_score instead of match logic
+                if doc_type == "rent_roll":
+                    validation_score = float(record.validation_score) if hasattr(record, 'validation_score') and record.validation_score else 0
+                    if validation_score < 85:
+                        total_critical += 1
+                    elif 85 <= validation_score < 95:
+                        total_warning += 1
+                    else:
+                        total_info += 1
                 else:
-                    total_info += 1
-                
-                if record.needs_review:
+                    is_matched = hasattr(record, 'account_id') and record.account_id is not None
+                    if conf < 85 or not is_matched:
+                        total_critical += 1
+                    elif 85 <= conf < 95:
+                        total_warning += 1
+                    else:
+                        total_info += 1
+
+                if hasattr(record, 'needs_review') and record.needs_review:
                     total_needs_review += 1
         
         # Calculate aggregates

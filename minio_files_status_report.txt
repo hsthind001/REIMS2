@@ -1,0 +1,180 @@
+[0;36m╔══════════════════════════════════════════════════════════════════╗[0m
+[0;36m║     REIMS2 - Complete MinIO Files Status Report                   ║[0m
+[0;36m╚══════════════════════════════════════════════════════════════════╝[0m
+[0;34mGenerated: 2025-12-19 11:00:16[0m
+
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[0;36m📋 Fetching all files from MinIO and database...[0m
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[0;36m📊 OVERALL STATISTICS:[0m
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+   Total Files in Database:    [0;34m143[0m
+   [0;32m✅ Completed (PASS):        80 (55%)[0m
+   [1;33m🔄 In Progress:           4[0m
+   [0;34m⏳ Pending in Queue:       24[0m
+   [0;31m❌ Failed (FAIL):          35[0m
+
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[0;36m📁 FILE DETAILS:[0m
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+Property        Year   Month  Document Type        File Name       Status      
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+ESP001          2025   12     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   12     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   12     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   12     Rent Roll            RentRoll-12.25.pdf        [0;34m⏳ PENDING                   [0m
+ESP001          2025   11     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   11     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   11     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   11     Rent Roll            RentRoll-11.25.pdf        [0;34m⏳ PENDING                   [0m
+ESP001          2025   10     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   10     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   10     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   10     Rent Roll            RentRoll-10.25.pdf        [0;34m⏳ PENDING                   [0m
+ESP001          2025   9      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   9      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   9      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   9      Rent Roll            RentRoll-9.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   8      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   8      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   8      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   8      Rent Roll            RentRoll-8.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   7      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   7      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   7      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   7      Rent Roll            RentRoll-7.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   6      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   6      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   6      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   6      Rent Roll            RentRoll-6.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   5      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   5      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   5      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   5      Rent Roll            RentRoll-5.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   4      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   4      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   4      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   4      Rent Roll            RentRoll-4.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   3      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   3      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   3      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   3      Rent Roll            RentRoll-3.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   2      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   2      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   2      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   2      Rent Roll            RentRoll-2.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2025   1      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2025   1      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2025   1      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2025   1      Rent Roll            RentRoll-1.25.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   12     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   12     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   12     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   12     Rent Roll            RentRoll-12.24.pdf        [0;34m⏳ PENDING                   [0m
+ESP001          2024   11     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   11     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   11     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   11     Rent Roll            RentRoll-11.24.pdf        [0;34m⏳ PENDING                   [0m
+ESP001          2024   10     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   10     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   10     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   10     Rent Roll            RentRoll-10.24.pdf        [0;34m⏳ PENDING                   [0m
+ESP001          2024   9      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   9      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   9      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   9      Rent Roll            RentRoll-9.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   8      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   8      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   8      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   8      Rent Roll            RentRoll-8.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   7      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   7      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   7      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   7      Rent Roll            RentRoll-7.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   6      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   6      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   6      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   6      Rent Roll            RentRoll-6.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   5      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   5      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   5      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   5      Rent Roll            RentRoll-5.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   4      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   4      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   4      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   4      Rent Roll            RentRoll-4.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   3      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   3      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   3      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   3      Rent Roll            RentRoll-3.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   2      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   2      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   2      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   2      Rent Roll            RentRoll-2.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2024   1      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2024   1      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2024   1      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2024   1      Rent Roll            RentRoll-1.24.pdf         [0;34m⏳ PENDING                   [0m
+ESP001          2023   12     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   12     Rent Roll            RentRoll-12.23.pdf        [1;33m🔄 IN PROGRESS (228s)       [0m
+ESP001          2023   11     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   11     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   11     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   11     Rent Roll            RentRoll-11.23.pdf        [1;33m🔄 IN PROGRESS (234s)       [0m
+ESP001          2023   10     Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   10     Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   10     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   10     Rent Roll            RentRoll-10.23.pdf        [1;33m🔄 IN PROGRESS (240s)       [0m
+ESP001          2023   9      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   9      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   9      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   9      Rent Roll            RentRoll-9.23.pdf         [1;33m🔄 IN PROGRESS (254s)       [0m
+ESP001          2023   8      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   8      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   8      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   8      Rent Roll            RentRoll-8.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   7      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   7      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   7      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   7      Rent Roll            RentRoll-7.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   6      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   6      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   6      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   6      Rent Roll            RentRoll-6.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   5      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   5      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   5      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   5      Rent Roll            RentRoll-5.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   4      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   4      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   4      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   4      Rent Roll            RentRoll-4.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   3      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   3      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   3      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   3      Rent Roll            RentRoll-3.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   2      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   2      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   2      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   2      Rent Roll            RentRoll-2.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2023   1      Balance Sheet        Balance_Sheet_esp_Accr... [0;32m✅ PASS                      [0m
+ESP001          2023   1      Cash Flow            Cash_Flow_esp_Accrual-... [0;31m❌ FAIL                      [0m
+ESP001          2023   1      Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+ESP001          2023   1      Rent Roll            RentRoll-1.23.pdf         [0;32m✅ PASS                      [0m
+ESP001          2022   12     Income Statement     Income_Statement_esp_A... [0;32m✅ PASS                      [0m
+
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[0;36m💡 NOTE:[0m
+[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+   This report shows all files that have been uploaded to the database.
+   Files in MinIO that haven't been registered in the database won't appear here.
+   Status meanings:
+   • ✅ PASS = Successfully extracted and stored in database
+   • ❌ FAIL = Extraction failed
+   • 🔄 IN PROGRESS = Currently being processed
+   • ⏳ PENDING = Queued for processing
+   • ❓ NOT UPLOADED = File record exists but not uploaded
+

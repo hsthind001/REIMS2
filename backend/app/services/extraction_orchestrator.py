@@ -948,6 +948,9 @@ class ExtractionOrchestrator:
         (header, line items, adjustments, reconciliations) for this property+period
         before inserting new data to ensure clean replacement.
         
+        Transaction handling: Deletion is committed in a separate transaction
+        before insertion to prevent rollback issues and ensure clean state.
+        
         Inserts:
         - Header record with summary totals
         - Line items with full categorization
@@ -958,6 +961,9 @@ class ExtractionOrchestrator:
         from app.models.cash_flow_adjustments import CashFlowAdjustment
         from app.models.cash_account_reconciliation import CashAccountReconciliation
         from datetime import datetime
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         items = parsed_data.get("line_items", [])
         adjustments = parsed_data.get("adjustments", [])
@@ -966,222 +972,247 @@ class ExtractionOrchestrator:
         
         records_inserted = 0
         
-        # DELETE all existing cash flow data for this property+period
-        deleted_header = self.db.query(CashFlowHeader).filter(
-            CashFlowHeader.property_id == upload.property_id,
-            CashFlowHeader.period_id == upload.period_id
-        ).delete(synchronize_session=False)
+        # STEP 1: DELETE all existing cash flow data in a separate transaction
+        # This ensures deletion is committed before insertion, preventing rollback issues
+        try:
+            deleted_header = self.db.query(CashFlowHeader).filter(
+                CashFlowHeader.property_id == upload.property_id,
+                CashFlowHeader.period_id == upload.period_id
+            ).delete(synchronize_session=False)
+            
+            deleted_items = self.db.query(CashFlowData).filter(
+                CashFlowData.property_id == upload.property_id,
+                CashFlowData.period_id == upload.period_id
+            ).delete(synchronize_session=False)
+            
+            deleted_adjustments = self.db.query(CashFlowAdjustment).filter(
+                CashFlowAdjustment.property_id == upload.property_id,
+                CashFlowAdjustment.period_id == upload.period_id
+            ).delete(synchronize_session=False)
+            
+            deleted_reconciliations = self.db.query(CashAccountReconciliation).filter(
+                CashAccountReconciliation.property_id == upload.property_id,
+                CashAccountReconciliation.period_id == upload.period_id
+            ).delete(synchronize_session=False)
+            
+            # Commit deletion in separate transaction
+            self.db.flush()  # Ensure deletions are applied
+            self.db.commit()  # Commit deletion transaction
+            
+            if any([deleted_header, deleted_items, deleted_adjustments, deleted_reconciliations]):
+                print(f"🗑️  Deleted cash flow data: {deleted_header} header, {deleted_items} items, {deleted_adjustments} adjustments, {deleted_reconciliations} reconciliations for property {upload.property_id}, period {upload.period_id}")
+                logger.info(f"Deleted cash flow data for upload_id={upload.id}: {deleted_header} header, {deleted_items} items, {deleted_adjustments} adjustments, {deleted_reconciliations} reconciliations")
         
-        deleted_items = self.db.query(CashFlowData).filter(
-            CashFlowData.property_id == upload.property_id,
-            CashFlowData.period_id == upload.period_id
-        ).delete(synchronize_session=False)
+        except Exception as e:
+            # Rollback deletion transaction if it fails
+            self.db.rollback()
+            error_msg = f"Failed to delete existing cash flow data for upload_id={upload.id}: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
-        deleted_adjustments = self.db.query(CashFlowAdjustment).filter(
-            CashFlowAdjustment.property_id == upload.property_id,
-            CashFlowAdjustment.period_id == upload.period_id
-        ).delete(synchronize_session=False)
-        
-        deleted_reconciliations = self.db.query(CashAccountReconciliation).filter(
-            CashAccountReconciliation.property_id == upload.property_id,
-            CashAccountReconciliation.period_id == upload.period_id
-        ).delete(synchronize_session=False)
-        
-        if any([deleted_header, deleted_items, deleted_adjustments, deleted_reconciliations]):
-            print(f"🗑️  Deleted cash flow data: {deleted_header} header, {deleted_items} items, {deleted_adjustments} adjustments, {deleted_reconciliations} reconciliations for property {upload.property_id}, period {upload.period_id}")
-        
-        # Step 1: Calculate header totals from line items
+        # STEP 2: Calculate header totals from line items
         totals = self._calculate_cash_flow_totals(items)
         
-        # Step 2: Parse period dates from header
+        # STEP 3: Parse period dates from header
         period_start, period_end = self._parse_period_dates(
             header_data.get("report_period_start"),
             header_data.get("report_period_end"),
             upload.period_id
         )
         
-        # Step 3: Create NEW CashFlowHeader
-        header = CashFlowHeader(
-            property_id=upload.property_id,
-            period_id=upload.period_id,
-            upload_id=upload.id,
-            property_name=header_data.get("property_name", ""),
-            property_code=header_data.get("property_code", ""),
-            report_period_start=period_start,
-            report_period_end=period_end,
-            accounting_basis=header_data.get("accounting_basis", "Accrual"),
-            report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
-            # Totals from calculations
-            total_income=Decimal(str(totals.get("total_income", 0))),
-            base_rentals=Decimal(str(totals.get("base_rentals", 0))),
-            total_operating_expenses=Decimal(str(totals.get("total_operating_expenses", 0))),
-            total_additional_operating_expenses=Decimal(str(totals.get("total_additional_expenses", 0))),
-            total_expenses=Decimal(str(totals.get("total_expenses", 0))),
-            net_operating_income=Decimal(str(totals.get("noi", 0))),
-            noi_percentage=Decimal(str(totals.get("noi_percentage", 0))),
-            mortgage_interest=Decimal(str(totals.get("mortgage_interest", 0))),
-            depreciation=Decimal(str(totals.get("depreciation", 0))),
-            amortization=Decimal(str(totals.get("amortization", 0))),
-            total_other_income_expense=Decimal(str(totals.get("total_other", 0))),
-            net_income=Decimal(str(totals.get("net_income", 0))),
-            net_income_percentage=Decimal(str(totals.get("net_income_percentage", 0))),
-            total_adjustments=Decimal(str(sum(adj.get("amount", 0) for adj in adjustments))),
-            cash_flow=Decimal(str(totals.get("cash_flow", 0))),
-            cash_flow_percentage=Decimal(str(totals.get("cash_flow_percentage", 0))),
-            beginning_cash_balance=Decimal(str(totals.get("beginning_cash", 0))),
-            ending_cash_balance=Decimal(str(totals.get("ending_cash", 0))),
-            extraction_confidence=Decimal(str(confidence_score)),
-            needs_review=confidence_score < 85.0
-        )
-        self.db.add(header)
-        self.db.flush()  # Get header.id
-        
-        # Step 4: INTELLIGENT DEDUPLICATION - Prevents duplicate constraint violations
-        # Constraints: 
-        #   - uq_cf_property_period_account: (property_id, period_id, account_code)
-        #   - uq_cf_property_period_account_name_line: (property_id, period_id, account_code, account_name, line_number)
-        # We use the more specific constraint: (account_code, account_name, line_number)
-        
-        dedup_service = get_deduplication_service()
-        
-        # Add line_number for tracking if not present
-        for idx, item in enumerate(items):
-            if not item.get("line_number"):
-                item['line_number'] = idx + 1
-        
-        # Use constraint-aware deduplication: (account_code, account_name, line_number)
-        dedup_result = dedup_service.deduplicate_items(
-            items=items,
-            constraint_columns=['account_code', 'account_name', 'line_number'],
-            selection_strategy='confidence',  # Default, but will use 'amount' for totals/subtotals
-            document_type='cash_flow',
-            is_total_or_subtotal=lambda item: item.get("is_subtotal", False) or item.get("is_total", False)
-        )
-        
-        deduplicated_items = dedup_result['deduplicated_items']
-        stats = dedup_result['statistics']
-        
-        # Count totals/subtotals for logging
-        totals_count = sum(1 for item in deduplicated_items if item.get("is_subtotal") or item.get("is_total"))
-        detail_count = len(deduplicated_items) - totals_count
-        
-        if stats['duplicates_removed'] > 0:
-            print(f"📊 Cash Flow extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals, {stats['duplicates_removed']} duplicates removed)")
-        else:
-            print(f"📊 Cash Flow extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals)")
-        
-        # PRE-INSERTION VALIDATION: Ensure no duplicate constraint keys (safety check)
-        is_valid, error_msg = dedup_service.validate_no_duplicates(
-            items=deduplicated_items,
-            constraint_columns=['account_code', 'account_name', 'line_number'],
-            context=f"cash_flow insertion (upload_id={upload.id})"
-        )
-        if not is_valid:
-            raise ValueError(f"Pre-insertion validation failed: {error_msg}")
-        
-        # Step 5: Insert line items with full categorization (including unmatched)
-        for item in deduplicated_items:
-            account_code = item.get("account_code", "") or item.get("matched_account_code", "") or "UNMATCHED"
-            account_name = item.get("account_name", "") or item.get("matched_account_name", "")
-            account_id = item.get("matched_account_id")
-            match_confidence = item.get("match_confidence", 0.0) if not account_id else item.get("match_confidence", 100.0)
-            
-            # Skip only if completely no information
-            if not account_name and account_code == "UNMATCHED":
-                continue
-            
-            # Calculate confidence and review flag
-            item_confidence = item.get("confidence", confidence_score)
-            avg_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
-            needs_review = (avg_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
-            
-            # Determine cash flow category based on account code and line section
-            cash_flow_category = self._determine_cash_flow_category(account_code, item.get("line_section"))
-            
-            # Insert new line item
-            # Extract coordinates if available (for PDF source navigation)
-            extraction_x0 = item.get("extraction_x0")
-            extraction_y0 = item.get("extraction_y0")
-            extraction_x1 = item.get("extraction_x1")
-            extraction_y1 = item.get("extraction_y1")
-            
-            cf_data = CashFlowData(
-                header_id=header.id,
+        # STEP 4: Create NEW CashFlowHeader (in new transaction)
+        try:
+            header = CashFlowHeader(
                 property_id=upload.property_id,
                 period_id=upload.period_id,
                 upload_id=upload.id,
-                account_id=account_id,
-                account_code=account_code or "",
-                account_name=account_name,
-                period_amount=Decimal(str(item.get("period_amount", 0))),
-                ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
-                period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
-                ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
-                cash_flow_category=cash_flow_category,  # NEW: Set category
-                line_section=item.get("line_section"),
-                line_category=item.get("line_category"),
-                line_subcategory=item.get("line_subcategory"),
-                line_number=item.get("line_number"),
-                is_subtotal=item.get("is_subtotal", False),
-                is_total=item.get("is_total", False),
-                page_number=item.get("page"),
-                extraction_confidence=Decimal(str(avg_confidence)),
-                needs_review=needs_review,
-                # PDF Source Navigation: Extraction coordinates
-                extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
-                extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
-                extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
-                extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None
+                property_name=header_data.get("property_name", ""),
+                property_code=header_data.get("property_code", ""),
+                report_period_start=period_start,
+                report_period_end=period_end,
+                accounting_basis=header_data.get("accounting_basis", "Accrual"),
+                report_generation_date=self._parse_report_date(header_data.get("report_generation_date")),
+                # Totals from calculations
+                total_income=Decimal(str(totals.get("total_income", 0))),
+                base_rentals=Decimal(str(totals.get("base_rentals", 0))),
+                total_operating_expenses=Decimal(str(totals.get("total_operating_expenses", 0))),
+                total_additional_operating_expenses=Decimal(str(totals.get("total_additional_expenses", 0))),
+                total_expenses=Decimal(str(totals.get("total_expenses", 0))),
+                net_operating_income=Decimal(str(totals.get("noi", 0))),
+                noi_percentage=Decimal(str(totals.get("noi_percentage", 0))),
+                mortgage_interest=Decimal(str(totals.get("mortgage_interest", 0))),
+                depreciation=Decimal(str(totals.get("depreciation", 0))),
+                amortization=Decimal(str(totals.get("amortization", 0))),
+                total_other_income_expense=Decimal(str(totals.get("total_other", 0))),
+                net_income=Decimal(str(totals.get("net_income", 0))),
+                net_income_percentage=Decimal(str(totals.get("net_income_percentage", 0))),
+                total_adjustments=Decimal(str(sum(adj.get("amount", 0) for adj in adjustments))),
+                cash_flow=Decimal(str(totals.get("cash_flow", 0))),
+                cash_flow_percentage=Decimal(str(totals.get("cash_flow_percentage", 0))),
+                beginning_cash_balance=Decimal(str(totals.get("beginning_cash", 0))),
+                ending_cash_balance=Decimal(str(totals.get("ending_cash", 0))),
+                extraction_confidence=Decimal(str(confidence_score)),
+                needs_review=confidence_score < 85.0
             )
-            self.db.add(cf_data)
-            records_inserted += 1
+            self.db.add(header)
+            self.db.flush()  # Get header.id
         
-        # Step 5: Insert NEW adjustments
-        for adj in adjustments:
-            adj_record = CashFlowAdjustment(
-                header_id=header.id,
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                adjustment_category=adj.get("adjustment_category"),
-                adjustment_name=adj.get("adjustment_name"),
-                amount=Decimal(str(adj.get("amount", 0))),
-                is_increase=adj.get("is_increase", True),
-                related_property=adj.get("related_property"),
-                related_entity=adj.get("related_entity"),
-                line_number=adj.get("line_number"),
-                page_number=adj.get("page"),
-                extraction_confidence=Decimal(str(adj.get("confidence", confidence_score))),
-                needs_review=adj.get("confidence", confidence_score) < 85.0
+            # STEP 5: INTELLIGENT DEDUPLICATION - Prevents duplicate constraint violations
+            # Constraints: 
+            #   - uq_cf_property_period_account_name_line: (property_id, period_id, account_code, account_name, line_number)
+            # Note: Old constraint uq_cf_property_period_account (without line_number) has been removed via migration
+            # We use the constraint: (account_code, account_name, line_number)
+            
+            dedup_service = get_deduplication_service()
+            
+            # Add line_number for tracking if not present
+            for idx, item in enumerate(items):
+                if not item.get("line_number"):
+                    item['line_number'] = idx + 1
+            
+            # Use constraint-aware deduplication: (account_code, account_name, line_number)
+            dedup_result = dedup_service.deduplicate_items(
+                items=items,
+                constraint_columns=['account_code', 'account_name', 'line_number'],
+                selection_strategy='confidence',  # Default, but will use 'amount' for totals/subtotals
+                document_type='cash_flow',
+                is_total_or_subtotal=lambda item: item.get("is_subtotal", False) or item.get("is_total", False)
             )
-            self.db.add(adj_record)
-            records_inserted += 1
-        
-        # Step 6: Insert NEW cash account reconciliations
-        for cash_acct in cash_accounts:
-            cash_record = CashAccountReconciliation(
-                header_id=header.id,
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                account_name=cash_acct.get("account_name"),
-                account_type=cash_acct.get("account_type"),
-                beginning_balance=Decimal(str(cash_acct.get("beginning_balance", 0))),
-                ending_balance=Decimal(str(cash_acct.get("ending_balance", 0))),
-                difference=Decimal(str(cash_acct.get("difference", 0))),
-                is_escrow_account=cash_acct.get("is_escrow_account", False),
-                is_negative_balance=cash_acct.get("is_negative_balance", False),
-                is_total_row=cash_acct.get("is_total_row", False),
-                line_number=cash_acct.get("line_number"),
-                page_number=cash_acct.get("page"),
-                extraction_confidence=Decimal(str(cash_acct.get("confidence", confidence_score))),
-                needs_review=cash_acct.get("confidence", confidence_score) < 85.0
+            
+            deduplicated_items = dedup_result['deduplicated_items']
+            stats = dedup_result['statistics']
+            
+            # Count totals/subtotals for logging
+            totals_count = sum(1 for item in deduplicated_items if item.get("is_subtotal") or item.get("is_total"))
+            detail_count = len(deduplicated_items) - totals_count
+            
+            if stats['duplicates_removed'] > 0:
+                print(f"📊 Cash Flow extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals, {stats['duplicates_removed']} duplicates removed)")
+            else:
+                print(f"📊 Cash Flow extraction: {stats['total_items']} raw items → {stats['final_count']} unique records ({detail_count} detail + {totals_count} totals/subtotals)")
+            
+            # PRE-INSERTION VALIDATION: Ensure no duplicate constraint keys (safety check)
+            is_valid, error_msg = dedup_service.validate_no_duplicates(
+                items=deduplicated_items,
+                constraint_columns=['account_code', 'account_name', 'line_number'],
+                context=f"cash_flow insertion (upload_id={upload.id})"
             )
-            self.db.add(cash_record)
-            records_inserted += 1
+            if not is_valid:
+                raise ValueError(f"Pre-insertion validation failed: {error_msg}")
+            
+            # STEP 6: Insert line items with full categorization (including unmatched)
+            for item in deduplicated_items:
+                account_code = item.get("account_code", "") or item.get("matched_account_code", "") or "UNMATCHED"
+                account_name = item.get("account_name", "") or item.get("matched_account_name", "")
+                account_id = item.get("matched_account_id")
+                match_confidence = item.get("match_confidence", 0.0) if not account_id else item.get("match_confidence", 100.0)
+                
+                # Skip only if completely no information
+                if not account_name and account_code == "UNMATCHED":
+                    continue
+                
+                # Calculate confidence and review flag
+                item_confidence = item.get("confidence", confidence_score)
+                avg_confidence = (float(item_confidence) + float(match_confidence)) / 2.0
+                needs_review = (avg_confidence < 85.0) or (account_id is None) or (account_code == "UNMATCHED")
+                
+                # Determine cash flow category based on account code and line section
+                cash_flow_category = self._determine_cash_flow_category(account_code, item.get("line_section"))
+                
+                # Insert new line item
+                # Extract coordinates if available (for PDF source navigation)
+                extraction_x0 = item.get("extraction_x0")
+                extraction_y0 = item.get("extraction_y0")
+                extraction_x1 = item.get("extraction_x1")
+                extraction_y1 = item.get("extraction_y1")
+                
+                cf_data = CashFlowData(
+                    header_id=header.id,
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    account_id=account_id,
+                    account_code=account_code or "",
+                    account_name=account_name,
+                    period_amount=Decimal(str(item.get("period_amount", 0))),
+                    ytd_amount=Decimal(str(item["ytd_amount"])) if item.get("ytd_amount") is not None else None,
+                    period_percentage=Decimal(str(item["period_percentage"])) if item.get("period_percentage") is not None else None,
+                    ytd_percentage=Decimal(str(item["ytd_percentage"])) if item.get("ytd_percentage") is not None else None,
+                    cash_flow_category=cash_flow_category,  # NEW: Set category
+                    line_section=item.get("line_section"),
+                    line_category=item.get("line_category"),
+                    line_subcategory=item.get("line_subcategory"),
+                    line_number=item.get("line_number"),
+                    is_subtotal=item.get("is_subtotal", False),
+                    is_total=item.get("is_total", False),
+                    page_number=item.get("page"),
+                    extraction_confidence=Decimal(str(avg_confidence)),
+                    needs_review=needs_review,
+                    # PDF Source Navigation: Extraction coordinates
+                    extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
+                    extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
+                    extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
+                    extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None
+                )
+                self.db.add(cf_data)
+                records_inserted += 1
+            
+            # STEP 7: Insert NEW adjustments
+            for adj in adjustments:
+                adj_record = CashFlowAdjustment(
+                    header_id=header.id,
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    adjustment_category=adj.get("adjustment_category"),
+                    adjustment_name=adj.get("adjustment_name"),
+                    amount=Decimal(str(adj.get("amount", 0))),
+                    is_increase=adj.get("is_increase", True),
+                    related_property=adj.get("related_property"),
+                    related_entity=adj.get("related_entity"),
+                    line_number=adj.get("line_number"),
+                    page_number=adj.get("page"),
+                    extraction_confidence=Decimal(str(adj.get("confidence", confidence_score))),
+                    needs_review=adj.get("confidence", confidence_score) < 85.0
+                )
+                self.db.add(adj_record)
+                records_inserted += 1
+            
+            # STEP 8: Insert NEW cash account reconciliations
+            for cash_acct in cash_accounts:
+                cash_record = CashAccountReconciliation(
+                    header_id=header.id,
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    account_name=cash_acct.get("account_name"),
+                    account_type=cash_acct.get("account_type"),
+                    beginning_balance=Decimal(str(cash_acct.get("beginning_balance", 0))),
+                    ending_balance=Decimal(str(cash_acct.get("ending_balance", 0))),
+                    difference=Decimal(str(cash_acct.get("difference", 0))),
+                    is_escrow_account=cash_acct.get("is_escrow_account", False),
+                    is_negative_balance=cash_acct.get("is_negative_balance", False),
+                    is_total_row=cash_acct.get("is_total_row", False),
+                    line_number=cash_acct.get("line_number"),
+                    page_number=cash_acct.get("page"),
+                    extraction_confidence=Decimal(str(cash_acct.get("confidence", confidence_score))),
+                    needs_review=cash_acct.get("confidence", confidence_score) < 85.0
+                )
+                self.db.add(cash_record)
+                records_inserted += 1
+            
+            # Commit all insertions
+            self.db.commit()
+            logger.info(f"Successfully inserted {records_inserted} cash flow records for upload_id={upload.id}")
+            return records_inserted
         
-        self.db.commit()
-        return records_inserted
+        except Exception as e:
+            # Rollback insertion transaction on error
+            self.db.rollback()
+            error_msg = f"Failed to insert cash flow data for upload_id={upload.id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            # Re-raise with more context
+            raise ValueError(f"Cash flow data insertion failed: {str(e)}") from e
     
     def _calculate_cash_flow_totals(self, items: List[Dict]) -> Dict:
         """Calculate summary totals from line items"""

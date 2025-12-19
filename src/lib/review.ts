@@ -54,6 +54,29 @@ export class ReviewService {
   async bulkApprove(records: Array<{ id: number; table_name: string }>): Promise<void> {
     return api.post<void>('/review/bulk-approve', { records });
   }
+
+  /**
+   * Export review items to Excel
+   */
+  async exportReviewItems(params?: {
+    property_code?: string;
+    document_type?: string;
+    severity?: string;
+  }): Promise<Blob> {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/review/export`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to export review items');
+    }
+
+    return response.blob();
+  }
 }
 
 // Export singleton

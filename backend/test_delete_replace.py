@@ -59,9 +59,9 @@ def test_balance_sheet_delete_replace():
             period_id=period.id,
             document_type="balance_sheet",
             file_name="test1.pdf",
-            file_size=1000,
+            file_size_bytes=1000,
             file_path="test/test1.pdf",
-            status="completed"
+            extraction_status="completed"
         )
         db.add(upload1)
         db.flush()
@@ -110,9 +110,9 @@ def test_balance_sheet_delete_replace():
             period_id=period.id,
             document_type="balance_sheet",
             file_name="test2.pdf",
-            file_size=1000,
+            file_size_bytes=1000,
             file_path="test/test2.pdf",
-            status="completed"
+            extraction_status="completed"
         )
         db.add(upload2)
         db.flush()
@@ -223,9 +223,9 @@ def test_income_statement_delete_replace():
             period_id=period.id,
             document_type="income_statement",
             file_name="test_is1.pdf",
-            file_size=1000,
+            file_size_bytes=1000,
             file_path="test/test_is1.pdf",
-            status="completed"
+            extraction_status="completed"
         )
         db.add(upload1)
         db.flush()
@@ -286,9 +286,9 @@ def test_income_statement_delete_replace():
             period_id=period.id,
             document_type="income_statement",
             file_name="test_is2.pdf",
-            file_size=1000,
+            file_size_bytes=1000,
             file_path="test/test_is2.pdf",
-            status="completed"
+            extraction_status="completed"
         )
         db.add(upload2)
         db.flush()

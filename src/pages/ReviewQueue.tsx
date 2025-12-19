@@ -192,12 +192,32 @@ export default function ReviewQueue() {
     return reasons.join('; ') || 'Flagged for review'
   }
   
+  const handleBack = () => {
+    // Clear hash to go back to Data Control Center
+    window.location.hash = ''
+  }
+
   return (
     <div className="page">
       <div className="page-header">
-        <div>
-          <h1>Review Queue</h1>
-          <p className="page-subtitle">Items needing manual review or correction</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button 
+            onClick={handleBack}
+            className="btn-secondary"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              padding: '0.5rem 1rem'
+            }}
+            title="Go back to Data Control Center"
+          >
+            ← Back
+          </button>
+          <div>
+            <h1>Review Queue</h1>
+            <p className="page-subtitle">Items needing manual review or correction</p>
+          </div>
         </div>
         <div className="header-actions" style={{ display: 'flex', gap: '0.5rem' }}>
           <button 

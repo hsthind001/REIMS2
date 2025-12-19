@@ -8,7 +8,7 @@ from typing import Optional, List
 from decimal import Decimal
 
 from app.db.database import get_db
-from app.db.minio_client import get_file_url
+from app.db.minio_client import get_file_url, delete_file
 from app.services.document_service import DocumentService
 from app.services.pdf_generator_service import PDFGeneratorService
 from app.tasks.extraction_tasks import extract_document
@@ -230,25 +230,33 @@ async def bulk_upload_documents(
     property_code: str = Form(..., description="Property code (e.g., WEND001)"),
     year: int = Form(..., ge=2000, le=2100, description="Year for all documents"),
     files: List[UploadFile] = File(..., description="Multiple files to upload (PDF, CSV, Excel, DOC)"),
+    duplicate_strategy: str = Form("skip", description="How to handle duplicates: 'skip' (default), 'replace', or 'version'"),
     uploaded_by: Optional[int] = Form(None, description="User ID (optional)"),
     db: Session = Depends(get_db)
 ):
     """
-    Bulk upload multiple documents for a year.
-    
+    Bulk upload multiple documents for a year with intelligent duplicate handling.
+
     **Features:**
     - Auto-detects document type from filename
     - Auto-detects month from filename (defaults to January if not found)
     - Supports PDF, CSV, Excel (.xlsx, .xls), DOC (.doc, .docx)
     - Intelligently organizes files in MinIO buckets
     - Queues extraction tasks automatically
-    
+    - Smart duplicate handling with user control
+
+    **Duplicate Handling Strategies:**
+    - **skip** (default): Skip files where documents already exist for that property/period/type
+    - **replace**: Replace existing documents with new uploads (deletes old data)
+    - **version**: Create new version and keep both (future feature)
+
     **Filename Patterns:**
     - Document type: *balance*sheet*, *income*statement*, *cash*flow*, *rent*roll*
     - Month: Numeric (1-12), month name (January-December), quarter (Q1-Q4)
-    
+
     **Returns:**
-    - Results per file with status, upload_id, and any errors
+    - Results per file with status (success/skipped/replaced/failed)
+    - Summary counts and duplicate statistics
     """
     if not files:
         raise HTTPException(
@@ -265,13 +273,14 @@ async def bulk_upload_documents(
     try:
         # Create document service
         doc_service = DocumentService(db)
-        
-        # Bulk upload documents
+
+        # Bulk upload documents with duplicate strategy
         result = await doc_service.bulk_upload_documents(
             property_code=property_code,
             year=year,
             files=files,
-            uploaded_by=uploaded_by
+            uploaded_by=uploaded_by,
+            duplicate_strategy=duplicate_strategy
         )
         
         return result
@@ -781,6 +790,132 @@ async def get_download_url(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get download URL: {str(e)}"
+        )
+
+
+@router.post("/documents/uploads/reprocess-failed", status_code=status.HTTP_200_OK)
+async def reprocess_failed_uploads(
+    db: Session = Depends(get_db)
+):
+    """
+    Reprocess all failed document uploads
+    
+    **Operation:**
+    - Finds all documents with extraction_status = 'failed' or containing 'failed'
+    - Resets their status to 'pending'
+    - Queues them for extraction again
+    - Returns count of queued documents
+    
+    **Returns:**
+    - Count of failed documents queued for reprocessing
+    """
+    try:
+        # Find all failed uploads
+        from sqlalchemy import or_
+        failed_uploads = db.query(DocumentUpload).filter(
+            or_(
+                DocumentUpload.extraction_status == 'failed',
+                DocumentUpload.extraction_status.like('%failed%')
+            )
+        ).all()
+        
+        queued_count = 0
+        
+        for upload in failed_uploads:
+            try:
+                # Reset status to pending
+                upload.extraction_status = 'pending'
+                upload.extraction_task_id = None
+                upload.extraction_started_at = None
+                upload.extraction_completed_at = None
+                db.flush()
+                
+                # Queue extraction task
+                task = extract_document.delay(upload.id)
+                upload.extraction_task_id = task.id
+                db.commit()
+                
+                queued_count += 1
+            except Exception as e:
+                db.rollback()
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to reprocess upload_id={upload.id}: {str(e)}")
+        
+        return {
+            "message": f"Successfully queued {queued_count} failed document(s) for reprocessing",
+            "queued_count": queued_count,
+            "total_failed": len(failed_uploads)
+        }
+    
+    except Exception as e:
+        db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to reprocess failed uploads: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reprocess failed uploads: {str(e)}"
+        )
+
+
+@router.delete("/documents/uploads/delete-all-history", status_code=status.HTTP_200_OK)
+async def delete_all_upload_history(
+    db: Session = Depends(get_db)
+):
+    """
+    Delete all document upload history from the database
+    
+    **Warning:** This operation:
+    - Deletes ALL document upload records from the database
+    - Deletes associated extracted financial data (via cascade)
+    - Deletes files from MinIO storage
+    - This action CANNOT be undone
+    
+    **Use Cases:**
+    - Clean up old upload history
+    - Reset system for testing
+    - Remove all document records
+    
+    **Returns:**
+    - Count of deleted records
+    """
+    try:
+        # Get all document uploads
+        all_uploads = db.query(DocumentUpload).all()
+        deleted_count = len(all_uploads)
+        
+        # Delete files from MinIO and database records
+        for upload in all_uploads:
+            # Delete file from MinIO if file_path exists
+            if upload.file_path:
+                try:
+                    delete_file(upload.file_path)
+                except Exception as e:
+                    # Log error but continue deletion
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to delete file from MinIO: {upload.file_path}, error: {str(e)}")
+            
+            # Delete database record (cascade will handle related data)
+            db.delete(upload)
+        
+        # Commit all deletions
+        db.commit()
+        
+        return {
+            "message": f"Successfully deleted {deleted_count} document upload records",
+            "deleted_count": deleted_count
+        }
+    
+    except Exception as e:
+        db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to delete upload history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete upload history: {str(e)}"
         )
 
 

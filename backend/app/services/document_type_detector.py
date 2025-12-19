@@ -107,30 +107,55 @@ class DocumentTypeDetector:
     def detect_month_from_filename(self, filename: str, year: int) -> Optional[int]:
         """
         Extract month from filename patterns.
-        
+
         Supports:
         - Numeric month: "ESP_2024_12_Balance_Sheet.pdf" → 12
         - Month name: "ESP_2024_December_Balance_Sheet.pdf" → 12
         - Quarter: "ESP_2024_Q4_Balance_Sheet.pdf" → 10 (Q4 = Oct)
         - Month abbreviation: "ESP_2024_Dec_Balance_Sheet.pdf" → 12
-        
+        - Period range: "Income_Statement_esp_Accrual-2.24-3.24.pdf" → 2 (start month)
+        - Decimal format: "2.24" → February 2024, "11.24" → November 2024
+
         Args:
             filename: Original filename
             year: Year for context (used in some patterns)
-        
+
         Returns:
             Month number (1-12) if detected, None otherwise
         """
         filename_lower = filename.lower()
-        
+
+        # Pattern 0: Period range with decimal format (e.g., "2.24-3.24" means Feb 2024 to Mar 2024)
+        # This is the MOST specific pattern, so check it first
+        period_range_pattern = r'(\d{1,2})\.(\d{2})\-(\d{1,2})\.(\d{2})'
+        period_match = re.search(period_range_pattern, filename_lower)
+        if period_match:
+            start_month = int(period_match.group(1))
+            start_year_suffix = period_match.group(2)
+            if 1 <= start_month <= 12:
+                logger.info(f"Detected month {start_month} from period range '{period_match.group(0)}' in filename '{filename}'")
+                return start_month
+
+        # Pattern 0b: Single decimal format (e.g., "7.24" means July 2024)
+        decimal_pattern = r'[_\-\s](\d{1,2})\.(\d{2})[_\-\s\.]'
+        decimal_match = re.search(decimal_pattern, filename_lower)
+        if decimal_match:
+            month_num = int(decimal_match.group(1))
+            year_suffix = decimal_match.group(2)
+            if 1 <= month_num <= 12:
+                logger.info(f"Detected month {month_num} from decimal format '{decimal_match.group(0)}' in filename '{filename}'")
+                return month_num
+
         # Pattern 1: Numeric month (1-12) after year
         # Examples: "ESP_2024_12_...", "2024_12_...", "2024-12-..."
+        year_last_two = str(year)[-2:]  # Get last 2 digits of year
         numeric_patterns = [
             rf'{year}[_\-\s]+(\d{{1,2}})[_\-\s]',  # Year followed by 1-2 digits
+            rf'{year_last_two}[_\-\s]+(\d{{1,2}})[_\-\s]',  # YY followed by month
             rf'(\d{{1,2}})[_\-\s]+{year}',  # 1-2 digits followed by year
             rf'[_\-\s](\d{{1,2}})[_\-\s]',  # Standalone 1-2 digits
         ]
-        
+
         for pattern in numeric_patterns:
             match = re.search(pattern, filename_lower)
             if match:
@@ -138,7 +163,7 @@ class DocumentTypeDetector:
                 if 1 <= month_num <= 12:
                     logger.info(f"Detected month {month_num} from filename '{filename}' using numeric pattern")
                     return month_num
-        
+
         # Pattern 2: Month name (full or abbreviated)
         for month_name, month_num in self.MONTH_NAMES.items():
             # Look for month name as whole word
@@ -146,7 +171,7 @@ class DocumentTypeDetector:
             if re.search(pattern, filename_lower, re.IGNORECASE):
                 logger.info(f"Detected month {month_num} ({month_name}) from filename '{filename}'")
                 return month_num
-        
+
         # Pattern 3: Quarter (Q1, Q2, Q3, Q4)
         quarter_pattern = r'\bq([1-4])\b'
         match = re.search(quarter_pattern, filename_lower, re.IGNORECASE)
@@ -156,7 +181,7 @@ class DocumentTypeDetector:
             if month_num:
                 logger.info(f"Detected month {month_num} from quarter Q{quarter} in filename '{filename}'")
                 return month_num
-        
+
         # Pattern 4: Month number in filename without year context
         # Look for standalone 01-12 or 1-12
         standalone_month = re.search(r'[_\-\s](\d{1,2})[_\-\s]', filename_lower)
@@ -168,7 +193,7 @@ class DocumentTypeDetector:
                 if not re.search(r'\d{4}', context):  # Not near a 4-digit year
                     logger.info(f"Detected month {month_num} from standalone pattern in filename '{filename}'")
                     return month_num
-        
+
         logger.info(f"Could not detect month from filename '{filename}', will default to 1")
         return None
 

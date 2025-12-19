@@ -12,6 +12,7 @@ const DataControlCenter = lazy(() => import('./pages/DataControlCenter'))
 const AdminHub = lazy(() => import('./pages/AdminHub'))
 const RiskManagement = lazy(() => import('./pages/RiskManagement'))
 const BulkImport = lazy(() => import('./pages/BulkImport'))
+const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -41,6 +42,10 @@ function AppContent() {
       setHashRoute(hash)
       // If navigating to bulk-import, ensure we're on operations page
       if (hash === 'bulk-import' && currentPage !== 'operations') {
+        setCurrentPage('operations')
+      }
+      // If navigating to review-queue, ensure we're on operations page
+      if (hash === 'review-queue' && currentPage !== 'operations') {
         setCurrentPage('operations')
       }
     }
@@ -214,6 +219,10 @@ function AppContent() {
           {hashRoute === 'bulk-import' ? (
             <Suspense fallback={<PageLoader />}>
               <BulkImport />
+            </Suspense>
+          ) : hashRoute === 'review-queue' ? (
+            <Suspense fallback={<PageLoader />}>
+              <ReviewQueue />
             </Suspense>
           ) : (
             renderPage()
