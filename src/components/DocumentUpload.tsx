@@ -10,6 +10,8 @@ import { documentService } from '../lib/document';
 import { propertyService } from '../lib/property';
 import type { Property, DocumentUploadRequest } from '../types/api';
 import { useEffect } from 'react';
+import { extractErrorMessage } from '../utils/errorHandling';
+import { SafeErrorDisplay } from './SafeErrorDisplay';
 
 interface DocumentUploadProps {
   onUploadSuccess?: () => void;
@@ -136,37 +138,8 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
       }, 2000);
 
     } catch (err: any) {
-      // Handle different error formats - ensure we always set a string, never an object
-      let errorMessage = 'Upload failed';
-      if (err) {
-        if (typeof err === 'string') {
-          errorMessage = err;
-        } else if (err.message) {
-          // Check if message is actually a string, not an object
-          if (typeof err.message === 'string') {
-            errorMessage = err.message;
-          } else if (typeof err.message === 'object') {
-            // If message is an object, try to extract a meaningful string
-            errorMessage = err.message.message || err.message.error || JSON.stringify(err.message);
-          }
-        } else if (err.detail) {
-          // Handle detail which might be an object (e.g., property mismatch errors)
-          if (typeof err.detail === 'string') {
-            errorMessage = err.detail;
-          } else if (typeof err.detail === 'object') {
-            // Extract message from detail object if available
-            errorMessage = err.detail.message || err.detail.error || 'Upload failed with validation error';
-          }
-        } else if (typeof err === 'object') {
-          // Last resort: try to extract any string property
-          errorMessage = err.error || err.msg || 'Upload failed';
-        }
-      }
-      // Ensure we never set an object - convert to string if needed
-      if (typeof errorMessage !== 'string') {
-        errorMessage = String(errorMessage);
-      }
-      setError(errorMessage);
+      // Use intelligent error extraction utility - ensures we always get a string
+      setError(extractErrorMessage(err, 'Upload failed'));
       setProgress(0);
     } finally {
       setUploading(false);
@@ -177,7 +150,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     <div className="document-upload-container">
       <h3>Upload Financial Document</h3>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <SafeErrorDisplay error={error} alert variant="error" />}
       {success && <div className="alert alert-success">{success}</div>}
 
       <form onSubmit={handleSubmit}>

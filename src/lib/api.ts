@@ -5,6 +5,8 @@
  * type safety, and session management
  */
 
+import { extractErrorMessage } from '../utils/errorHandling';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_PREFIX = '/api/v1';
 
@@ -150,18 +152,8 @@ export class ApiClient {
 
       if (!response.ok) {
         const errorData = await response.json();
-        // Extract message from detail - handle both string and object cases
-        let errorMessage = 'Upload failed';
-        if (errorData.detail) {
-          if (typeof errorData.detail === 'string') {
-            errorMessage = errorData.detail;
-          } else if (typeof errorData.detail === 'object') {
-            // If detail is an object, try to extract a message
-            errorMessage = errorData.detail.message || errorData.detail.error || 'Upload failed';
-          }
-        } else if (errorData.message) {
-          errorMessage = typeof errorData.message === 'string' ? errorData.message : 'Upload failed';
-        }
+        // Use intelligent error extraction utility
+        const errorMessage = extractErrorMessage(errorData.detail || errorData, 'Upload failed');
         throw {
           message: errorMessage,
           status: response.status,

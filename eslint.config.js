@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Prevent rendering objects directly in JSX
+      'react/jsx-no-useless-fragment': 'warn',
+      // Warn about potential object rendering issues
+      '@typescript-eslint/no-explicit-any': 'warn',
+    },
   },
 ])

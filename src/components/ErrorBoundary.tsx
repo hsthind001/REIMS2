@@ -6,6 +6,7 @@
  */
 
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { extractErrorMessage } from '../utils/errorHandling';
 
 interface Props {
   children: ReactNode;
@@ -67,7 +68,7 @@ export class ErrorBoundary extends Component<Props, State> {
               overflow: 'auto',
               fontSize: '14px'
             }}>
-              {this.state.error?.toString()}
+              {extractErrorMessage(this.state.error, 'Unknown error occurred')}
             </pre>
           </div>
 
