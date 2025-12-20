@@ -43,7 +43,6 @@ class Property(Base):
     income_statement_headers = relationship("IncomeStatementHeader", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     cash_flow_headers = relationship("CashFlowHeader", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     cash_flow_data = relationship("CashFlowData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    income_statement_headers = relationship("IncomeStatementHeader", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     rent_roll_data = relationship("RentRollData", back_populates="property", cascade="all, delete-orphan", lazy="noload")

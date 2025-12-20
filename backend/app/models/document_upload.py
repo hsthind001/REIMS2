@@ -54,7 +54,6 @@ class DocumentUpload(Base):
     income_statement_data = relationship("IncomeStatementData", back_populates="upload", cascade="all, delete-orphan")
     income_statement_header = relationship("IncomeStatementHeader", back_populates="upload", uselist=False, cascade="all, delete-orphan")
     cash_flow_header = relationship("CashFlowHeader", back_populates="upload", uselist=False, cascade="all, delete-orphan")
-    income_statement_header = relationship("IncomeStatementHeader", back_populates="upload", uselist=False, cascade="all, delete-orphan")
     cash_flow_data = relationship("CashFlowData", back_populates="upload", cascade="all, delete-orphan")
     cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="upload", cascade="all, delete-orphan")
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="upload", cascade="all, delete-orphan")
