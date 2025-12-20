@@ -63,8 +63,8 @@ class Budget(Base):
     # Notes
     notes = Column(String(500), nullable=True)
 
-    # Additional metadata
-    budget_metadata = Column(JSONB, nullable=True)
+    # Additional metadata (use budget_metadata to avoid SQLAlchemy reserved name)
+    budget_metadata = Column("metadata", JSONB, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -177,8 +177,8 @@ class Forecast(Base):
     # Notes
     notes = Column(String(500), nullable=True)
 
-    # Additional metadata
-    budget_metadata = Column(JSONB, nullable=True)
+    # Additional metadata (use forecast_metadata to avoid SQLAlchemy reserved name)
+    forecast_metadata = Column("metadata", JSONB, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -213,7 +213,7 @@ class Forecast(Base):
             "tolerance_amount": float(self.tolerance_amount) if self.tolerance_amount else None,
             "assumptions": self.assumptions,
             "notes": self.notes,
-            "budget_metadata": self.budget_metadata,
+            "forecast_metadata": self.forecast_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "created_by": self.created_by,

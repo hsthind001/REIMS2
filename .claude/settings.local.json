@@ -51,7 +51,9 @@
       "Bash(docker-compose up:*)",
       "Bash(docker restart:*)",
       "Bash(python -m alembic revision:*)",
-      "Bash(PGPASSWORD=reims docker exec:*)"
+      "Bash(PGPASSWORD=reims docker exec:*)",
+      "Bash(find:*)",
+      "Bash(docker-compose restart:*)"
     ]
   }
 }

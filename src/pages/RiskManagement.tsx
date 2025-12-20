@@ -254,29 +254,49 @@ export default function RiskManagement() {
       const response = await fetch(`${API_BASE_URL}/risk-alerts/properties/${propertyId}/alerts`, {
         credentials: 'include'
       })
-      if (response.ok) {
-        const data = await response.json()
-        const allAlerts = data.alerts || []
-        
-        // Sort: Active alerts first, then resolved, then by date
-        const sortedAlerts = allAlerts.sort((a: Alert, b: Alert) => {
-          const aStatus = (a.status || '').toUpperCase()
-          const bStatus = (b.status || '').toUpperCase()
-          
-          // Active alerts first
-          if (aStatus === 'ACTIVE' && bStatus !== 'ACTIVE') return -1
-          if (aStatus !== 'ACTIVE' && bStatus === 'ACTIVE') return 1
-          
-          // Then by date (newest first)
-          const aDate = new Date(a.created_at || a.triggered_at || 0).getTime()
-          const bDate = new Date(b.created_at || b.triggered_at || 0).getTime()
-          return bDate - aDate
-        })
-        
-        setAlerts(sortedAlerts)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`Failed to fetch alerts: ${response.status} ${response.statusText}`, errorText)
+        // Set empty array on error to prevent undefined state
+        setAlerts([])
+        return
       }
+      
+      const data = await response.json()
+      const allAlerts = data.alerts || []
+      
+      // Log for debugging
+      console.log(`Fetched ${allAlerts.length} alerts for property ${propertyId}`, {
+        total: allAlerts.length,
+        active: allAlerts.filter((a: Alert) => (a.status || '').toUpperCase() === 'ACTIVE').length,
+        critical: allAlerts.filter((a: Alert) => {
+          const status = (a.status || '').toUpperCase()
+          const severity = (a.severity || '').toUpperCase()
+          return status === 'ACTIVE' && (severity === 'CRITICAL' || severity === 'URGENT')
+        }).length
+      })
+      
+      // Sort: Active alerts first, then resolved, then by date
+      const sortedAlerts = allAlerts.sort((a: Alert, b: Alert) => {
+        const aStatus = (a.status || '').toUpperCase()
+        const bStatus = (b.status || '').toUpperCase()
+        
+        // Active alerts first
+        if (aStatus === 'ACTIVE' && bStatus !== 'ACTIVE') return -1
+        if (aStatus !== 'ACTIVE' && bStatus === 'ACTIVE') return 1
+        
+        // Then by date (newest first)
+        const aDate = new Date(a.created_at || a.triggered_at || 0).getTime()
+        const bDate = new Date(b.created_at || b.triggered_at || 0).getTime()
+        return bDate - aDate
+      })
+      
+      setAlerts(sortedAlerts)
     } catch (err) {
       console.error('Failed to fetch alerts:', err)
+      // Set empty array on error to prevent undefined state
+      setAlerts([])
     } finally {
       setLoading(false)
     }

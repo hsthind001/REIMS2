@@ -1,0 +1,172 @@
+/**
+ * Variance Analysis Service
+ *
+ * API calls for budget vs actual and forecast variance analysis
+ */
+
+import { api } from './api';
+
+export interface VarianceItem {
+  account_code: string;
+  account_name: string;
+  budget_amount: number;
+  actual_amount: number;
+  variance_amount: number;
+  variance_percentage: number;
+  is_favorable: boolean;
+  severity: 'NORMAL' | 'WARNING' | 'CRITICAL' | 'URGENT';
+  tolerance_percentage: number;
+}
+
+export interface VarianceSummary {
+  total_accounts: number;
+  flagged_accounts: number;
+  total_budget: number;
+  total_actual: number;
+  total_variance_amount: number;
+  total_variance_percentage: number;
+  severity_breakdown: {
+    NORMAL: number;
+    WARNING: number;
+    CRITICAL: number;
+    URGENT: number;
+  };
+}
+
+export interface BudgetVarianceResponse {
+  success: boolean;
+  property_id: number;
+  property_code: string;
+  property_name: string;
+  financial_period_id: number;
+  period_year: number;
+  period_month: number;
+  budget_id?: number;
+  variance_items: VarianceItem[];
+  summary: VarianceSummary;
+  alerts_created: number;
+}
+
+export interface ForecastVarianceResponse {
+  success: boolean;
+  property_id: number;
+  property_code: string;
+  property_name: string;
+  financial_period_id: number;
+  period_year: number;
+  period_month: number;
+  forecast_id?: number;
+  variance_items: VarianceItem[];
+  summary: VarianceSummary;
+  alerts_created: number;
+}
+
+export interface ComprehensiveVarianceResponse {
+  success: boolean;
+  property_id: number;
+  property_code: string;
+  property_name: string;
+  financial_period_id: number;
+  period_year: number;
+  period_month: number;
+  budget_variance?: BudgetVarianceResponse;
+  forecast_variance?: ForecastVarianceResponse;
+}
+
+export interface VarianceTrendData {
+  period_year: number;
+  period_month: number;
+  variance_percentage: number;
+  flagged_accounts: number;
+}
+
+export interface VarianceTrendResponse {
+  success: boolean;
+  property_id: number;
+  variance_type: 'budget' | 'forecast';
+  trend_data: VarianceTrendData[];
+  trend_direction: 'improving' | 'stable' | 'deteriorating';
+}
+
+export class VarianceAnalysisService {
+  /**
+   * Get budget variance for a property and period
+   */
+  async getBudgetVariance(
+    propertyId: number,
+    periodId: number,
+    budgetId?: number
+  ): Promise<BudgetVarianceResponse> {
+    const params: any = {};
+    if (budgetId) {
+      params.budget_id = budgetId;
+    }
+    return api.get<BudgetVarianceResponse>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/budget`,
+      params
+    );
+  }
+
+  /**
+   * Get forecast variance for a property and period
+   */
+  async getForecastVariance(
+    propertyId: number,
+    periodId: number,
+    forecastId?: number
+  ): Promise<ForecastVarianceResponse> {
+    const params: any = {};
+    if (forecastId) {
+      params.forecast_id = forecastId;
+    }
+    return api.get<ForecastVarianceResponse>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/forecast`,
+      params
+    );
+  }
+
+  /**
+   * Get comprehensive variance report (budget + forecast)
+   */
+  async getComprehensiveVariance(
+    propertyId: number,
+    periodId: number,
+    includeBudget: boolean = true,
+    includeForecast: boolean = true
+  ): Promise<ComprehensiveVarianceResponse> {
+    return api.get<ComprehensiveVarianceResponse>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/comprehensive`,
+      {
+        include_budget: includeBudget,
+        include_forecast: includeForecast
+      }
+    );
+  }
+
+  /**
+   * Get variance trend over time
+   */
+  async getVarianceTrend(
+    propertyId: number,
+    varianceType: 'budget' | 'forecast' = 'budget',
+    lookbackPeriods: number = 6
+  ): Promise<VarianceTrendResponse> {
+    return api.get<VarianceTrendResponse>(
+      `/variance-analysis/properties/${propertyId}/trend`,
+      {
+        variance_type: varianceType,
+        lookback_periods: lookbackPeriods
+      }
+    );
+  }
+
+  /**
+   * Get variance thresholds configuration
+   */
+  async getThresholds() {
+    return api.get('/variance-analysis/thresholds');
+  }
+}
+
+// Export singleton
+export const varianceAnalysisService = new VarianceAnalysisService();

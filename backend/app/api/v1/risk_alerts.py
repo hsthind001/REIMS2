@@ -177,6 +177,76 @@ def monitor_all_properties(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/properties/{property_id}/trigger-alerts")
+def trigger_alerts_for_property(
+    property_id: int,
+    period_id: Optional[int] = Query(None, description="Financial period ID. If not provided, uses latest period"),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually trigger alert evaluation for a property
+    
+    Evaluates all active alert rules against current financial metrics
+    and creates alerts when thresholds are breached.
+    """
+    from app.services.alert_trigger_service import AlertTriggerService
+    from app.models.financial_metrics import FinancialMetrics
+    from app.models.property import Property
+    
+    # Verify property exists
+    property = db.query(Property).filter(Property.id == property_id).first()
+    if not property:
+        raise HTTPException(status_code=404, detail="Property not found")
+    
+    # Get period_id if not provided
+    if not period_id:
+        from app.models.financial_period import FinancialPeriod
+        latest_period = db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id
+        ).order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc()).first()
+        
+        if not latest_period:
+            raise HTTPException(status_code=404, detail="No financial periods found for this property")
+        period_id = latest_period.id
+    
+    try:
+        # Get metrics for this property/period
+        metrics = db.query(FinancialMetrics).filter(
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.period_id == period_id
+        ).first()
+        
+        if not metrics:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No financial metrics found for property {property_id}, period {period_id}. "
+                       "Please calculate metrics first."
+            )
+        
+        # Trigger alert evaluation
+        alert_service = AlertTriggerService(db)
+        created_alerts = alert_service.evaluate_and_trigger_alerts(
+            property_id=property_id,
+            period_id=period_id,
+            metrics=metrics
+        )
+        
+        return {
+            "success": True,
+            "property_id": property_id,
+            "period_id": period_id,
+            "alerts_created": len(created_alerts),
+            "alerts": created_alerts,
+            "message": f"Triggered {len(created_alerts)} alert(s) for property {property_id}"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to trigger alerts for property {property_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to trigger alerts: {str(e)}")
+
+
 @router.get("")
 @router.get("/")
 def get_risk_alerts(
@@ -475,6 +545,7 @@ def get_property_alerts(
 
     try:
         # Query alerts table (the main alerts system)
+        # Use LEFT JOIN to include alerts even if document_uploads doesn't exist
         sql = """
             SELECT 
                 a.id,
@@ -495,7 +566,7 @@ def get_property_alerts(
                 ar.field_name,
                 ar.threshold_value
             FROM alerts a
-            JOIN document_uploads du ON a.document_id = du.id
+            LEFT JOIN document_uploads du ON a.document_id = du.id
             LEFT JOIN alert_rules ar ON a.alert_rule_id = ar.id
             WHERE du.property_id = :property_id
         """
@@ -510,8 +581,9 @@ def get_property_alerts(
         
         results = db.execute(text(sql), params).fetchall()
     except Exception as e:
-        # If alerts table doesn't exist or query fails, fall back to committee_alerts only
-        logger.warning(f"Failed to query alerts table: {str(e)}, falling back to committee_alerts")
+        # If alerts table doesn't exist or query fails, log error and continue with committee_alerts only
+        logger.warning(f"Failed to query alerts table: {str(e)}, falling back to committee_alerts only")
+        logger.debug(f"Alerts table query error details: {type(e).__name__}: {str(e)}", exc_info=True)
         results = []
     
     # Convert to dict format matching frontend expectations
@@ -589,14 +661,115 @@ def get_property_alerts(
         })
     
     # Also query committee_alerts for completeness
-    committee_alerts = db.query(CommitteeAlert).filter(CommitteeAlert.property_id == property_id)
+    # Use raw SQL to avoid model column mismatch issues
+    from sqlalchemy import text as sql_text
+    committee_sql = """
+        SELECT 
+            id,
+            property_id,
+            financial_period_id,
+            alert_type,
+            severity,
+            status,
+            title,
+            description,
+            threshold_value,
+            actual_value,
+            threshold_unit,
+            assigned_committee,
+            requires_approval,
+            triggered_at,
+            acknowledged_at,
+            resolved_at,
+            dismissed_at,
+            acknowledged_by,
+            resolved_by,
+            dismissed_by,
+            resolution_notes,
+            dismissal_reason,
+            metadata as alert_metadata,
+            related_metric,
+            br_id,
+            created_at,
+            updated_at
+        FROM committee_alerts
+        WHERE property_id = :property_id
+    """
+    committee_params = {'property_id': property_id}
     if status:
-        committee_alerts = committee_alerts.filter(CommitteeAlert.status == status)
-    committee_alerts = committee_alerts.order_by(CommitteeAlert.triggered_at.desc()).all()
+        committee_sql += " AND status = :status"
+        committee_params['status'] = status
+    committee_sql += " ORDER BY triggered_at DESC"
+    
+    committee_results = db.execute(sql_text(committee_sql), committee_params).fetchall()
     
     # Add committee alerts to the list with file information
-    for alert in committee_alerts:
-        alert_dict = alert.to_dict()
+    for row in committee_results:
+        # Convert to dict format matching frontend expectations
+        alert_dict = {
+            "id": row.id,
+            "property_id": row.property_id,
+            "financial_period_id": row.financial_period_id,
+            "alert_type": row.alert_type.value if hasattr(row.alert_type, 'value') else str(row.alert_type),
+            "severity": row.severity.value if hasattr(row.severity, 'value') else str(row.severity),
+            "status": row.status.value if hasattr(row.status, 'value') else str(row.status),
+            "title": row.title,
+            "description": row.description,
+            "threshold_value": float(row.threshold_value) if row.threshold_value else None,
+            "actual_value": float(row.actual_value) if row.actual_value else None,
+            "threshold_unit": row.threshold_unit,
+            "assigned_committee": row.assigned_committee.value if hasattr(row.assigned_committee, 'value') else str(row.assigned_committee),
+            "requires_approval": row.requires_approval,
+            "triggered_at": row.triggered_at.isoformat() if row.triggered_at else None,
+            "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
+            "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+            "dismissed_at": row.dismissed_at.isoformat() if row.dismissed_at else None,
+            "acknowledged_by": row.acknowledged_by,
+            "resolved_by": row.resolved_by,
+            "dismissed_by": row.dismissed_by,
+            "resolution_notes": row.resolution_notes,
+            "dismissal_reason": row.dismissal_reason,
+            "alert_metadata": row.alert_metadata,
+            "related_metric": row.related_metric,
+            "br_id": row.br_id,
+            "created_at": row.triggered_at.isoformat() if row.triggered_at else None,  # Use triggered_at as created_at
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        
+        # Get period information
+        if row.financial_period_id:
+            from app.models.financial_period import FinancialPeriod
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == row.financial_period_id
+            ).first()
+            if period:
+                alert_dict["period_year"] = period.period_year
+                alert_dict["period_month"] = period.period_month
+                alert_dict["period"] = f"{period.period_year}-{str(period.period_month).zfill(2)}"
+        
+        # Try to get file information from financial_period_id
+        if row.financial_period_id and not alert_dict.get("file_name"):
+            from app.models.document_upload import DocumentUpload
+            # Look for document uploads for this property and period
+            uploads = db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == row.property_id,
+                DocumentUpload.period_id == row.financial_period_id
+            ).order_by(DocumentUpload.upload_date.desc()).all()
+            
+            # Prefer income statement for DSCR alerts, otherwise use most recent
+            alert_type_str = alert_dict.get("alert_type", "")
+            for upload in uploads:
+                if upload.document_type == 'income_statement' or (alert_type_str == 'DSCR_BREACH' and upload.document_type == 'income_statement'):
+                    alert_dict["file_name"] = upload.file_name
+                    alert_dict["document_type"] = upload.document_type
+                    alert_dict["document_id"] = upload.id
+                    break
+            
+            # If no income statement, use most recent document
+            if not alert_dict.get("file_name") and uploads:
+                alert_dict["file_name"] = uploads[0].file_name
+                alert_dict["document_type"] = uploads[0].document_type
+                alert_dict["document_id"] = uploads[0].id
         
         # Get period information
         if alert.financial_period_id:

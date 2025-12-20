@@ -21,6 +21,9 @@ import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
 import { reconciliationService, type ReconciliationSession, type ComparisonData } from '../lib/reconciliation';
+import { chartOfAccountsService, type ChartOfAccount, type ChartOfAccountsSummary } from '../lib/chart_of_accounts';
+import { varianceAnalysisService, type BudgetVarianceResponse, type VarianceItem } from '../lib/variance_analysis';
+import { financialPeriodsService } from '../lib/financial_periods';
 import { MortgageDataTable } from '../components/mortgage/MortgageDataTable';
 import { MortgageDetail } from '../components/mortgage/MortgageDetail';
 import { MortgageMetrics } from '../components/mortgage/MortgageMetrics';
@@ -103,6 +106,22 @@ export default function FinancialCommand() {
   const [selectedMortgageId, setSelectedMortgageId] = useState<number | null>(null);
   const [currentPeriodId, setCurrentPeriodId] = useState<number | null>(null);
 
+  // Chart of Accounts state
+  const [showChartOfAccounts, setShowChartOfAccounts] = useState(false);
+  const [chartOfAccounts, setChartOfAccounts] = useState<ChartOfAccount[]>([]);
+  const [chartSummary, setChartSummary] = useState<ChartOfAccountsSummary | null>(null);
+  const [loadingChart, setLoadingChart] = useState(false);
+  const [chartSearchQuery, setChartSearchQuery] = useState('');
+  const [chartFilterType, setChartFilterType] = useState<string>('');
+  const [chartFilterCategory, setChartFilterCategory] = useState<string>('');
+
+  // Variance Analysis state
+  const [showVarianceAnalysis, setShowVarianceAnalysis] = useState(false);
+  const [budgetVariance, setBudgetVariance] = useState<BudgetVarianceResponse | null>(null);
+  const [loadingVariance, setLoadingVariance] = useState(false);
+  const [varianceFilterSeverity, setVarianceFilterSeverity] = useState<string>('');
+  const [varianceSearchQuery, setVarianceSearchQuery] = useState('');
+
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -112,25 +131,9 @@ export default function FinancialCommand() {
       loadFinancialData(selectedProperty.id);
       loadAvailableDocuments(selectedProperty.property_code);
       loadReconciliationSessions(selectedProperty.property_code);
-      loadCurrentPeriodId(selectedProperty.id);
+      loadCurrentPeriod();
     }
-  }, [selectedProperty, selectedYear, selectedMonth]); // Removed period dependencies - load all documents
-  
-  const loadCurrentPeriodId = async (propertyId: number) => {
-    try {
-      const periods = await api.get<{ periods: FinancialPeriod[] }>(
-        `/financial-periods?property_id=${propertyId}`
-      );
-      const period = periods.periods?.find(
-        (p: FinancialPeriod) => p.period_year === selectedYear && p.period_month === selectedMonth
-      );
-      if (period) {
-        setCurrentPeriodId(period.id);
-      }
-    } catch (err) {
-      console.error('Failed to load period ID:', err);
-    }
-  };
+  }, [selectedProperty, selectedYear, selectedMonth]);
 
   const loadInitialData = async () => {
     try {
@@ -535,41 +538,52 @@ export default function FinancialCommand() {
       } : 'NONE FOUND');
 
       if (doc && doc.id) {
+        console.log('Loading financial data for document ID:', doc.id);
+
         // Get summary to know total count
         const summary = await financialDataService.getSummary(doc.id);
-        
+        console.log('Summary loaded:', summary);
+
         // Load ALL items
         const data = await financialDataService.getFinancialData(doc.id, {
           limit: Math.max(summary.total_items || 10000, 10000),
           skip: 0
         });
-        
+        console.log('Initial data loaded:', {
+          total_items: data.total_items,
+          items_loaded: data.items?.length,
+          document_type: data.document_type
+        });
+
         // If paginated, load remaining pages
         if (data.total_items > data.items.length) {
           const allItems = [...data.items];
           let skip = data.items.length;
-          
+
           while (allItems.length < data.total_items) {
             const nextPage = await financialDataService.getFinancialData(doc.id, {
               limit: 1000,
               skip: skip
             });
-            
+
             allItems.push(...nextPage.items);
             skip += nextPage.items.length;
-            
+
             if (nextPage.items.length === 0) break;
           }
-          
+
+          console.log('All pages loaded:', allItems.length, 'items');
           setFinancialData({
             ...data,
             items: allItems,
             limit: allItems.length
           });
         } else {
+          console.log('Setting financial data with', data.items?.length, 'items');
           setFinancialData(data);
         }
       } else {
+        console.warn('No valid document found, setting financialData to null');
         setFinancialData(null);
       }
     } catch (err) {
@@ -580,31 +594,208 @@ export default function FinancialCommand() {
     }
   };
 
-  const handleViewFullFinancialData = async () => {
-    setShowFullFinancialData(true);
-    
-    // Ensure documents are loaded
-    if (selectedProperty && availableDocuments.length === 0) {
-      await loadAvailableDocuments(selectedProperty.property_code);
+  const loadChartOfAccounts = async () => {
+    try {
+      setLoadingChart(true);
+      console.log('Loading chart of accounts with filters:', {
+        search: chartSearchQuery,
+        account_type: chartFilterType,
+        category: chartFilterCategory
+      });
+
+      // Load summary
+      const summary = await chartOfAccountsService.getSummary();
+      setChartSummary(summary);
+      console.log('Chart summary:', summary);
+
+      // Load all accounts with filters
+      const accounts = await chartOfAccountsService.getAccounts({
+        limit: 500,
+        search: chartSearchQuery || undefined,
+        account_type: chartFilterType || undefined,
+        category: chartFilterCategory || undefined,
+        is_active: true
+      });
+
+      setChartOfAccounts(accounts);
+      console.log('Loaded accounts:', accounts.length);
+    } catch (err) {
+      console.error('Failed to load chart of accounts:', err);
+      alert('Failed to load chart of accounts. Please try again.');
+    } finally {
+      setLoadingChart(false);
     }
-    
-    // Auto-select first available document type
-    if (availableDocuments.length > 0) {
-      const firstDoc = availableDocuments.find(d => 
-        (d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement') &&
-        d.extraction_status === 'completed'
-      ) || availableDocuments.find(d => 
-        d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement'
+  };
+
+  const handleViewChartOfAccounts = async () => {
+    try {
+      console.log('View Chart of Accounts clicked');
+      setShowChartOfAccounts(true);
+      await loadChartOfAccounts();
+    } catch (err) {
+      console.error('Error in handleViewChartOfAccounts:', err);
+      alert('Failed to load chart of accounts. Please try again.');
+    }
+  };
+
+  const loadCurrentPeriod = async (): Promise<number | null> => {
+    if (!selectedProperty) {
+      console.warn('Cannot load period: no property selected');
+      setCurrentPeriodId(null);
+      return null;
+    }
+
+    try {
+      console.log('Loading financial period for:', {
+        propertyId: selectedProperty.id,
+        year: selectedYear,
+        month: selectedMonth
+      });
+
+      const period = await financialPeriodsService.getOrCreatePeriod(
+        selectedProperty.id,
+        selectedYear,
+        selectedMonth
       );
-      
-      if (firstDoc && (firstDoc.document_type === 'income_statement' || firstDoc.document_type === 'balance_sheet' || firstDoc.document_type === 'cash_flow' || firstDoc.document_type === 'mortgage_statement')) {
-        setSelectedStatementType(firstDoc.document_type);
-        if (firstDoc.document_type === 'mortgage_statement') {
-          // Mortgage statements are handled differently
-        } else {
-          loadFullFinancialData(firstDoc.document_type);
+
+      setCurrentPeriodId(period.id);
+      console.log('Financial period loaded:', period);
+      return period.id;
+    } catch (err) {
+      console.error('Failed to load financial period:', err);
+      setCurrentPeriodId(null);
+      return null;
+    }
+  };
+
+  const loadVarianceAnalysis = async (periodId?: number) => {
+    const usePeriodId = periodId || currentPeriodId;
+
+    if (!selectedProperty || !usePeriodId) {
+      console.warn('Cannot load variance: property or period not selected');
+      return;
+    }
+
+    try {
+      setLoadingVariance(true);
+      console.log('Loading variance analysis for:', {
+        propertyId: selectedProperty.id,
+        periodId: usePeriodId
+      });
+
+      const result = await varianceAnalysisService.getBudgetVariance(
+        selectedProperty.id,
+        usePeriodId
+      );
+
+      setBudgetVariance(result);
+      console.log('Variance loaded:', result);
+    } catch (err) {
+      console.error('Failed to load variance analysis:', err);
+      alert('Failed to load variance analysis. Please try again.');
+    } finally {
+      setLoadingVariance(false);
+    }
+  };
+
+  const handleRunVarianceAnalysis = async () => {
+    try {
+      if (!selectedProperty) {
+        alert('Please select a property first');
+        return;
+      }
+
+      console.log('Run Variance Analysis clicked');
+      setShowVarianceAnalysis(true);
+
+      // Ensure we have a period ID
+      let periodId = currentPeriodId;
+      if (!periodId) {
+        periodId = await loadCurrentPeriod();
+        if (!periodId) {
+          alert('Could not create or find financial period for the selected property and date');
+          return;
         }
       }
+
+      // Load variance with the period ID
+      await loadVarianceAnalysis(periodId);
+    } catch (err) {
+      console.error('Error in handleRunVarianceAnalysis:', err);
+      alert('Failed to run variance analysis. Please try again.');
+    }
+  };
+
+  const handleViewFullFinancialData = async () => {
+    try {
+      console.log('View Full Financial Data clicked', {
+        selectedProperty: selectedProperty?.property_code,
+        availableDocumentsCount: availableDocuments.length
+      });
+
+      // Validate that a property is selected
+      if (!selectedProperty) {
+        console.error('No property selected');
+        alert('Please select a property first');
+        return;
+      }
+
+      // Open modal first to show loading state
+      setShowFullFinancialData(true);
+
+      // Ensure documents are loaded - get fresh data
+      let docsToUse = availableDocuments;
+      if (availableDocuments.length === 0) {
+        console.log('Loading available documents...');
+        try {
+          const docs = await documentService.getDocuments({
+            property_code: selectedProperty.property_code,
+            limit: 100
+          });
+          docsToUse = docs.items || [];
+          setAvailableDocuments(docsToUse);
+          console.log('Loaded documents:', docsToUse.length);
+        } catch (err) {
+          console.error('Failed to load documents:', err);
+        }
+      }
+
+      console.log('Documents to use:', docsToUse.length);
+
+      // Auto-select first available document type
+      // Prioritize financial statements (income, balance, cash flow) over mortgage statements
+      if (docsToUse.length > 0) {
+        // First try to find completed financial statements (not mortgage)
+        const firstDoc = docsToUse.find(d =>
+          (d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow') &&
+          d.extraction_status === 'completed'
+        ) || docsToUse.find(d =>
+          d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow'
+        ) || docsToUse.find(d =>
+          d.document_type === 'mortgage_statement' && d.extraction_status === 'completed'
+        ) || docsToUse.find(d =>
+          d.document_type === 'mortgage_statement'
+        );
+
+        console.log('First document selected:', firstDoc);
+
+        if (firstDoc && (firstDoc.document_type === 'income_statement' || firstDoc.document_type === 'balance_sheet' || firstDoc.document_type === 'cash_flow' || firstDoc.document_type === 'mortgage_statement')) {
+          setSelectedStatementType(firstDoc.document_type);
+          if (firstDoc.document_type === 'mortgage_statement') {
+            console.log('Mortgage statement selected - handled separately');
+          } else {
+            console.log('Loading financial data for:', firstDoc.document_type);
+            await loadFullFinancialData(firstDoc.document_type);
+          }
+        } else {
+          console.warn('No suitable document found');
+        }
+      } else {
+        console.warn('No available documents found for property:', selectedProperty.property_code);
+      }
+    } catch (err) {
+      console.error('Error in handleViewFullFinancialData:', err);
+      alert('Failed to load financial data. Please try again.');
     }
   };
 
@@ -852,18 +1043,30 @@ export default function FinancialCommand() {
                     })}
                   </div>
                   
-                  {/* Available Documents Info */}
-                  {availableDocuments.length > 0 && (
+                  {/* Available Documents Info - Only show when no data is loaded */}
+                  {availableDocuments.length > 0 && !loadingFinancialData && !financialData && selectedStatementType !== 'mortgage_statement' && (
                     <div className="mb-4 p-3 bg-info-light/20 rounded-lg">
-                      <div className="text-sm font-medium mb-2">Available Documents:</div>
+                      <div className="text-sm font-medium mb-2">Available Documents for {selectedProperty?.property_name}:</div>
                       <div className="text-xs text-text-secondary space-y-1">
                         {availableDocuments
                           .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement')
+                          .slice(0, 10)
                           .map((doc, i) => (
                             <div key={i}>
-                              {doc.document_type.replace('_', ' ')} - {doc.extraction_status} (ID: {doc.id})
+                              • {doc.document_type.replace('_', ' ')} - {doc.extraction_status} (ID: {doc.id})
                             </div>
                           ))}
+                        {availableDocuments.filter(d =>
+                          d.document_type === 'income_statement' || d.document_type === 'balance_sheet' ||
+                          d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement'
+                        ).length > 10 && (
+                          <div className="text-xs text-text-tertiary italic">
+                            ... and {availableDocuments.filter(d =>
+                              d.document_type === 'income_statement' || d.document_type === 'balance_sheet' ||
+                              d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement'
+                            ).length - 10} more documents
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1067,89 +1270,211 @@ export default function FinancialCommand() {
           </div>
         )}
 
-        {activeTab === 'variance' && varianceData && (
+        {activeTab === 'variance' && (
           <div className="space-y-6">
+            {/* Header Card */}
             <Card className="p-6">
-              <h2 className="text-2xl font-bold mb-4">Variance Analysis - {varianceData.period}</h2>
-              
-              {/* Portfolio Summary */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-3">Portfolio Summary</h3>
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-2 px-4">Metric</th>
-                      <th className="text-right py-2 px-4">Budget</th>
-                      <th className="text-right py-2 px-4">Actual</th>
-                      <th className="text-right py-2 px-4">Variance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className={getVarianceColor(varianceData.portfolio.revenue.variance)}>
-                      <td className="py-2 px-4">Total Revenue</td>
-                      <td className="text-right py-2 px-4">${(varianceData.portfolio.revenue.budget / 1000000).toFixed(2)}M</td>
-                      <td className="text-right py-2 px-4">${(varianceData.portfolio.revenue.actual / 1000000).toFixed(2)}M</td>
-                      <td className="text-right py-2 px-4">
-                        {getVarianceIcon(varianceData.portfolio.revenue.variance)} {varianceData.portfolio.revenue.variance.toFixed(1)}%
-                      </td>
-                    </tr>
-                    <tr className={getVarianceColor(varianceData.portfolio.expenses.variance)}>
-                      <td className="py-2 px-4">Total OpEx</td>
-                      <td className="text-right py-2 px-4">${(varianceData.portfolio.expenses.budget / 1000000).toFixed(2)}M</td>
-                      <td className="text-right py-2 px-4">${(varianceData.portfolio.expenses.actual / 1000000).toFixed(2)}M</td>
-                      <td className="text-right py-2 px-4">
-                        {getVarianceIcon(varianceData.portfolio.expenses.variance)} {varianceData.portfolio.expenses.variance.toFixed(1)}%
-                      </td>
-                    </tr>
-                    <tr className={getVarianceColor(varianceData.portfolio.noi.variance)}>
-                      <td className="py-2 px-4">Net Operating Income</td>
-                      <td className="text-right py-2 px-4">${(varianceData.portfolio.noi.budget / 1000000).toFixed(2)}M</td>
-                      <td className="text-right py-2 px-4">${(varianceData.portfolio.noi.actual / 1000000).toFixed(2)}M</td>
-                      <td className="text-right py-2 px-4">
-                        {getVarianceIcon(varianceData.portfolio.noi.variance)} {varianceData.portfolio.noi.variance.toFixed(1)}%
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold mb-2">📈 Variance Analysis</h2>
+                <p className="text-text-secondary">
+                  Analyze budget vs actual performance and identify accounts exceeding variance thresholds.
+                </p>
               </div>
-
-              {/* Property-Level Heatmap */}
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Property-Level Variance</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-2 px-4">Property</th>
-                        <th className="text-right py-2 px-4">Revenue Var</th>
-                        <th className="text-right py-2 px-4">Expense Var</th>
-                        <th className="text-right py-2 px-4">NOI Var</th>
-                        <th className="text-center py-2 px-4">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {varianceData.byProperty.map((prop) => (
-                        <tr key={prop.propertyId} className={getVarianceColor(prop.noi.variance)}>
-                          <td className="py-2 px-4 font-medium">{prop.name}</td>
-                          <td className="text-right py-2 px-4">
-                            {getVarianceIcon(prop.revenue.variance)} {prop.revenue.variance.toFixed(1)}%
-                          </td>
-                          <td className="text-right py-2 px-4">
-                            {getVarianceIcon(prop.expenses.variance)} {prop.expenses.variance.toFixed(1)}%
-                          </td>
-                          <td className="text-right py-2 px-4">
-                            {getVarianceIcon(prop.noi.variance)} {prop.noi.variance.toFixed(1)}%
-                          </td>
-                          <td className="text-center py-2 px-4">
-                            {prop.noi.variance > 10 ? '🔴 Monitor' : prop.noi.variance > 5 ? '🟡 Watch' : '🟢 OK'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <Button variant="primary" onClick={handleRunVarianceAnalysis}>
+                Run Variance Analysis
+              </Button>
             </Card>
+
+            {/* Variance Results - Displayed Inline */}
+            {showVarianceAnalysis && (
+              <>
+                {/* Summary Card */}
+                {budgetVariance && budgetVariance.summary && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Variance Summary</h3>
+                    <div className="mb-4 text-sm text-text-secondary">
+                      {budgetVariance.property_name} • {budgetVariance.period_year}/{String(budgetVariance.period_month).padStart(2, '0')}
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                      <div className="p-4 bg-background rounded-lg border border-border">
+                        <div className="text-sm text-text-secondary mb-1">Total Accounts</div>
+                        <div className="text-2xl font-bold">{budgetVariance.summary.total_accounts}</div>
+                      </div>
+                      <div className="p-4 bg-warning-light/20 rounded-lg border border-warning">
+                        <div className="text-sm text-text-secondary mb-1">Flagged</div>
+                        <div className="text-2xl font-bold text-warning">{budgetVariance.summary.flagged_accounts}</div>
+                      </div>
+                      <div className="p-4 bg-background rounded-lg border border-border">
+                        <div className="text-sm text-text-secondary mb-1">Total Budget</div>
+                        <div className="text-xl font-bold">${(budgetVariance.summary.total_budget / 1000).toFixed(0)}K</div>
+                      </div>
+                      <div className="p-4 bg-background rounded-lg border border-border">
+                        <div className="text-sm text-text-secondary mb-1">Total Actual</div>
+                        <div className="text-xl font-bold">${(budgetVariance.summary.total_actual / 1000).toFixed(0)}K</div>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="text-sm text-text-secondary mb-2">Severity Breakdown:</div>
+                      <div className="grid grid-cols-4 gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 bg-success rounded-full"></span>
+                          <span className="text-sm">Normal: {budgetVariance.summary.severity_breakdown.NORMAL}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 bg-warning rounded-full"></span>
+                          <span className="text-sm">Warning: {budgetVariance.summary.severity_breakdown.WARNING}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 bg-danger rounded-full"></span>
+                          <span className="text-sm">Critical: {budgetVariance.summary.severity_breakdown.CRITICAL}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 bg-purple-600 rounded-full"></span>
+                          <span className="text-sm">Urgent: {budgetVariance.summary.severity_breakdown.URGENT}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {budgetVariance.alerts_created > 0 && (
+                      <div className="mt-4 p-3 bg-info-light/20 rounded-lg border border-info">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-info" />
+                          <span className="text-sm font-medium">
+                            {budgetVariance.alerts_created} alert{budgetVariance.alerts_created > 1 ? 's' : ''} created for critical variances
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                )}
+
+                {/* Filter Card */}
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Filter Results</h3>
+                  <div className="flex gap-4">
+                    <input
+                      type="text"
+                      placeholder="Search by account code or name..."
+                      value={varianceSearchQuery}
+                      onChange={(e) => setVarianceSearchQuery(e.target.value)}
+                      className="flex-1 px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                    />
+                    <select
+                      value={varianceFilterSeverity}
+                      onChange={(e) => setVarianceFilterSeverity(e.target.value)}
+                      className="px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                    >
+                      <option value="">All Severity Levels</option>
+                      <option value="URGENT">Urgent (&gt;50%)</option>
+                      <option value="CRITICAL">Critical (25-50%)</option>
+                      <option value="WARNING">Warning (10-25%)</option>
+                      <option value="NORMAL">Normal (&lt;10%)</option>
+                    </select>
+                  </div>
+                </Card>
+
+                {/* Variance Details Table */}
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Account-Level Variance</h3>
+                  {loadingVariance ? (
+                    <div className="text-center py-8">
+                      <div className="text-text-secondary">Loading variance analysis...</div>
+                    </div>
+                  ) : budgetVariance && budgetVariance.variance_items && budgetVariance.variance_items.length > 0 ? (
+                    <div>
+                      <div className="overflow-x-auto border border-border rounded-lg">
+                        <table className="w-full">
+                          <thead className="bg-background border-b-2 border-border">
+                            <tr>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Code</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Account Name</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Budget</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Actual</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Variance $</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Variance %</th>
+                              <th className="text-center py-3 px-4 text-sm font-semibold">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {budgetVariance.variance_items
+                              .filter(item => {
+                                const matchesSearch = !varianceSearchQuery ||
+                                  item.account_code.toLowerCase().includes(varianceSearchQuery.toLowerCase()) ||
+                                  item.account_name.toLowerCase().includes(varianceSearchQuery.toLowerCase());
+                                const matchesSeverity = !varianceFilterSeverity || item.severity === varianceFilterSeverity;
+                                return matchesSearch && matchesSeverity;
+                              })
+                              .map((item) => (
+                                <tr
+                                  key={item.account_code}
+                                  className={`border-b border-border hover:bg-background transition-colors ${
+                                    item.severity === 'URGENT' ? 'bg-purple-50' :
+                                    item.severity === 'CRITICAL' ? 'bg-danger-light/10' :
+                                    item.severity === 'WARNING' ? 'bg-warning-light/10' : ''
+                                  }`}
+                                >
+                                  <td className="py-3 px-4">
+                                    <span className="font-mono font-medium text-sm">{item.account_code}</span>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span className="font-medium">{item.account_name}</span>
+                                  </td>
+                                  <td className="text-right py-3 px-4 font-mono text-sm">
+                                    ${item.budget_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="text-right py-3 px-4 font-mono text-sm">
+                                    ${item.actual_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className={`text-right py-3 px-4 font-mono text-sm font-semibold ${
+                                    item.is_favorable ? 'text-success' : 'text-danger'
+                                  }`}>
+                                    {item.variance_amount >= 0 ? '+' : ''}{item.variance_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className={`text-right py-3 px-4 font-mono text-sm font-semibold ${
+                                    item.is_favorable ? 'text-success' : 'text-danger'
+                                  }`}>
+                                    {item.variance_percentage >= 0 ? '+' : ''}{item.variance_percentage.toFixed(1)}%
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <div className="flex items-center justify-center gap-2">
+                                      {item.severity === 'URGENT' && <span className="text-purple-600">🚨</span>}
+                                      {item.severity === 'CRITICAL' && <span className="text-danger">🔴</span>}
+                                      {item.severity === 'WARNING' && <span className="text-warning">🟡</span>}
+                                      {item.severity === 'NORMAL' && <span className="text-success">🟢</span>}
+                                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                        item.is_favorable ? 'bg-success-light text-success' : 'bg-danger-light text-danger'
+                                      }`}>
+                                        {item.is_favorable ? 'Favorable' : 'Unfavorable'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 text-sm text-text-secondary text-center">
+                        Showing {budgetVariance.variance_items.filter(item => {
+                          const matchesSearch = !varianceSearchQuery ||
+                            item.account_code.toLowerCase().includes(varianceSearchQuery.toLowerCase()) ||
+                            item.account_name.toLowerCase().includes(varianceSearchQuery.toLowerCase());
+                          const matchesSeverity = !varianceFilterSeverity || item.severity === varianceFilterSeverity;
+                          return matchesSearch && matchesSeverity;
+                        }).length} of {budgetVariance.variance_items.length} accounts
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-text-secondary">
+                        No variance data available. Run the analysis to see results.
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </>
+            )}
           </div>
         )}
 
@@ -1237,12 +1562,181 @@ export default function FinancialCommand() {
         )}
 
         {activeTab === 'chart' && (
-          <Card className="p-6">
-            <h2 className="text-2xl font-bold mb-4">Chart of Accounts</h2>
-            <Button variant="primary" onClick={() => window.location.hash = 'chart-of-accounts'}>
-              View Full Chart of Accounts
-            </Button>
-          </Card>
+          <div className="space-y-6">
+            {/* Header Card */}
+            <Card className="p-6">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold mb-2">📊 Chart of Accounts</h2>
+                <p className="text-text-secondary">
+                  View and manage your complete chart of accounts with all account codes, categories, and types.
+                </p>
+              </div>
+              <Button variant="primary" onClick={handleViewChartOfAccounts}>
+                View Full Chart of Accounts
+              </Button>
+            </Card>
+
+            {/* Chart of Accounts Content - Displayed Inline */}
+            {showChartOfAccounts && (
+              <>
+                {/* Summary Cards */}
+                {chartSummary && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Account Summary</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      {Object.entries(chartSummary.by_type).map(([type, count]) => (
+                        <div key={type} className="p-4 bg-background rounded-lg border border-border">
+                          <div className="text-sm text-text-secondary mb-1 capitalize">{type}</div>
+                          <div className="text-2xl font-bold">{count}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <div className="flex gap-6 text-sm">
+                        <div>
+                          <span className="text-text-secondary">Total Accounts:</span>
+                          <span className="ml-2 font-semibold">{chartSummary.total_accounts}</span>
+                        </div>
+                        <div>
+                          <span className="text-text-secondary">Active:</span>
+                          <span className="ml-2 font-semibold text-success">{chartSummary.active_accounts}</span>
+                        </div>
+                        <div>
+                          <span className="text-text-secondary">Calculated:</span>
+                          <span className="ml-2 font-semibold text-info">{chartSummary.calculated_accounts}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Search and Filter Card */}
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Search & Filter</h3>
+                  <div className="flex gap-4">
+                    <input
+                      type="text"
+                      placeholder="Search by account code or name..."
+                      value={chartSearchQuery}
+                      onChange={(e) => setChartSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && loadChartOfAccounts()}
+                      className="flex-1 px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                    />
+                    <select
+                      value={chartFilterType}
+                      onChange={(e) => setChartFilterType(e.target.value)}
+                      className="px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                    >
+                      <option value="">All Types</option>
+                      <option value="asset">Asset</option>
+                      <option value="liability">Liability</option>
+                      <option value="equity">Equity</option>
+                      <option value="income">Income</option>
+                      <option value="expense">Expense</option>
+                    </select>
+                    <Button variant="info" onClick={loadChartOfAccounts}>
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh
+                    </Button>
+                  </div>
+                </Card>
+
+                {/* Accounts Table Card */}
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">All Accounts</h3>
+                  {loadingChart ? (
+                    <div className="text-center py-8">
+                      <div className="text-text-secondary">Loading chart of accounts...</div>
+                    </div>
+                  ) : chartOfAccounts.length > 0 ? (
+                    <div>
+                      <div className="overflow-x-auto border border-border rounded-lg">
+                        <table className="w-full">
+                          <thead className="bg-background border-b-2 border-border">
+                            <tr>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Code</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Account Name</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Category</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Subcategory</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Document Types</th>
+                              <th className="text-center py-3 px-4 text-sm font-semibold">Calculated</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {chartOfAccounts.map((account) => (
+                              <tr
+                                key={account.id}
+                                className={`border-b border-border hover:bg-background transition-colors ${
+                                  account.is_calculated ? 'bg-info-light/10' : ''
+                                }`}
+                              >
+                                <td className="py-3 px-4">
+                                  <span className="font-mono font-medium text-sm">{account.account_code}</span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{account.account_name}</span>
+                                    {account.parent_account_code && (
+                                      <span className="text-xs text-text-tertiary">
+                                        Parent: {account.parent_account_code}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                    account.account_type === 'asset' ? 'bg-success-light text-success' :
+                                    account.account_type === 'liability' ? 'bg-danger-light text-danger' :
+                                    account.account_type === 'equity' ? 'bg-info-light text-info' :
+                                    account.account_type === 'income' ? 'bg-premium-light text-premium' :
+                                    account.account_type === 'expense' ? 'bg-warning-light text-warning' :
+                                    'bg-background text-text-secondary'
+                                  }`}>
+                                    {account.account_type}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-text-secondary">
+                                  {account.category || '-'}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-text-secondary">
+                                  {account.subcategory || '-'}
+                                </td>
+                                <td className="py-3 px-4 text-xs text-text-secondary">
+                                  {account.document_types && Array.isArray(account.document_types)
+                                    ? account.document_types.map(dt => dt.replace('_', ' ')).join(', ')
+                                    : '-'
+                                  }
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  {account.is_calculated ? (
+                                    <span className="text-info" title={account.calculation_formula || ''}>
+                                      <Calculator className="w-4 h-4 inline" />
+                                    </span>
+                                  ) : (
+                                    <span className="text-text-tertiary">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 text-sm text-text-secondary text-center">
+                        Showing {chartOfAccounts.length} of {chartSummary?.total_accounts || chartOfAccounts.length} accounts
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-text-secondary">
+                        No accounts found. Try adjusting your search or filters.
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </>
+            )}
+          </div>
         )}
 
         {activeTab === 'reconciliation' && (

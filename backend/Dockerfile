@@ -3,8 +3,9 @@ FROM reims-base:latest
 
 # Install PostgreSQL client for pg_isready and psql (for migrations and seeding)
 # Install Redis tools for redis-cli (for Flower entrypoint script)
+# Install curl for health checks
 USER root
-RUN apt-get update && apt-get install -y postgresql-client redis-tools && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y postgresql-client redis-tools curl && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser

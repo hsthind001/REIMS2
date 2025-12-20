@@ -18,6 +18,10 @@ RUN --mount=type=cache,target=/root/.npm \
 # Ensure node_modules binaries have execute permissions
 RUN chmod -R +x node_modules/.bin 2>/dev/null || true
 
+# Copy entrypoint script for dependency management and startup logic
+COPY frontend-entrypoint.sh /frontend-entrypoint.sh
+RUN chmod +x /frontend-entrypoint.sh
+
 # Copy project files (this layer invalidates on code changes)
 # Copy in order: config files first, then source code
 COPY vite.config.ts tsconfig*.json ./
@@ -27,6 +31,9 @@ COPY src ./src
 
 # Expose Vite dev server port
 EXPOSE 5173
+
+# Use entrypoint script for automatic dependency checking and cache management
+ENTRYPOINT ["/frontend-entrypoint.sh"]
 
 # Start development server
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

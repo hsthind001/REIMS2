@@ -94,32 +94,54 @@ class VarianceAnalysisService:
             # Get actual data
             actual_income = self.db.query(IncomeStatementData).filter(
                 IncomeStatementData.property_id == property_id,
-                IncomeStatementData.financial_period_id == financial_period_id
+                IncomeStatementData.period_id == financial_period_id
             ).all()
 
             actual_balance = self.db.query(BalanceSheetData).filter(
                 BalanceSheetData.property_id == property_id,
-                BalanceSheetData.financial_period_id == financial_period_id
+                BalanceSheetData.period_id == financial_period_id
             ).all()
 
-            # Build actual amounts by account
+            # Build actual amounts by account - with rollup to parent codes
             actual_by_account = {}
 
             for item in actual_income:
                 if item.account_code:
-                    actual_by_account[item.account_code] = {
-                        "amount": Decimal(str(item.amount or 0)),
-                        "account_name": item.account_name,
-                        "source": "income_statement"
-                    }
+                    # Extract parent account code (e.g., 4010-0000 -> 40000)
+                    parent_code = self._extract_parent_account_code(item.account_code)
+
+                    if parent_code not in actual_by_account:
+                        actual_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name,
+                            "source": "income_statement",
+                            "detail_accounts": []
+                        }
+
+                    actual_by_account[parent_code]["amount"] += Decimal(str(item.period_amount or 0))
+                    actual_by_account[parent_code]["detail_accounts"].append({
+                        "code": item.account_code,
+                        "amount": Decimal(str(item.period_amount or 0))
+                    })
 
             for item in actual_balance:
                 if item.account_code:
-                    actual_by_account[item.account_code] = {
-                        "amount": Decimal(str(item.amount or 0)),
-                        "account_name": item.account_name,
-                        "source": "balance_sheet"
-                    }
+                    # Extract parent account code
+                    parent_code = self._extract_parent_account_code(item.account_code)
+
+                    if parent_code not in actual_by_account:
+                        actual_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name,
+                            "source": "balance_sheet",
+                            "detail_accounts": []
+                        }
+
+                    actual_by_account[parent_code]["amount"] += Decimal(str(item.amount or 0))
+                    actual_by_account[parent_code]["detail_accounts"].append({
+                        "code": item.account_code,
+                        "amount": Decimal(str(item.amount or 0))
+                    })
 
             # Analyze variances
             variances = []
@@ -165,14 +187,14 @@ class VarianceAnalysisService:
                     "account_code": account_code,
                     "account_name": account_name,
                     "account_category": budget.account_category,
-                    "budgeted_amount": float(budgeted_amount),
+                    "budget_amount": float(budgeted_amount),
                     "actual_amount": float(actual_amount),
                     "variance_amount": float(variance_amount),
                     "variance_percentage": float(variance_pct),
                     "within_tolerance": within_tolerance,
                     "tolerance_percentage": float(tolerance_pct),
                     "severity": severity,
-                    "favorable": self._is_favorable_variance(
+                    "is_favorable": self._is_favorable_variance(
                         account_code,
                         float(variance_amount)
                     ),
@@ -205,29 +227,41 @@ class VarianceAnalysisService:
                 else Decimal("0")
             )
 
+            # Calculate severity breakdown
+            severity_breakdown = {
+                "NORMAL": 0,
+                "WARNING": 0,
+                "CRITICAL": 0,
+                "URGENT": 0
+            }
+            for variance in variances:
+                severity = variance["severity"]
+                if severity == "INFO":
+                    severity_breakdown["NORMAL"] += 1
+                elif severity in severity_breakdown:
+                    severity_breakdown[severity] += 1
+
             return {
                 "success": True,
                 "property_id": property_id,
+                "property_code": property.property_code,
                 "property_name": property.property_name,
                 "financial_period_id": financial_period_id,
-                "period": {
-                    "start_date": period.period_start_date.isoformat(),
-                    "end_date": period.period_end_date.isoformat(),
-                    "period_type": period.period_type,
-                },
+                "period_year": period.period_year,
+                "period_month": period.period_month,
                 "variance_type": "budget",
                 "analysis_date": datetime.utcnow().isoformat(),
                 "summary": {
-                    "total_budgeted": float(total_budget),
-                    "total_actual": float(total_actual),
-                    "total_variance": float(total_variance),
-                    "total_variance_percentage": float(total_variance_pct),
-                    "accounts_analyzed": len(variances),
+                    "total_accounts": len(variances),
                     "flagged_accounts": len(flagged_accounts),
-                    "within_tolerance": len(variances) - len(flagged_accounts),
+                    "total_budget": float(total_budget),
+                    "total_actual": float(total_actual),
+                    "total_variance_amount": float(total_variance),
+                    "total_variance_percentage": float(total_variance_pct),
+                    "severity_breakdown": severity_breakdown,
                 },
-                "variances": variances,
-                "flagged_accounts": flagged_accounts,
+                "variance_items": variances,
+                "alerts_created": len([v for v in variances if v["severity"] in ["CRITICAL", "URGENT"]]),
             }
 
         except Exception as e:
@@ -278,30 +312,52 @@ class VarianceAnalysisService:
             # Get actual data (same as budget variance)
             actual_income = self.db.query(IncomeStatementData).filter(
                 IncomeStatementData.property_id == property_id,
-                IncomeStatementData.financial_period_id == financial_period_id
+                IncomeStatementData.period_id == financial_period_id
             ).all()
 
             actual_balance = self.db.query(BalanceSheetData).filter(
                 BalanceSheetData.property_id == property_id,
-                BalanceSheetData.financial_period_id == financial_period_id
+                BalanceSheetData.period_id == financial_period_id
             ).all()
 
-            # Build actual amounts by account
+            # Build actual amounts by account - with rollup to parent codes
             actual_by_account = {}
 
             for item in actual_income:
                 if item.account_code:
-                    actual_by_account[item.account_code] = {
-                        "amount": Decimal(str(item.amount or 0)),
-                        "account_name": item.account_name,
-                    }
+                    # Extract parent account code (e.g., 4010-0000 -> 40000)
+                    parent_code = self._extract_parent_account_code(item.account_code)
+
+                    if parent_code not in actual_by_account:
+                        actual_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name,
+                            "detail_accounts": []
+                        }
+
+                    actual_by_account[parent_code]["amount"] += Decimal(str(item.period_amount or 0))
+                    actual_by_account[parent_code]["detail_accounts"].append({
+                        "code": item.account_code,
+                        "amount": Decimal(str(item.period_amount or 0))
+                    })
 
             for item in actual_balance:
                 if item.account_code:
-                    actual_by_account[item.account_code] = {
-                        "amount": Decimal(str(item.amount or 0)),
-                        "account_name": item.account_name,
-                    }
+                    # Extract parent account code
+                    parent_code = self._extract_parent_account_code(item.account_code)
+
+                    if parent_code not in actual_by_account:
+                        actual_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name,
+                            "detail_accounts": []
+                        }
+
+                    actual_by_account[parent_code]["amount"] += Decimal(str(item.amount or 0))
+                    actual_by_account[parent_code]["detail_accounts"].append({
+                        "code": item.account_code,
+                        "amount": Decimal(str(item.amount or 0))
+                    })
 
             # Analyze variances
             variances = []
@@ -349,14 +405,14 @@ class VarianceAnalysisService:
                     "account_code": account_code,
                     "account_name": account_name,
                     "account_category": forecast.account_category,
-                    "forecasted_amount": float(forecasted_amount),
+                    "forecast_amount": float(forecasted_amount),
                     "actual_amount": float(actual_amount),
                     "variance_amount": float(variance_amount),
                     "variance_percentage": float(variance_pct),
                     "within_tolerance": within_tolerance,
                     "tolerance_percentage": float(tolerance_pct),
                     "severity": severity,
-                    "favorable": self._is_favorable_variance(
+                    "is_favorable": self._is_favorable_variance(
                         account_code,
                         float(variance_amount)
                     ),
@@ -389,29 +445,41 @@ class VarianceAnalysisService:
                 else Decimal("0")
             )
 
+            # Calculate severity breakdown
+            severity_breakdown = {
+                "NORMAL": 0,
+                "WARNING": 0,
+                "CRITICAL": 0,
+                "URGENT": 0
+            }
+            for variance in variances:
+                severity = variance["severity"]
+                if severity == "INFO":
+                    severity_breakdown["NORMAL"] += 1
+                elif severity in severity_breakdown:
+                    severity_breakdown[severity] += 1
+
             return {
                 "success": True,
                 "property_id": property_id,
+                "property_code": property.property_code,
                 "property_name": property.property_name,
                 "financial_period_id": financial_period_id,
-                "period": {
-                    "start_date": period.period_start_date.isoformat(),
-                    "end_date": period.period_end_date.isoformat(),
-                    "period_type": period.period_type,
-                },
+                "period_year": period.period_year,
+                "period_month": period.period_month,
                 "variance_type": "forecast",
                 "analysis_date": datetime.utcnow().isoformat(),
                 "summary": {
-                    "total_forecasted": float(total_forecast),
-                    "total_actual": float(total_actual),
-                    "total_variance": float(total_variance),
-                    "total_variance_percentage": float(total_variance_pct),
-                    "accounts_analyzed": len(variances),
+                    "total_accounts": len(variances),
                     "flagged_accounts": len(flagged_accounts),
-                    "within_tolerance": len(variances) - len(flagged_accounts),
+                    "total_forecast": float(total_forecast),
+                    "total_actual": float(total_actual),
+                    "total_variance_amount": float(total_variance),
+                    "total_variance_percentage": float(total_variance_pct),
+                    "severity_breakdown": severity_breakdown,
                 },
-                "variances": variances,
-                "flagged_accounts": flagged_accounts,
+                "variance_items": variances,
+                "alerts_created": len([v for v in variances if v["severity"] in ["CRITICAL", "URGENT"]]),
             }
 
         except Exception as e:
@@ -551,6 +619,43 @@ class VarianceAnalysisService:
             # For other accounts, positive variance is generally favorable
             return variance_amount > 0
 
+    def _extract_parent_account_code(self, account_code: str) -> str:
+        """
+        Extract parent account code from detailed account code
+
+        Examples:
+        - 4010-0000 -> 40000
+        - 4020-0000 -> 40000
+        - 5010-0000 -> 50000
+        - 40000 -> 40000 (already parent)
+
+        Logic:
+        - If account code contains dash, take first part
+        - Extract first 2 digits (major category: 40, 50, etc.)
+        - Pad with zeros to 5 digits
+        """
+        # Split on dash if present
+        if '-' in account_code:
+            base_code = account_code.split('-')[0]
+        else:
+            base_code = account_code
+
+        # Remove any non-numeric characters
+        numeric_code = ''.join(c for c in base_code if c.isdigit())
+
+        if len(numeric_code) >= 2:
+            # Take first 2 digits and pad to 5 digits
+            # 4010 -> 40 -> 40000
+            # 50 -> 50 -> 50000
+            parent = numeric_code[:2] + '000'
+            return parent
+        elif len(numeric_code) == 1:
+            # Single digit, pad to 5
+            return numeric_code + '0000'
+        else:
+            # No numeric code found, return as-is
+            return account_code
+
     def _create_variance_alert(
         self,
         property_id: int,
@@ -584,14 +689,14 @@ class VarianceAnalysisService:
             severity = severity_map.get(variance_data["severity"], AlertSeverity.WARNING)
 
             # Build description
-            variance_direction = "favorable" if variance_data["favorable"] else "unfavorable"
+            variance_direction = "favorable" if variance_data["is_favorable"] else "unfavorable"
 
             if variance_type == "budget":
                 comparison = "budget"
-                expected_amount = variance_data["budgeted_amount"]
+                expected_amount = variance_data["budget_amount"]
             else:
                 comparison = "forecast"
-                expected_amount = variance_data["forecasted_amount"]
+                expected_amount = variance_data["forecast_amount"]
 
             description = (
                 f"Significant {variance_direction} variance detected in {variance_data['account_name']} "
