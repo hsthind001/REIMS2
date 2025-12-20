@@ -14,6 +14,7 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
+from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.financial_metrics import FinancialMetrics
 
 
@@ -70,6 +71,10 @@ class MetricsService:
         # Performance Metrics (requires both IS and RR data)
         if self._has_income_statement_data(property_id, period_id) and self._has_rent_roll_data(property_id, period_id):
             metrics_data.update(self.calculate_performance_metrics(property_id, period_id, metrics_data))
+        
+        # Mortgage Metrics (if mortgage data exists)
+        if self._has_mortgage_data(property_id, period_id):
+            metrics_data.update(self.calculate_mortgage_metrics(property_id, period_id, metrics_data))
         
         # Store metrics (upsert)
         metrics = self._store_metrics(property_id, period_id, metrics_data)
@@ -626,6 +631,120 @@ class MetricsService:
             'total_annual_rent': Decimal(str(total_annual_rent)) if total_annual_rent else None,
         }
     
+    def calculate_mortgage_metrics(
+        self,
+        property_id: int,
+        period_id: int,
+        existing_metrics: Dict
+    ) -> Dict:
+        """
+        Calculate mortgage-specific metrics
+        
+        Metrics:
+        - Total mortgage debt (sum of all principal balances)
+        - Weighted average interest rate
+        - Total monthly/annual debt service
+        - DSCR (if NOI available)
+        - Interest coverage ratio
+        - Debt yield
+        - Break-even occupancy
+        """
+        # Get all mortgage statements for this property/period
+        mortgages = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == period_id
+        ).all()
+        
+        if not mortgages:
+            return {}
+        
+        # Calculate total mortgage debt
+        total_mortgage_debt = sum(
+            Decimal(str(m.principal_balance or 0)) for m in mortgages
+        )
+        
+        # Calculate weighted average interest rate
+        total_weighted_rate = Decimal('0')
+        total_principal_for_rate = Decimal('0')
+        for m in mortgages:
+            if m.interest_rate and m.principal_balance:
+                principal = Decimal(str(m.principal_balance))
+                rate = Decimal(str(m.interest_rate))
+                total_weighted_rate += principal * rate
+                total_principal_for_rate += principal
+        
+        weighted_avg_interest_rate = (
+            total_weighted_rate / total_principal_for_rate
+            if total_principal_for_rate > 0 else None
+        )
+        
+        # Calculate total debt service
+        total_monthly_debt_service = Decimal('0')
+        total_annual_debt_service = Decimal('0')
+        
+        for m in mortgages:
+            if m.annual_debt_service:
+                total_annual_debt_service += Decimal(str(m.annual_debt_service))
+            elif m.monthly_debt_service:
+                monthly = Decimal(str(m.monthly_debt_service))
+                total_monthly_debt_service += monthly
+                total_annual_debt_service += monthly * Decimal('12')
+            elif m.principal_due and m.interest_due:
+                monthly = Decimal(str(m.principal_due or 0)) + Decimal(str(m.interest_due or 0))
+                total_monthly_debt_service += monthly
+                total_annual_debt_service += monthly * Decimal('12')
+        
+        # Calculate DSCR if NOI available
+        dscr = None
+        noi = existing_metrics.get('net_operating_income')
+        if noi and total_annual_debt_service > 0:
+            dscr = Decimal(str(noi)) / total_annual_debt_service
+        
+        # Calculate interest coverage ratio (EBIT / Interest Expense)
+        interest_coverage_ratio = None
+        if noi:
+            total_interest = sum(
+                Decimal(str(m.ytd_interest_paid or 0)) for m in mortgages
+            )
+            # Annualize if needed (assume YTD is for the period)
+            # For monthly periods, multiply by 12
+            from app.models.financial_period import FinancialPeriod
+            period = self.db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id
+            ).first()
+            if period and period.period_start_date and period.period_end_date:
+                days_diff = (period.period_end_date - period.period_start_date).days
+                if days_diff <= 35:  # Monthly period
+                    total_interest = total_interest * Decimal('12')
+            
+            if total_interest > 0:
+                interest_coverage_ratio = Decimal(str(noi)) / total_interest
+        
+        # Calculate debt yield (NOI / Total Loan Amount * 100)
+        debt_yield = None
+        if noi and total_mortgage_debt > 0:
+            debt_yield = (Decimal(str(noi)) / total_mortgage_debt) * Decimal('100')
+        
+        # Calculate break-even occupancy
+        # Break-Even = (Operating Expenses + Debt Service) / Gross Potential Rent * 100
+        break_even_occupancy = None
+        total_expenses = existing_metrics.get('total_expenses') or Decimal('0')
+        gross_potential_rent = existing_metrics.get('total_annual_rent')
+        if gross_potential_rent and gross_potential_rent > 0:
+            total_required = total_expenses + total_annual_debt_service
+            break_even_occupancy = (total_required / Decimal(str(gross_potential_rent))) * Decimal('100')
+        
+        return {
+            'total_mortgage_debt': total_mortgage_debt if total_mortgage_debt > 0 else None,
+            'weighted_avg_interest_rate': weighted_avg_interest_rate,
+            'total_monthly_debt_service': total_monthly_debt_service if total_monthly_debt_service > 0 else None,
+            'total_annual_debt_service': total_annual_debt_service if total_annual_debt_service > 0 else None,
+            'dscr': dscr,
+            'interest_coverage_ratio': interest_coverage_ratio,
+            'debt_yield': debt_yield,
+            'break_even_occupancy': break_even_occupancy
+        }
+    
     def safe_divide(
         self, 
         numerator: Optional[Decimal], 
@@ -764,6 +883,14 @@ class MetricsService:
             RentRollData.period_id == period_id
         ).scalar()
         
+        return count > 0
+    
+    def _has_mortgage_data(self, property_id: int, period_id: int) -> bool:
+        """Check if mortgage statement data exists"""
+        count = self.db.query(func.count(MortgageStatementData.id)).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == period_id
+        ).scalar()
         return count > 0
     
     def _sum_balance_sheet_accounts_by_codes(

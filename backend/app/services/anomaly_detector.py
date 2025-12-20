@@ -38,7 +38,7 @@ class StatisticalAnomalyDetector:
             field_name: Field/account code name
             current_value: Current period value
             historical_values: List of historical values for comparison
-            threshold_value: Absolute value threshold (if None, uses default percentage-based logic)
+            threshold_value: Percentage threshold as decimal (e.g., 0.01 = 1%). If >= 100, treated as absolute value for backward compatibility.
         
         Returns:
             Dict with anomaly detection results
@@ -106,9 +106,12 @@ class StatisticalAnomalyDetector:
         threshold_value: float
     ) -> Optional[Dict]:
         """
-        Detect anomaly using absolute value threshold.
+        Detect anomaly using percentage-based threshold.
         
-        Anomaly is detected if: abs(current_value - expected_value) > threshold_value
+        Threshold is stored as a decimal (e.g., 0.01 = 1%).
+        Anomaly is detected if: abs(percentage_change) > threshold_value
+        
+        For backward compatibility: if threshold_value >= 100, treat as absolute value threshold.
         """
         if not historical_values:
             return None
@@ -116,30 +119,46 @@ class StatisticalAnomalyDetector:
         # Use average of all historical values (or single value if only one)
         recent_avg = statistics.mean(historical_values) if len(historical_values) > 0 else None
         
-        if recent_avg is None:
+        if recent_avg is None or recent_avg == 0:
             return None
         
-        # Calculate absolute difference
-        absolute_difference = abs(value - recent_avg)
+        # Calculate percentage change (as decimal, e.g., 0.05 = 5%)
+        pct_change = abs((value - recent_avg) / recent_avg)
         
-        # Check if difference exceeds threshold
-        if absolute_difference > threshold_value:
-            # Calculate percentage change for display purposes
-            if recent_avg != 0:
-                pct_change = ((value - recent_avg) / recent_avg) * 100
-            else:
-                pct_change = 0.0
-            
+        # Determine if threshold is percentage-based (< 1.0) or absolute (>= 100)
+        # Thresholds between 1.0 and 100 are ambiguous, so we'll treat < 1.0 as percentage
+        if threshold_value < 1.0:
+            # Percentage-based threshold (e.g., 0.01 = 1%)
+            threshold_exceeded = pct_change > threshold_value
+            threshold_display = threshold_value * 100  # Convert to percentage for display
+        else:
+            # Absolute value threshold (backward compatibility)
+            absolute_difference = abs(value - recent_avg)
+            threshold_exceeded = absolute_difference > threshold_value
+            threshold_display = threshold_value
+            # Calculate percentage for display
+            pct_change_display = pct_change * 100
+        
+        if threshold_exceeded:
             # Determine severity based on how much the threshold is exceeded
-            threshold_exceeded_ratio = absolute_difference / threshold_value if threshold_value > 0 else 0
+            if threshold_value < 1.0:
+                # Percentage-based: compare percentage change to threshold percentage
+                threshold_exceeded_ratio = pct_change / threshold_value if threshold_value > 0 else 0
+                pct_change_display = pct_change * 100  # Convert to percentage for display
+            else:
+                # Absolute-based: compare absolute difference to threshold
+                absolute_difference = abs(value - recent_avg)
+                threshold_exceeded_ratio = absolute_difference / threshold_value if threshold_value > 0 else 0
+                pct_change_display = pct_change * 100
             
             severity = "critical" if threshold_exceeded_ratio > 3.0 else "high" if threshold_exceeded_ratio > 2.0 else "medium"
             
             return {
-                "type": "absolute_value_change",
-                "absolute_difference": round(absolute_difference, 2),
-                "percentage_change": round(pct_change, 2),  # For display purposes
-                "threshold_value": threshold_value,
+                "type": "percentage_change" if threshold_value < 1.0 else "absolute_value_change",
+                "absolute_difference": round(abs(value - recent_avg), 2) if threshold_value >= 1.0 else None,
+                "percentage_change": round(pct_change_display, 2),  # Percentage for display
+                "threshold_value": threshold_display,
+                "threshold_type": "percentage" if threshold_value < 1.0 else "absolute",
                 "severity": severity
             }
         

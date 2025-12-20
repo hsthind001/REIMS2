@@ -223,7 +223,7 @@ async def get_default_threshold(
     
     return DefaultThresholdResponse(
         default_threshold=default_value,
-        description="Default absolute value threshold for anomaly detection. Used when no custom threshold is set for an account."
+        description="Default percentage threshold for anomaly detection (stored as decimal, e.g., 0.01 = 1%). Used when no custom threshold is set for an account."
     )
 
 
@@ -239,6 +239,6 @@ async def set_default_threshold(
     
     return DefaultThresholdResponse(
         default_threshold=Decimal(config.config_value),
-        description="Default absolute value threshold for anomaly detection. Used when no custom threshold is set for an account."
+        description="Default percentage threshold for anomaly detection (stored as decimal, e.g., 0.01 = 1%). Used when no custom threshold is set for an account."
     )
 

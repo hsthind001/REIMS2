@@ -21,6 +21,17 @@ class AlertType(str, enum.Enum):
     VARIANCE_BREACH = "VARIANCE_BREACH"
     ANOMALY_DETECTED = "ANOMALY_DETECTED"
     FINANCIAL_THRESHOLD = "FINANCIAL_THRESHOLD"
+    # New alert types
+    DEBT_YIELD_BREACH = "DEBT_YIELD_BREACH"
+    INTEREST_COVERAGE_BREACH = "INTEREST_COVERAGE_BREACH"
+    BREAK_EVEN_OCCUPANCY_BREACH = "BREAK_EVEN_OCCUPANCY_BREACH"
+    CASH_FLOW_NEGATIVE = "CASH_FLOW_NEGATIVE"
+    REVENUE_DECLINE = "REVENUE_DECLINE"
+    EXPENSE_SPIKE = "EXPENSE_SPIKE"
+    LIQUIDITY_WARNING = "LIQUIDITY_WARNING"
+    DEBT_TO_EQUITY_BREACH = "DEBT_TO_EQUITY_BREACH"
+    CAPEX_THRESHOLD = "CAPEX_THRESHOLD"
+    RENT_COLLECTION_RATE = "RENT_COLLECTION_RATE"
 
 
 class AlertSeverity(str, enum.Enum):
@@ -101,6 +112,16 @@ class CommitteeAlert(Base):
     # Related data (for traceability)
     related_metric = Column(String(100), nullable=True)  # e.g., "DSCR", "Occupancy Rate"
     br_id = Column(String(20), nullable=True)  # Business Requirement ID
+    
+    # Enhanced fields (from Phase 9 migration)
+    priority_score = Column(Numeric(10, 4), nullable=True)
+    correlation_group_id = Column(Integer, nullable=True)
+    escalation_level = Column(Integer, nullable=True, default=0)
+    escalated_at = Column(DateTime, nullable=True)
+    resolution_template_id = Column(Integer, nullable=True)
+    related_alert_ids = Column(JSONB, nullable=True)  # Array of related alert IDs
+    alert_tags = Column(JSONB, nullable=True)  # Custom tags for filtering/grouping
+    performance_impact = Column(String(100), nullable=True)  # Estimated impact description
 
     # Relationships
     property = relationship("Property", back_populates="committee_alerts")

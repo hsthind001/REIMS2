@@ -51,6 +51,7 @@ services:
       SEED_DATABASE: "true"
     volumes:
       - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,8 +77,14 @@ services:
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_validation_rules.sql;
           echo 'Seeding extraction templates...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_extraction_templates.sql;
+          echo 'Seeding mortgage extraction templates...';
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_mortgage_extraction_templates.sql;
+          echo 'Seeding mortgage validation rules...';
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_mortgage_validation_rules.sql;
           echo 'Seeding lenders...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_lenders.sql;
+          echo 'Seeding default alert rules...';
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_default_alert_rules.sql;
           echo '✅ All seed files loaded';
         else
           echo 'ℹ️  Database already seeded, skipping';
@@ -250,6 +257,7 @@ services:
       # - Cash reconciliation with beginning/ending balances
     volumes:
       - ./backend/app:/app/app  # Mount app for development
+      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
       - ai-models-cache:/app/.cache/huggingface  # Cache for LayoutLMv3 models
     ports:
       - "8000:8000"
@@ -304,6 +312,7 @@ services:
       MINIO_SECRET_KEY: minioadmin
     volumes:
       - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
       - ai-models-cache:/app/.cache/huggingface  # Share model cache
     deploy:
       resources:

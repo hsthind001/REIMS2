@@ -26,7 +26,7 @@ const Documents = () => {
   const [selectedProperty, setSelectedProperty] = useState('')
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
-  const [selectedDocType, setSelectedDocType] = useState<'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll'>('balance_sheet')
+  const [selectedDocType, setSelectedDocType] = useState<'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll' | 'mortgage_statement'>('balance_sheet')
   const [properties, setProperties] = useState<Property[]>([])
   const [recentUploads, setRecentUploads] = useState<DocumentUpload[]>([])
   const [loading, setLoading] = useState(false)
@@ -152,7 +152,8 @@ const Documents = () => {
             'balance_sheet': 'Balance Sheet',
             'income_statement': 'Income Statement',
             'cash_flow': 'Cash Flow Statement',
-            'rent_roll': 'Rent Roll'
+            'rent_roll': 'Rent Roll',
+            'mortgage_statement': 'Mortgage Statement'
           }
           
           const selectedName = typeNames[detail.selected_type] || detail.selected_type
@@ -335,6 +336,7 @@ const Documents = () => {
                 <option value="income_statement">💰 Income Statement</option>
                 <option value="cash_flow">💵 Cash Flow Statement</option>
                 <option value="rent_roll">🏠 Rent Roll</option>
+                <option value="mortgage_statement">🏦 Mortgage Statement</option>
               </select>
             </div>
           </div>

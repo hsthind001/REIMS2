@@ -89,7 +89,7 @@ export interface DocumentUpload {
   id: number;
   property_id: number;
   period_id: number;
-  document_type: 'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll';
+  document_type: 'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll' | 'mortgage_statement';
   file_name: string;
   file_path: string;
   file_size_bytes: number;
@@ -105,7 +105,7 @@ export interface DocumentUploadRequest {
   property_code: string;
   period_year: number;
   period_month: number;
-  document_type: 'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll';
+  document_type: 'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll' | 'mortgage_statement';
   file: File;
 }
 

@@ -21,7 +21,11 @@ import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
 import { reconciliationService, type ReconciliationSession, type ComparisonData } from '../lib/reconciliation';
-import type { Property, DocumentUpload as DocumentUploadType } from '../types/api';
+import { MortgageDataTable } from '../components/mortgage/MortgageDataTable';
+import { MortgageDetail } from '../components/mortgage/MortgageDetail';
+import { MortgageMetrics } from '../components/mortgage/MortgageMetrics';
+import { api } from '../lib/api';
+import type { Property, DocumentUpload as DocumentUploadType, FinancialPeriod } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
@@ -79,7 +83,7 @@ export default function FinancialCommand() {
   const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingFinancialData, setLoadingFinancialData] = useState(false);
-  const [selectedStatementType, setSelectedStatementType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow' | null>(null);
+  const [selectedStatementType, setSelectedStatementType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow' | 'mortgage_statement' | null>(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [kpiDscr, setKpiDscr] = useState<number | null>(null);
@@ -94,6 +98,10 @@ export default function FinancialCommand() {
   const [reconciliationMonth, setReconciliationMonth] = useState<number>(new Date().getMonth() + 1);
   const [reconciliationDocType, setReconciliationDocType] = useState<string>('balance_sheet');
   const [activeReconciliation, setActiveReconciliation] = useState<ComparisonData | null>(null);
+  
+  // Mortgage statement state
+  const [selectedMortgageId, setSelectedMortgageId] = useState<number | null>(null);
+  const [currentPeriodId, setCurrentPeriodId] = useState<number | null>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -104,8 +112,25 @@ export default function FinancialCommand() {
       loadFinancialData(selectedProperty.id);
       loadAvailableDocuments(selectedProperty.property_code);
       loadReconciliationSessions(selectedProperty.property_code);
+      loadCurrentPeriodId(selectedProperty.id);
     }
-  }, [selectedProperty]); // Removed period dependencies - load all documents
+  }, [selectedProperty, selectedYear, selectedMonth]); // Removed period dependencies - load all documents
+  
+  const loadCurrentPeriodId = async (propertyId: number) => {
+    try {
+      const periods = await api.get<{ periods: FinancialPeriod[] }>(
+        `/financial-periods?property_id=${propertyId}`
+      );
+      const period = periods.periods?.find(
+        (p: FinancialPeriod) => p.period_year === selectedYear && p.period_month === selectedMonth
+      );
+      if (period) {
+        setCurrentPeriodId(period.id);
+      }
+    } catch (err) {
+      console.error('Failed to load period ID:', err);
+    }
+  };
 
   const loadInitialData = async () => {
     try {
@@ -566,15 +591,19 @@ export default function FinancialCommand() {
     // Auto-select first available document type
     if (availableDocuments.length > 0) {
       const firstDoc = availableDocuments.find(d => 
-        (d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow') &&
+        (d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement') &&
         d.extraction_status === 'completed'
       ) || availableDocuments.find(d => 
-        d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow'
+        d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement'
       );
       
-      if (firstDoc && (firstDoc.document_type === 'income_statement' || firstDoc.document_type === 'balance_sheet' || firstDoc.document_type === 'cash_flow')) {
+      if (firstDoc && (firstDoc.document_type === 'income_statement' || firstDoc.document_type === 'balance_sheet' || firstDoc.document_type === 'cash_flow' || firstDoc.document_type === 'mortgage_statement')) {
         setSelectedStatementType(firstDoc.document_type);
-        loadFullFinancialData(firstDoc.document_type);
+        if (firstDoc.document_type === 'mortgage_statement') {
+          // Mortgage statements are handled differently
+        } else {
+          loadFullFinancialData(firstDoc.document_type);
+        }
       }
     }
   };
@@ -787,7 +816,7 @@ export default function FinancialCommand() {
 
                   {/* Statement Type Selector */}
                   <div className="flex gap-2 mb-4 flex-wrap">
-                    {(['income_statement', 'balance_sheet', 'cash_flow'] as const).map((type) => {
+                    {(['income_statement', 'balance_sheet', 'cash_flow', 'mortgage_statement'] as const).map((type) => {
                       const docs = availableDocuments.filter(d => d.document_type === type);
                       const doc = docs.find(d => d.extraction_status === 'completed') || docs[0];
                       return (
@@ -795,7 +824,11 @@ export default function FinancialCommand() {
                           key={type}
                           onClick={() => {
                             setSelectedStatementType(type);
-                            loadFullFinancialData(type);
+                            if (type === 'mortgage_statement') {
+                              // Mortgage statements handled separately
+                            } else {
+                              loadFullFinancialData(type);
+                            }
                           }}
                           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                             selectedStatementType === type
@@ -825,7 +858,7 @@ export default function FinancialCommand() {
                       <div className="text-sm font-medium mb-2">Available Documents:</div>
                       <div className="text-xs text-text-secondary space-y-1">
                         {availableDocuments
-                          .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow')
+                          .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement')
                           .map((doc, i) => (
                             <div key={i}>
                               {doc.document_type.replace('_', ' ')} - {doc.extraction_status} (ID: {doc.id})
@@ -835,13 +868,40 @@ export default function FinancialCommand() {
                     </div>
                   )}
 
+                  {/* Mortgage Statement Display */}
+                  {selectedStatementType === 'mortgage_statement' && selectedProperty && currentPeriodId ? (
+                    <div className="space-y-6">
+                      <Card className="p-6">
+                        <h3 className="text-lg font-semibold mb-4">Mortgage Statements</h3>
+                        <MortgageDataTable
+                          propertyId={selectedProperty.id}
+                          periodId={currentPeriodId}
+                          onViewDetail={(mortgageId) => setSelectedMortgageId(mortgageId)}
+                        />
+                      </Card>
+                      {selectedProperty && currentPeriodId && (
+                        <Card className="p-6">
+                          <h3 className="text-lg font-semibold mb-4">Mortgage Metrics</h3>
+                          <MortgageMetrics
+                            propertyId={selectedProperty.id}
+                            periodId={currentPeriodId}
+                          />
+                        </Card>
+                      )}
+                    </div>
+                  ) : selectedStatementType === 'mortgage_statement' ? (
+                    <div className="text-center py-8 text-text-secondary">
+                      Please select a property and period to view mortgage statements.
+                    </div>
+                  ) : null}
+
                   {/* Financial Data Display */}
-                  {loadingFinancialData ? (
+                  {selectedStatementType !== 'mortgage_statement' && loadingFinancialData ? (
                     <div className="text-center py-8">
                       <div className="text-text-secondary">Loading complete financial document data...</div>
                       <div className="text-xs text-text-tertiary mt-2">Fetching all line items with zero data loss</div>
                     </div>
-                  ) : financialData && financialData.items && financialData.items.length > 0 ? (
+                  ) : selectedStatementType !== 'mortgage_statement' && financialData && financialData.items && financialData.items.length > 0 ? (
                     <Card className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div>
@@ -1462,6 +1522,14 @@ export default function FinancialCommand() {
           </div>
         )}
       </div>
+      
+      {/* Mortgage Detail Modal */}
+      {selectedMortgageId && (
+        <MortgageDetail
+          mortgageId={selectedMortgageId}
+          onClose={() => setSelectedMortgageId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -13,8 +13,13 @@ import logging
 from app.db.database import get_db
 from app.services.dscr_monitoring_service import DSCRMonitoringService
 from app.services.committee_notification_service import CommitteeNotificationService
+from app.services.alert_correlation_service import AlertCorrelationService
+from app.services.alert_escalation_service import AlertEscalationService
+from app.services.alert_prioritization_service import AlertPrioritizationService
 from app.models.committee_alert import CommitteeAlert, AlertType, AlertStatus, AlertSeverity, CommitteeType
 from app.models.property import Property
+from app.models.user import User
+from app.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/risk-alerts", tags=["risk_alerts"])
 logger = logging.getLogger(__name__)
@@ -744,4 +749,287 @@ def get_exit_strategy(
         "property_code": property.property_code,
         "strategies": [],
         "message": "Exit strategy analysis endpoint - implementation pending"
+    }
+
+
+# Phase 10: Enhanced API Endpoints
+
+@router.get("/summary")
+def get_alerts_summary(
+    property_id: Optional[int] = Query(None),
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get comprehensive alert summary for dashboard
+    
+    Returns counts by status, severity, type, and trends
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    
+    query = db.query(CommitteeAlert).filter(
+        CommitteeAlert.triggered_at >= cutoff_date
+    )
+    
+    if property_id:
+        query = query.filter(CommitteeAlert.property_id == property_id)
+    
+    alerts = query.all()
+    
+    # Counts by status
+    by_status = {}
+    for status in AlertStatus:
+        count = len([a for a in alerts if a.status == status])
+        if count > 0:
+            by_status[status.value] = count
+    
+    # Counts by severity
+    by_severity = {}
+    for severity in AlertSeverity:
+        count = len([a for a in alerts if a.severity == severity])
+        if count > 0:
+            by_severity[severity.value] = count
+    
+    # Counts by type
+    by_type = {}
+    for alert_type in AlertType:
+        count = len([a for a in alerts if a.alert_type == alert_type])
+        if count > 0:
+            by_type[alert_type.value] = count
+    
+    # Active alerts requiring attention
+    active_critical = len([a for a in alerts if a.status == AlertStatus.ACTIVE and a.severity in [AlertSeverity.CRITICAL, AlertSeverity.URGENT]])
+    
+    return {
+        "success": True,
+        "period_days": days,
+        "total_alerts": len(alerts),
+        "active_alerts": len([a for a in alerts if a.status == AlertStatus.ACTIVE]),
+        "critical_active": active_critical,
+        "by_status": by_status,
+        "by_severity": by_severity,
+        "by_type": by_type,
+        "property_id": property_id
+    }
+
+
+@router.get("/trends")
+def get_alert_trends(
+    property_id: Optional[int] = Query(None),
+    days: int = Query(default=90, ge=7, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get alert trends over time
+    
+    Returns daily/weekly counts for trend analysis
+    """
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    
+    query = db.query(CommitteeAlert).filter(
+        CommitteeAlert.triggered_at >= cutoff_date
+    )
+    
+    if property_id:
+        query = query.filter(CommitteeAlert.property_id == property_id)
+    
+    alerts = query.all()
+    
+    # Group by date
+    daily_counts = defaultdict(int)
+    for alert in alerts:
+        date_key = alert.triggered_at.date().isoformat() if alert.triggered_at else None
+        if date_key:
+            daily_counts[date_key] += 1
+    
+    # Convert to sorted list
+    trends = sorted([
+        {"date": date, "count": count}
+        for date, count in daily_counts.items()
+    ], key=lambda x: x["date"])
+    
+    return {
+        "success": True,
+        "period_days": days,
+        "trends": trends,
+        "total_alerts": len(alerts),
+        "property_id": property_id
+    }
+
+
+@router.post("/bulk-acknowledge")
+def bulk_acknowledge_alerts(
+    alert_ids: List[int],
+    acknowledged_by: int,
+    notes: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Bulk acknowledge multiple alerts"""
+    alerts = db.query(CommitteeAlert).filter(
+        CommitteeAlert.id.in_(alert_ids),
+        CommitteeAlert.status == AlertStatus.ACTIVE
+    ).all()
+    
+    if not alerts:
+        raise HTTPException(status_code=404, detail="No active alerts found")
+    
+    acknowledged_count = 0
+    for alert in alerts:
+        alert.status = AlertStatus.ACKNOWLEDGED
+        alert.acknowledged_at = datetime.utcnow()
+        alert.acknowledged_by = acknowledged_by
+        if notes:
+            alert.alert_metadata = alert.alert_metadata or {}
+            alert.alert_metadata["bulk_acknowledge_notes"] = notes
+        acknowledged_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "acknowledged": acknowledged_count,
+        "total_requested": len(alert_ids)
+    }
+
+
+@router.get("/{alert_id}/related")
+def get_related_alerts(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get alerts related to a specific alert"""
+    alert = db.query(CommitteeAlert).filter(CommitteeAlert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    correlation_service = AlertCorrelationService(db)
+    
+    # Get related alerts (same property, period, or correlation group)
+    related = db.query(CommitteeAlert).filter(
+        CommitteeAlert.id != alert_id,
+        CommitteeAlert.property_id == alert.property_id
+    )
+    
+    if alert.financial_period_id:
+        related = related.filter(
+            CommitteeAlert.financial_period_id == alert.financial_period_id
+        )
+    
+    if alert.correlation_group_id:
+        related = related.filter(
+            CommitteeAlert.correlation_group_id == alert.correlation_group_id
+        )
+    
+    related_alerts = related.limit(20).all()
+    
+    return {
+        "success": True,
+        "alert_id": alert_id,
+        "related_alerts": [a.to_dict() for a in related_alerts],
+        "total": len(related_alerts)
+    }
+
+
+@router.post("/{alert_id}/escalate")
+def escalate_alert(
+    alert_id: int,
+    reason: str,
+    target_committee: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually escalate an alert"""
+    alert = db.query(CommitteeAlert).filter(CommitteeAlert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    escalation_service = AlertEscalationService(db)
+    
+    target_committee_enum = None
+    if target_committee:
+        try:
+            target_committee_enum = CommitteeType(target_committee)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid committee: {target_committee}")
+    
+    escalated_alert = escalation_service.escalate_alert_manually(
+        alert_id=alert_id,
+        reason=reason,
+        target_committee=target_committee_enum
+    )
+    
+    return {
+        "success": True,
+        "alert": escalated_alert.to_dict(),
+        "escalation_level": escalated_alert.escalation_level
+    }
+
+
+@router.get("/analytics")
+def get_alert_analytics(
+    property_id: Optional[int] = Query(None),
+    days: int = Query(default=90, ge=7, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get comprehensive alert analytics
+    
+    Returns resolution times, frequency analysis, type distribution, etc.
+    """
+    from datetime import datetime, timedelta
+    
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    
+    query = db.query(CommitteeAlert).filter(
+        CommitteeAlert.triggered_at >= cutoff_date
+    )
+    
+    if property_id:
+        query = query.filter(CommitteeAlert.property_id == property_id)
+    
+    alerts = query.all()
+    
+    # Resolution time analysis
+    resolved_alerts = [a for a in alerts if a.status == AlertStatus.RESOLVED and a.resolved_at and a.triggered_at]
+    resolution_times = []
+    for alert in resolved_alerts:
+        hours = (alert.resolved_at - alert.triggered_at).total_seconds() / 3600
+        resolution_times.append(hours)
+    
+    avg_resolution_hours = sum(resolution_times) / len(resolution_times) if resolution_times else None
+    
+    # Frequency by type
+    type_frequency = {}
+    for alert_type in AlertType:
+        count = len([a for a in alerts if a.alert_type == alert_type])
+        if count > 0:
+            type_frequency[alert_type.value] = count
+    
+    # Property comparison (if no property filter)
+    property_counts = {}
+    if not property_id:
+        for alert in alerts:
+            prop_id = alert.property_id
+            property_counts[prop_id] = property_counts.get(prop_id, 0) + 1
+    
+    return {
+        "success": True,
+        "period_days": days,
+        "total_alerts": len(alerts),
+        "resolved_count": len(resolved_alerts),
+        "average_resolution_hours": avg_resolution_hours,
+        "type_frequency": type_frequency,
+        "property_distribution": property_counts if not property_id else None,
+        "property_id": property_id
     }

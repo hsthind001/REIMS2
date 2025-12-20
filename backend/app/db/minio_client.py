@@ -3,8 +3,10 @@ from minio.error import S3Error
 from app.core.config import settings
 import io
 from typing import Optional
+import os
+from urllib.parse import urlparse, urlunparse
 
-# Create MinIO client
+# Create MinIO client for internal operations (uses Docker service name)
 minio_client = Minio(
     settings.MINIO_ENDPOINT,
     access_key=settings.MINIO_ACCESS_KEY,
@@ -145,6 +147,10 @@ def get_file_url(
     """
     Get presigned URL for file access
     
+    Uses host.docker.internal to connect to MinIO from inside Docker,
+    allowing us to generate presigned URLs with localhost:9000 that have
+    valid signatures.
+    
     Args:
         object_name: Name of the object in MinIO
         bucket_name: Target bucket name
@@ -155,15 +161,77 @@ def get_file_url(
     """
     try:
         from datetime import timedelta
-        url = minio_client.presigned_get_object(
-            bucket_name,
-            object_name,
-            expires=timedelta(seconds=expires_seconds)
-        )
-        # MinIO now generates URLs with correct external endpoint via MINIO_SERVER_URL
-        return url
+        import socket
+        
+        # Try to create a client that can reach MinIO via host.docker.internal
+        # This allows us to generate presigned URLs with localhost:9000
+        # First, try host.docker.internal (works on Docker Desktop and some Linux setups)
+        try:
+            # Create client using host.docker.internal to reach MinIO on host
+            external_client = Minio(
+                'host.docker.internal:9000',
+                access_key=settings.MINIO_ACCESS_KEY,
+                secret_key=settings.MINIO_SECRET_KEY,
+                secure=settings.MINIO_SECURE
+            )
+            # Test connection by generating presigned URL
+            url = external_client.presigned_get_object(
+                bucket_name,
+                object_name,
+                expires=timedelta(seconds=expires_seconds)
+            )
+            # Replace host.docker.internal with localhost for browser access
+            url = url.replace('host.docker.internal', 'localhost')
+            return url
+        except Exception:
+            # If host.docker.internal doesn't work, try using gateway IP
+            # Get the Docker gateway IP (usually 172.17.0.1)
+            try:
+                gateway_ip = socket.gethostbyname('host.docker.internal')
+            except socket.gaierror:
+                # Fallback: use the gateway IP directly
+                gateway_ip = '172.17.0.1'
+            
+            try:
+                external_client = Minio(
+                    f'{gateway_ip}:9000',
+                    access_key=settings.MINIO_ACCESS_KEY,
+                    secret_key=settings.MINIO_SECRET_KEY,
+                    secure=settings.MINIO_SECURE
+                )
+                url = external_client.presigned_get_object(
+                    bucket_name,
+                    object_name,
+                    expires=timedelta(seconds=expires_seconds)
+                )
+                # Replace gateway IP with localhost
+                url = url.replace(gateway_ip, 'localhost')
+                return url
+            except Exception:
+                # Final fallback: generate with internal client and replace hostname
+                # Signature will be invalid, but MinIO might accept it if MINIO_SERVER_URL is set
+                url = minio_client.presigned_get_object(
+                    bucket_name,
+                    object_name,
+                    expires=timedelta(seconds=expires_seconds)
+                )
+                parsed = urlparse(url)
+                if parsed.hostname in ['minio', 'reims-minio']:
+                    new_netloc = f'localhost:{parsed.port or 9000}'
+                    url = urlunparse((
+                        parsed.scheme,
+                        new_netloc,
+                        parsed.path,
+                        parsed.params,
+                        parsed.query,
+                        parsed.fragment
+                    ))
+                return url
     except S3Error as e:
-        print(f"Error generating URL: {e}")
+        print(f"Error generating presigned URL: {e}")
+        return None
+    except Exception as e:
+        print(f"Error generating presigned URL: {e}")
         return None
 
 

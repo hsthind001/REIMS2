@@ -47,6 +47,7 @@ class FinancialPeriod(Base):
     cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="period", cascade="all, delete-orphan")
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="period", cascade="all, delete-orphan")
     rent_roll_data = relationship("RentRollData", back_populates="period", cascade="all, delete-orphan")
+    mortgage_statements = relationship("MortgageStatementData", back_populates="period", cascade="all, delete-orphan")
     financial_metrics = relationship("FinancialMetrics", back_populates="period", cascade="all, delete-orphan")
     
     def __repr__(self):

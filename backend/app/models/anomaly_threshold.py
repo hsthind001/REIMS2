@@ -5,14 +5,14 @@ from app.db.database import Base
 
 
 class AnomalyThreshold(Base):
-    """Store absolute value thresholds for anomaly detection per account code"""
+    """Store percentage-based thresholds for anomaly detection per account code. Thresholds stored as decimals (e.g., 0.01 = 1%)"""
     
     __tablename__ = "anomaly_thresholds"
 
     id = Column(Integer, primary_key=True, index=True)
     account_code = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "5400-0002"
     account_name = Column(String(255), nullable=False)  # e.g., "Salaries Expense"
-    threshold_value = Column(DECIMAL(15, 2), nullable=False)  # Absolute value threshold
+    threshold_value = Column(DECIMAL(15, 4), nullable=False)  # Percentage threshold as decimal (e.g., 0.01 = 1%)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     
     # Timestamps

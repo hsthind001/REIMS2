@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import '../App.css'
+import { propertyService } from '../lib/property'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1'
 
@@ -54,6 +55,37 @@ const detectDocumentTypeFromFilename = (filename: string): string => {
     return 'rent_roll'
   }
   
+  // Mortgage Statement patterns (matching backend patterns)
+  if (filenameLower.includes('mortgage') && filenameLower.includes('statement')) {
+    return 'mortgage_statement'
+  }
+  if (filenameLower.match(/\bmortgage\b/) || filenameLower.includes('mortgage stmt')) {
+    return 'mortgage_statement'
+  }
+  if (filenameLower.includes('loan') && filenameLower.includes('statement')) {
+    return 'mortgage_statement'
+  }
+  // Escrow patterns (common in mortgage statements)
+  if (filenameLower.includes('escrow') && (filenameLower.includes('statement') || filenameLower.includes('loan') || filenameLower.includes('pdf'))) {
+    return 'mortgage_statement'
+  }
+  if (filenameLower.includes('loan') && filenameLower.includes('escrow')) {
+    return 'mortgage_statement'
+  }
+  // Lender names with loan/escrow (Wells Fargo, CIBC, NorthMarq, etc.)
+  const mortgageLenders = ['wells fargo', 'cibc', 'northmarq', 'chase', 'bank of america', 'citibank', 'us bank', 'pnc', 'td bank']
+  if (mortgageLenders.some(lender => filenameLower.includes(lender)) && (filenameLower.includes('loan') || filenameLower.includes('escrow') || filenameLower.includes('statement'))) {
+    return 'mortgage_statement'
+  }
+  // Loan with number pattern (e.g., "loan 1008")
+  if (filenameLower.includes('loan') && filenameLower.match(/\d{4,}/)) {
+    return 'mortgage_statement'
+  }
+  // Escrow with number pattern
+  if (filenameLower.includes('escrow') && filenameLower.match(/\d{4,}/)) {
+    return 'mortgage_statement'
+  }
+  
   return 'unknown'
 }
 
@@ -74,30 +106,11 @@ export default function BulkImport() {
 
   const fetchProperties = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/properties`, {
-        credentials: 'include'
-      })
-      
-      if (!response.ok) {
-        console.error(`Failed to fetch properties: ${response.status} ${response.statusText}`)
-        setError(`Failed to load properties: ${response.statusText}`)
-        return
-      }
-      
-      const data = await response.json()
-      
-      // Handle both response formats: direct array or wrapped in properties key
-      let props: any[] = []
-      if (Array.isArray(data)) {
-        props = data
-      } else if (data.properties && Array.isArray(data.properties)) {
-        props = data.properties
-      } else if (data.items && Array.isArray(data.items)) {
-        props = data.items
-      }
+      // Use propertyService which handles authentication properly
+      const props = await propertyService.getAllProperties()
       
       // Filter out inactive properties and sort intelligently
-      props = props
+      const filteredProps = props
         .filter((p: any) => p.status !== 'inactive' && p.status !== 'deleted')
         .sort((a: any, b: any) => {
           // Sort by property_code if available, otherwise by name
@@ -110,7 +123,7 @@ export default function BulkImport() {
           return 0
         })
       
-      setProperties(props)
+      setProperties(filteredProps)
       
       if (props.length > 0) {
         // Intelligently select the first property with a code, or just the first one
@@ -292,6 +305,7 @@ export default function BulkImport() {
       'income_statement': 'Income Statement',
       'cash_flow': 'Cash Flow',
       'rent_roll': 'Rent Roll',
+      'mortgage_statement': 'Mortgage Statement',
       'unknown': 'Unknown'
     }
     return labels[type] || type
@@ -443,6 +457,7 @@ export default function BulkImport() {
               <option value="income_statement">Income Statement Only</option>
               <option value="cash_flow">Cash Flow Only</option>
               <option value="rent_roll">Rent Roll Only</option>
+              <option value="mortgage_statement">Mortgage Statement Only</option>
             </select>
             <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
               {fileTypeFilter === 'all' ? '📄 All files will be shown' : `📊 Only ${fileTypeFilter.replace('_', ' ')} files will be shown`}

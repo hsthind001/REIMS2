@@ -67,8 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err: any) {
       console.log('ℹ️ AuthContext: Not authenticated or error:', err.status || err.message);
       setUser(null);
-      // Don't set error on initial check if not authenticated or timeout
-      if (err.status !== 401 && err.message !== 'Authentication check timeout') {
+      // Don't set error on initial check if not authenticated, timeout, or network error
+      // Network errors during initial check are expected if backend is starting up
+      if (err.status !== 401 && 
+          err.message !== 'Authentication check timeout' &&
+          !(err.status === 0 || err.message?.includes('Network error'))) {
         console.warn('⚠️ AuthContext: Authentication error:', err.message);
         setError(err.message || 'Failed to check authentication');
       }

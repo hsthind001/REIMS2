@@ -42,7 +42,16 @@
       "Bash(git config:*)",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(pdftotext:*)",
+      "Bash(for file in \"/home/hsthind/Downloads/Statements-ESP/Mortgage statements/2025\"/*.pdf)",
+      "Bash(done)",
+      "Bash(while read fname)",
+      "Bash(do:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker restart:*)",
+      "Bash(python -m alembic revision:*)",
+      "Bash(PGPASSWORD=reims docker exec:*)"
     ]
   }
 }

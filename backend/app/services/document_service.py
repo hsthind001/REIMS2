@@ -417,7 +417,8 @@ class DocumentService:
             'balance_sheet': 'balance-sheet',
             'income_statement': 'income-statement',
             'cash_flow': 'cash-flow',
-            'rent_roll': 'rent-roll'
+            'rent_roll': 'rent-roll',
+            'mortgage_statement': 'mortgage-statement'
         }
         doc_folder = doc_type_folders.get(document_type, document_type)
         
@@ -440,7 +441,8 @@ class DocumentService:
             doc_type_map = {
                 'balance_sheet': 'Balance_Sheet',
                 'income_statement': 'Income_Statement',
-                'cash_flow': 'Cash_Flow_Statement'
+                'cash_flow': 'Cash_Flow_Statement',
+                'mortgage_statement': 'Mortgage_Statement'
             }
             type_name = doc_type_map.get(document_type, document_type)
             # Include month in filename to avoid overwrites (month number format: 01-12)

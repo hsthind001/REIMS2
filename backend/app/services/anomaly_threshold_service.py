@@ -1,7 +1,8 @@
 """
 Anomaly Threshold Service
 
-Manages absolute value thresholds for anomaly detection per account code.
+Manages percentage-based thresholds for anomaly detection per account code.
+Thresholds are stored as decimals (e.g., 0.01 = 1%).
 Provides methods to get, create, update, and delete thresholds, as well as
 manage the global default threshold.
 """
@@ -18,7 +19,7 @@ class AnomalyThresholdService:
     """Service for managing anomaly detection thresholds"""
     
     DEFAULT_THRESHOLD_KEY = "anomaly_threshold_default"
-    SYSTEM_FALLBACK_THRESHOLD = Decimal("1000.00")  # Fallback if no default set
+    SYSTEM_FALLBACK_THRESHOLD = Decimal("0.01")  # Fallback if no default set (1% = 0.01)
     
     def __init__(self, db: Session):
         self.db = db
@@ -157,7 +158,7 @@ class AnomalyThresholdService:
             config = SystemConfig(
                 config_key=self.DEFAULT_THRESHOLD_KEY,
                 config_value=str(threshold_value),
-                description="Default absolute value threshold for anomaly detection"
+                description="Default percentage threshold for anomaly detection (1% = 0.01)"
             )
             self.db.add(config)
         

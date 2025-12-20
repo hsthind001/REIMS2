@@ -19,6 +19,7 @@ from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.financial_metrics import FinancialMetrics
 from app.models.income_statement_data import IncomeStatementData
+from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.committee_alert import CommitteeAlert, AlertType, AlertSeverity, AlertStatus, CommitteeType
 from app.models.workflow_lock import WorkflowLock, LockReason, LockScope, LockStatus
 
@@ -250,13 +251,42 @@ class DSCRMonitoringService:
         
         DSCR = NOI / (Principal + Interest)
         
+        PREFERRED: Use mortgage statement data when available (most accurate)
+        FALLBACK: Use income statement interest + estimated principal
+        
         IMPORTANT: Only include actual debt service payments:
         - Mortgage Interest (7010-0000) - YES
-        - Principal payments - Need to calculate or get from cash flow
+        - Principal payments - YES (from mortgage statements or cash flow)
         - Depreciation (7020-0000) - NO (non-cash expense)
         - Amortization (7030-0000) - NO (non-cash expense)
         """
-        # Get ONLY Mortgage Interest (7010-0000) - this is the interest portion of debt service
+        # PREFERRED: Try to get debt service from mortgage statement data first
+        mortgage_data = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == financial_period_id
+        ).all()
+        
+        if mortgage_data:
+            # Sum annual debt service from all mortgages
+            total_annual_debt_service = Decimal("0")
+            for mortgage in mortgage_data:
+                if mortgage.annual_debt_service:
+                    total_annual_debt_service += Decimal(str(mortgage.annual_debt_service))
+                elif mortgage.monthly_debt_service:
+                    # Convert monthly to annual
+                    total_annual_debt_service += Decimal(str(mortgage.monthly_debt_service)) * Decimal("12")
+                else:
+                    # Calculate from principal_due + interest_due
+                    principal = Decimal(str(mortgage.principal_due or 0))
+                    interest = Decimal(str(mortgage.interest_due or 0))
+                    monthly = principal + interest
+                    total_annual_debt_service += monthly * Decimal("12")
+            
+            if total_annual_debt_service > 0:
+                logger.debug(f"Using mortgage statement data for debt service: {total_annual_debt_service}")
+                return total_annual_debt_service
+        
+        # FALLBACK: Get ONLY Mortgage Interest (7010-0000) - this is the interest portion of debt service
         from app.models.income_statement_header import IncomeStatementHeader
         mortgage_interest = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,

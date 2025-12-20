@@ -11,8 +11,10 @@ const FinancialCommand = lazy(() => import('./pages/FinancialCommand'))
 const DataControlCenter = lazy(() => import('./pages/DataControlCenter'))
 const AdminHub = lazy(() => import('./pages/AdminHub'))
 const RiskManagement = lazy(() => import('./pages/RiskManagement'))
+const AlertRules = lazy(() => import('./pages/AlertRules'))
 const BulkImport = lazy(() => import('./pages/BulkImport'))
 const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
+const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -47,6 +49,10 @@ function AppContent() {
       // If navigating to review-queue, ensure we're on operations page
       if (hash === 'review-queue' && currentPage !== 'operations') {
         setCurrentPage('operations')
+      }
+      // If navigating to alert-rules, ensure we're on risk page
+      if (hash === 'alert-rules' && currentPage !== 'risk') {
+        setCurrentPage('risk')
       }
     }
 
@@ -102,6 +108,10 @@ function AppContent() {
         case 'users':
           return <AdminHub />
         case 'risk':
+          // Check if hash route is alert-rules
+          if (hashRoute === 'alert-rules') {
+            return <AlertRules />
+          }
           return <RiskManagement />
         default:
           return <CommandCenter />
@@ -141,6 +151,7 @@ function AppContent() {
         <div className="header-right">
           {isAuthenticated ? (
             <>
+              <NotificationCenter />
               <span className="user-info">👤 {user?.username}</span>
               <button className="btn-logout" onClick={handleLogout}>Logout</button>
             </>

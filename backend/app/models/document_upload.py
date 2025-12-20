@@ -59,6 +59,7 @@ class DocumentUpload(Base):
     cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="upload", cascade="all, delete-orphan")
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="upload", cascade="all, delete-orphan")
     rent_roll_data = relationship("RentRollData", back_populates="upload", cascade="all, delete-orphan")
+    mortgage_statement_data = relationship("MortgageStatementData", back_populates="upload", cascade="all, delete-orphan")
     validation_results = relationship("ValidationResult", back_populates="upload", cascade="all, delete-orphan")
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
     concordance_records = relationship("ConcordanceTable", back_populates="upload", cascade="all, delete-orphan")

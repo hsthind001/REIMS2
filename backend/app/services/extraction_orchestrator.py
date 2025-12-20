@@ -17,6 +17,8 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
+from app.models.mortgage_statement_data import MortgageStatementData
+from app.models.lender import Lender
 from app.models.financial_metrics import FinancialMetrics
 from app.models.chart_of_accounts import ChartOfAccounts
 from app.models.extraction_field_metadata import ExtractionFieldMetadata
@@ -30,6 +32,8 @@ from app.services.concordance_service import ConcordanceService
 from app.db.minio_client import download_file
 from app.core.config import settings
 from app.services.deduplication_service import get_deduplication_service
+from app.services.alert_trigger_service import AlertTriggerService
+import json
 
 
 class ExtractionOrchestrator:
@@ -431,23 +435,47 @@ class ExtractionOrchestrator:
                         "error": "Failed to download PDF for table extraction"
                     }
             
-            # Step 1: Try table extraction first (highest accuracy)
-            parsed_data = self._extract_with_tables(pdf_data, upload.document_type)
-            
-            # Step 2: If table extraction yields no results, try template extractor
-            if not parsed_data.get("success") or not parsed_data.get("line_items"):
-                parsed_data = self.template_extractor.extract_using_template(
+            # Step 1: For mortgage statements, use mortgage extraction service
+            if upload.document_type == "mortgage_statement":
+                from app.services.mortgage_extraction_service import MortgageExtractionService
+                mortgage_service = MortgageExtractionService(self.db)
+                extraction_result = mortgage_service.extract_mortgage_data(
                     extracted_text=extracted_text,
-                    document_type=upload.document_type,
-                    template_name=None
+                    pdf_data=pdf_data
                 )
+                
+                if extraction_result.get("success"):
+                    parsed_data = {
+                        "success": True,
+                        "mortgage_data": extraction_result.get("mortgage_data", {}),
+                        "extraction_coordinates": extraction_result.get("extraction_coordinates", {}),
+                        "extraction_method": extraction_result.get("extraction_method", "template_patterns"),
+                        "confidence": extraction_result.get("confidence", confidence_score)
+                    }
+                    confidence_score = extraction_result.get("confidence", confidence_score)
+                else:
+                    parsed_data = {
+                        "success": False,
+                        "error": extraction_result.get("error", "Mortgage extraction failed")
+                    }
+            else:
+                # Step 1: Try table extraction first (highest accuracy)
+                parsed_data = self._extract_with_tables(pdf_data, upload.document_type)
+                
+                # Step 2: If table extraction yields no results, try template extractor
+                if not parsed_data.get("success") or not parsed_data.get("line_items"):
+                    parsed_data = self.template_extractor.extract_using_template(
+                        extracted_text=extracted_text,
+                        document_type=upload.document_type,
+                        template_name=None
+                    )
+                
+                # Step 3: If still no success, try fallback regex extraction
+                if not parsed_data.get("success") or not parsed_data.get("line_items"):
+                    parsed_data = self._fallback_extraction(extracted_text, upload.document_type)
             
-            # Step 3: If still no success, try fallback regex extraction
-            if not parsed_data.get("success") or not parsed_data.get("line_items"):
-                parsed_data = self._fallback_extraction(extracted_text, upload.document_type)
-            
-            # Step 4: Intelligent account matching
-            if parsed_data.get("line_items"):
+            # Step 4: Intelligent account matching (skip for mortgage statements)
+            if parsed_data.get("line_items") and upload.document_type != "mortgage_statement":
                 parsed_data["line_items"] = self._match_accounts_intelligent(
                     parsed_data["line_items"],
                     document_type=upload.document_type
@@ -476,6 +504,12 @@ class ExtractionOrchestrator:
                 )
             elif upload.document_type == "rent_roll":
                 records_inserted = self._insert_rent_roll_data(
+                    upload=upload,
+                    parsed_data=parsed_data,
+                    confidence_score=confidence_score
+                )
+            elif upload.document_type == "mortgage_statement":
+                records_inserted = self._insert_mortgage_statement_data(
                     upload=upload,
                     parsed_data=parsed_data,
                     confidence_score=confidence_score
@@ -1527,6 +1561,156 @@ class ExtractionOrchestrator:
         
         return records_inserted
     
+    def _insert_mortgage_statement_data(
+        self,
+        upload: DocumentUpload,
+        parsed_data: Dict,
+        confidence_score: float
+    ) -> int:
+        """
+        Insert mortgage statement data
+        
+        DELETE and REPLACE strategy: Deletes all existing mortgage data
+        for this property+period before inserting new data.
+        """
+        from app.services.mortgage_extraction_service import MortgageExtractionService
+        from datetime import date
+        
+        mortgage_data = parsed_data.get("mortgage_data", {})
+        if not mortgage_data:
+            return 0
+        
+        records_inserted = 0
+        
+        # DELETE all existing mortgage data for this property+period
+        deleted_count = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == upload.property_id,
+            MortgageStatementData.period_id == upload.period_id
+        ).delete(synchronize_session=False)
+        
+        if deleted_count > 0:
+            print(f"🗑️  Deleted {deleted_count} existing mortgage records for property {upload.property_id}, period {upload.period_id}")
+        
+        # Helper to safely convert to Decimal
+        def to_decimal(val):
+            if val is None:
+                return None
+            if isinstance(val, Decimal):
+                return val
+            try:
+                return Decimal(str(val))
+            except:
+                return None
+        
+        # Helper to safely convert date
+        def to_date(date_val):
+            if not date_val:
+                return None
+            if isinstance(date_val, date):
+                return date_val
+            if isinstance(date_val, datetime):
+                return date_val.date()
+            if isinstance(date_val, str):
+                try:
+                    return datetime.strptime(date_val, '%Y-%m-%d').date()
+                except:
+                    pass
+            return None
+        
+        # Extract coordinates if available
+        extraction_coords = parsed_data.get("extraction_coordinates", {})
+        extraction_coordinates_json = json.dumps(extraction_coords) if extraction_coords else None
+        
+        # Get loan number (required)
+        loan_number = mortgage_data.get("loan_number")
+        if not loan_number:
+            print("⚠️  Warning: No loan number extracted from mortgage statement")
+            loan_number = "UNKNOWN"
+        
+        # Create mortgage statement record
+        mortgage_record = MortgageStatementData(
+            property_id=upload.property_id,
+            period_id=upload.period_id,
+            upload_id=upload.id,
+            lender_id=mortgage_data.get("lender_id"),
+            
+            # Loan Identification
+            loan_number=str(loan_number),
+            loan_type=mortgage_data.get("loan_type"),
+            property_address=mortgage_data.get("property_address"),
+            borrower_name=mortgage_data.get("borrower_name"),
+            
+            # Statement Metadata
+            statement_date=to_date(mortgage_data.get("statement_date")),
+            payment_due_date=to_date(mortgage_data.get("payment_due_date")),
+            statement_period_start=to_date(mortgage_data.get("statement_period_start")),
+            statement_period_end=to_date(mortgage_data.get("statement_period_end")),
+            
+            # Current Balances
+            principal_balance=to_decimal(mortgage_data.get("principal_balance")) or Decimal('0'),
+            tax_escrow_balance=to_decimal(mortgage_data.get("tax_escrow_balance")) or Decimal('0'),
+            insurance_escrow_balance=to_decimal(mortgage_data.get("insurance_escrow_balance")) or Decimal('0'),
+            reserve_balance=to_decimal(mortgage_data.get("reserve_balance")) or Decimal('0'),
+            other_escrow_balance=to_decimal(mortgage_data.get("other_escrow_balance")) or Decimal('0'),
+            suspense_balance=to_decimal(mortgage_data.get("suspense_balance")) or Decimal('0'),
+            total_loan_balance=to_decimal(mortgage_data.get("total_loan_balance")),
+            
+            # Current Period Payment Breakdown
+            principal_due=to_decimal(mortgage_data.get("principal_due")),
+            interest_due=to_decimal(mortgage_data.get("interest_due")),
+            tax_escrow_due=to_decimal(mortgage_data.get("tax_escrow_due")),
+            insurance_escrow_due=to_decimal(mortgage_data.get("insurance_escrow_due")),
+            reserve_due=to_decimal(mortgage_data.get("reserve_due")),
+            late_fees=to_decimal(mortgage_data.get("late_fees")) or Decimal('0'),
+            other_fees=to_decimal(mortgage_data.get("other_fees")) or Decimal('0'),
+            total_payment_due=to_decimal(mortgage_data.get("total_payment_due")),
+            
+            # Year-to-Date Totals
+            ytd_principal_paid=to_decimal(mortgage_data.get("ytd_principal_paid")) or Decimal('0'),
+            ytd_interest_paid=to_decimal(mortgage_data.get("ytd_interest_paid")) or Decimal('0'),
+            ytd_taxes_disbursed=to_decimal(mortgage_data.get("ytd_taxes_disbursed")) or Decimal('0'),
+            ytd_insurance_disbursed=to_decimal(mortgage_data.get("ytd_insurance_disbursed")) or Decimal('0'),
+            ytd_reserve_disbursed=to_decimal(mortgage_data.get("ytd_reserve_disbursed")) or Decimal('0'),
+            ytd_total_paid=to_decimal(mortgage_data.get("ytd_total_paid")),
+            
+            # Loan Terms
+            original_loan_amount=to_decimal(mortgage_data.get("original_loan_amount")),
+            interest_rate=to_decimal(mortgage_data.get("interest_rate")),
+            loan_term_months=mortgage_data.get("loan_term_months"),
+            maturity_date=to_date(mortgage_data.get("maturity_date")),
+            origination_date=to_date(mortgage_data.get("origination_date")),
+            payment_frequency=mortgage_data.get("payment_frequency"),
+            amortization_type=mortgage_data.get("amortization_type"),
+            
+            # Calculated Fields
+            remaining_term_months=mortgage_data.get("remaining_term_months"),
+            annual_debt_service=to_decimal(mortgage_data.get("annual_debt_service")),
+            monthly_debt_service=to_decimal(mortgage_data.get("monthly_debt_service")),
+            
+            # Extraction Quality
+            extraction_confidence=Decimal(str(confidence_score)),
+            extraction_method=parsed_data.get("extraction_method", "template_patterns"),
+            extraction_coordinates=extraction_coordinates_json,
+            
+            # Review Workflow
+            needs_review=confidence_score < 85.0,
+            reviewed=False,
+            
+            # Validation
+            validation_score=None,  # Will be calculated by validation service
+            has_errors=False
+        )
+        
+        self.db.add(mortgage_record)
+        self.db.commit()
+        self.db.refresh(mortgage_record)
+        
+        records_inserted = 1
+        
+        print(f"✅ Inserted mortgage statement record (loan_number: {loan_number}, confidence: {confidence_score:.1f}%)")
+        
+        return records_inserted
+    
     def _calculate_financial_metrics(self, upload: DocumentUpload):
         """
         Calculate comprehensive financial metrics using MetricsService
@@ -1537,6 +1721,8 @@ class ExtractionOrchestrator:
         - Cash flow summaries
         - Rent roll occupancy
         - Performance metrics
+        
+        After metrics calculation, automatically triggers alert evaluation.
         """
         try:
             from app.services.metrics_service import MetricsService
@@ -1546,6 +1732,21 @@ class ExtractionOrchestrator:
                 property_id=upload.property_id,
                 period_id=upload.period_id
             )
+            
+            # Trigger alert evaluation after metrics calculation (Phase 2)
+            if metrics:
+                try:
+                    alert_trigger = AlertTriggerService(self.db)
+                    alerts = alert_trigger.evaluate_and_trigger_alerts(
+                        property_id=upload.property_id,
+                        period_id=upload.period_id,
+                        metrics=metrics
+                    )
+                    if alerts:
+                        print(f"✅ Triggered {len(alerts)} alerts for property {upload.property_id}, period {upload.period_id}")
+                except Exception as alert_error:
+                    # Don't fail extraction if alert generation fails
+                    print(f"⚠️  Alert evaluation failed (non-blocking): {str(alert_error)}")
             
             return metrics
         
@@ -2109,6 +2310,13 @@ class ExtractionOrchestrator:
                 return self.table_parser.extract_cash_flow_table(pdf_data)
             elif document_type == "rent_roll":
                 return self.table_parser.extract_rent_roll_table(pdf_data)
+            elif document_type == "mortgage_statement":
+                # Mortgage statements use template-based extraction (field patterns)
+                # Table extraction not as applicable for mortgage statements
+                return {
+                    "success": False,
+                    "error": "Use template extraction for mortgage statements"
+                }
             else:
                 return {
                     "success": False,

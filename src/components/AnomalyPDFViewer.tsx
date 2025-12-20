@@ -7,6 +7,7 @@ import 'react-pdf/dist/esm/Page/TextLayer.css'
 // Set up PDF.js worker
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`
+  console.log('PDF.js worker configured:', pdfjs.GlobalWorkerOptions.workerSrc)
 }
 
 interface AnomalyPDFViewerProps {
@@ -43,15 +44,26 @@ export function AnomalyPDFViewer({
     }
   }, [coordinates])
 
+  // Log PDF URL for debugging
+  useEffect(() => {
+    if (pdfUrl) {
+      console.log('AnomalyPDFViewer: PDF URL:', pdfUrl)
+      console.log('AnomalyPDFViewer: Coordinates:', coordinates)
+    }
+  }, [pdfUrl, coordinates])
+
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    console.log('AnomalyPDFViewer: PDF loaded successfully, pages:', numPages)
     setNumPages(numPages)
     setLoading(false)
     setError(null)
   }
 
   const onDocumentLoadError = (error: Error) => {
-    console.error('PDF Load Error:', error)
-    setError('Failed to load PDF')
+    console.error('AnomalyPDFViewer: PDF Load Error:', error)
+    console.error('AnomalyPDFViewer: PDF URL:', pdfUrl)
+    // Set error to trigger iframe fallback
+    setError('Using iframe fallback')
     setLoading(false)
   }
 
@@ -127,105 +139,192 @@ export function AnomalyPDFViewer({
   const highlightStyle = getHighlightStyle()
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'white' }}>
       {/* Header with controls */}
-      <div className="flex items-center justify-between p-4 border-b bg-gray-50">
-        <div className="flex items-center gap-2">
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        padding: '1rem', 
+        borderBottom: '1px solid #e5e7eb', 
+        backgroundColor: '#f9fafb' 
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <button
             onClick={goToPrevPage}
             disabled={pageNumber <= 1}
-            className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+            style={{
+              padding: '0.5rem',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              cursor: pageNumber <= 1 ? 'not-allowed' : 'pointer',
+              opacity: pageNumber <= 1 ? 0.5 : 1
+            }}
+            onMouseOver={(e) => pageNumber > 1 && (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             title="Previous page"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ChevronLeft size={20} />
           </button>
-          <span className="text-sm font-medium">
+          <span style={{ fontSize: '0.875rem', fontWeight: '500' }}>
             Page {pageNumber} of {numPages || '?'}
           </span>
           <button
             onClick={goToNextPage}
             disabled={pageNumber >= numPages}
-            className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+            style={{
+              padding: '0.5rem',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              cursor: pageNumber >= numPages ? 'not-allowed' : 'pointer',
+              opacity: pageNumber >= numPages ? 0.5 : 1
+            }}
+            onMouseOver={(e) => pageNumber < numPages && (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             title="Next page"
           >
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight size={20} />
           </button>
-          <div className="flex items-center gap-2 ml-4">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem' }}>
             <button
               onClick={zoomOut}
               disabled={scale <= 0.5}
-              className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+              style={{
+                padding: '0.5rem',
+                borderRadius: '4px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                cursor: scale <= 0.5 ? 'not-allowed' : 'pointer',
+                opacity: scale <= 0.5 ? 0.5 : 1
+              }}
+              onMouseOver={(e) => scale > 0.5 && (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               title="Zoom out"
             >
-              <ZoomOut className="w-5 h-5" />
+              <ZoomOut size={20} />
             </button>
-            <span className="text-sm w-16 text-center">{Math.round(scale * 100)}%</span>
+            <span style={{ fontSize: '0.875rem', width: '4rem', textAlign: 'center' }}>{Math.round(scale * 100)}%</span>
             <button
               onClick={zoomIn}
               disabled={scale >= 3.0}
-              className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+              style={{
+                padding: '0.5rem',
+                borderRadius: '4px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                cursor: scale >= 3.0 ? 'not-allowed' : 'pointer',
+                opacity: scale >= 3.0 ? 0.5 : 1
+              }}
+              onMouseOver={(e) => scale < 3.0 && (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               title="Zoom in"
             >
-              <ZoomIn className="w-5 h-5" />
+              <ZoomIn size={20} />
             </button>
           </div>
           {coordinates && (
-            <div className="ml-4 px-3 py-1 rounded text-xs font-medium"
-                 style={{
-                   backgroundColor: highlightType === 'actual' ? '#fff3cd' : '#d1ecf1',
-                   color: highlightType === 'actual' ? '#856404' : '#0c5460'
-                 }}>
+            <div style={{
+              marginLeft: '1rem',
+              padding: '0.25rem 0.75rem',
+              borderRadius: '4px',
+              fontSize: '0.75rem',
+              fontWeight: '500',
+              backgroundColor: highlightType === 'actual' ? '#fff3cd' : '#d1ecf1',
+              color: highlightType === 'actual' ? '#856404' : '#0c5460'
+            }}>
               {highlightType === 'actual' ? '📍 Actual Value' : '📍 Expected Value'}
             </div>
           )}
         </div>
         <button
           onClick={onClose}
-          className="p-2 rounded hover:bg-gray-100"
+          style={{
+            padding: '0.5rem',
+            borderRadius: '4px',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           title="Close"
         >
-          <X className="w-5 h-5" />
+          <X size={20} />
         </button>
       </div>
 
       {/* PDF Content */}
-      <div className="flex-1 overflow-auto p-4 flex justify-center bg-gray-50">
+      <div style={{ 
+        flex: 1, 
+        overflow: 'auto', 
+        padding: '1rem', 
+        display: 'flex', 
+        justifyContent: 'center', 
+        backgroundColor: '#f9fafb' 
+      }}>
         {loading && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading PDF...</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                border: '3px solid #e5e7eb',
+                borderTop: '3px solid #2563eb',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 1rem'
+              }}></div>
+              <p style={{ color: '#6b7280' }}>Loading PDF...</p>
             </div>
           </div>
         )}
 
-        {error && (
-          <div className="flex flex-col items-center justify-center h-full">
-            <div className="text-center text-red-600 mb-4 bg-red-50 p-4 rounded border border-red-200">
-              <p className="text-lg font-semibold mb-2">Failed to load PDF</p>
-              <p className="text-sm">Please try again or contact support.</p>
-            </div>
-            <div className="w-full h-full border border-gray-300 rounded">
+        {error && pdfUrl && pdfUrl.trim() !== '' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+            {error !== 'Using iframe fallback' && (
+              <div style={{ 
+                textAlign: 'center', 
+                color: '#dc2626', 
+                marginBottom: '1rem', 
+                backgroundColor: '#fef2f2', 
+                padding: '1rem', 
+                borderRadius: '4px', 
+                border: '1px solid #fecaca' 
+              }}>
+                <p style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>PDF Viewer Error</p>
+                <p style={{ fontSize: '0.875rem' }}>Using browser PDF viewer as fallback.</p>
+              </div>
+            )}
+            <div style={{ width: '100%', height: '100%', border: '1px solid #d1d5db', borderRadius: '4px' }}>
               <iframe
                 src={pdfUrl}
-                className="w-full h-full"
+                style={{ width: '100%', height: '100%', border: 'none', minHeight: '600px' }}
                 title="PDF Viewer"
-                style={{ minHeight: '600px' }}
               />
             </div>
           </div>
         )}
 
-        {!loading && !error && (
-          <div className="relative inline-block" ref={pageRef}>
+        {!loading && !error && pdfUrl && pdfUrl.trim() !== '' && (
+          <div style={{ position: 'relative', display: 'inline-block' }} ref={pageRef}>
             <Document
               file={pdfUrl}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={
-                <div className="flex flex-col items-center justify-center h-96">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-                  <p className="text-gray-600">Loading PDF...</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '24rem' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    border: '3px solid #e5e7eb',
+                    borderTop: '3px solid #2563eb',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    marginBottom: '1rem'
+                  }}></div>
+                  <p style={{ color: '#6b7280' }}>Loading PDF...</p>
                 </div>
               }
               options={{
@@ -238,12 +337,12 @@ export function AnomalyPDFViewer({
                 standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
               }}
             >
-              <div className="relative">
+              <div style={{ position: 'relative' }}>
                 <Page
                   pageNumber={pageNumber}
                   scale={scale}
                   onLoadSuccess={onPageLoadSuccess}
-                  className="shadow-lg"
+                  style={{ boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)' }}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
                 />
@@ -256,8 +355,30 @@ export function AnomalyPDFViewer({
             </Document>
           </div>
         )}
+        
+        {!loading && !error && (!pdfUrl || pdfUrl.trim() === '') && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '2rem' }}>
+            <div style={{ textAlign: 'center', maxWidth: '28rem' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📄</div>
+              <p style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>PDF URL Not Available</p>
+              <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>
+                The PDF file URL could not be generated. Please check if the document exists in storage.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   )
 }
-

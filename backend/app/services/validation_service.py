@@ -16,6 +16,7 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
+from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.financial_metrics import FinancialMetrics
 from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
@@ -80,6 +81,8 @@ class ValidationService:
             validation_results.extend(self._validate_cash_flow(upload))
         elif upload.document_type == "rent_roll":
             validation_results.extend(self._validate_rent_roll(upload))
+        elif upload.document_type == "mortgage_statement":
+            validation_results.extend(self._validate_mortgage_statement(upload))
         
         # Count results
         total_checks = len(validation_results)
@@ -2389,6 +2392,414 @@ class ValidationService:
         )
         
         return result
+    
+    # ==================== MORTGAGE STATEMENT VALIDATIONS ====================
+    
+    def _validate_mortgage_statement(self, upload: DocumentUpload) -> List[Dict]:
+        """
+        Run all mortgage statement validations
+        
+        Includes:
+        - Payment calculation validation
+        - Escrow balance validation
+        - Interest rate range validation
+        - YTD totals validation
+        - Cross-document reconciliation
+        """
+        results = []
+        
+        # Get mortgage data for this upload
+        mortgage_data = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.upload_id == upload.id
+        ).first()
+        
+        if not mortgage_data:
+            return [{
+                "rule_name": "mortgage_data_exists",
+                "passed": False,
+                "severity": "error",
+                "error_message": "No mortgage data found for this upload"
+            }]
+        
+        # 1. Principal Balance Reasonableness
+        results.append(self.validate_mortgage_principal_reasonable(
+            upload.id, mortgage_data.id
+        ))
+        
+        # 2. Payment Calculation
+        results.append(self.validate_mortgage_payment_calculation(
+            upload.id, mortgage_data.id
+        ))
+        
+        # 3. Escrow Balance Total
+        results.append(self.validate_mortgage_escrow_total(
+            upload.id, mortgage_data.id
+        ))
+        
+        # 4. Interest Rate Range
+        results.append(self.validate_mortgage_interest_rate_range(
+            upload.id, mortgage_data.id
+        ))
+        
+        # 5. YTD Totals
+        results.append(self.validate_mortgage_ytd_total(
+            upload.id, mortgage_data.id
+        ))
+        
+        # 6. Cross-Document: Balance Sheet Reconciliation
+        results.append(self.validate_mortgage_balance_sheet_reconciliation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        # 7. Cross-Document: Income Statement Interest Reconciliation
+        results.append(self.validate_mortgage_interest_income_statement_reconciliation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        return results
+    
+    def validate_mortgage_principal_reasonable(
+        self,
+        upload_id: int,
+        mortgage_id: int
+    ) -> Dict:
+        """Validate principal balance is within reasonable range"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_principal_reasonable",
+            rule_description="Principal balance should be positive and less than $100M",
+            error_msg="Principal balance is outside reasonable range",
+            document_type="mortgage_statement",
+            rule_type="range_check",
+            rule_formula="principal_balance > 0 AND principal_balance < 100000000",
+            severity="warning"
+        )
+        
+        mortgage = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.id == mortgage_id
+        ).first()
+        
+        if not mortgage:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Mortgage data not found",
+                severity=rule.severity
+            )
+        
+        principal = mortgage.principal_balance or Decimal('0')
+        passed = principal > 0 and principal < Decimal('100000000')
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('100000000'),
+            actual_value=principal,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+    
+    def validate_mortgage_payment_calculation(
+        self,
+        upload_id: int,
+        mortgage_id: int
+    ) -> Dict:
+        """Validate total payment equals sum of components"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_payment_calculation",
+            rule_description="Total payment = Principal + Interest + Escrow + Fees",
+            error_msg="Payment breakdown does not sum to total payment due",
+            document_type="mortgage_statement",
+            rule_type="balance_check",
+            rule_formula="total_payment_due = principal_due + interest_due + tax_escrow_due + insurance_escrow_due + reserve_due + late_fees + other_fees",
+            severity="error"
+        )
+        
+        mortgage = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.id == mortgage_id
+        ).first()
+        
+        if not mortgage:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Mortgage data not found",
+                severity=rule.severity
+            )
+        
+        # Calculate sum of components
+        principal = mortgage.principal_due or Decimal('0')
+        interest = mortgage.interest_due or Decimal('0')
+        tax_escrow = mortgage.tax_escrow_due or Decimal('0')
+        insurance_escrow = mortgage.insurance_escrow_due or Decimal('0')
+        reserve = mortgage.reserve_due or Decimal('0')
+        late_fees = mortgage.late_fees or Decimal('0')
+        other_fees = mortgage.other_fees or Decimal('0')
+        
+        calculated_total = principal + interest + tax_escrow + insurance_escrow + reserve + late_fees + other_fees
+        actual_total = mortgage.total_payment_due or Decimal('0')
+        
+        # Allow $1 tolerance for rounding
+        difference = abs(calculated_total - actual_total)
+        passed = difference <= Decimal('1.00')
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=calculated_total,
+            actual_value=actual_total,
+            difference=difference,
+            difference_percentage=(difference / actual_total * 100) if actual_total > 0 else None,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+    
+    def validate_mortgage_escrow_total(
+        self,
+        upload_id: int,
+        mortgage_id: int
+    ) -> Dict:
+        """Validate escrow balances sum correctly"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_escrow_total",
+            rule_description="Total escrow = Tax + Insurance + Reserve + Other escrows",
+            error_msg="Escrow balances do not sum correctly",
+            document_type="mortgage_statement",
+            rule_type="balance_check",
+            rule_formula="total_loan_balance = principal_balance + tax_escrow_balance + insurance_escrow_balance + reserve_balance + other_escrow_balance",
+            severity="warning"
+        )
+        
+        mortgage = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.id == mortgage_id
+        ).first()
+        
+        if not mortgage:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Mortgage data not found",
+                severity=rule.severity
+            )
+        
+        principal = mortgage.principal_balance or Decimal('0')
+        tax_escrow = mortgage.tax_escrow_balance or Decimal('0')
+        insurance_escrow = mortgage.insurance_escrow_balance or Decimal('0')
+        reserve = mortgage.reserve_balance or Decimal('0')
+        other_escrow = mortgage.other_escrow_balance or Decimal('0')
+        
+        calculated_total = principal + tax_escrow + insurance_escrow + reserve + other_escrow
+        actual_total = mortgage.total_loan_balance or Decimal('0')
+        
+        # Allow $1 tolerance
+        difference = abs(calculated_total - actual_total)
+        passed = difference <= Decimal('1.00')
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=calculated_total,
+            actual_value=actual_total,
+            difference=difference,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+    
+    def validate_mortgage_interest_rate_range(
+        self,
+        upload_id: int,
+        mortgage_id: int
+    ) -> Dict:
+        """Validate interest rate is within reasonable range"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_interest_rate_range",
+            rule_description="Interest rate should be between 0% and 20%",
+            error_msg="Interest rate is outside normal commercial mortgage range",
+            document_type="mortgage_statement",
+            rule_type="range_check",
+            rule_formula="interest_rate >= 0 AND interest_rate <= 20",
+            severity="warning"
+        )
+        
+        mortgage = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.id == mortgage_id
+        ).first()
+        
+        if not mortgage or not mortgage.interest_rate:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=True,  # Pass if not provided
+                error_message=None,
+                severity=rule.severity
+            )
+        
+        rate = mortgage.interest_rate
+        passed = rate >= 0 and rate <= 20
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('20'),
+            actual_value=rate,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+    
+    def validate_mortgage_ytd_total(
+        self,
+        upload_id: int,
+        mortgage_id: int
+    ) -> Dict:
+        """Validate YTD totals sum correctly"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_ytd_total",
+            rule_description="YTD total paid = YTD principal + YTD interest",
+            error_msg="YTD payment totals do not match",
+            document_type="mortgage_statement",
+            rule_type="balance_check",
+            rule_formula="ytd_total_paid = ytd_principal_paid + ytd_interest_paid",
+            severity="warning"
+        )
+        
+        mortgage = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.id == mortgage_id
+        ).first()
+        
+        if not mortgage:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                error_message="Mortgage data not found",
+                severity=rule.severity
+            )
+        
+        ytd_principal = mortgage.ytd_principal_paid or Decimal('0')
+        ytd_interest = mortgage.ytd_interest_paid or Decimal('0')
+        calculated_total = ytd_principal + ytd_interest
+        actual_total = mortgage.ytd_total_paid or Decimal('0')
+        
+        # Allow $1 tolerance
+        difference = abs(calculated_total - actual_total)
+        passed = difference <= Decimal('1.00')
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=calculated_total,
+            actual_value=actual_total,
+            difference=difference,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+    
+    def validate_mortgage_balance_sheet_reconciliation(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """Validate mortgage balances match balance sheet long-term debt"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_balance_sheet_reconciliation",
+            rule_description="Total mortgage principal should match long-term debt on balance sheet",
+            error_msg="Mortgage balances do not reconcile with balance sheet long-term debt section",
+            document_type="mortgage_statement",
+            rule_type="cross_document_check",
+            rule_formula="SUM(mortgage_principal_balance) = balance_sheet_long_term_debt",
+            severity="error"
+        )
+        
+        # Sum all mortgage principal balances
+        total_mortgage_balance = self.db.query(
+            func.sum(MortgageStatementData.principal_balance)
+        ).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == period_id
+        ).scalar() or Decimal('0')
+        
+        # Get long-term debt from balance sheet (account codes starting with 26xx)
+        long_term_debt = self.db.query(
+            func.sum(BalanceSheetData.amount)
+        ).filter(
+            BalanceSheetData.property_id == property_id,
+            BalanceSheetData.period_id == period_id,
+            BalanceSheetData.account_code.like('26%')
+        ).scalar() or Decimal('0')
+        
+        # Allow $100 tolerance for rounding and timing differences
+        difference = abs(total_mortgage_balance - long_term_debt)
+        passed = difference <= Decimal('100.00')
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=long_term_debt,
+            actual_value=total_mortgage_balance,
+            difference=difference,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+    
+    def validate_mortgage_interest_income_statement_reconciliation(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """Validate YTD mortgage interest matches income statement interest expense"""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_interest_income_statement_reconciliation",
+            rule_description="YTD interest paid should match interest expense on income statement",
+            error_msg="Mortgage interest does not match income statement interest expense",
+            document_type="mortgage_statement",
+            rule_type="cross_document_check",
+            rule_formula="SUM(ytd_interest_paid) = income_statement_interest_expense",
+            severity="warning"
+        )
+        
+        # Sum YTD interest from all mortgages
+        ytd_mortgage_interest = self.db.query(
+            func.sum(MortgageStatementData.ytd_interest_paid)
+        ).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == period_id
+        ).scalar() or Decimal('0')
+        
+        # Get interest expense from income statement (account 7010-0000 or similar)
+        income_statement_interest = self.db.query(
+            func.sum(IncomeStatementData.period_amount)
+        ).filter(
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == period_id,
+            IncomeStatementData.account_code.in_(['7010-0000', '6520-0000', '6521-0000', '6522-0000'])
+        ).scalar() or Decimal('0')
+        
+        # Allow 5% tolerance or $1000, whichever is greater (for accruals, prepaid interest, etc.)
+        tolerance_pct = Decimal('0.05')
+        tolerance = max(ytd_mortgage_interest * tolerance_pct, Decimal('1000.00'))
+        difference = abs(ytd_mortgage_interest - income_statement_interest)
+        passed = difference <= tolerance
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=income_statement_interest,
+            actual_value=ytd_mortgage_interest,
+            difference=difference,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
     
     # ==================== HELPER METHODS ====================
     

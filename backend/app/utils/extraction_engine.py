@@ -225,13 +225,7 @@ class MultiEngineExtractor:
                 'november': 11, 'nov': 11,
                 'december': 12, 'dec': 12
             }
-            
-            found_months = []
-            sample_lower = sample_text.lower()
-            for month_name, month_num in month_names.items():
-                if month_name in sample_lower:
-                    found_months.append(month_num)
-            
+
             # Get most common year (not just first one)
             detected_year = None
             if years:
@@ -240,8 +234,60 @@ class MultiEngineExtractor:
                 year_counts = Counter(years)
                 # Get most common year
                 detected_year = int(year_counts.most_common(1)[0][0])
-            
-            detected_month = found_months[0] if found_months else None
+
+            # PRIORITY 1: Look for statement date patterns (mortgage statements, financial docs)
+            # Patterns like "As of Date 2/21/2025" or "Statement Date: 12/31/2024"
+            detected_month = None
+            statement_date_patterns = [
+                r'(?:as of date|statement date|report date|loan information as of date|payment information as of date)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+                r'(?:as of|dated?|for the (?:period|month) ending?)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+                r'(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+statement)',
+            ]
+
+            for pattern in statement_date_patterns:
+                match = re.search(pattern, sample_text, re.IGNORECASE)
+                if match:
+                    try:
+                        month = int(match.group(1))
+                        day = int(match.group(2))
+                        year = int(match.group(3))
+                        if 1 <= month <= 12 and 1 <= day <= 31:
+                            detected_month = month
+                            if detected_year is None:
+                                detected_year = year
+                            break  # Found a high-confidence statement date
+                    except (ValueError, IndexError):
+                        continue
+
+            # PRIORITY 2: If no statement date found, look for date in format MM/DD/YYYY
+            if detected_month is None:
+                date_matches = re.findall(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b', sample_text)
+                if date_matches:
+                    # Get most common month from dates
+                    from collections import Counter
+                    months_in_dates = []
+                    for match in date_matches:
+                        try:
+                            month = int(match[0])
+                            day = int(match[1])
+                            if 1 <= month <= 12 and 1 <= day <= 31:
+                                months_in_dates.append(month)
+                        except ValueError:
+                            continue
+
+                    if months_in_dates:
+                        month_counts = Counter(months_in_dates)
+                        detected_month = month_counts.most_common(1)[0][0]
+
+            # PRIORITY 3: Fall back to month name search (least reliable)
+            if detected_month is None:
+                found_months = []
+                sample_lower = sample_text.lower()
+                for month_name, month_num in month_names.items():
+                    if month_name in sample_lower:
+                        found_months.append(month_num)
+
+                detected_month = found_months[0] if found_months else None
             
             # Calculate confidence
             confidence = 0

@@ -105,6 +105,16 @@ class FinancialMetrics(Base):
     revenue_per_sqft = Column(DECIMAL(10, 4))
     expense_ratio = Column(DECIMAL(5, 2))  # Expenses / Revenue
     
+    # ==================== MORTGAGE METRICS ====================
+    total_mortgage_debt = Column(DECIMAL(15, 2))  # Total principal balance from all mortgages
+    weighted_avg_interest_rate = Column(DECIMAL(6, 4))  # Weighted average interest rate
+    total_monthly_debt_service = Column(DECIMAL(12, 2))  # Total monthly P+I payments
+    total_annual_debt_service = Column(DECIMAL(15, 2))  # Total annual P+I payments
+    dscr = Column(DECIMAL(10, 4))  # Debt Service Coverage Ratio (NOI / Annual Debt Service)
+    interest_coverage_ratio = Column(DECIMAL(10, 4))  # EBIT / Interest Expense
+    debt_yield = Column(DECIMAL(10, 4))  # NOI / Total Loan Amount * 100
+    break_even_occupancy = Column(DECIMAL(5, 2))  # (Operating Expenses + Debt Service) / Gross Potential Rent * 100
+    
     # Metadata
     calculated_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())

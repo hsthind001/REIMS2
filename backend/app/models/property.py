@@ -47,6 +47,7 @@ class Property(Base):
     cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     rent_roll_data = relationship("RentRollData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    mortgage_statements = relationship("MortgageStatementData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
     financial_metrics = relationship("FinancialMetrics", back_populates="property", cascade="all, delete-orphan", lazy="noload")
 
     # Next-level AI features relationships

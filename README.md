@@ -17,10 +17,11 @@ A comprehensive financial document processing system for real estate portfolio m
 
 ### Financial Management
 - 🏢 Multi-property portfolio management
-- 📈 Balance Sheet, Income Statement, Cash Flow, Rent Roll support
+- 📈 Balance Sheet, Income Statement, Cash Flow, Rent Roll, **Mortgage Statement** support
 - 💰 179-account Chart of Accounts
-- 📉 Financial metrics calculation (20+ KPIs)
+- 📉 Financial metrics calculation (20+ KPIs including DSCR, LTV, Debt Yield)
 - 📅 Monthly period tracking
+- 🏦 Mortgage statement analysis with automated DSCR/LTV calculation
 
 ### User Interface
 - 🔐 Secure authentication (session-based)

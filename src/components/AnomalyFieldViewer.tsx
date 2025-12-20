@@ -63,6 +63,9 @@ export function AnomalyFieldViewer({
   useEffect(() => {
     if (isOpen && anomaly.record_id) {
       fetchCoordinates()
+    } else if (isOpen && !anomaly.record_id) {
+      setError('Anomaly record ID is missing. Cannot load field coordinates.')
+      setLoading(false)
     }
   }, [isOpen, anomaly.record_id])
 
@@ -74,9 +77,14 @@ export function AnomalyFieldViewer({
 
     try {
       const data = await anomaliesService.getFieldCoordinates(anomaly.record_id)
+      console.log('AnomalyFieldViewer: Received coordinates data:', data)
+      if (!data.pdf_url) {
+        console.warn('AnomalyFieldViewer: PDF URL is missing from response')
+        setError('PDF URL is not available. The document may have been deleted or is not accessible.')
+      }
       setCoordinates(data)
     } catch (err) {
-      console.error('Failed to fetch coordinates:', err)
+      console.error('AnomalyFieldViewer: Failed to fetch coordinates:', err)
       setError(err instanceof Error ? err.message : 'Failed to load field coordinates')
     } finally {
       setLoading(false)
@@ -89,32 +97,71 @@ export function AnomalyFieldViewer({
     <>
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          zIndex: 1000,
+          cursor: 'pointer'
+        }}
         onClick={onClose}
       />
 
       {/* Side Panel */}
       <div
-        className="fixed right-0 top-0 h-full w-full md:w-3/4 lg:w-2/3 xl:w-1/2 bg-white shadow-2xl z-50 flex flex-col"
-        style={{ animation: 'slideIn 0.3s ease-out' }}
+        style={{
+          position: 'fixed',
+          right: 0,
+          top: 0,
+          height: '100%',
+          width: '100%',
+          maxWidth: '50%',
+          backgroundColor: 'white',
+          boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.3)',
+          zIndex: 1001,
+          display: 'flex',
+          flexDirection: 'column',
+          animation: 'slideIn 0.3s ease-out'
+        }}
       >
         {loading && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading field information...</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                border: '3px solid #e5e7eb',
+                borderTop: '3px solid #2563eb',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 1rem'
+              }}></div>
+              <p style={{ color: '#6b7280' }}>Loading field information...</p>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="flex flex-col items-center justify-center h-full p-8">
-            <div className="text-center text-red-600 bg-red-50 p-6 rounded-lg border border-red-200 max-w-md">
-              <p className="text-lg font-semibold mb-2">Error</p>
-              <p className="text-sm">{error}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '2rem' }}>
+            <div style={{ textAlign: 'center', color: '#dc2626', backgroundColor: '#fef2f2', padding: '1.5rem', borderRadius: '8px', border: '1px solid #fecaca', maxWidth: '28rem' }}>
+              <p style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>Error</p>
+              <p style={{ fontSize: '0.875rem' }}>{error}</p>
               <button
                 onClick={onClose}
-                className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#b91c1c'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
               >
                 Close
               </button>
@@ -125,19 +172,28 @@ export function AnomalyFieldViewer({
         {!loading && !error && coordinates && (
           <>
             {/* Header */}
-            <div className="p-4 border-b bg-gray-50">
-              <div className="flex items-center justify-between">
+            <div style={{ padding: '1rem', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <h2 className="text-lg font-semibold">
+                  <h2 style={{ fontSize: '1.125rem', fontWeight: '600', margin: 0 }}>
                     {fieldType === 'actual' ? 'Actual Value' : 'Expected Value'} Location
                   </h2>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem', margin: 0 }}>
                     {anomaly.details.account_name || anomaly.field_name} - {anomaly.details.file_name}
                   </p>
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-2 rounded hover:bg-gray-200"
+                  style={{
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '1.25rem'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#e5e7eb'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   title="Close"
                 >
                   ✕
@@ -146,12 +202,12 @@ export function AnomalyFieldViewer({
             </div>
 
             {/* Explanation */}
-            <div className="p-4 border-b bg-blue-50">
-              <p className="text-sm text-gray-700">
+            <div style={{ padding: '1rem', borderBottom: '1px solid #e5e7eb', backgroundColor: '#eff6ff' }}>
+              <p style={{ fontSize: '0.875rem', color: '#374151', margin: 0 }}>
                 {coordinates.explanation}
               </p>
               {!coordinates.has_coordinates && (
-                <p className="text-xs text-gray-600 mt-2 italic">
+                <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.5rem', fontStyle: 'italic', margin: '0.5rem 0 0 0' }}>
                   This field is calculated from multiple line items, so a specific location cannot be highlighted.
                 </p>
               )}
@@ -159,7 +215,7 @@ export function AnomalyFieldViewer({
 
             {/* PDF Viewer or Message */}
             {coordinates.has_coordinates && coordinates.pdf_url ? (
-              <div className="flex-1 overflow-hidden">
+              <div style={{ flex: 1, overflow: 'hidden' }}>
                 <AnomalyPDFViewer
                   pdfUrl={coordinates.pdf_url}
                   coordinates={coordinates.coordinates || undefined}
@@ -167,21 +223,30 @@ export function AnomalyFieldViewer({
                   onClose={onClose}
                 />
               </div>
-            ) : coordinates.pdf_url ? (
-              <div className="flex-1 flex flex-col">
-                <div className="flex-1 flex items-center justify-center p-8">
-                  <div className="text-center max-w-md">
-                    <div className="text-4xl mb-4">📄</div>
-                    <p className="text-lg font-semibold mb-2">Field Location Not Available</p>
-                    <p className="text-sm text-gray-600 mb-4">
+            ) : coordinates.pdf_url && coordinates.pdf_url.trim() !== '' ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+                  <div style={{ textAlign: 'center', maxWidth: '28rem' }}>
+                    <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📄</div>
+                    <p style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>Field Location Not Available</p>
+                    <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>
                       {coordinates.explanation}
                     </p>
-                    <div className="mt-4">
+                    <div style={{ marginTop: '1rem' }}>
                       <a
                         href={coordinates.pdf_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.5rem 1rem',
+                          backgroundColor: '#2563eb',
+                          color: 'white',
+                          borderRadius: '4px',
+                          textDecoration: 'none'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
                       >
                         Open PDF in new tab →
                       </a>
@@ -189,23 +254,23 @@ export function AnomalyFieldViewer({
                   </div>
                 </div>
                 {/* Show PDF in iframe as fallback */}
-                <div className="h-96 border-t">
+                <div style={{ height: '24rem', borderTop: '1px solid #e5e7eb' }}>
                   <iframe
                     src={coordinates.pdf_url}
-                    className="w-full h-full"
+                    style={{ width: '100%', height: '100%', border: 'none' }}
                     title="PDF Viewer"
                   />
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center p-8">
-                <div className="text-center max-w-md">
-                  <div className="text-4xl mb-4">📄</div>
-                  <p className="text-lg font-semibold mb-2">PDF Not Available</p>
-                  <p className="text-sm text-gray-600 mb-4">
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+                <div style={{ textAlign: 'center', maxWidth: '28rem' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📄</div>
+                  <p style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>PDF Not Available</p>
+                  <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>
                     {coordinates.explanation}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
                     The PDF file may have been deleted or is not accessible.
                   </p>
                 </div>
@@ -222,6 +287,14 @@ export function AnomalyFieldViewer({
           }
           to {
             transform: translateX(0);
+          }
+        }
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
           }
         }
       `}</style>

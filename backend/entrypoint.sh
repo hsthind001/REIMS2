@@ -53,6 +53,12 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       echo "🌱 Seeding extraction templates..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_extraction_templates.sql
       
+      echo "🌱 Seeding mortgage extraction templates..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_mortgage_extraction_templates.sql
+      
+      echo "🌱 Seeding mortgage validation rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_mortgage_validation_rules.sql
+      
       echo "🌱 Seeding lenders..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_lenders.sql
       

@@ -16,6 +16,8 @@ from app.models.cash_flow_adjustments import CashFlowAdjustment
 from app.models.cash_account_reconciliation import CashAccountReconciliation
 from app.models.rent_roll_data import RentRollData
 from app.models.financial_metrics import FinancialMetrics
+from app.models.mortgage_statement_data import MortgageStatementData
+from app.models.mortgage_payment_history import MortgagePaymentHistory
 from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
 from app.models.audit_trail import AuditTrail
@@ -35,6 +37,8 @@ from app.models.tenant_performance_history import TenantPerformanceHistory
 # Risk management models
 from app.models.committee_alert import CommitteeAlert
 from app.models.workflow_lock import WorkflowLock
+from app.models.alert_rule import AlertRule
+from app.models.alert_history import AlertHistory
 
 # Budget and forecast models
 from app.models.budget import Budget, Forecast
@@ -69,6 +73,8 @@ __all__ = [
     "CashAccountReconciliation",
     "RentRollData",
     "FinancialMetrics",
+    "MortgageStatementData",
+    "MortgagePaymentHistory",
     "ValidationRule",
     "ValidationResult",
     "AuditTrail",
@@ -86,6 +92,8 @@ __all__ = [
     # Risk management
     "CommitteeAlert",
     "WorkflowLock",
+    "AlertRule",
+    "AlertHistory",
     # Budget and forecast
     "Budget",
     "Forecast",

@@ -37,9 +37,17 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       } else {
         throw new Error('Login failed')
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err)
-      setError('Invalid email or password')
+      // Check if it's a network error
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Network error or server unavailable. Please check if the backend server is running.')
+      } else if (err.message && err.message.includes('Network')) {
+        setError(err.message)
+      } else {
+        // Try to get error message from response
+        setError('Invalid email or password')
+      }
     } finally {
       setLoading(false)
     }

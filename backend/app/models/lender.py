@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
 
@@ -28,4 +29,7 @@ class Lender(Base):
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    mortgage_statements = relationship("MortgageStatementData", back_populates="lender", cascade="all, delete-orphan")
 

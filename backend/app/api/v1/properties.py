@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.db.database import get_db
 from app.models.property import Property
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
@@ -36,9 +36,9 @@ async def create_property(
 
 @router.get("/", response_model=List[PropertyResponse])
 async def list_properties(
-    skip: int = 0,
-    limit: int = 100,
-    status: str = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):

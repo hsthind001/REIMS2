@@ -235,6 +235,7 @@ export default function Reconciliation() {
                 <option value="income_statement">💰 Income Statement</option>
                 <option value="cash_flow">💵 Cash Flow</option>
                 <option value="rent_roll">🏠 Rent Roll</option>
+                <option value="mortgage_statement">🏦 Mortgage Statement</option>
               </select>
             </div>
 

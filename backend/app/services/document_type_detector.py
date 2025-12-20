@@ -43,6 +43,23 @@ class DocumentTypeDetector:
             r'rentroll',
             r'lease.*roll',
             r'tenant.*roll'
+        ],
+        'mortgage_statement': [
+            r'mortgage.*statement',
+            r'\bmortgage\b',
+            r'loan.*statement',
+            r'escrow.*statement',
+            r'escrow.*loan',
+            r'loan.*escrow',
+            r'mortgage.*stmt',
+            r'loan.*stmt',
+            r'escrow.*pdf',
+            r'wells.*fargo.*loan',
+            r'wells.*fargo.*escrow',
+            r'cibc.*loan',
+            r'northmarq.*loan',
+            r'loan.*\d{4,}',  # Loan with number (e.g., "loan 1008")
+            r'escrow.*\d{4,}'  # Escrow with number
         ]
     }
     
@@ -76,7 +93,7 @@ class DocumentTypeDetector:
         
         Returns:
             {
-                "document_type": "balance_sheet" | "income_statement" | "cash_flow" | "rent_roll" | "unknown",
+                "document_type": "balance_sheet" | "income_statement" | "cash_flow" | "rent_roll" | "mortgage_statement" | "unknown",
                 "confidence": float (0.0-1.0),
                 "detected_pattern": str
             }
@@ -125,8 +142,18 @@ class DocumentTypeDetector:
         """
         filename_lower = filename.lower()
 
-        # Pattern 0: Period range with decimal format (e.g., "2.24-3.24" means Feb 2024 to Mar 2024)
-        # This is the MOST specific pattern, so check it first
+        # Pattern 0: YYYY.MM.DD date format at start of filename (e.g., "2023.02.06 esp wells fargo loan 1008.pdf")
+        date_format_pattern = r'^(\d{4})\.(\d{1,2})\.(\d{1,2})'
+        date_match = re.search(date_format_pattern, filename_lower)
+        if date_match:
+            year_full = int(date_match.group(1))
+            month_num = int(date_match.group(2))
+            day = int(date_match.group(3))
+            if 1 <= month_num <= 12:
+                logger.info(f"Detected month {month_num} from date format '{date_match.group(0)}' in filename '{filename}'")
+                return month_num
+
+        # Pattern 0a: Period range with decimal format (e.g., "2.24-3.24" means Feb 2024 to Mar 2024)
         period_range_pattern = r'(\d{1,2})\.(\d{2})\-(\d{1,2})\.(\d{2})'
         period_match = re.search(period_range_pattern, filename_lower)
         if period_match:

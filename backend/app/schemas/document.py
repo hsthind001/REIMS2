@@ -13,6 +13,7 @@ class DocumentTypeEnum(str, Enum):
     income_statement = "income_statement"
     cash_flow = "cash_flow"
     rent_roll = "rent_roll"
+    mortgage_statement = "mortgage_statement"
 
 
 class ExtractionStatusEnum(str, Enum):

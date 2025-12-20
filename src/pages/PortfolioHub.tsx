@@ -19,6 +19,7 @@ import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
 import { DocumentUpload } from '../components/DocumentUpload';
+import { MortgageMetricsWidget } from '../components/mortgage/MortgageMetricsWidget';
 import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/exportUtils';
 import type { Property, PropertyCreate, DocumentUpload as DocumentUploadType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
@@ -1458,6 +1459,18 @@ export default function PortfolioHub() {
                           </div>
                         </Card>
                       </div>
+
+                      {/* Mortgage Metrics Section */}
+                      {selectedProperty && (
+                        <div className="mb-6">
+                          <h3 className="text-lg font-semibold mb-4">🏦 Mortgage Metrics</h3>
+                          <MortgageMetricsWidget
+                            propertyId={selectedProperty.id}
+                            periodYear={selectedYear}
+                            periodMonth={selectedMonth}
+                          />
+                        </div>
+                      )}
 
                       {/* Financial Data Display */}
                       {loadingDocumentData ? (

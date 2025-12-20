@@ -83,7 +83,7 @@ export default function RiskManagement() {
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [loading, setLoading] = useState(false)
   const [accountsWithThresholds, setAccountsWithThresholds] = useState<any[]>([])
-  const [defaultThreshold, setDefaultThreshold] = useState<number>(1000)
+  const [defaultThreshold, setDefaultThreshold] = useState<number>(0.01) // 1% as decimal
   const [editingThreshold, setEditingThreshold] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState<number | null>(null)
   const [thresholdsLoading, setThresholdsLoading] = useState(false)
@@ -601,12 +601,30 @@ export default function RiskManagement() {
       </div>
 
       {/* Tabs */}
-      <div className="tabs">
+      <div className="tabs" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
         <button
           className={`tab ${activeTab === 'alerts' ? 'active' : ''}`}
           onClick={() => setActiveTab('alerts')}
         >
           🚨 Risk Alerts ({alerts.length})
+        </button>
+        <button
+          onClick={() => {
+            window.location.hash = '#alert-rules';
+          }}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#28a745',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+            fontWeight: '600',
+            marginLeft: 'auto'
+          }}
+        >
+          ⚙️ Manage Alert Rules
         </button>
         <button
           className={`tab ${activeTab === 'locks' ? 'active' : ''}`}
@@ -1168,6 +1186,10 @@ export default function RiskManagement() {
                             textDecorationStyle: 'dotted'
                           }}
                           onClick={() => {
+                            if (!anomaly.record_id) {
+                              alert(`Cannot open PDF: Anomaly record ID is missing. Please contact support.`)
+                              return
+                            }
                             setSelectedAnomalyForViewer(anomaly)
                             setFieldViewerType('actual')
                             setFieldViewerOpen(true)
@@ -1216,6 +1238,10 @@ export default function RiskManagement() {
                             textDecorationStyle: 'dotted'
                           }}
                           onClick={() => {
+                            if (!anomaly.record_id) {
+                              alert(`Cannot open PDF: Anomaly record ID is missing. Please contact support.`)
+                              return
+                            }
                             setSelectedAnomalyForViewer(anomaly)
                             setFieldViewerType('expected')
                             setFieldViewerOpen(true)
@@ -1296,7 +1322,7 @@ export default function RiskManagement() {
         <div className="card">
           <h3 className="card-title">Value Setup - Anomaly Thresholds</h3>
           <p style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
-            Configure absolute value thresholds for each account code. If the change in value exceeds the threshold, 
+            Configure percentage thresholds for each account code. If the percentage change in value exceeds the threshold, 
             the field will appear in anomalies. Fields without custom thresholds use the global default.
           </p>
 
@@ -1348,13 +1374,14 @@ export default function RiskManagement() {
               Global Default Threshold
             </label>
             <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.75rem' }}>
-              This threshold will be used for all account codes that don't have a custom threshold set.
+              This percentage threshold will be used for all account codes that don't have a custom threshold set.
+              Enter as a percentage (e.g., 1 for 1%).
             </p>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 type="number"
-                value={defaultThreshold}
-                onChange={(e) => setDefaultThreshold(parseFloat(e.target.value) || 0)}
+                value={defaultThreshold * 100} // Display as percentage
+                onChange={(e) => setDefaultThreshold((parseFloat(e.target.value) || 0) / 100)} // Convert to decimal
                 style={{
                   padding: '0.5rem',
                   border: '1px solid #d1d5db',
@@ -1362,9 +1389,10 @@ export default function RiskManagement() {
                   width: '200px',
                   fontSize: '0.875rem'
                 }}
-                step="0.01"
+                step="0.1"
                 min="0"
               />
+              <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>%</span>
               <button
                 onClick={() => handleSaveDefaultThreshold(defaultThreshold)}
                 style={{
@@ -1396,7 +1424,7 @@ export default function RiskManagement() {
                   <tr style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
                     <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Account Code</th>
                     <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Account Name</th>
-                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Threshold Value</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Threshold Value (%)</th>
                     <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Status</th>
                     <th style={{ padding: '0.75rem', textAlign: 'center', fontWeight: '600', color: '#374151' }}>Actions</th>
                   </tr>
@@ -1404,9 +1432,11 @@ export default function RiskManagement() {
                 <tbody>
                   {accountsWithThresholds.map((account) => {
                     const isEditing = editingThreshold === account.account_code
-                    const displayValue = isEditing 
+                    // Convert decimal threshold to percentage for display
+                    const thresholdDecimal = isEditing 
                       ? (editingValue !== null ? editingValue : (account.threshold_value || account.default_threshold))
                       : (account.threshold_value || account.default_threshold)
+                    const displayValue = thresholdDecimal * 100 // Convert to percentage for display
                     
                     return (
                       <tr 
@@ -1424,24 +1454,27 @@ export default function RiskManagement() {
                         </td>
                         <td style={{ padding: '0.75rem' }}>
                           {isEditing ? (
-                            <input
-                              type="number"
-                              value={displayValue}
-                              onChange={(e) => setEditingValue(parseFloat(e.target.value) || 0)}
-                              style={{
-                                padding: '0.5rem',
-                                border: '1px solid #3b82f6',
-                                borderRadius: '4px',
-                                width: '150px',
-                                fontSize: '0.875rem'
-                              }}
-                              step="0.01"
-                              min="0"
-                              autoFocus
-                            />
+                            <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                              <input
+                                type="number"
+                                value={displayValue}
+                                onChange={(e) => setEditingValue((parseFloat(e.target.value) || 0) / 100)} // Convert to decimal
+                                style={{
+                                  padding: '0.5rem',
+                                  border: '1px solid #3b82f6',
+                                  borderRadius: '4px',
+                                  width: '120px',
+                                  fontSize: '0.875rem'
+                                }}
+                                step="0.1"
+                                min="0"
+                                autoFocus
+                              />
+                              <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>%</span>
+                            </div>
                           ) : (
                             <span style={{ fontSize: '0.875rem', color: account.is_custom ? '#374151' : '#6b7280' }}>
-                              {displayValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {displayValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}%
                               {!account.is_custom && (
                                 <span style={{ fontSize: '0.75rem', color: '#9ca3af', marginLeft: '0.5rem' }}>
                                   (default)
@@ -1466,7 +1499,7 @@ export default function RiskManagement() {
                           {isEditing ? (
                             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                               <button
-                                onClick={() => handleSaveThreshold(account.account_code, account.account_name, editingValue || account.default_threshold)}
+                                onClick={() => handleSaveThreshold(account.account_code, account.account_name, editingValue !== null ? editingValue : (account.threshold_value || account.default_threshold))}
                                 style={{
                                   padding: '0.375rem 0.75rem',
                                   backgroundColor: '#10b981',
