@@ -19,6 +19,7 @@ from app.models.income_statement_data import IncomeStatementData
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.budget import Budget, BudgetStatus, Forecast
 from app.models.committee_alert import CommitteeAlert, AlertType, AlertSeverity, AlertStatus, CommitteeType
+from app.core.constants import financial_thresholds, account_codes
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +30,17 @@ class VarianceAnalysisService:
 
     Compares actual financial results against budgets and forecasts.
     Flags variances that exceed tolerance thresholds.
+    Uses configurable thresholds from financial_thresholds.
     """
-
-    # Default tolerance thresholds
-    DEFAULT_BUDGET_TOLERANCE_PCT = Decimal("10.0")     # 10%
-    DEFAULT_FORECAST_TOLERANCE_PCT = Decimal("15.0")   # 15%
-
-    # Variance severity thresholds
-    WARNING_THRESHOLD_PCT = Decimal("10.0")    # 10% variance = warning
-    CRITICAL_THRESHOLD_PCT = Decimal("25.0")   # 25% variance = critical
-    URGENT_THRESHOLD_PCT = Decimal("50.0")     # 50% variance = urgent
 
     def __init__(self, db: Session):
         self.db = db
+        # Use configurable thresholds
+        self.DEFAULT_BUDGET_TOLERANCE_PCT = financial_thresholds.default_budget_tolerance_pct
+        self.DEFAULT_FORECAST_TOLERANCE_PCT = financial_thresholds.default_forecast_tolerance_pct
+        self.WARNING_THRESHOLD_PCT = financial_thresholds.variance_warning_threshold_pct
+        self.CRITICAL_THRESHOLD_PCT = financial_thresholds.variance_critical_threshold_pct
+        self.URGENT_THRESHOLD_PCT = financial_thresholds.variance_urgent_threshold_pct
 
     def analyze_budget_variance(
         self,
@@ -606,13 +605,14 @@ class VarianceAnalysisService:
         """
         Determine if variance is favorable or unfavorable
 
+        Uses account code classification from constants
         Revenue accounts (4xxxx): Positive variance = favorable
         Expense accounts (5xxxx, 6xxxx): Negative variance = favorable
         """
-        if account_code.startswith("4"):
+        if account_codes.is_revenue_account(account_code):
             # Revenue: actual > budget is favorable
             return variance_amount > 0
-        elif account_code.startswith("5") or account_code.startswith("6"):
+        elif account_codes.is_operating_expense(account_code):
             # Expenses: actual < budget is favorable
             return variance_amount < 0
         else:

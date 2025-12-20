@@ -80,6 +80,15 @@ fi
 
 # Validate Python imports before starting (catch errors early)
 echo "🔍 Validating application imports..."
+
+# Validate constants module loads correctly
+echo "🔧 Validating constants module..."
+if python3 -c "from app.core.constants import financial_thresholds, account_codes; print('✅ Constants loaded:', financial_thresholds.dscr_warning_threshold)" 2>/dev/null; then
+    echo "✅ Constants module validated successfully"
+else
+    echo "⚠️  Warning: Constants module validation failed"
+fi
+
 if [ -f /app/scripts/validate_startup.py ]; then
     python3 /app/scripts/validate_startup.py || {
         echo "⚠️  Import validation found issues (see above). Application will attempt to start anyway."

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import '../App.css'
+import { useAuth } from '../components/AuthContext'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1'
 
@@ -16,6 +17,7 @@ interface QueryResult {
 }
 
 export default function NaturalLanguageQuery() {
+  const { user, isAuthenticated } = useAuth()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<QueryResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -59,6 +61,12 @@ export default function NaturalLanguageQuery() {
       return
     }
 
+    // Check authentication
+    if (!isAuthenticated || !user) {
+      setError('Please log in to use Natural Language Query')
+      return
+    }
+
     setLoading(true)
     setError(null)
 
@@ -69,7 +77,7 @@ export default function NaturalLanguageQuery() {
         credentials: 'include',
         body: JSON.stringify({
           query_text: query,
-          user_id: 1 // Replace with actual user ID
+          user_id: user.id // Use actual user ID from auth context
         })
       })
 

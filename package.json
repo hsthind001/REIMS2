@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "generate:types": "python3 scripts/generate_typescript_interfaces.py",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

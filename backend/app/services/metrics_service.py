@@ -16,6 +16,7 @@ from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.financial_metrics import FinancialMetrics
+from app.core.constants import financial_thresholds, account_codes
 
 
 class MetricsService:
@@ -410,8 +411,15 @@ class MetricsService:
             property_id, period_id, account_pattern='4%', is_calculated=False
         )
         # Exclude Other Income (4090) if it's a large negative adjustment
+        # Use configurable threshold (percentage-based or absolute value)
         other_income = self._get_income_statement_total(property_id, period_id, '4090-0000')
-        if other_income and other_income < Decimal('-10000'):  # Large negative adjustment
+
+        # Calculate threshold as percentage of gross revenue or use absolute minimum
+        threshold = (gross_revenue * financial_thresholds.noi_large_negative_adjustment_percentage
+                    if gross_revenue
+                    else financial_thresholds.noi_large_negative_adjustment_threshold)
+
+        if other_income and other_income < -abs(threshold):
             gross_revenue_for_margin = gross_revenue - other_income if gross_revenue else None
         else:
             gross_revenue_for_margin = gross_revenue
@@ -581,16 +589,11 @@ class MetricsService:
     def _is_special_unit_type(self, unit_number: Optional[str]) -> bool:
         """
         Check if unit is a special type that shouldn't count toward occupancy
-        
-        Special unit types: COMMON, ATM, LAND, SIGN
+
+        Uses configurable special unit types from constants
         These are not leasable units and should be excluded from occupancy calculations
         """
-        if not unit_number:
-            return False
-        
-        unit_upper = str(unit_number).upper()
-        special_codes = ['COMMON', 'ATM', 'LAND', 'SIGN']
-        return any(code in unit_upper for code in special_codes)
+        return account_codes.is_special_unit_type(unit_number)
     
     def calculate_rent_roll_stats(
         self, 
