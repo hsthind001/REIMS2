@@ -14,6 +14,7 @@ const RiskManagement = lazy(() => import('./pages/RiskManagement'))
 const AlertRules = lazy(() => import('./pages/AlertRules'))
 const BulkImport = lazy(() => import('./pages/BulkImport'))
 const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
+const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
 
 // Loading fallback component
@@ -41,17 +42,23 @@ function AppContent() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1) // Remove the #
+      // Extract route name (before query params)
+      const routeName = hash.split('?')[0]
       setHashRoute(hash)
       // If navigating to bulk-import, ensure we're on operations page
-      if (hash === 'bulk-import' && currentPage !== 'operations') {
+      if (routeName === 'bulk-import' && currentPage !== 'operations') {
         setCurrentPage('operations')
       }
       // If navigating to review-queue, ensure we're on operations page
-      if (hash === 'review-queue' && currentPage !== 'operations') {
+      if (routeName === 'review-queue' && currentPage !== 'operations') {
         setCurrentPage('operations')
       }
+      // If navigating to workflow-locks, ensure we're on risk page
+      if (routeName === 'workflow-locks' && currentPage !== 'risk') {
+        setCurrentPage('risk')
+      }
       // If navigating to alert-rules, ensure we're on risk page
-      if (hash === 'alert-rules' && currentPage !== 'risk') {
+      if (routeName === 'alert-rules' && currentPage !== 'risk') {
         setCurrentPage('risk')
       }
     }
@@ -231,9 +238,13 @@ function AppContent() {
             <Suspense fallback={<PageLoader />}>
               <BulkImport />
             </Suspense>
-          ) : hashRoute === 'review-queue' ? (
+          ) : hashRoute.startsWith('review-queue') ? (
             <Suspense fallback={<PageLoader />}>
               <ReviewQueue />
+            </Suspense>
+          ) : hashRoute === 'workflow-locks' ? (
+            <Suspense fallback={<PageLoader />}>
+              <WorkflowLocks />
             </Suspense>
           ) : (
             renderPage()

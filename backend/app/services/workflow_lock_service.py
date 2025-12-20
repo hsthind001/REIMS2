@@ -10,7 +10,7 @@ from datetime import datetime
 import logging
 
 from app.models.workflow_lock import WorkflowLock, LockReason, LockScope, LockStatus
-from app.models.committee_alert import CommitteeAlert, AlertStatus
+from app.models.committee_alert import CommitteeAlert, AlertStatus, AlertType, AlertSeverity, CommitteeType
 from app.models.property import Property
 
 logger = logging.getLogger(__name__)
@@ -437,3 +437,140 @@ class WorkflowLockService:
             "locks_released": len(results),
             "results": results
         }
+    
+    def create_lock_from_alert(
+        self,
+        alert: CommitteeAlert,
+        locked_by: int = 1  # Default to system user
+    ) -> Dict:
+        """
+        Create a workflow lock from a CommitteeAlert
+        
+        Automatically determines lock reason, scope, and committee based on alert.
+        Handles duplicate lock prevention.
+        
+        Args:
+            alert: CommitteeAlert to create lock for
+            locked_by: User ID who is creating the lock (default: system user)
+        
+        Returns:
+            Dict with lock creation result
+        """
+        try:
+            # Only create locks for critical/urgent alerts that require approval
+            if alert.severity not in [AlertSeverity.CRITICAL, AlertSeverity.URGENT]:
+                return {
+                    "success": False,
+                    "error": "Only critical/urgent alerts require workflow locks"
+                }
+            
+            if not alert.requires_approval:
+                return {
+                    "success": False,
+                    "error": "Alert does not require approval"
+                }
+            
+            # Check if lock already exists for this alert
+            existing_lock = self.db.query(WorkflowLock).filter(
+                WorkflowLock.alert_id == alert.id,
+                WorkflowLock.status == LockStatus.ACTIVE
+            ).first()
+            
+            if existing_lock:
+                return {
+                    "success": False,
+                    "error": "Workflow lock already exists for this alert",
+                    "lock_id": existing_lock.id
+                }
+            
+            # Map alert type to lock reason
+            lock_reason = self._map_alert_type_to_lock_reason(alert.alert_type)
+            
+            # Determine lock scope
+            lock_scope = self._determine_lock_scope(alert.alert_type, alert.severity)
+            
+            # Map committee to approval committee string
+            approval_committee = self._map_committee_to_string(alert.assigned_committee)
+            
+            # Create lock title and description
+            lock_title = f"Lock: {alert.title}"
+            lock_description = (
+                f"Workflow lock created automatically for alert: {alert.title}\n\n"
+                f"{alert.description}"
+            )
+            
+            # Create the lock
+            return self.create_lock(
+                property_id=alert.property_id,
+                lock_reason=lock_reason,
+                lock_scope=lock_scope,
+                title=lock_title,
+                description=lock_description,
+                locked_by=locked_by,
+                alert_id=alert.id,
+                approval_committee=approval_committee,
+                br_id=alert.br_id
+            )
+        
+        except Exception as e:
+            logger.error(f"Error creating lock from alert {alert.id}: {str(e)}", exc_info=True)
+            return {"success": False, "error": str(e)}
+    
+    def _map_alert_type_to_lock_reason(self, alert_type: AlertType) -> LockReason:
+        """Map alert type to workflow lock reason"""
+        mapping = {
+            AlertType.DSCR_BREACH: LockReason.DSCR_BREACH,
+            AlertType.OCCUPANCY_WARNING: LockReason.OCCUPANCY_THRESHOLD,
+            AlertType.OCCUPANCY_CRITICAL: LockReason.OCCUPANCY_THRESHOLD,
+            AlertType.LTV_BREACH: LockReason.COVENANT_VIOLATION,
+            AlertType.COVENANT_VIOLATION: LockReason.COVENANT_VIOLATION,
+            AlertType.VARIANCE_BREACH: LockReason.VARIANCE_BREACH,
+            AlertType.ANOMALY_DETECTED: LockReason.FINANCIAL_ANOMALY,
+            AlertType.FINANCIAL_THRESHOLD: LockReason.FINANCIAL_ANOMALY,
+            AlertType.DEBT_YIELD_BREACH: LockReason.COVENANT_VIOLATION,
+            AlertType.INTEREST_COVERAGE_BREACH: LockReason.COVENANT_VIOLATION,
+            AlertType.CASH_FLOW_NEGATIVE: LockReason.FINANCIAL_ANOMALY,
+            AlertType.REVENUE_DECLINE: LockReason.FINANCIAL_ANOMALY,
+            AlertType.EXPENSE_SPIKE: LockReason.FINANCIAL_ANOMALY,
+            AlertType.LIQUIDITY_WARNING: LockReason.FINANCIAL_ANOMALY,
+            AlertType.DEBT_TO_EQUITY_BREACH: LockReason.COVENANT_VIOLATION,
+        }
+        return mapping.get(alert_type, LockReason.COMMITTEE_REVIEW)
+    
+    def _determine_lock_scope(self, alert_type: AlertType, severity: AlertSeverity) -> LockScope:
+        """Determine lock scope based on alert type and severity"""
+        # Critical alerts lock all property operations
+        if severity == AlertSeverity.CRITICAL:
+            return LockScope.PROPERTY_ALL
+        
+        # Urgent alerts typically lock financial updates
+        if severity == AlertSeverity.URGENT:
+            return LockScope.FINANCIAL_UPDATES
+        
+        # Type-based scope for warnings
+        financial_types = [
+            AlertType.DSCR_BREACH,
+            AlertType.CASH_FLOW_NEGATIVE,
+            AlertType.REVENUE_DECLINE,
+            AlertType.EXPENSE_SPIKE,
+            AlertType.LIQUIDITY_WARNING,
+            AlertType.DEBT_TO_EQUITY_BREACH,
+            AlertType.DEBT_YIELD_BREACH,
+            AlertType.INTEREST_COVERAGE_BREACH
+        ]
+        
+        if alert_type in financial_types:
+            return LockScope.FINANCIAL_UPDATES
+        
+        # Default to financial updates
+        return LockScope.FINANCIAL_UPDATES
+    
+    def _map_committee_to_string(self, committee: CommitteeType) -> str:
+        """Map CommitteeType enum to string for approval_committee field"""
+        mapping = {
+            CommitteeType.FINANCE_SUBCOMMITTEE: "Finance Sub-Committee",
+            CommitteeType.OCCUPANCY_SUBCOMMITTEE: "Occupancy Sub-Committee",
+            CommitteeType.RISK_COMMITTEE: "Risk Committee",
+            CommitteeType.EXECUTIVE_COMMITTEE: "Executive Committee",
+        }
+        return mapping.get(committee, "Risk Committee")

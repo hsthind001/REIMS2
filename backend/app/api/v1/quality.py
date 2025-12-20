@@ -347,10 +347,15 @@ async def get_quality_summary(
                         total_info += 1
                 else:
                     is_matched = hasattr(record, 'account_id') and record.account_id is not None
-                    if conf < 85 or not is_matched:
+                    # Get match confidence for non-rent-roll records
+                    match_conf = float(getattr(record, 'match_confidence', 0)) if hasattr(record, 'match_confidence') and getattr(record, 'match_confidence') else 0
+                    # Critical: extraction < 85% OR match < 95% OR unmatched
+                    if conf < 85 or match_conf < 95 or not is_matched:
                         total_critical += 1
+                    # Warning: extraction 85-95% AND match >= 95% AND matched
                     elif 85 <= conf < 95:
                         total_warning += 1
+                    # Info: extraction >= 95% AND match >= 95%
                     else:
                         total_info += 1
 

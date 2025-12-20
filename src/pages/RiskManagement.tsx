@@ -8,6 +8,13 @@ import {
   saveThreshold
 } from '../lib/anomalyThresholds'
 import { AnomalyFieldViewer } from '../components/AnomalyFieldViewer'
+import {
+  getPropertyLocks,
+  approveLock,
+  rejectLock,
+  releaseLock,
+  type WorkflowLock as WorkflowLockType
+} from '../lib/workflowLocks'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1'
 
@@ -33,14 +40,7 @@ interface Alert {
   field_name?: string
 }
 
-interface WorkflowLock {
-  id: number
-  property_id: number
-  lock_reason: string
-  status: string
-  requires_committee_approval: boolean
-  created_at: string
-}
+// WorkflowLock interface imported from workflowLocks.ts
 
 interface Anomaly {
   type: string
@@ -79,7 +79,15 @@ export default function RiskManagement() {
   const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<number | null>(null)
   const [alerts, setAlerts] = useState<Alert[]>([])
-  const [locks, setLocks] = useState<WorkflowLock[]>([])
+  const [locks, setLocks] = useState<WorkflowLockType[]>([])
+  const [expandedLocks, setExpandedLocks] = useState<Set<number>>(new Set())
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [showApproveModal, setShowApproveModal] = useState<number | null>(null)
+  const [showRejectModal, setShowRejectModal] = useState<number | null>(null)
+  const [showReleaseModal, setShowReleaseModal] = useState<number | null>(null)
+  const [approveNotes, setApproveNotes] = useState('')
+  const [rejectReason, setRejectReason] = useState('')
+  const [releaseNotes, setReleaseNotes] = useState('')
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [loading, setLoading] = useState(false)
   const [accountsWithThresholds, setAccountsWithThresholds] = useState<any[]>([])
@@ -305,18 +313,149 @@ export default function RiskManagement() {
   const fetchLocks = async (propertyId: number) => {
     setLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/workflow-locks/properties/${propertyId}`, {
-        credentials: 'include'
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setLocks(data.locks || [])
-      }
+      const locksData = await getPropertyLocks(propertyId)
+      setLocks(locksData)
+      console.log(`Fetched ${locksData.length} workflow locks for property ${propertyId}`)
     } catch (err) {
       console.error('Failed to fetch locks:', err)
+      setLocks([])
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleApproveLock = async (lockId: number) => {
+    if (!approveNotes.trim()) {
+      alert('Please provide approval notes')
+      return
+    }
+    
+    setActionLoading(lockId)
+    try {
+      await approveLock(lockId, {
+        approved_by: 1, // TODO: Get actual user ID
+        resolution_notes: approveNotes
+      })
+      setApproveNotes('')
+      setShowApproveModal(null)
+      if (selectedProperty) {
+        await fetchLocks(selectedProperty)
+      }
+      alert('✅ Lock approved successfully')
+    } catch (err: any) {
+      console.error('Failed to approve lock:', err)
+      alert(`Failed to approve lock: ${err.message}`)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleRejectLock = async (lockId: number) => {
+    if (!rejectReason.trim()) {
+      alert('Please provide rejection reason')
+      return
+    }
+    
+    setActionLoading(lockId)
+    try {
+      await rejectLock(lockId, {
+        rejected_by: 1, // TODO: Get actual user ID
+        rejection_reason: rejectReason
+      })
+      setRejectReason('')
+      setShowRejectModal(null)
+      if (selectedProperty) {
+        await fetchLocks(selectedProperty)
+      }
+      alert('✅ Lock rejected')
+    } catch (err: any) {
+      console.error('Failed to reject lock:', err)
+      alert(`Failed to reject lock: ${err.message}`)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleReleaseLock = async (lockId: number) => {
+    if (!releaseNotes.trim()) {
+      alert('Please provide release notes')
+      return
+    }
+    
+    setActionLoading(lockId)
+    try {
+      await releaseLock(lockId, {
+        unlocked_by: 1, // TODO: Get actual user ID
+        resolution_notes: releaseNotes
+      })
+      setReleaseNotes('')
+      setShowReleaseModal(null)
+      if (selectedProperty) {
+        await fetchLocks(selectedProperty)
+      }
+      alert('✅ Lock released successfully')
+    } catch (err: any) {
+      console.error('Failed to release lock:', err)
+      alert(`Failed to release lock: ${err.message}`)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const toggleLockExpanded = (lockId: number) => {
+    const newExpanded = new Set(expandedLocks)
+    if (newExpanded.has(lockId)) {
+      newExpanded.delete(lockId)
+    } else {
+      newExpanded.add(lockId)
+    }
+    setExpandedLocks(newExpanded)
+  }
+
+  const getStatusColor = (status: string) => {
+    const statusUpper = (status || '').toUpperCase()
+    switch (statusUpper) {
+      case 'ACTIVE':
+        return '#dc2626' // red
+      case 'PENDING_APPROVAL':
+        return '#f59e0b' // amber
+      case 'APPROVED':
+        return '#10b981' // green
+      case 'REJECTED':
+        return '#ef4444' // red
+      case 'RELEASED':
+        return '#6b7280' // gray
+      default:
+        return '#6b7280'
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    const statusUpper = (status || '').toUpperCase()
+    const color = getStatusColor(status)
+    return (
+      <span style={{
+        padding: '0.25rem 0.75rem',
+        borderRadius: '12px',
+        fontSize: '0.75rem',
+        fontWeight: '600',
+        backgroundColor: `${color}20`,
+        color: color,
+        border: `1px solid ${color}40`
+      }}>
+        {status}
+      </span>
+    )
+  }
+
+  const getLockReasonIcon = (reason: string) => {
+    const reasonUpper = (reason || '').toUpperCase()
+    if (reasonUpper.includes('DSCR')) return '📊'
+    if (reasonUpper.includes('OCCUPANCY')) return '🏢'
+    if (reasonUpper.includes('COVENANT')) return '⚠️'
+    if (reasonUpper.includes('ANOMALY')) return '🔍'
+    if (reasonUpper.includes('VARIANCE')) return '📈'
+    return '🔒'
   }
 
   const fetchAnomalies = async (propertyId: number) => {
@@ -827,50 +966,155 @@ export default function RiskManagement() {
 
       {activeTab === 'locks' && (
         <div className="card">
-          <h3 className="card-title">Workflow Locks</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>Workflow Locks</h3>
+            <button
+              className="btn-primary"
+              onClick={() => window.location.hash = 'workflow-locks'}
+            >
+              🔓 Manage All Locks
+            </button>
+          </div>
           {loading ? (
             <div className="empty-state">
               <div className="spinner"></div>
               <p>Loading workflow locks...</p>
             </div>
           ) : locks.length > 0 ? (
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Reason</th>
-                    <th>Status</th>
-                    <th>Requires Approval</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locks.map((lock) => (
-                    <tr key={lock.id}>
-                      <td>{lock.id}</td>
-                      <td>{lock.lock_reason}</td>
-                      <td>
-                        <span className={`badge badge-${(lock.status || '').toUpperCase() === 'ACTIVE' ? 'error' : 'success'}`}>
-                          {lock.status}
-                        </span>
-                      </td>
-                      <td>
-                        {lock.requires_committee_approval ? '✓' : '✗'}
-                      </td>
-                      <td>{new Date(lock.created_at).toLocaleDateString()}</td>
-                      <td>
-                        {(lock.status || '').toUpperCase() === 'ACTIVE' && (
-                          <button className="btn-sm btn-warning">
-                            Request Release
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {locks.map((lock) => {
+                const isExpanded = expandedLocks.has(lock.id)
+                const statusUpper = (lock.status || '').toUpperCase()
+                const isActive = statusUpper === 'ACTIVE'
+                const isPending = statusUpper === 'PENDING_APPROVAL'
+                const lockDate = lock.locked_at || lock.created_at
+                const daysLocked = lockDate ? Math.floor(
+                  (new Date().getTime() - new Date(lockDate).getTime()) / (1000 * 60 * 60 * 24)
+                ) : 0
+                
+                return (
+                  <div
+                    key={lock.id}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      backgroundColor: '#ffffff',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                          <span style={{ fontSize: '1.5rem' }}>{getLockReasonIcon(lock.lock_reason)}</span>
+                          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>{lock.title}</h4>
+                          {getStatusBadge(lock.status)}
+                          {lock.requires_committee_approval && (
+                            <span style={{
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem',
+                              backgroundColor: '#fef3c7',
+                              color: '#92400e',
+                              fontWeight: '500'
+                            }}>
+                              Requires Approval
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                          <span><strong>Reason:</strong> {lock.lock_reason.replace(/_/g, ' ')}</span>
+                          <span><strong>Scope:</strong> {lock.lock_scope?.replace(/_/g, ' ') || 'N/A'}</span>
+                          {lock.approval_committee && (
+                            <span><strong>Committee:</strong> {lock.approval_committee}</span>
+                          )}
+                          <span><strong>Locked:</strong> {daysLocked} day{daysLocked !== 1 ? 's' : ''} ago</span>
+                        </div>
+                        {lock.description && !isExpanded && (
+                          <p style={{ fontSize: '0.875rem', color: '#374151', margin: '0.5rem 0', 
+                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {lock.description}
+                          </p>
+                        )}
+                        {isExpanded && lock.description && (
+                          <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: '#f9fafb', borderRadius: '4px' }}>
+                            <p style={{ fontSize: '0.875rem', color: '#374151', margin: 0, whiteSpace: 'pre-wrap' }}>
+                              {lock.description}
+                            </p>
+                            {lock.alert_id && (
+                              <button
+                                className="btn-sm btn-secondary"
+                                style={{ marginTop: '0.5rem' }}
+                                onClick={() => {
+                                  setActiveTab('alerts')
+                                  // Scroll to alert if possible
+                                }}
+                              >
+                                View Related Alert #{lock.alert_id}
+                              </button>
+                            )}
+                            {lock.resolution_notes && (
+                              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb' }}>
+                                <strong style={{ fontSize: '0.875rem' }}>Resolution Notes:</strong>
+                                <p style={{ fontSize: '0.875rem', color: '#374151', margin: '0.25rem 0 0 0' }}>
+                                  {lock.resolution_notes}
+                                </p>
+                              </div>
+                            )}
+                            {lock.rejection_reason && (
+                              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb' }}>
+                                <strong style={{ fontSize: '0.875rem', color: '#dc2626' }}>Rejection Reason:</strong>
+                                <p style={{ fontSize: '0.875rem', color: '#dc2626', margin: '0.25rem 0 0 0' }}>
+                                  {lock.rejection_reason}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
+                        <button
+                          className="btn-sm btn-secondary"
+                          onClick={() => toggleLockExpanded(lock.id)}
+                          style={{ minWidth: '80px' }}
+                        >
+                          {isExpanded ? '▼ Less' : '▶ More'}
+                        </button>
+                        {isActive && lock.requires_committee_approval && (
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                              className="btn-sm btn-success"
+                              onClick={() => setShowApproveModal(lock.id)}
+                              disabled={actionLoading === lock.id}
+                              style={{ minWidth: '80px' }}
+                            >
+                              {actionLoading === lock.id ? '...' : '✓ Approve'}
+                            </button>
+                            <button
+                              className="btn-sm btn-danger"
+                              onClick={() => setShowRejectModal(lock.id)}
+                              disabled={actionLoading === lock.id}
+                              style={{ minWidth: '80px' }}
+                            >
+                              {actionLoading === lock.id ? '...' : '✗ Reject'}
+                            </button>
+                          </div>
+                        )}
+                        {isActive && !lock.requires_committee_approval && (
+                          <button
+                            className="btn-sm btn-warning"
+                            onClick={() => setShowReleaseModal(lock.id)}
+                            disabled={actionLoading === lock.id}
+                            style={{ minWidth: '100px' }}
+                          >
+                            {actionLoading === lock.id ? '...' : '🔓 Release'}
                           </button>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ) : (
             <div className="empty-state">
@@ -1592,6 +1836,198 @@ export default function RiskManagement() {
           <div className="loading-state">
             <div className="spinner"></div>
             <p>Loading risk data...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Lock Modal */}
+      {showApproveModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+          }}>
+            <h3 style={{ marginTop: 0 }}>Approve Workflow Lock</h3>
+            <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
+              Please provide approval notes for this workflow lock.
+            </p>
+            <textarea
+              value={approveNotes}
+              onChange={(e) => setApproveNotes(e.target.value)}
+              placeholder="Enter approval notes..."
+              style={{
+                width: '100%',
+                minHeight: '100px',
+                padding: '0.75rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                fontFamily: 'inherit',
+                marginBottom: '1rem'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setShowApproveModal(null)
+                  setApproveNotes('')
+                }}
+                disabled={actionLoading === showApproveModal}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-success"
+                onClick={() => handleApproveLock(showApproveModal)}
+                disabled={actionLoading === showApproveModal || !approveNotes.trim()}
+              >
+                {actionLoading === showApproveModal ? 'Approving...' : 'Approve Lock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Lock Modal */}
+      {showRejectModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+          }}>
+            <h3 style={{ marginTop: 0 }}>Reject Workflow Lock</h3>
+            <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
+              Please provide a reason for rejecting this workflow lock.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Enter rejection reason..."
+              style={{
+                width: '100%',
+                minHeight: '100px',
+                padding: '0.75rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                fontFamily: 'inherit',
+                marginBottom: '1rem'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setShowRejectModal(null)
+                  setRejectReason('')
+                }}
+                disabled={actionLoading === showRejectModal}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                onClick={() => handleRejectLock(showRejectModal)}
+                disabled={actionLoading === showRejectModal || !rejectReason.trim()}
+              >
+                {actionLoading === showRejectModal ? 'Rejecting...' : 'Reject Lock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Release Lock Modal */}
+      {showReleaseModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+          }}>
+            <h3 style={{ marginTop: 0 }}>Release Workflow Lock</h3>
+            <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
+              Please provide resolution notes for releasing this workflow lock.
+            </p>
+            <textarea
+              value={releaseNotes}
+              onChange={(e) => setReleaseNotes(e.target.value)}
+              placeholder="Enter resolution notes..."
+              style={{
+                width: '100%',
+                minHeight: '100px',
+                padding: '0.75rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                fontFamily: 'inherit',
+                marginBottom: '1rem'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setShowReleaseModal(null)
+                  setReleaseNotes('')
+                }}
+                disabled={actionLoading === showReleaseModal}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-warning"
+                onClick={() => handleReleaseLock(showReleaseModal)}
+                disabled={actionLoading === showReleaseModal || !releaseNotes.trim()}
+              >
+                {actionLoading === showReleaseModal ? 'Releasing...' : 'Release Lock'}
+              </button>
+            </div>
           </div>
         </div>
       )}

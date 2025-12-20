@@ -226,18 +226,34 @@ export default function DataControlCenter() {
         setLoading(true);
       }
 
-      // Load quality score
-      const qualityRes = await fetch(`${API_BASE_URL}/quality/summary`, {
-        credentials: 'include'
-      });
+      // Load quality score and validation statistics in parallel
+      const [qualityRes, validationStatsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/quality/summary`, { credentials: 'include' }),
+        fetch(`${API_BASE_URL}/validations/rules/statistics`, { credentials: 'include' })
+      ]);
+
+      // Parse validation statistics
+      let validationStats = null;
+      if (validationStatsRes.ok) {
+        validationStats = await validationStatsRes.json();
+      }
+
+      // Parse quality data and set quality score
       if (qualityRes.ok) {
         const quality = await qualityRes.json();
 
-        // Calculate validation metrics from quality data
-        const totalIssues = (quality.critical_count || 0) + (quality.warning_count || 0);
-        const passRate = quality.total_records > 0
-          ? ((quality.total_records - totalIssues) / quality.total_records * 100)
-          : 99.2;
+        // Calculate validation metrics from actual validation statistics
+        // Use validation statistics if available, otherwise use defaults
+        const validationPassRate = validationStats?.summary?.overall_pass_rate ?? 0;
+        const validationTotalChecks = validationStats?.summary?.total_checks ?? 0;
+        // Calculate failed count: total_checks - passed_count
+        // passed_count = total_checks * (pass_rate / 100)
+        const validationFailedCount = validationTotalChecks > 0
+          ? Math.round(validationTotalChecks * (1 - validationPassRate / 100))
+          : 0;
+        const validationCriticalFailures = validationStats?.summary?.critical_failures ?? 0;
+        const validationActiveRules = validationStats?.summary?.active_rules ?? 24;
+        const validationWarnings = validationStats?.summary?.warnings ?? 0;
 
         setQualityScore({
           overallScore: quality.overall_avg_confidence || 96,
@@ -249,10 +265,10 @@ export default function DataControlCenter() {
             documentsProcessed: quality.total_documents || 0
           },
           validation: {
-            passRate: passRate,
-            failedValidations: quality.warning_count || 0,
-            activeRules: 24,
-            criticalFailures: quality.critical_count || 0
+            passRate: validationPassRate,
+            failedValidations: validationFailedCount,
+            activeRules: validationActiveRules,
+            criticalFailures: validationCriticalFailures
           },
           completeness: {
             score: quality.overall_match_rate || 97.8,
@@ -941,11 +957,17 @@ export default function DataControlCenter() {
                   <Card variant="warning" className="p-4">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-warning" />
-                      <div>
+                      <div className="flex-1">
                         <div className="font-semibold">Warning Items ({qualityScore.warningCount})</div>
                         <div className="text-sm text-text-secondary">
                           {qualityScore.warningCount} items with confidence 85-95% should be reviewed
                         </div>
+                        <button
+                          className="mt-2 text-warning hover:underline text-sm font-medium"
+                          onClick={() => window.location.hash = 'review-queue?severity=warning'}
+                        >
+                          View Warning Items →
+                        </button>
                       </div>
                     </div>
                   </Card>

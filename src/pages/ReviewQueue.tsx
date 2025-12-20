@@ -31,13 +31,20 @@ interface ReviewQueueItem {
 }
 
 export default function ReviewQueue() {
+  // Parse severity from URL hash (e.g., review-queue?severity=warning)
+  const getSeverityFromHash = (): string => {
+    const hash = window.location.hash
+    const match = hash.match(/severity=(\w+)/)
+    return match ? match[1] : 'all'
+  }
+
   const [reviewItems, setReviewItems] = useState<ReviewQueueItem[]>([])
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
     property_code: '',
     document_type: '',
-    severity: 'all'
+    severity: getSeverityFromHash()
   })
   const [selectedItem, setSelectedItem] = useState<ReviewQueueItem | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -75,12 +82,15 @@ export default function ReviewQueue() {
       if (filters.severity !== 'all') {
         filteredItems = filteredItems.filter((item: ReviewQueueItem) => {
           const conf = item.extraction_confidence || 0
+          const matchConf = item.match_confidence || 0
           const isMatched = item.account_code && item.account_code !== 'UNMATCHED'
           
           if (filters.severity === 'critical') {
-            return conf < 85 || !isMatched
+            // Critical: extraction < 85% OR match < 95% OR unmatched
+            return conf < 85 || matchConf < 95 || !isMatched
           } else if (filters.severity === 'warning') {
-            return conf >= 85 && conf < 95 && isMatched
+            // Warning: extraction 85-95% AND match >= 95% AND matched
+            return conf >= 85 && conf < 95 && matchConf >= 95 && isMatched
           }
           return true
         })
@@ -169,12 +179,15 @@ export default function ReviewQueue() {
     const matchConf = item.match_confidence || 0
     const isMatched = item.account_code && item.account_code !== 'UNMATCHED'
     
-    // Critical: extraction < 85 OR match < 95 OR unmatched
+    // Critical: extraction < 85% OR match < 95% OR unmatched
     if (extractionConf < 85 || matchConf < 95 || !isMatched) {
       return 'critical'
-    } else if (extractionConf < 95) {
+    } 
+    // Warning: extraction 85-95% AND match >= 95% AND matched
+    else if (extractionConf >= 85 && extractionConf < 95 && matchConf >= 95 && isMatched) {
       return 'warning'
     }
+    // Excellent: extraction >= 95% AND match >= 95%
     return 'excellent'
   }
   
