@@ -1586,7 +1586,7 @@ export default function PortfolioHub() {
                                 <div className="flex justify-between py-2 border-b border-border">
                                   <span>Operating Expenses</span>
                                   <span>
-                                    ${(financialStatements.income_statement.total_operating_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${(financialStatements.income_statement.total_expenses || financialStatements.income_statement.total_operating_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </div>
                                 <div className="flex justify-between py-2 border-b-2 border-border font-semibold">
@@ -1599,7 +1599,10 @@ export default function PortfolioHub() {
                                   <div className="flex justify-between py-2">
                                     <span className="text-text-secondary">Operating Margin</span>
                                     <span className="text-text-secondary">
-                                      {(financialStatements.income_statement.operating_margin * 100).toFixed(1)}%
+                                      {/* Backend returns operating_margin as percentage (already × 100), so display as-is */}
+                                      {typeof financialStatements.income_statement.operating_margin === 'number'
+                                        ? financialStatements.income_statement.operating_margin.toFixed(1)
+                                        : '0.0'}%
                                     </span>
                                   </div>
                                 )}

@@ -384,7 +384,7 @@ class MetricsService:
         # Get totals - try specific accounts first
         total_revenue = self._get_income_statement_total(property_id, period_id, '4999-0000')
         total_expenses = self._get_income_statement_total(property_id, period_id, '8999-0000')
-        noi = self._get_income_statement_total(property_id, period_id, '6299-0000')
+        stored_noi = self._get_income_statement_total(property_id, period_id, '6299-0000')
         net_income = self._get_income_statement_total(property_id, period_id, '9090-0000')
         
         # If totals not found, sum categories
@@ -398,8 +398,39 @@ class MetricsService:
                 property_id, period_id, account_pattern='[5-8]%', is_calculated=False
             )
         
-        # Calculate margins
-        operating_margin = self.safe_divide(noi, total_revenue) * Decimal('100')
+        # Calculate operating expenses (5xxx and 6xxx accounts only)
+        # Operating expenses exclude 7xxx (mortgage interest) and 8xxx (depreciation/amortization)
+        operating_expenses = self._sum_income_statement_accounts(
+            property_id, period_id, account_pattern='[5-6]%', is_calculated=False
+        ) or Decimal('0')
+        
+        # Get gross revenue (excluding Other Income adjustments for margin calculation)
+        # Other Income (4090) can have large negative adjustments that skew margins
+        gross_revenue = self._sum_income_statement_accounts(
+            property_id, period_id, account_pattern='4%', is_calculated=False
+        )
+        # Exclude Other Income (4090) if it's a large negative adjustment
+        other_income = self._get_income_statement_total(property_id, period_id, '4090-0000')
+        if other_income and other_income < Decimal('-10000'):  # Large negative adjustment
+            gross_revenue_for_margin = gross_revenue - other_income if gross_revenue else None
+        else:
+            gross_revenue_for_margin = gross_revenue
+        
+        # Calculate NOI: Revenue - Operating Expenses
+        # Prefer calculated NOI over stored NOI for accuracy
+        if gross_revenue_for_margin is not None and operating_expenses is not None:
+            calculated_noi = gross_revenue_for_margin - operating_expenses
+            noi = calculated_noi
+        elif stored_noi is not None:
+            # Fall back to stored NOI if calculation not possible
+            noi = stored_noi
+        else:
+            noi = None
+        
+        # Calculate operating margin using gross revenue (before large adjustments)
+        # This gives a more accurate picture of operating performance
+        revenue_for_margin = gross_revenue_for_margin if gross_revenue_for_margin else total_revenue
+        operating_margin = self.safe_divide(noi, revenue_for_margin) * Decimal('100') if noi is not None and revenue_for_margin is not None else None
         profit_margin = self.safe_divide(net_income, total_revenue) * Decimal('100')
         
         return {
@@ -536,7 +567,8 @@ class MetricsService:
         revenue_per_sqft = self.safe_divide(revenue, total_sqft)
         
         # Expense ratio
-        expense_ratio = self.safe_divide(expenses, revenue) * Decimal('100')
+        expense_ratio_result = self.safe_divide(expenses, revenue)
+        expense_ratio = expense_ratio_result * Decimal('100') if expense_ratio_result is not None else None
         
         return {
             "noi_per_sqft": noi_per_sqft,
@@ -820,15 +852,52 @@ class MetricsService:
         account_pattern: str,
         is_calculated: bool = False
     ) -> Optional[Decimal]:
-        """Sum income statement accounts matching pattern"""
-        result = self.db.query(
-            func.sum(IncomeStatementData.period_amount)
-        ).filter(
-            IncomeStatementData.property_id == property_id,
-            IncomeStatementData.period_id == period_id,
-            IncomeStatementData.account_code.like(account_pattern),
-            IncomeStatementData.is_calculated == is_calculated
-        ).scalar()
+        """Sum income statement accounts matching pattern
+        
+        Supports both SQL LIKE patterns (e.g., '4%') and regex patterns (e.g., '[5-8]%')
+        """
+        from sqlalchemy import or_
+        
+        # Handle regex patterns like [5-8]% by converting to multiple LIKE conditions
+        if account_pattern.startswith('[') and ']' in account_pattern:
+            # Extract range and suffix
+            range_end = account_pattern.index(']')
+            range_part = account_pattern[1:range_end]
+            suffix = account_pattern[range_end + 1:]
+            
+            # Parse range (e.g., '5-8' -> ['5', '6', '7', '8'])
+            if '-' in range_part:
+                start, end = range_part.split('-')
+                start_digit = int(start)
+                end_digit = int(end)
+                digits = [str(d) for d in range(start_digit, end_digit + 1)]
+            else:
+                digits = [range_part]
+            
+            # Build OR conditions for each digit
+            conditions = [
+                IncomeStatementData.account_code.like(f"{digit}{suffix}")
+                for digit in digits
+            ]
+            
+            result = self.db.query(
+                func.sum(IncomeStatementData.period_amount)
+            ).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id,
+                or_(*conditions),
+                IncomeStatementData.is_calculated == is_calculated
+            ).scalar()
+        else:
+            # Standard LIKE pattern
+            result = self.db.query(
+                func.sum(IncomeStatementData.period_amount)
+            ).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id,
+                IncomeStatementData.account_code.like(account_pattern),
+                IncomeStatementData.is_calculated == is_calculated
+            ).scalar()
         
         return result if result else None
     

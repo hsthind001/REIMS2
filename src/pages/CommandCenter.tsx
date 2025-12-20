@@ -20,6 +20,7 @@ import { DocumentUpload } from '../components/DocumentUpload';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
 import { getMetricSource, getPDFViewerData } from '../lib/metrics_source';
+import { useAuth } from '../components/AuthContext';
 import type { Property } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
@@ -62,6 +63,12 @@ interface CriticalAlert {
   };
   recommendation: string;
   createdAt: Date;
+  period?: {
+    id: number;
+    year: number;
+    month: number;
+  };
+  financial_period_id?: number;
 }
 
 interface PropertyPerformance {
@@ -88,6 +95,7 @@ interface AIInsight {
 }
 
 export default function CommandCenter() {
+  const { user } = useAuth();
   const [portfolioHealth, setPortfolioHealth] = useState<PortfolioHealth | null>(null);
   const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlert[]>([]);
   const [propertyPerformance, setPropertyPerformance] = useState<PropertyPerformance[]>([]);
@@ -379,12 +387,49 @@ export default function CommandCenter() {
 
   const loadCriticalAlerts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts?priority=critical`, {
+      const response = await fetch(`${API_BASE_URL}/risk-alerts?priority=critical&status=ACTIVE`, {
         credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
-        const alerts = (data.alerts || data).slice(0, 5); // Top 5 critical
+        let alerts = data.alerts || data;
+        
+        // Filter to show only latest period's alert per property
+        // Group by property_id and keep only the most recent alert per property
+        const alertsByProperty = new Map<number, any>();
+        alerts.forEach((a: any) => {
+          const propertyId = a.property_id;
+          const existing = alertsByProperty.get(propertyId);
+          
+          if (!existing) {
+            alertsByProperty.set(propertyId, a);
+          } else {
+            // Compare by period (year/month) or triggered_at
+            const existingDate = new Date(existing.triggered_at || existing.created_at || 0);
+            const currentDate = new Date(a.triggered_at || a.created_at || 0);
+            
+            // Prefer alert with more recent period or triggered_at
+            if (a.financial_period_id && existing.financial_period_id) {
+              // If both have period_id, prefer the one with later period
+              // For now, use triggered_at as proxy (will be improved with period info)
+              if (currentDate > existingDate) {
+                alertsByProperty.set(propertyId, a);
+              }
+            } else if (currentDate > existingDate) {
+              alertsByProperty.set(propertyId, a);
+            }
+          }
+        });
+        
+        // Convert map back to array and take top 5
+        alerts = Array.from(alertsByProperty.values())
+          .sort((a: any, b: any) => {
+            const dateA = new Date(a.triggered_at || a.created_at || 0).getTime();
+            const dateB = new Date(b.triggered_at || b.created_at || 0).getTime();
+            return dateB - dateA; // Most recent first
+          })
+          .slice(0, 5);
+        
         setCriticalAlerts(alerts.map((a: any) => ({
           id: a.id,
           property: {
@@ -395,13 +440,19 @@ export default function CommandCenter() {
           type: a.alert_type || 'risk',
           severity: a.severity || 'critical',
           metric: {
-            name: a.metric_name || 'DSCR',
+            name: a.metric_name || a.related_metric || 'DSCR',
             current: a.actual_value || 0,
             threshold: a.threshold_value || 1.25,
             impact: a.impact || 'Risk identified'
           },
-          recommendation: a.recommendation || 'Review immediately',
-          createdAt: new Date(a.created_at || Date.now())
+          recommendation: a.recommendation || a.description || 'Review immediately',
+          createdAt: new Date(a.triggered_at || a.created_at || Date.now()),
+          financial_period_id: a.financial_period_id,
+          period: a.period ? {
+            id: a.period.id,
+            year: a.period.year,
+            month: a.period.month
+          } : undefined
         })));
       } else if (response.status === 404) {
         // Endpoint doesn't exist yet - set empty alerts
@@ -899,18 +950,34 @@ export default function CommandCenter() {
         setAnalysisDetails(data);
       } else {
         // Generate analysis from insight data
+        let recommendations: string[] = [];
+        
+        // Enhanced recommendations based on insight type
+        if (insight.id === 'market_cap_rates') {
+          recommendations = [
+            'Consider selling properties when market cap rates are favorable',
+            'Monitor market trends to identify optimal exit timing',
+            'Compare portfolio cap rates to market averages',
+            'Review property valuations in light of current market conditions',
+            'Evaluate refinancing vs. sale options based on cap rate trends'
+          ];
+        } else {
+          recommendations = [
+            'Review related financial metrics',
+            'Monitor trends over next quarter',
+            'Consider implementing suggested actions'
+          ];
+        }
+        
         setAnalysisDetails({
           title: insight.title,
           summary: insight.description,
           details: [
             `Type: ${insight.type}`,
-            `Confidence: ${(insight.confidence * 100).toFixed(0)}%`
-          ],
-          recommendations: [
-            'Review related financial metrics',
-            'Monitor trends over next quarter',
-            'Consider implementing suggested actions'
-          ]
+            `Confidence: ${(insight.confidence * 100).toFixed(0)}%`,
+            insight.id === 'market_cap_rates' ? 'Market Analysis: Cap rates indicate market conditions favorable for property sales' : ''
+          ].filter(Boolean),
+          recommendations: recommendations
         });
       }
     } catch (err) {
@@ -986,6 +1053,125 @@ export default function CommandCenter() {
       case 'fair': return <AlertTriangle className="w-5 h-5 text-warning" />;
       case 'poor': return <AlertTriangle className="w-5 h-5 text-danger" />;
       default: return null;
+    }
+  };
+
+  // Button handlers for critical alerts
+  const handleViewFinancials = (alert: CriticalAlert) => {
+    // Navigate to Financial Command page (reports page) with property filter
+    // The FinancialCommand page will read the property code from URL hash
+    window.location.hash = `reports?property=${alert.property.code}`;
+  };
+
+  const handleAIRecommendations = async (alert: CriticalAlert) => {
+    setLoadingAnalysis(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/nlq/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          question: `What are the recommendations for ${alert.property.name} with ${alert.metric.name} of ${alert.metric.current} (threshold: ${alert.metric.threshold})?`,
+          context: {
+            property_id: alert.property.id,
+            alert_id: alert.id,
+            metric: alert.metric.name,
+            current_value: alert.metric.current,
+            threshold: alert.metric.threshold
+          }
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Check if query was successful
+        if (!data.success) {
+          // Display error in modal for better UX
+          setAnalysisDetails({
+            title: `AI Recommendations for ${alert.property.name}`,
+            summary: data.answer || data.error || 'Unable to generate recommendations at this time.',
+            details: [
+              `Property: ${alert.property.name} (${alert.property.code})`,
+              `Metric: ${alert.metric.name}`,
+              `Current Value: ${alert.metric.current}`,
+              `Threshold: ${alert.metric.threshold}`,
+              `Impact: ${alert.metric.impact}`
+            ],
+            recommendations: [
+              'The AI recommendation service is currently unavailable.',
+              'Please try again later or contact support if the issue persists.'
+            ]
+          });
+          setShowAnalysisModal(true);
+          return;
+        }
+        
+        // Successful query - display results
+        setAnalysisDetails({
+          title: `AI Recommendations for ${alert.property.name}`,
+          summary: data.answer || data.response || data.message || 'AI analysis unavailable',
+          details: [
+            `Property: ${alert.property.name} (${alert.property.code})`,
+            `Metric: ${alert.metric.name}`,
+            `Current Value: ${alert.metric.current}`,
+            `Threshold: ${alert.metric.threshold}`,
+            `Impact: ${alert.metric.impact}`
+          ],
+          recommendations: data.recommendations || (data.answer ? [data.answer] : ['No specific recommendations available at this time.'])
+        });
+        setShowAnalysisModal(true);
+      } else {
+        const error = await response.json();
+        alert(`Failed to load AI recommendations: ${error.detail || error.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to get AI recommendations:', err);
+      alert('Failed to load AI recommendations. Please try again.');
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  const handleAcknowledgeAlert = async (alert: CriticalAlert) => {
+    // Get current user ID from auth context
+    const currentUserId = user?.id || 1; // Fallback to 1 if not available
+    
+    if (!currentUserId) {
+      alert('Please log in to acknowledge alerts');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${alert.id}/acknowledge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          acknowledged_by: currentUserId,
+          notes: `Acknowledged from Command Center dashboard`
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Remove alert from list
+          setCriticalAlerts(prev => prev.filter(a => a.id !== alert.id));
+          // Show success message
+          alert('Alert acknowledged successfully');
+          // Refresh alerts to get updated list
+          await loadCriticalAlerts();
+        } else {
+          alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
+        }
+      } else {
+        const error = await response.json();
+        alert(`Failed to acknowledge alert: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to acknowledge alert:', err);
+      alert('Failed to acknowledge alert. Please try again.');
     }
   };
 
@@ -1184,7 +1370,7 @@ export default function CommandCenter() {
                 <Card key={alert.id} variant="danger" className="p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className="text-danger font-bold">🔴</span>
                         <span className="font-semibold text-lg">
                           {alert.property.name} - {alert.metric.name} {alert.metric.current}
@@ -1192,6 +1378,11 @@ export default function CommandCenter() {
                         <span className="text-sm text-text-secondary">
                           (Below {alert.metric.threshold})
                         </span>
+                        {alert.period && (
+                          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-medium">
+                            {new Date(alert.period.year, alert.period.month - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
                       </div>
                       <p className="text-text-secondary mb-2">
                         <strong>Impact:</strong> {alert.metric.impact}
@@ -1204,13 +1395,31 @@ export default function CommandCenter() {
                         max={100}
                         variant="danger"
                         showLabel
-                        label={`${Math.round((alert.metric.current / alert.metric.threshold) * 100)}% to compliance`}
+                        label={`${Math.round((alert.metric.current / alert.metric.threshold) * 100)}% of threshold (${Math.round(((alert.metric.threshold - alert.metric.current) / alert.metric.threshold) * 100)}% below compliance)`}
                       />
                     </div>
                     <div className="ml-4 flex gap-2">
-                      <Button variant="info" size="sm">View Financials</Button>
-                      <Button variant="premium" size="sm">AI Recommendations</Button>
-                      <Button variant="success" size="sm">Acknowledge</Button>
+                      <Button 
+                        variant="info" 
+                        size="sm"
+                        onClick={() => handleViewFinancials(alert)}
+                      >
+                        View Financials
+                      </Button>
+                      <Button 
+                        variant="premium" 
+                        size="sm"
+                        onClick={() => handleAIRecommendations(alert)}
+                      >
+                        AI Recommendations
+                      </Button>
+                      <Button 
+                        variant="success" 
+                        size="sm"
+                        onClick={() => handleAcknowledgeAlert(alert)}
+                      >
+                        Acknowledge
+                      </Button>
                     </div>
                   </div>
                 </Card>

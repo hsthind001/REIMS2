@@ -247,23 +247,35 @@ def get_portfolio_insights(
                 )
 
                 if metrics and metrics.net_income and metrics.total_assets:
-                    cap_rate = (float(metrics.net_income) / float(metrics.total_assets)) * 100
-                    portfolio_avg_cap += cap_rate
-                    cap_count += 1
+                    if metrics.total_assets > 0:
+                        cap_rate = (float(metrics.net_income) / float(metrics.total_assets)) * 100
+                        # Validate cap rate is reasonable (0.1% to 20%)
+                        if 0.1 <= cap_rate <= 20:
+                            portfolio_avg_cap += cap_rate
+                            cap_count += 1
+                        else:
+                            logger.debug(f"Invalid cap rate {cap_rate}% for property {prop.id}, skipping")
 
         if cap_count > 0:
             avg_cap = portfolio_avg_cap / cap_count
-            # Simplified market trend analysis
-            market_cap = avg_cap * 1.05  # Assume market trending slightly higher
-
-            if market_cap > avg_cap:
-                insights.append(AIInsight(
-                    id="market_cap_rates",
-                    type="market",
-                    title="Market Cap Rates Trending Up",
-                    description=f"Market cap rates trending up {round((market_cap - avg_cap), 2)}% - favorable for sales",
-                    confidence=0.78
-                ))
+            
+            # Only proceed if we have valid average cap rate
+            if avg_cap > 0:
+                # Simplified market trend analysis (assume market trending 5% higher)
+                market_cap = avg_cap * 1.05
+                
+                # Calculate percentage change correctly
+                percentage_change = ((market_cap - avg_cap) / avg_cap) * 100
+                
+                # Only show if change is meaningful (> 0.1%)
+                if percentage_change > 0.1:
+                    insights.append(AIInsight(
+                        id="market_cap_rates",
+                        type="market",
+                        title="Market Cap Rates Trending Up",
+                        description=f"Market cap rates trending up {round(percentage_change, 1)}% - favorable for sales",
+                        confidence=0.78
+                    ))
 
         # If no insights generated, add default ones
         if len(insights) == 0:

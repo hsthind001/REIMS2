@@ -127,24 +127,37 @@ class DSCRMonitoringService:
             }
 
             # Check if alert needed or if existing alert should be resolved
+            # Only create alerts if property has actual uploaded financial data
             if dscr < self.WARNING_THRESHOLD:
-                # DSCR is below threshold - create or update alert
-                try:
-                    alert = self._create_dscr_alert(
-                        property_id=property_id,
-                        financial_period_id=period.id,
-                        dscr=dscr,
-                        noi=noi,
-                        total_debt_service=total_debt_service,
-                        severity=severity,
+                # Verify property has actual financial data before creating alert
+                has_financial_data = self._has_financial_data(property_id, period.id)
+                
+                if not has_financial_data:
+                    logger.info(
+                        f"Skipping alert creation for property {property_id} (period {period.id}): "
+                        "No uploaded financial documents found. Property may not have data uploaded yet."
                     )
-                    result["alert_created"] = True
-                    result["alert_id"] = alert.id if alert else None
-                except Exception as alert_err:
-                    # Log but don't fail the DSCR calculation if alert creation fails
-                    logger.warning(f"Failed to create DSCR alert (DSCR calculation still successful): {str(alert_err)}")
                     result["alert_created"] = False
-                    result["alert_error"] = str(alert_err)
+                    result["alert_skipped"] = True
+                    result["skip_reason"] = "No financial data uploaded"
+                else:
+                    # DSCR is below threshold and property has data - create or update alert
+                    try:
+                        alert = self._create_dscr_alert(
+                            property_id=property_id,
+                            financial_period_id=period.id,
+                            dscr=dscr,
+                            noi=noi,
+                            total_debt_service=total_debt_service,
+                            severity=severity,
+                        )
+                        result["alert_created"] = True
+                        result["alert_id"] = alert.id if alert else None
+                    except Exception as alert_err:
+                        # Log but don't fail the DSCR calculation if alert creation fails
+                        logger.warning(f"Failed to create DSCR alert (DSCR calculation still successful): {str(alert_err)}")
+                        result["alert_created"] = False
+                        result["alert_error"] = str(alert_err)
             else:
                 # DSCR is healthy - auto-resolve any existing active alerts for this property/period
                 try:
@@ -429,15 +442,23 @@ class DSCRMonitoringService:
         severity: AlertSeverity,
     ) -> CommitteeAlert:
         """
-        Create a DSCR breach alert
+        Create a DSCR breach alert with intelligent duplicate prevention
+        
+        Logic:
+        - Check for ANY existing alert (not just ACTIVE) for property/period
+        - If ACTIVE exists → Update it
+        - If ACKNOWLEDGED/RESOLVED exists → Reactivate if DSCR still below threshold
+        - If DISMISSED exists → Create new alert (user explicitly dismissed)
+        - If none exists → Create new alert
         """
-        # Check if alert already exists for this property/period
+        # Check for existing alert (any status except DISMISSED)
+        # Order by triggered_at DESC to get the most recent one
         existing_alert = self.db.query(CommitteeAlert).filter(
             CommitteeAlert.property_id == property_id,
             CommitteeAlert.financial_period_id == financial_period_id,
             CommitteeAlert.alert_type == AlertType.DSCR_BREACH,
-            CommitteeAlert.status == AlertStatus.ACTIVE
-        ).first()
+            CommitteeAlert.status != AlertStatus.DISMISSED  # Check all except dismissed
+        ).order_by(CommitteeAlert.triggered_at.desc()).first()
 
         if existing_alert:
             # Update existing alert with current DSCR calculation
@@ -452,13 +473,34 @@ class DSCRMonitoringService:
                 + (f"This may indicate covenant violation. Finance committee review required." if dscr < self.WARNING_THRESHOLD else "Property meets DSCR requirements.")
             )
             existing_alert.updated_at = datetime.utcnow()
-            # Auto-resolve if DSCR is now healthy
-            if dscr >= self.WARNING_THRESHOLD and existing_alert.status == AlertStatus.ACTIVE:
-                existing_alert.status = AlertStatus.RESOLVED
-                existing_alert.resolved_at = datetime.utcnow()
-                existing_alert.resolved_by = None
-                existing_alert.resolution_notes = f"Auto-resolved: DSCR improved to {float(dscr):.2f} (above threshold {float(self.WARNING_THRESHOLD):.2f})"
+            
+            # Intelligent status management
+            if dscr >= self.WARNING_THRESHOLD:
+                # DSCR is now healthy - resolve if active
+                if existing_alert.status == AlertStatus.ACTIVE:
+                    existing_alert.status = AlertStatus.RESOLVED
+                    existing_alert.resolved_at = datetime.utcnow()
+                    existing_alert.resolved_by = None
+                    existing_alert.resolution_notes = f"Auto-resolved: DSCR improved to {float(dscr):.2f} (above threshold {float(self.WARNING_THRESHOLD):.2f})"
+            else:
+                # DSCR is still below threshold
+                if existing_alert.status in [AlertStatus.ACKNOWLEDGED, AlertStatus.RESOLVED]:
+                    # Reactivate if it was previously acknowledged/resolved
+                    existing_alert.status = AlertStatus.ACTIVE
+                    existing_alert.acknowledged_at = None
+                    existing_alert.acknowledged_by = None
+                    existing_alert.resolved_at = None
+                    existing_alert.resolved_by = None
+                    existing_alert.resolution_notes = None
+                    logger.info(
+                        f"Reactivated DSCR alert {existing_alert.id} for property {property_id}, "
+                        f"period {financial_period_id} (DSCR still below threshold)"
+                    )
+                # If already ACTIVE, just update the values (already done above)
+            
             self.db.commit()
+            self.db.refresh(existing_alert)
+            logger.info(f"DSCR alert updated: {existing_alert.id} for property {property_id}, period {financial_period_id}")
             return existing_alert
 
         # Create new alert
@@ -538,6 +580,48 @@ class DSCRMonitoringService:
 
         logger.info(f"Workflow lock created: {lock.id} for alert {alert.id}")
         return lock
+
+    def _has_financial_data(self, property_id: int, period_id: int) -> bool:
+        """
+        Check if property has actual uploaded financial documents for the period
+        
+        Returns True if property has:
+        - Income statement data, OR
+        - Mortgage statement data, OR
+        - Document uploads with extraction_status='completed'
+        
+        This prevents creating alerts for properties without uploaded data.
+        """
+        # Check for income statement data
+        income_data = self.db.query(IncomeStatementData).filter(
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == period_id
+        ).first()
+        
+        if income_data:
+            return True
+        
+        # Check for mortgage statement data
+        mortgage_data = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == period_id
+        ).first()
+        
+        if mortgage_data:
+            return True
+        
+        # Check for completed document uploads
+        from app.models.document_upload import DocumentUpload
+        completed_upload = self.db.query(DocumentUpload).filter(
+            DocumentUpload.property_id == property_id,
+            DocumentUpload.period_id == period_id,
+            DocumentUpload.extraction_status == 'completed'
+        ).first()
+        
+        if completed_upload:
+            return True
+        
+        return False
 
     def monitor_all_properties(self, lookback_days: int = 90) -> Dict:
         """

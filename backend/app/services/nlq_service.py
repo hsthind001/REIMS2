@@ -2012,12 +2012,28 @@ Generate a clear, accurate answer:"""
             .first()
 
         if cached:
-            return cached.to_dict()
+            cached_dict = cached.to_dict()
+            # Only return successful cached results
+            # Check if answer contains error message pattern
+            answer = cached_dict.get('answer', '')
+            if answer and (answer.startswith('❌ Error:') or answer.startswith('Error:')):
+                # Skip cached error result, force re-processing
+                logger.info("Skipping cached error result, will re-process query")
+                return None
+            # Add success field for consistency (cached results are always successful)
+            cached_dict['success'] = True
+            return cached_dict
 
         return None
 
     def _cache_result(self, question: str, result: Dict):
         """Cache result (already stored in database via NLQQuery)"""
+        # Only cache successful results
+        # Note: Failed queries are not stored in database, so this is mainly for consistency
+        if not result.get('success', True):
+            logger.debug("Skipping cache for failed query result")
+            return
+        # Note: Results are already cached via NLQQuery model in query() method
         pass
     
     def _generate_suggested_followups(self, question: str, answer: str, data: List[Dict]) -> List[str]:

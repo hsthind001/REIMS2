@@ -61,6 +61,10 @@ function AppContent() {
       if (routeName === 'alert-rules' && currentPage !== 'risk') {
         setCurrentPage('risk')
       }
+      // If navigating to reports, ensure we're on reports page
+      if (routeName === 'reports' && currentPage !== 'reports') {
+        setCurrentPage('reports')
+      }
     }
 
     // Check initial hash

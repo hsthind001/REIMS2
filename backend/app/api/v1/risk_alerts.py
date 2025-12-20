@@ -4,7 +4,7 @@ Risk Alerts API Endpoints
 Handles committee alerts, DSCR monitoring, and covenant compliance
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -19,10 +19,53 @@ from app.services.alert_prioritization_service import AlertPrioritizationService
 from app.models.committee_alert import CommitteeAlert, AlertType, AlertStatus, AlertSeverity, CommitteeType
 from app.models.property import Property
 from app.models.user import User
+from app.models.income_statement_data import IncomeStatementData
+from app.models.mortgage_statement_data import MortgageStatementData
+from app.models.document_upload import DocumentUpload
 from app.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/risk-alerts", tags=["risk_alerts"])
 logger = logging.getLogger(__name__)
+
+
+def _has_financial_data_for_period(db: Session, property_id: int, period_id: int) -> bool:
+    """
+    Check if property has actual uploaded financial documents for the period
+    
+    Returns True if property has:
+    - Income statement data, OR
+    - Mortgage statement data, OR
+    - Document uploads with extraction_status='completed'
+    """
+    # Check for income statement data
+    income_data = db.query(IncomeStatementData).filter(
+        IncomeStatementData.property_id == property_id,
+        IncomeStatementData.period_id == period_id
+    ).first()
+    
+    if income_data:
+        return True
+    
+    # Check for mortgage statement data
+    mortgage_data = db.query(MortgageStatementData).filter(
+        MortgageStatementData.property_id == property_id,
+        MortgageStatementData.period_id == period_id
+    ).first()
+    
+    if mortgage_data:
+        return True
+    
+    # Check for completed document uploads
+    completed_upload = db.query(DocumentUpload).filter(
+        DocumentUpload.property_id == property_id,
+        DocumentUpload.period_id == period_id,
+        DocumentUpload.extraction_status == 'completed'
+    ).first()
+    
+    if completed_upload:
+        return True
+    
+    return False
 
 
 class AlertAcknowledgeRequest(BaseModel):
@@ -151,6 +194,116 @@ def get_covenant_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/diagnostics/duplicate-alerts")
+def diagnose_duplicate_alerts(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    alert_type: Optional[str] = Query(None, description="Filter by alert type (e.g., DSCR_BREACH)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Diagnostic endpoint to analyze duplicate alerts
+    
+    Identifies:
+    - Alerts for same property/period combination
+    - Different periods vs same period duplicates
+    - Status distribution of duplicates
+    """
+    from sqlalchemy import func, case
+    from app.models.financial_period import FinancialPeriod
+    
+    # Build base query
+    query = db.query(CommitteeAlert)
+    
+    if property_id:
+        query = query.filter(CommitteeAlert.property_id == property_id)
+    
+    if alert_type:
+        query = query.filter(CommitteeAlert.alert_type == alert_type)
+    else:
+        # Default to DSCR_BREACH for this diagnostic
+        query = query.filter(CommitteeAlert.alert_type == AlertType.DSCR_BREACH)
+    
+    alerts = query.order_by(
+        CommitteeAlert.property_id,
+        CommitteeAlert.financial_period_id,
+        CommitteeAlert.triggered_at.desc()
+    ).all()
+    
+    # Group alerts by property/period
+    alert_groups = {}
+    for alert in alerts:
+        key = (alert.property_id, alert.financial_period_id)
+        if key not in alert_groups:
+            alert_groups[key] = []
+        alert_groups[key].append({
+            "id": alert.id,
+            "status": alert.status.value if alert.status else None,
+            "severity": alert.severity.value if alert.severity else None,
+            "actual_value": float(alert.actual_value) if alert.actual_value else None,
+            "triggered_at": alert.triggered_at.isoformat() if alert.triggered_at else None,
+            "acknowledged_at": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+            "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
+        })
+    
+    # Find duplicates (more than 1 alert per property/period)
+    duplicates = {}
+    for key, alert_list in alert_groups.items():
+        if len(alert_list) > 1:
+            property_id_val, period_id_val = key
+            
+            # Get period details
+            period = db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id_val).first()
+            period_info = None
+            if period:
+                period_info = {
+                    "year": period.period_year,
+                    "month": period.period_month,
+                    "start_date": period.period_start_date.isoformat() if period.period_start_date else None,
+                    "end_date": period.period_end_date.isoformat() if period.period_end_date else None,
+                }
+            
+            # Get property details
+            property_obj = db.query(Property).filter(Property.id == property_id_val).first()
+            property_info = None
+            if property_obj:
+                property_info = {
+                    "id": property_obj.id,
+                    "name": property_obj.property_name,
+                    "code": property_obj.property_code,
+                }
+            
+            duplicates[key] = {
+                "property": property_info,
+                "period": period_info,
+                "period_id": period_id_val,
+                "alert_count": len(alert_list),
+                "alerts": alert_list,
+                "statuses": list(set(a["status"] for a in alert_list)),
+                "active_count": sum(1 for a in alert_list if a["status"] == "ACTIVE"),
+                "acknowledged_count": sum(1 for a in alert_list if a["status"] == "ACKNOWLEDGED"),
+                "resolved_count": sum(1 for a in alert_list if a["status"] == "RESOLVED"),
+            }
+    
+    # Summary statistics
+    total_alerts = len(alerts)
+    total_property_period_combinations = len(alert_groups)
+    total_duplicates = len(duplicates)
+    total_duplicate_alerts = sum(len(v["alerts"]) for v in duplicates.values())
+    
+    return {
+        "success": True,
+        "summary": {
+            "total_alerts": total_alerts,
+            "total_property_period_combinations": total_property_period_combinations,
+            "total_duplicate_groups": total_duplicates,
+            "total_duplicate_alerts": total_duplicate_alerts,
+            "unique_alerts": total_alerts - total_duplicate_alerts + total_duplicates,
+        },
+        "duplicates": duplicates,
+        "message": f"Found {total_duplicates} property/period combinations with duplicate alerts"
+    }
+
+
 @router.post("/monitor-all-properties")
 def monitor_all_properties(
     lookback_days: int = Query(default=90, ge=1, le=365),
@@ -273,7 +426,7 @@ def get_risk_alerts(
         }
         severity = priority_map.get(priority.lower(), severity)
 
-    query = db.query(CommitteeAlert)
+    query = db.query(CommitteeAlert).options(joinedload(CommitteeAlert.property))
 
     if status:
         query = query.filter(CommitteeAlert.status == status)
@@ -295,10 +448,58 @@ def get_risk_alerts(
         CommitteeAlert.triggered_at.desc()
     ).limit(limit).all()
 
+    # Enhance alert data with property details and metric information
+    alerts_data = []
+    for alert in alerts:
+        alert_dict = alert.to_dict()
+        
+        # Add property details if property relationship is loaded
+        if alert.property:
+            alert_dict["property_name"] = alert.property.property_name
+            alert_dict["property_code"] = alert.property.property_code
+            
+            # For DSCR alerts, check if property has actual financial data
+            # Skip alerts for properties without uploaded documents
+            if alert.alert_type == AlertType.DSCR_BREACH and alert.financial_period_id:
+                has_data = _has_financial_data_for_period(db, alert.property_id, alert.financial_period_id)
+                if not has_data:
+                    logger.debug(
+                        f"Skipping DSCR alert {alert.id} for property {alert.property_id}: "
+                        "No financial data uploaded"
+                    )
+                    continue  # Skip this alert
+        
+        # Add period information if financial_period_id exists
+        if alert.financial_period_id:
+            from app.models.financial_period import FinancialPeriod
+            period = db.query(FinancialPeriod).filter(FinancialPeriod.id == alert.financial_period_id).first()
+            if period:
+                alert_dict["period"] = {
+                    "id": period.id,
+                    "year": period.period_year,
+                    "month": period.period_month,
+                    "start_date": period.period_start_date.isoformat() if period.period_start_date else None,
+                    "end_date": period.period_end_date.isoformat() if period.period_end_date else None,
+                }
+        
+        # Map metric name from related_metric or alert_type
+        alert_dict["metric_name"] = alert.related_metric or (alert.alert_type.value if alert.alert_type else "Unknown")
+        
+        # Add impact and recommendation from metadata or description
+        if alert.alert_metadata and isinstance(alert.alert_metadata, dict):
+            alert_dict["impact"] = alert.alert_metadata.get("impact", "Risk identified")
+        else:
+            alert_dict["impact"] = "Risk identified"
+        
+        # Use description as recommendation, or default message
+        alert_dict["recommendation"] = alert.description or "Review immediately"
+        
+        alerts_data.append(alert_dict)
+
     return {
         "success": True,
-        "alerts": [alert.to_dict() for alert in alerts],
-        "total": len(alerts),
+        "alerts": alerts_data,
+        "total": len(alerts_data),
         "filters": {
             "priority": priority,
             "status": status,
@@ -323,7 +524,7 @@ def get_all_alerts(
     """
     Get all alerts with optional filtering
     """
-    query = db.query(CommitteeAlert)
+    query = db.query(CommitteeAlert).options(joinedload(CommitteeAlert.property))
 
     if status:
         query = query.filter(CommitteeAlert.status == status)
@@ -345,10 +546,59 @@ def get_all_alerts(
         CommitteeAlert.triggered_at.desc()
     ).limit(limit).all()
 
+    # Enhance alert data with property details and metric information
+    # Also filter out alerts for properties without uploaded financial data
+    alerts_data = []
+    for alert in alerts:
+        alert_dict = alert.to_dict()
+        
+        # Add property details if property relationship is loaded
+        if alert.property:
+            alert_dict["property_name"] = alert.property.property_name
+            alert_dict["property_code"] = alert.property.property_code
+            
+            # For DSCR alerts, check if property has actual financial data
+            # Skip alerts for properties without uploaded documents
+            if alert.alert_type == AlertType.DSCR_BREACH and alert.financial_period_id:
+                has_data = _has_financial_data_for_period(db, alert.property_id, alert.financial_period_id)
+                if not has_data:
+                    logger.debug(
+                        f"Skipping DSCR alert {alert.id} for property {alert.property_id}: "
+                        "No financial data uploaded"
+                    )
+                    continue  # Skip this alert
+        
+        # Add period information if financial_period_id exists
+        if alert.financial_period_id:
+            from app.models.financial_period import FinancialPeriod
+            period = db.query(FinancialPeriod).filter(FinancialPeriod.id == alert.financial_period_id).first()
+            if period:
+                alert_dict["period"] = {
+                    "id": period.id,
+                    "year": period.period_year,
+                    "month": period.period_month,
+                    "start_date": period.period_start_date.isoformat() if period.period_start_date else None,
+                    "end_date": period.period_end_date.isoformat() if period.period_end_date else None,
+                }
+        
+        # Map metric name from related_metric or alert_type
+        alert_dict["metric_name"] = alert.related_metric or (alert.alert_type.value if alert.alert_type else "Unknown")
+        
+        # Add impact and recommendation from metadata or description
+        if alert.alert_metadata and isinstance(alert.alert_metadata, dict):
+            alert_dict["impact"] = alert.alert_metadata.get("impact", "Risk identified")
+        else:
+            alert_dict["impact"] = "Risk identified"
+        
+        # Use description as recommendation, or default message
+        alert_dict["recommendation"] = alert.description or "Review immediately"
+        
+        alerts_data.append(alert_dict)
+
     return {
         "success": True,
-        "alerts": [alert.to_dict() for alert in alerts],
-        "total": len(alerts),
+        "alerts": alerts_data,
+        "total": len(alerts_data),
         "filters": {
             "status": status,
             "severity": severity,

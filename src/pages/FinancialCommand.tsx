@@ -124,7 +124,40 @@ export default function FinancialCommand() {
 
   useEffect(() => {
     loadInitialData();
+    
+    // Check URL hash for property parameter
+    const hash = window.location.hash;
+    if (hash.includes('property=')) {
+      const params = new URLSearchParams(hash.split('?')[1] || '');
+      const propertyCode = params.get('property');
+      if (propertyCode) {
+        // Property will be set after properties load
+        setTimeout(() => {
+          const property = properties.find(p => p.property_code === propertyCode);
+          if (property) {
+            setSelectedProperty(property);
+          }
+        }, 100);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    // Re-check hash when properties are loaded
+    if (properties.length > 0) {
+      const hash = window.location.hash;
+      if (hash.includes('property=')) {
+        const params = new URLSearchParams(hash.split('?')[1] || '');
+        const propertyCode = params.get('property');
+        if (propertyCode && (!selectedProperty || selectedProperty.property_code !== propertyCode)) {
+          const property = properties.find(p => p.property_code === propertyCode);
+          if (property) {
+            setSelectedProperty(property);
+          }
+        }
+      }
+    }
+  }, [properties]);
 
   useEffect(() => {
     if (selectedProperty) {

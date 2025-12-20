@@ -138,7 +138,15 @@ export default function Reports() {
 
   const formatPercent = (value: number | null | undefined): string => {
     if (value === null || value === undefined) return 'N/A';
-    return `${(value * 100).toFixed(2)}%`;
+    // Backend returns percentages as already multiplied by 100 (e.g., 93.1, not 0.931)
+    // Check if value is already a percentage (> 1) or a decimal (< 1)
+    if (Math.abs(value) > 1) {
+      // Already a percentage, display as-is
+      return `${value.toFixed(2)}%`;
+    } else {
+      // Decimal format, multiply by 100
+      return `${(value * 100).toFixed(2)}%`;
+    }
   };
 
   const formatRatio = (value: number | null | undefined): string => {
