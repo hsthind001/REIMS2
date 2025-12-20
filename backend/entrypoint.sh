@@ -62,6 +62,9 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       echo "🌱 Seeding lenders..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_lenders.sql
       
+      echo "🌱 Seeding default alert rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_default_alert_rules.sql
+      
       echo "✅ Database seeded successfully!"
     else
       echo "ℹ️  Database already seeded, skipping..."

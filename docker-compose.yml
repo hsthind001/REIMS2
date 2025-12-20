@@ -243,6 +243,20 @@ services:
       # CORS
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
       
+      # Email Configuration (for Alert Notifications)
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-localhost}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-1025}
+      EMAIL_SMTP_USE_TLS: ${EMAIL_SMTP_USE_TLS:-false}
+      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_SMTP_FROM_EMAIL: ${EMAIL_SMTP_FROM_EMAIL:-noreply@reims.com}
+      EMAIL_SMTP_FROM_NAME: ${EMAIL_SMTP_FROM_NAME:-REIMS 2.0}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      EMAIL_DEBUG: ${EMAIL_DEBUG:-false}
+      EMAIL_SEND_ALERT_EMAILS: ${EMAIL_SEND_ALERT_EMAILS:-true}
+      EMAIL_SEND_DIGEST_EMAILS: ${EMAIL_SEND_DIGEST_EMAILS:-true}
+      EMAIL_SEND_ESCALATION_EMAILS: ${EMAIL_SEND_ESCALATION_EMAILS:-true}
+      
       # Database Initialization
       # NOTE: Migrations and seeding are handled by db-init container
       RUN_MIGRATIONS: "false"  # db-init container handles migrations
@@ -298,6 +312,8 @@ services:
     container_name: reims-celery-worker
     restart: unless-stopped
     entrypoint: ["/celery-entrypoint.sh"]
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: reims
       POSTGRES_PASSWORD: reims
@@ -310,6 +326,19 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      # Email Configuration (for Alert Notifications)
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-localhost}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-1025}
+      EMAIL_SMTP_USE_TLS: ${EMAIL_SMTP_USE_TLS:-false}
+      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_SMTP_FROM_EMAIL: ${EMAIL_SMTP_FROM_EMAIL:-noreply@reims.com}
+      EMAIL_SMTP_FROM_NAME: ${EMAIL_SMTP_FROM_NAME:-REIMS 2.0}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      EMAIL_DEBUG: ${EMAIL_DEBUG:-false}
+      EMAIL_SEND_ALERT_EMAILS: ${EMAIL_SEND_ALERT_EMAILS:-true}
+      EMAIL_SEND_DIGEST_EMAILS: ${EMAIL_SEND_DIGEST_EMAILS:-true}
+      EMAIL_SEND_ESCALATION_EMAILS: ${EMAIL_SEND_ESCALATION_EMAILS:-true}
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic  # Mount alembic for migrations
