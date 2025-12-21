@@ -1,0 +1,445 @@
+# Complete World-Class Anomaly Detection System - Remaining Features PRD
+
+## Executive Summary
+
+Complete the remaining 15% of the world-class anomaly detection system to achieve 100% completion. This PRD covers Phase 6 optimization integration and Phase 7 UI/UX backend enhancements.
+
+## Current Status
+
+- Phase 1-4: 100% complete
+- Phase 5 (LayoutLM): 90% complete (services created, API registered)
+- Phase 6 (Optimization): 70% complete (services created but not integrated)
+- Phase 7 (UI/UX): 45% complete (missing backend APIs)
+
+## Phase 6: Optimization Integration (30% Remaining)
+
+### Task 1: Integrate GPU Acceleration into PyOD Detector
+
+**File**: `backend/app/services/pyod_anomaly_detector.py`
+
+**Requirements**:
+1. Import `GPUAcceleratedDetector` from `app.services.gpu_accelerated_detector`
+2. Initialize GPU detector in `__init__` method
+3. Modify `detect_anomalies()` method to:
+   - Check if GPU is available and enabled
+   - Use GPU for batch predictions when processing multiple data points
+   - Fallback to CPU gracefully if GPU unavailable
+   - Track GPU usage metrics
+4. Add GPU device selection logic
+5. Log GPU vs CPU performance for monitoring
+
+**Success Criteria**:
+- GPU automatically used when available
+- CPU fallback works correctly
+- Performance improvement measurable
+- No breaking changes to existing API
+
+### Task 2: Integrate Incremental Learning into Model Training
+
+**File**: `backend/app/services/pyod_anomaly_detector.py`
+
+**Requirements**:
+1. Import `IncrementalLearningService` from `app.services.incremental_learning_service`
+2. Modify model training flow to:
+   - Check for existing cached model before training
+   - Use `incremental_fit()` instead of full retrain when:
+     - Cached model exists
+     - Incremental learning is enabled
+     - Model supports incremental updates
+   - Update model cache after incremental update
+   - Track incremental learning statistics (speedup, accuracy changes)
+3. Add feature flag check for incremental learning
+4. Handle model compatibility (not all models support incremental)
+
+**Success Criteria**:
+- 10x speedup achieved for incremental updates
+- Model accuracy maintained or improved
+- Cache properly updated after incremental fit
+- Statistics tracked and available
+
+### Task 3: Add Parallel Processing with Celery Groups
+
+**File**: `backend/app/tasks/anomaly_detection_tasks.py`
+
+**Requirements**:
+1. Create `detect_anomalies_parallel()` Celery task
+2. Use `celery.group()` for batch detection across multiple properties
+3. Support up to 4 workers for linear scaling
+4. Aggregate results from parallel tasks
+5. Handle errors gracefully in parallel execution
+6. Update `run_nightly_anomaly_detection` to use parallel processing when multiple properties need detection
+
+**Success Criteria**:
+- Linear scaling up to 4 workers
+- Results properly aggregated
+- Error handling works correctly
+- Performance improvement measurable
+
+### Task 4: Create Model Optimization API
+
+**File**: `backend/app/api/v1/model_optimization.py` (NEW)
+
+**Endpoints Required**:
+1. `GET /api/v1/model-optimization/gpu-status`
+   - Check GPU availability
+   - Return device name, memory usage, CUDA version
+   - Return current GPU usage stats
+
+2. `POST /api/v1/model-optimization/enable-gpu`
+   - Enable/disable GPU acceleration
+   - Validate GPU availability before enabling
+   - Update feature flag
+
+3. `GET /api/v1/model-optimization/incremental-stats/{model_id}`
+   - Get incremental learning statistics for specific model
+   - Return: speedup achieved, update count, accuracy changes, last update time
+
+4. `POST /api/v1/model-optimization/trigger-retrain/{model_id}`
+   - Force full retrain of cached model
+   - Invalidate cache
+   - Trigger new training
+
+5. `GET /api/v1/model-optimization/performance-metrics`
+   - Get cache hit rates
+   - Get GPU usage statistics
+   - Get incremental learning stats
+   - Get overall performance metrics
+
+**Success Criteria**:
+- All 5 endpoints functional
+- Proper authentication required
+- Error handling comprehensive
+- Response times <200ms
+
+## Phase 7: UI/UX Backend Enhancements (55% Remaining)
+
+### Task 5: Create Enhanced Anomaly Detail API
+
+**File**: `backend/app/api/v1/anomalies.py`
+
+**Endpoint**: `GET /api/v1/anomalies/{anomaly_id}/detailed`
+
+**Requirements**:
+Return comprehensive anomaly data including:
+1. Anomaly details (all existing fields)
+2. XAI explanation (if available):
+   - Root cause type and description
+   - SHAP values and feature importance
+   - LIME explanation
+   - Suggested actions
+3. PDF field coordinates (if available):
+   - Page number, x, y, width, height
+   - Confidence score
+4. Similar anomalies:
+   - Same account code, different periods
+   - Similarity scores
+   - Limit to top 5 most similar
+5. Feedback statistics:
+   - True positive rate
+   - False positive rate
+   - Total feedback count
+   - Recent feedback summary
+6. Cross-property context:
+   - Portfolio ranking
+   - Percentile
+   - Benchmark comparison
+7. Learned patterns:
+   - Any patterns that apply to this anomaly
+   - Pattern confidence
+   - Auto-suppression status
+8. Model information:
+   - Which algorithm detected it
+   - Confidence scores
+   - Detection methods used
+   - Model version
+
+**Success Criteria**:
+- Single comprehensive endpoint
+- All data aggregated correctly
+- Response time <500ms
+- Proper error handling
+
+### Task 6: Add WebSocket for Batch Job Updates
+
+**File**: `backend/app/api/v1/websocket.py`
+
+**Endpoint**: `WS /ws/batch-job/{job_id}`
+
+**Requirements**:
+1. Connect to batch reprocessing job
+2. Send real-time updates every 2 seconds:
+   - Status (pending, running, completed, failed, cancelled)
+   - Progress percentage (0-100)
+   - Processed documents count
+   - Total documents count
+   - ETA (estimated completion time) based on current processing rate
+   - Current document being processed (if available)
+3. Handle multiple clients per job (broadcast updates)
+4. Handle disconnections gracefully
+5. Close connection when job completes or fails
+6. Use `BatchReprocessingJob` model to query job status
+
+**Success Criteria**:
+- Real-time updates every 2 seconds
+- Multiple clients supported
+- Graceful disconnection handling
+- ETA calculation accurate
+
+### Task 7: Create Anomaly Export Service
+
+**File**: `backend/app/services/anomaly_export_service.py` (NEW)
+
+**Requirements**:
+1. Export anomalies to CSV, XLSX, and JSON formats
+2. Include all anomaly fields plus:
+   - XAI explanations (root cause, SHAP values, LIME explanation, suggested actions)
+   - Cross-property context
+   - Feedback history
+3. Support filtering by:
+   - Property ID(s)
+   - Date range (start_date, end_date)
+   - Severity level
+   - Anomaly type
+   - Account code(s)
+4. Format specifications:
+   - Excel: Multiple sheets (Anomalies, Explanations, Statistics, Feedback)
+   - CSV: Single file with all data, explanations in separate columns
+   - JSON: Structured JSON with nested explanation objects
+5. Handle large exports efficiently:
+   - Streaming for CSV
+   - Chunked processing for Excel
+   - Pagination for JSON
+6. Return file bytes ready for download
+
+**Success Criteria**:
+- All 3 formats supported
+- Filtering works correctly
+- Large exports handled efficiently
+- File bytes returned correctly
+
+### Task 8: Add Anomaly Export API Endpoints
+
+**File**: `backend/app/api/v1/anomalies.py`
+
+**Endpoints Required**:
+1. `GET /api/v1/anomalies/export/csv`
+2. `GET /api/v1/anomalies/export/excel`
+3. `GET /api/v1/anomalies/export/json`
+
+**Query Parameters**:
+- `property_ids` (comma-separated)
+- `date_start` (ISO date)
+- `date_end` (ISO date)
+- `severity` (critical, high, medium, low)
+- `anomaly_type` (z_score, percentage_change, etc.)
+- `account_codes` (comma-separated)
+
+**Requirements**:
+- All endpoints require authentication
+- Return proper Content-Type headers
+- Include filename in Content-Disposition header
+- Use AnomalyExportService
+- Handle errors gracefully
+
+**Success Criteria**:
+- All 3 endpoints functional
+- Proper file download headers
+- Filtering works correctly
+- Response times acceptable for large exports
+
+### Task 9: Create Uncertain Anomalies Endpoint
+
+**File**: `backend/app/api/v1/anomalies.py`
+
+**Endpoint**: `GET /api/v1/anomalies/uncertain?limit=10`
+
+**Requirements**:
+1. Return anomalies most needing user feedback
+2. Sort by uncertainty score calculated as:
+   - `(1 - confidence) * (1 + days_since_detection / 30) * (1 - feedback_count / 10)`
+3. Include:
+   - Anomaly details
+   - Confidence score
+   - Days since detection
+   - Feedback count
+   - Similar anomalies count
+   - Uncertainty score
+4. Filter to only anomalies with:
+   - Confidence < 0.9
+   - No feedback or low feedback count (< 3)
+5. Limit results to specified limit (default 10)
+
+**Success Criteria**:
+- Sorting logic works correctly
+- Returns most uncertain anomalies first
+- Helps prioritize feedback collection
+
+### Task 10: Create Portfolio Analytics API
+
+**File**: `backend/app/api/v1/portfolio_analytics.py` (NEW)
+
+**Endpoints Required**:
+1. `POST /api/v1/portfolio-analytics/calculate-benchmarks`
+   - Calculate benchmarks for all properties
+   - Triggers `CrossPropertyIntelligenceService.calculate_benchmarks` for all account codes
+   - Can be run asynchronously (Celery task)
+
+2. `GET /api/v1/portfolio-analytics/analytics`
+   - Get portfolio-wide analytics including:
+     - Total properties
+     - Total anomalies
+     - Average metrics (DSCR, NOI, occupancy, etc.)
+     - Portfolio health score (0-100)
+     - Anomaly distribution by severity
+     - Top performing properties
+     - Properties needing attention
+
+3. `GET /api/v1/portfolio-analytics/property/{property_id}/comparison`
+   - Compare specific property to portfolio benchmarks
+   - Uses `CrossPropertyIntelligenceService.get_property_ranking`
+   - Returns percentile rankings for key metrics
+
+4. `GET /api/v1/portfolio-analytics/outliers`
+   - Get portfolio outliers
+   - Properties outside 5th-95th percentile for key metrics
+   - Sorted by outlier severity
+
+**Requirements**:
+- All endpoints require authentication
+- Use `CrossPropertyIntelligenceService` for calculations
+- Proper error handling
+- Response times <500ms
+
+**Success Criteria**:
+- All 4 endpoints functional
+- Calculations accurate
+- Performance acceptable
+
+## Integration Tasks
+
+### Task 11: Update Main Router
+
+**File**: `backend/app/main.py`
+
+**Requirements**:
+1. Import `model_optimization` router from `app.api.v1.model_optimization`
+2. Import `portfolio_analytics` router from `app.api.v1.portfolio_analytics`
+3. Register `model_optimization` router with prefix `/api/v1/model-optimization`
+4. Register `portfolio_analytics` router with prefix `/api/v1/portfolio-analytics`
+5. Ensure proper tags for OpenAPI documentation
+6. Verify WebSocket router is already registered
+
+**Success Criteria**:
+- All routers registered correctly
+- OpenAPI docs updated
+- No conflicts with existing routes
+
+### Task 12: Create Pydantic Schemas
+
+**File**: `backend/app/schemas/anomaly_export.py` (NEW)
+
+**Schemas Required**:
+1. `AnomalyExportRequest` - Filter parameters
+2. `AnomalyExportResponse` - Export result
+3. `UncertainAnomalyResponse` - Uncertain anomaly data
+4. `DetailedAnomalyResponse` - Enhanced anomaly details
+5. `GPUStatusResponse` - GPU availability and stats
+6. `IncrementalStatsResponse` - Incremental learning statistics
+7. `PerformanceMetricsResponse` - Overall performance metrics
+
+**Requirements**:
+- Proper Pydantic Field descriptions
+- Validation rules
+- Optional fields marked correctly
+- Type hints accurate
+
+**Success Criteria**:
+- All schemas defined correctly
+- Validation works
+- API documentation generated correctly
+
+### Task 13: Testing and Verification
+
+**Requirements**:
+1. Test GPU acceleration integration
+   - Verify GPU is used when available
+   - Verify CPU fallback works
+   - Measure performance improvement
+
+2. Test incremental learning flow
+   - Verify 10x speedup
+   - Verify model accuracy maintained
+   - Test cache updates
+
+3. Test parallel processing
+   - Verify linear scaling
+   - Test result aggregation
+   - Test error handling
+
+4. Test Model Optimization API
+   - All 5 endpoints
+   - Various scenarios
+   - Error cases
+
+5. Test Enhanced Anomaly Detail API
+   - Verify all data returned
+   - Test with/without explanations
+   - Test performance
+
+6. Test WebSocket batch job updates
+   - Real-time updates
+   - Multiple clients
+   - Disconnection handling
+
+7. Test Anomaly Export
+   - All 3 formats
+   - Various filters
+   - Large exports
+
+8. Test Uncertain Anomalies endpoint
+   - Sorting logic
+   - Filtering
+   - Limit parameter
+
+9. Test Portfolio Analytics API
+   - All 4 endpoints
+   - Real data
+   - Performance
+
+10. Integration testing
+    - All services work together
+    - End-to-end flows
+    - Error scenarios
+
+11. Performance testing
+    - Response times <200ms for APIs
+    - Explanation generation <5s
+    - Export handles large datasets
+
+**Success Criteria**:
+- All tests pass
+- Performance targets met
+- No regressions
+- Documentation updated
+
+## Implementation Order
+
+1. Phase 6 Integration (Tasks 1-4)
+2. Phase 7 Backend APIs (Tasks 5-10)
+3. Integration (Tasks 11-12)
+4. Testing (Task 13)
+
+## Success Criteria
+
+- GPU acceleration automatically used when available
+- Incremental learning reduces retrain time by 10x
+- Parallel processing scales linearly up to 4 workers
+- Enhanced detail API returns all context in one call
+- WebSocket provides real-time batch job updates
+- Export service generates comprehensive reports
+- Uncertain anomalies endpoint helps prioritize feedback
+- Portfolio analytics provides portfolio-wide insights
+- All tests pass
+- Performance targets met
+- 100% completion achieved
+

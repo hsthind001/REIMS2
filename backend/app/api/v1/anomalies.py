@@ -2,10 +2,11 @@
 Anomaly Detection API Endpoints
 Provides API access to anomaly detection and management.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
+import json
 
 from app.db.database import get_db
 from app.api.dependencies import get_current_user
@@ -14,8 +15,12 @@ from app.services.anomaly_detection_service import AnomalyDetectionService
 from app.services.xai_explanation_service import XAIExplanationService
 from app.services.active_learning_service import ActiveLearningService
 from app.services.cross_property_intelligence import CrossPropertyIntelligenceService
+from app.services.anomaly_export_service import AnomalyExportService
+from fastapi import Response
+from datetime import date
 from app.models.anomaly_explanation import AnomalyExplanation
 from app.models.anomaly_detection import AnomalyDetection
+from app.models.anomaly_feedback import AnomalyFeedback
 from pydantic import BaseModel
 import logging
 
@@ -306,6 +311,233 @@ async def get_anomaly(
         "expected_value": float(anomaly.expected_value) if anomaly.expected_value else None,
         "detected_at": anomaly.detected_at.isoformat() if anomaly.detected_at else None
     }
+
+
+@router.get("/{anomaly_id}/detailed")
+async def get_anomaly_detailed(
+    anomaly_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get comprehensive detailed information about a specific anomaly.
+    
+    Returns:
+        Comprehensive anomaly data including:
+        - Anomaly details (all fields)
+        - XAI explanation (if available)
+        - PDF field coordinates (if available)
+        - Similar anomalies (same account, different periods)
+        - Feedback statistics
+        - Cross-property context
+        - Learned patterns
+        - Model information
+    """
+    import time
+    start_time = time.time()
+    
+    # Get anomaly
+    anomaly = db.query(AnomalyDetection).filter(
+        AnomalyDetection.id == anomaly_id
+    ).first()
+    
+    if not anomaly:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anomaly {anomaly_id} not found"
+        )
+    
+    result = {
+        "anomaly": {
+            "id": anomaly.id,
+            "type": anomaly.anomaly_type,
+            "severity": anomaly.severity,
+            "message": anomaly.message or f"Anomaly detected in {anomaly.account_code}",
+            "property_id": anomaly.property_id,
+            "account_code": anomaly.account_code,
+            "field_name": anomaly.field_name,
+            "actual_value": float(anomaly.actual_value) if anomaly.actual_value else None,
+            "expected_value": float(anomaly.expected_value) if anomaly.expected_value else None,
+            "confidence": float(anomaly.confidence) if anomaly.confidence else None,
+            "z_score": float(anomaly.z_score) if anomaly.z_score else None,
+            "percentage_change": float(anomaly.percentage_change) if anomaly.percentage_change else None,
+            "detected_at": anomaly.detected_at.isoformat() if anomaly.detected_at else None,
+            "detection_method": anomaly.detection_method,
+            "context_suppressed": anomaly.context_suppressed or False,
+            "suppression_reason": anomaly.suppression_reason
+        },
+        "xai_explanation": None,
+        "pdf_coordinates": None,
+        "similar_anomalies": [],
+        "feedback_statistics": None,
+        "cross_property_context": None,
+        "learned_patterns": [],
+        "model_information": None
+    }
+    
+    # Get XAI explanation if available
+    try:
+        from app.models.anomaly_explanation import AnomalyExplanation
+        explanation = db.query(AnomalyExplanation).filter(
+            AnomalyExplanation.anomaly_detection_id == anomaly_id
+        ).first()
+        
+        if explanation:
+            result["xai_explanation"] = {
+                "root_cause_type": explanation.root_cause_type,
+                "root_cause_description": explanation.root_cause_description,
+                "shap_values": explanation.shap_values,
+                "lime_explanation": explanation.lime_explanation,
+                "natural_language_explanation": explanation.natural_language_explanation,
+                "recommended_actions": explanation.recommended_actions,
+                "generated_at": explanation.generated_at.isoformat() if explanation.generated_at else None
+            }
+    except Exception as e:
+        logger.warning(f"Error getting XAI explanation: {e}")
+    
+    # Get PDF field coordinates if available
+    try:
+        from app.models.pdf_field_coordinate import PdfFieldCoordinate
+        from app.models.document_upload import DocumentUpload
+        
+        if anomaly.document_id:
+            coordinates = db.query(PdfFieldCoordinate).filter(
+                PdfFieldCoordinate.document_id == anomaly.document_id,
+                PdfFieldCoordinate.field_name == anomaly.field_name
+            ).first()
+            
+            if coordinates:
+                result["pdf_coordinates"] = {
+                    "page_number": coordinates.page_number,
+                    "x": float(coordinates.x) if coordinates.x else None,
+                    "y": float(coordinates.y) if coordinates.y else None,
+                    "width": float(coordinates.width) if coordinates.width else None,
+                    "height": float(coordinates.height) if coordinates.height else None,
+                    "confidence": float(coordinates.confidence) if coordinates.confidence else None
+                }
+    except Exception as e:
+        logger.warning(f"Error getting PDF coordinates: {e}")
+    
+    # Get similar anomalies (same account, different periods)
+    try:
+        from sqlalchemy import and_
+        from datetime import datetime, timedelta
+        
+        similar = db.query(AnomalyDetection).filter(
+            and_(
+                AnomalyDetection.id != anomaly_id,
+                AnomalyDetection.account_code == anomaly.account_code,
+                AnomalyDetection.property_id == anomaly.property_id,
+                AnomalyDetection.detected_at >= datetime.now() - timedelta(days=365)
+            )
+        ).order_by(AnomalyDetection.detected_at.desc()).limit(5).all()
+        
+        result["similar_anomalies"] = [
+            {
+                "id": s.id,
+                "detected_at": s.detected_at.isoformat() if s.detected_at else None,
+                "actual_value": float(s.actual_value) if s.actual_value else None,
+                "expected_value": float(s.expected_value) if s.expected_value else None,
+                "severity": s.severity,
+                "similarity_score": 0.8  # Would calculate based on value similarity
+            }
+            for s in similar
+        ]
+    except Exception as e:
+        logger.warning(f"Error getting similar anomalies: {e}")
+    
+    # Get feedback statistics
+    try:
+        from app.models.anomaly_feedback import AnomalyFeedback
+        from sqlalchemy import func
+        
+        feedback_stats = db.query(
+            func.count(AnomalyFeedback.id).label('total_feedback'),
+            func.sum(func.cast(AnomalyFeedback.feedback_type == 'true_positive', db.Integer)).label('true_positives'),
+            func.sum(func.cast(AnomalyFeedback.feedback_type == 'false_positive', db.Integer)).label('false_positives')
+        ).filter(
+            AnomalyFeedback.anomaly_detection_id == anomaly_id
+        ).first()
+        
+        total_feedback = feedback_stats.total_feedback or 0
+        true_positives = feedback_stats.true_positives or 0
+        false_positives = feedback_stats.false_positives or 0
+        
+        result["feedback_statistics"] = {
+            "total_feedback_count": total_feedback,
+            "true_positive_count": true_positives,
+            "false_positive_count": false_positives,
+            "true_positive_rate": (true_positives / total_feedback * 100) if total_feedback > 0 else None,
+            "false_positive_rate": (false_positives / total_feedback * 100) if total_feedback > 0 else None
+        }
+    except Exception as e:
+        logger.warning(f"Error getting feedback statistics: {e}")
+    
+    # Get cross-property context
+    try:
+        from app.services.cross_property_intelligence import CrossPropertyIntelligenceService
+        cross_property_service = CrossPropertyIntelligenceService(db)
+        
+        if cross_property_service.enabled:
+            # Get property ranking
+            ranking = cross_property_service.get_property_ranking(
+                property_id=anomaly.property_id,
+                account_code=anomaly.account_code
+            )
+            
+            if ranking:
+                result["cross_property_context"] = {
+                    "portfolio_rank": ranking.get('rank'),
+                    "portfolio_percentile": ranking.get('percentile'),
+                    "portfolio_mean": ranking.get('portfolio_mean'),
+                    "portfolio_median": ranking.get('portfolio_median'),
+                    "portfolio_std": ranking.get('portfolio_std'),
+                    "total_properties": ranking.get('total_properties')
+                }
+    except Exception as e:
+        logger.warning(f"Error getting cross-property context: {e}")
+    
+    # Get learned patterns that apply to this anomaly
+    try:
+        from app.models.anomaly_feedback import AnomalyLearningPattern
+        from sqlalchemy import and_
+        
+        patterns = db.query(AnomalyLearningPattern).filter(
+            and_(
+                AnomalyLearningPattern.is_active == True,
+                AnomalyLearningPattern.property_id == anomaly.property_id,
+                AnomalyLearningPattern.account_code == anomaly.account_code
+            )
+        ).all()
+        
+        result["learned_patterns"] = [
+            {
+                "id": p.id,
+                "pattern_type": p.pattern_type,
+                "pattern_description": p.pattern_description,
+                "confidence": float(p.confidence) if p.confidence else None,
+                "suppression_enabled": p.auto_suppress,
+                "learned_at": p.created_at.isoformat() if p.created_at else None
+            }
+            for p in patterns
+        ]
+    except Exception as e:
+        logger.warning(f"Error getting learned patterns: {e}")
+    
+    # Get model information
+    result["model_information"] = {
+        "detection_method": anomaly.detection_method,
+        "algorithm_used": getattr(anomaly, 'algorithm_used', None),
+        "model_version": getattr(anomaly, 'model_version', None),
+        "confidence_score": float(anomaly.confidence) if anomaly.confidence else None
+    }
+    
+    elapsed_time = time.time() - start_time
+    result["response_time_ms"] = elapsed_time * 1000
+    
+    logger.info(f"Enhanced anomaly detail retrieved in {elapsed_time*1000:.2f}ms for anomaly {anomaly_id}")
+    
+    return result
 
 
 @router.post("/{anomaly_id}/explain")
@@ -904,3 +1136,152 @@ async def get_learned_patterns(
         }
         for p in patterns
     ]
+
+
+@router.get("/export/csv")
+async def export_anomalies_csv(
+    property_ids: Optional[str] = Query(None, description="Comma-separated property IDs"),
+    date_start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    severity: Optional[str] = Query(None, description="Severity filter (critical, high, medium, low)"),
+    anomaly_type: Optional[str] = Query(None, description="Anomaly type filter"),
+    account_codes: Optional[str] = Query(None, description="Comma-separated account codes"),
+    include_explanations: bool = Query(True, description="Include XAI explanations"),
+    include_feedback: bool = Query(True, description="Include feedback history"),
+    include_cross_property: bool = Query(True, description="Include cross-property context"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export anomalies to CSV format."""
+    try:
+        property_id_list = [int(p.strip()) for p in property_ids.split(',')] if property_ids else None
+        account_code_list = [c.strip() for c in account_codes.split(',')] if account_codes else None
+        export_service = AnomalyExportService(db)
+        csv_bytes = export_service.export_anomalies(
+            format='csv', property_ids=property_id_list, date_start=date_start, date_end=date_end,
+            severity=severity, anomaly_type=anomaly_type, account_codes=account_code_list,
+            include_explanations=include_explanations, include_feedback=include_feedback,
+            include_cross_property=include_cross_property
+        )
+        filename = f"anomalies_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return Response(content=csv_bytes, media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}", "Content-Type": "text/csv; charset=utf-8"})
+    except Exception as e:
+        logger.error(f"Error exporting anomalies to CSV: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to export anomalies: {str(e)}")
+
+
+@router.get("/export/excel")
+async def export_anomalies_excel(
+    property_ids: Optional[str] = Query(None, description="Comma-separated property IDs"),
+    date_start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    severity: Optional[str] = Query(None, description="Severity filter (critical, high, medium, low)"),
+    anomaly_type: Optional[str] = Query(None, description="Anomaly type filter"),
+    account_codes: Optional[str] = Query(None, description="Comma-separated account codes"),
+    include_explanations: bool = Query(True, description="Include XAI explanations"),
+    include_feedback: bool = Query(True, description="Include feedback history"),
+    include_cross_property: bool = Query(True, description="Include cross-property context"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export anomalies to Excel format (XLSX)."""
+    try:
+        property_id_list = [int(p.strip()) for p in property_ids.split(',')] if property_ids else None
+        account_code_list = [c.strip() for c in account_codes.split(',')] if account_codes else None
+        export_service = AnomalyExportService(db)
+        excel_bytes = export_service.export_anomalies(
+            format='xlsx', property_ids=property_id_list, date_start=date_start, date_end=date_end,
+            severity=severity, anomaly_type=anomaly_type, account_codes=account_code_list,
+            include_explanations=include_explanations, include_feedback=include_feedback,
+            include_cross_property=include_cross_property
+        )
+        filename = f"anomalies_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return Response(content=excel_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error exporting anomalies to Excel: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to export anomalies: {str(e)}")
+
+
+@router.get("/export/json")
+async def export_anomalies_json(
+    property_ids: Optional[str] = Query(None, description="Comma-separated property IDs"),
+    date_start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    severity: Optional[str] = Query(None, description="Severity filter (critical, high, medium, low)"),
+    anomaly_type: Optional[str] = Query(None, description="Anomaly type filter"),
+    account_codes: Optional[str] = Query(None, description="Comma-separated account codes"),
+    include_explanations: bool = Query(True, description="Include XAI explanations"),
+    include_feedback: bool = Query(True, description="Include feedback history"),
+    include_cross_property: bool = Query(True, description="Include cross-property context"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export anomalies to JSON format."""
+    try:
+        property_id_list = [int(p.strip()) for p in property_ids.split(',')] if property_ids else None
+        account_code_list = [c.strip() for c in account_codes.split(',')] if account_codes else None
+        export_service = AnomalyExportService(db)
+        json_bytes = export_service.export_anomalies(
+            format='json', property_ids=property_id_list, date_start=date_start, date_end=date_end,
+            severity=severity, anomaly_type=anomaly_type, account_codes=account_code_list,
+            include_explanations=include_explanations, include_feedback=include_feedback,
+            include_cross_property=include_cross_property
+        )
+        filename = f"anomalies_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        return Response(content=json_bytes, media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except Exception as e:
+        logger.error(f"Error exporting anomalies to JSON: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to export anomalies: {str(e)}")
+
+
+@router.get("/uncertain")
+async def get_uncertain_anomalies(
+    limit: int = Query(10, ge=1, le=100, description="Maximum number of anomalies to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get anomalies most needing user feedback (uncertain anomalies)."""
+    try:
+        from sqlalchemy import and_, or_, func
+        from datetime import timedelta
+        query = db.query(AnomalyDetection, func.count(AnomalyFeedback.id).label('feedback_count')
+        ).outerjoin(AnomalyFeedback, AnomalyFeedback.anomaly_detection_id == AnomalyDetection.id
+        ).filter(and_(or_(AnomalyDetection.confidence.is_(None), AnomalyDetection.confidence < 0.9),
+            AnomalyDetection.context_suppressed == False)).group_by(AnomalyDetection.id).having(
+            func.count(AnomalyFeedback.id) < 3)
+        results = query.all()
+        uncertain_anomalies = []
+        current_date = datetime.now()
+        for anomaly, feedback_count in results:
+            days_since = (current_date - anomaly.detected_at).days if anomaly.detected_at else 0
+            confidence = float(anomaly.confidence) if anomaly.confidence else 0.5
+            uncertainty_score = ((1 - confidence) * (1 + days_since / 30) * (1 - min(feedback_count, 10) / 10))
+            similar_count = db.query(AnomalyDetection).filter(and_(
+                AnomalyDetection.id != anomaly.id, AnomalyDetection.account_code == anomaly.account_code,
+                AnomalyDetection.property_id == anomaly.property_id,
+                AnomalyDetection.detected_at >= current_date - timedelta(days=365))).count()
+            uncertain_anomalies.append({'anomaly': anomaly, 'uncertainty_score': uncertainty_score,
+                'confidence': confidence, 'days_since_detection': days_since, 'feedback_count': feedback_count,
+                'similar_anomalies_count': similar_count})
+        uncertain_anomalies.sort(key=lambda x: x['uncertainty_score'], reverse=True)
+        uncertain_anomalies = uncertain_anomalies[:limit]
+        return [{"id": item['anomaly'].id, "property_id": item['anomaly'].property_id,
+            "account_code": item['anomaly'].account_code, "field_name": item['anomaly'].field_name,
+            "anomaly_type": item['anomaly'].anomaly_type, "severity": item['anomaly'].severity,
+            "actual_value": float(item['anomaly'].actual_value) if item['anomaly'].actual_value else None,
+            "expected_value": float(item['anomaly'].expected_value) if item['anomaly'].expected_value else None,
+            "confidence": item['confidence'], "uncertainty_score": item['uncertainty_score'],
+            "days_since_detection": item['days_since_detection'], "feedback_count": item['feedback_count'],
+            "similar_anomalies_count": item['similar_anomalies_count'],
+            "detected_at": item['anomaly'].detected_at.isoformat() if item['anomaly'].detected_at else None,
+            "message": item['anomaly'].message or f"Anomaly detected in {item['anomaly'].account_code}"}
+            for item in uncertain_anomalies]
+    except Exception as e:
+        logger.error(f"Error getting uncertain anomalies: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get uncertain anomalies: {str(e)}")

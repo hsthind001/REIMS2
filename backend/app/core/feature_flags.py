@@ -44,6 +44,16 @@ class FeatureFlags:
     GPU_ACCELERATION_ENABLED = os.getenv('FEATURE_FLAG_GPU', 'false').lower() == 'true'
     
     @classmethod
+    def is_gpu_acceleration_enabled(cls) -> bool:
+        """Check if GPU acceleration is enabled."""
+        return cls.GPU_ACCELERATION_ENABLED
+    
+    @classmethod
+    def is_incremental_learning_enabled(cls) -> bool:
+        """Check if incremental learning is enabled."""
+        return cls.INCREMENTAL_LEARNING_ENABLED
+    
+    @classmethod
     def get_all_flags(cls) -> Dict[str, bool]:
         """
         Get all feature flags as a dictionary.

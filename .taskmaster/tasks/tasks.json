@@ -2,199 +2,170 @@
   "master": {
     "tasks": [
       {
-        "id": 52,
-        "title": "Create Database Schema for Field Metadata",
-        "description": "Create a database table to store extraction metadata at the field level.",
-        "details": "Create a new table 'extraction_field_metadata' with columns for document ID, table name, record ID, field name, confidence score, extraction engine, conflicting values, resolution method, needs review, review priority, flagged reason, created at, reviewed at, and reviewed by. Implement foreign key constraints and performance indexes. Use Alembic for migrations.",
-        "testStrategy": "Run Alembic migrations and verify table creation. Insert sample data and test rollback.",
+        "id": "66",
+        "title": "Integrate GPU Acceleration into PyOD Detector",
+        "description": "Enhance the PyOD anomaly detector with GPU acceleration for improved performance.",
+        "details": "Import `GPUAcceleratedDetector` from `app.services.gpu_accelerated_detector`. Initialize the GPU detector in the `__init__` method. Modify `detect_anomalies()` to check GPU availability and use it for batch predictions. Implement a fallback to CPU if GPU is unavailable. Add logic for GPU device selection and log performance metrics.",
+        "testStrategy": "Verify GPU is used when available and CPU fallback works. Measure performance improvement and ensure no API changes.",
         "priority": "medium",
         "dependencies": [],
         "status": "done",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:47:23.072Z"
       },
       {
-        "id": 53,
-        "title": "Create SQLAlchemy Model for Metadata",
-        "description": "Develop a SQLAlchemy ORM model for the extraction_field_metadata table.",
-        "details": "Create a model class 'ExtractionFieldMetadata' with all necessary columns and relationships to Document and User models. Implement helper methods for retrieving low-confidence fields and fields needing review.",
-        "testStrategy": "Test CRUD operations and model import. Verify relationships and helper methods.",
-        "priority": "medium",
-        "dependencies": [
-          52
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 54,
-        "title": "Create Base Extractor Abstract Class",
-        "description": "Develop an abstract base class for all extraction engines to standardize interfaces.",
-        "details": "Create 'BaseExtractor' with abstract methods 'extract' and 'calculate_confidence'. Define 'ExtractionResult' dataclass. Implement helper methods for confidence calculation.",
-        "testStrategy": "Verify abstract methods cannot be instantiated. Test import and basic functionality.",
-        "priority": "medium",
-        "dependencies": [
-          53
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 55,
-        "title": "Update PyMuPDF Extractor to Use Base Class",
-        "description": "Refactor PyMuPDF extractor to inherit from BaseExtractor and return ExtractionResult with confidence scores.",
-        "details": "Modify PyMuPDFExtractor to inherit from BaseExtractor. Implement 'extract' to return ExtractionResult and 'calculate_confidence' for text quality. Include metadata like processing time and page count.",
-        "testStrategy": "Test extraction on sample PDF and verify confidence scores. Run existing tests to ensure no breakage.",
-        "priority": "medium",
-        "dependencies": [
-          54
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 56,
-        "title": "Update PDFPlumber Extractor",
-        "description": "Refactor PDFPlumber extractor to inherit from BaseExtractor and enhance table detection.",
-        "details": "Modify PDFPlumberExtractor to inherit from BaseExtractor. Implement 'extract' to return ExtractionResult with table detection metadata. Adjust confidence based on table quality.",
-        "testStrategy": "Test extraction on sample document and verify confidence scores. Ensure backward compatibility.",
-        "priority": "medium",
-        "dependencies": [
-          54,
-          55
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 57,
-        "title": "Update Camelot Extractor",
-        "description": "Refactor Camelot extractor to use BaseExtractor and handle advanced table parsing.",
-        "details": "Modify CamelotExtractor to inherit from BaseExtractor. Implement 'extract' to return ExtractionResult. Convert Camelot accuracy to 0-1 scale and adjust confidence for lattice method.",
-        "testStrategy": "Test extraction on sample document and verify confidence scores. Ensure backward compatibility.",
-        "priority": "medium",
-        "dependencies": [
-          54,
-          55
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 58,
-        "title": "Create Confidence Engine",
-        "description": "Develop a service to calculate aggregate confidence across multiple extraction engines and detect conflicts.",
-        "details": "Implement 'ConfidenceEngine' with methods 'calculate_field_confidence', 'detect_conflicts', and 'recommend_resolution'. Use weighted voting for confidence calculation.",
-        "testStrategy": "Write unit tests for consensus, conflict detection, and weighted voting. Verify confidence bonuses.",
-        "priority": "medium",
-        "dependencies": [
-          55,
-          56,
-          57
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 59,
-        "title": "Create Metadata Storage Service",
-        "description": "Develop a service to save extraction metadata to the database after extraction completes.",
-        "details": "Implement 'MetadataStorageService' with 'save_field_metadata' method. Handle multiple engine results and flag low-confidence fields. Ensure transaction handling.",
-        "testStrategy": "Test metadata saving with mock ExtractionResult objects. Verify transaction rollback on error.",
-        "priority": "medium",
-        "dependencies": [
-          53,
-          58
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 60,
-        "title": "Integrate Metadata into Extraction Orchestrator",
-        "description": "Update the extraction orchestrator to capture metadata after all engines run.",
-        "details": "Collect ExtractionResult from all engines in the orchestrator. Use ConfidenceEngine for aggregate scores and MetadataStorageService to save metadata. Ensure transactional integrity.",
-        "testStrategy": "Test full extraction flow with metadata capture. Verify metadata is saved and rollback on failure.",
-        "priority": "medium",
-        "dependencies": [
-          55,
-          56,
-          57,
-          58,
-          59
-        ],
-        "status": "done",
-        "subtasks": []
-      },
-      {
-        "id": 61,
-        "title": "Create Confidence Indicator Frontend Component",
-        "description": "Develop a React component to display confidence scores visually.",
-        "details": "Create 'ConfidenceIndicator.tsx' to show a horizontal bar with color coding based on confidence score. Implement tooltip for engine and conflict details.",
-        "testStrategy": "Test component in Storybook or standalone page. Verify responsiveness and tooltip functionality.",
+        "id": "67",
+        "title": "Integrate Incremental Learning into Model Training",
+        "description": "Implement incremental learning to optimize model training efficiency.",
+        "details": "Import `IncrementalLearningService` and modify the training flow to use `incremental_fit()` when applicable. Check for cached models and update the cache post-training. Track statistics like speedup and accuracy changes. Implement a feature flag for incremental learning and handle model compatibility.",
+        "testStrategy": "Ensure 10x speedup for incremental updates and maintain model accuracy. Verify cache updates and statistics tracking.",
         "priority": "medium",
         "dependencies": [],
         "status": "done",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:48:39.105Z"
       },
       {
-        "id": 62,
-        "title": "Create Confidence Data Table Component",
-        "description": "Develop an enhanced table component to display extracted data with confidence indicators.",
-        "details": "Create a React component following existing table patterns to integrate confidence indicators. Ensure compatibility with existing frontend structure.",
-        "testStrategy": "Test component integration with sample data. Verify confidence indicators display correctly.",
+        "id": "68",
+        "title": "Add Parallel Processing with Celery Groups",
+        "description": "Implement parallel processing for anomaly detection using Celery.",
+        "details": "Create `detect_anomalies_parallel()` Celery task using `celery.group()` for batch detection. Support up to 4 workers and aggregate results. Update `run_nightly_anomaly_detection` to utilize parallel processing. Implement error handling for parallel execution.",
+        "testStrategy": "Test linear scaling up to 4 workers, result aggregation, and error handling. Measure performance improvement.",
         "priority": "medium",
-        "dependencies": [
-          61
-        ],
+        "dependencies": [],
         "status": "done",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:50:00.654Z"
       },
       {
-        "id": 63,
-        "title": "Create Metadata API Endpoints",
-        "description": "Develop REST API endpoints for fetching field metadata.",
-        "details": "Implement endpoints for fetching field metadata, confidence summary, and marking metadata as reviewed. Ensure endpoints follow RESTful conventions.",
-        "testStrategy": "Test API endpoints with sample requests. Verify data retrieval and update operations.",
+        "id": "69",
+        "title": "Create Model Optimization API",
+        "description": "Develop API endpoints for model optimization features.",
+        "details": "Create endpoints in `backend/app/api/v1/model_optimization.py` for GPU status, enabling GPU, incremental stats, retraining, and performance metrics. Ensure proper authentication and error handling. Optimize response times to be under 200ms.",
+        "testStrategy": "Test all endpoints for functionality, authentication, and error handling. Measure response times.",
         "priority": "medium",
-        "dependencies": [
-          53,
-          59
-        ],
+        "dependencies": [],
         "status": "done",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:51:11.955Z"
       },
       {
-        "id": 64,
-        "title": "Update Documents Page with Confidence View",
-        "description": "Enhance the Documents page to show confidence indicators and metadata.",
-        "details": "Integrate confidence indicators and metadata display into the Documents page. Ensure seamless user experience and data accuracy.",
-        "testStrategy": "Test page updates with sample documents. Verify confidence indicators and metadata display correctly.",
+        "id": "70",
+        "title": "Create Enhanced Anomaly Detail API",
+        "description": "Develop a comprehensive API endpoint for detailed anomaly information.",
+        "details": "Implement `GET /api/v1/anomalies/{anomaly_id}/detailed` to return detailed anomaly data including explanations, feedback, and model information. Ensure data aggregation and response time under 500ms.",
+        "testStrategy": "Verify data aggregation and response time. Test with and without explanations and ensure proper error handling.",
         "priority": "medium",
-        "dependencies": [
-          62,
-          63
-        ],
+        "dependencies": [],
         "status": "done",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:52:12.320Z"
       },
       {
-        "id": 65,
-        "title": "Create Pydantic Schemas for Metadata",
-        "description": "Develop data validation schemas for API requests and responses.",
-        "details": "Create Pydantic schemas for metadata-related API endpoints. Ensure data validation and serialization accuracy.",
-        "testStrategy": "Test schema validation with sample data. Verify correct serialization and deserialization.",
+        "id": "71",
+        "title": "Add WebSocket for Batch Job Updates",
+        "description": "Implement WebSocket for real-time updates on batch jobs.",
+        "details": "Create WebSocket endpoint `WS /ws/batch-job/{job_id}` to send updates every 2 seconds. Include job status, progress, and ETA. Support multiple clients and handle disconnections gracefully.",
+        "testStrategy": "Test real-time updates, multiple client support, and disconnection handling. Verify ETA accuracy.",
         "priority": "medium",
-        "dependencies": [
-          63
-        ],
+        "dependencies": [],
         "status": "done",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:53:45.747Z"
+      },
+      {
+        "id": "72",
+        "title": "Create Anomaly Export Service",
+        "description": "Develop a service to export anomalies in various formats.",
+        "details": "Implement `anomaly_export_service.py` to export anomalies to CSV, XLSX, and JSON. Include filtering options and handle large exports efficiently with streaming and chunked processing.",
+        "testStrategy": "Test export functionality for all formats and filters. Ensure efficient handling of large exports.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:55:08.251Z"
+      },
+      {
+        "id": "73",
+        "title": "Add Anomaly Export API Endpoints",
+        "description": "Create API endpoints for exporting anomalies.",
+        "details": "Add endpoints in `backend/app/api/v1/anomalies.py` for exporting anomalies in CSV, Excel, and JSON formats. Ensure authentication, proper headers, and error handling.",
+        "testStrategy": "Test all endpoints for functionality, filtering, and response times. Verify file download headers.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:56:35.662Z"
+      },
+      {
+        "id": "74",
+        "title": "Create Uncertain Anomalies Endpoint",
+        "description": "Develop an API endpoint to identify anomalies needing feedback.",
+        "details": "Implement `GET /api/v1/anomalies/uncertain?limit=10` to return anomalies sorted by uncertainty score. Include anomaly details and apply filters for confidence and feedback count.",
+        "testStrategy": "Test sorting logic, filtering, and limit parameter. Verify prioritization of feedback collection.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:57:16.388Z"
+      },
+      {
+        "id": "75",
+        "title": "Create Portfolio Analytics API",
+        "description": "Develop API endpoints for portfolio-wide analytics.",
+        "details": "Create endpoints in `backend/app/api/v1/portfolio_analytics.py` for calculating benchmarks, retrieving analytics, property comparison, and identifying outliers. Use `CrossPropertyIntelligenceService` for calculations.",
+        "testStrategy": "Test all endpoints for functionality, accuracy, and performance. Ensure calculations are correct and response times are acceptable.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:58:09.894Z"
+      },
+      {
+        "id": "76",
+        "title": "Update Main Router",
+        "description": "Register new routers in the main application file.",
+        "details": "Import and register `model_optimization` and `portfolio_analytics` routers in `backend/app/main.py`. Ensure proper OpenAPI documentation and verify existing WebSocket registration.",
+        "testStrategy": "Verify all routers are registered correctly and OpenAPI docs are updated. Check for route conflicts.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T21:59:18.452Z"
+      },
+      {
+        "id": "77",
+        "title": "Create Pydantic Schemas",
+        "description": "Define Pydantic schemas for API requests and responses.",
+        "details": "Create schemas in `backend/app/schemas/anomaly_export.py` for various API requests and responses. Ensure proper field descriptions, validation rules, and type hints.",
+        "testStrategy": "Test schema validation and API documentation generation. Verify optional fields and type accuracy.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T22:00:04.002Z"
+      },
+      {
+        "id": "78",
+        "title": "Testing and Verification",
+        "description": "Conduct comprehensive testing and verification of all features.",
+        "details": "Perform tests for GPU integration, incremental learning, parallel processing, and all new APIs. Conduct integration and performance testing to ensure all components work together seamlessly.",
+        "testStrategy": "Ensure all tests pass, performance targets are met, and no regressions occur. Update documentation as needed.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T22:00:47.970Z"
       }
     ],
     "metadata": {
-      "created": "2025-11-09T13:26:50.898Z",
-      "updated": "2025-11-11T23:24:36.124Z",
-      "description": "Tasks for master context"
+      "version": "1.0.0",
+      "lastModified": "2025-12-21T22:00:47.971Z",
+      "taskCount": 13,
+      "completedCount": 13,
+      "tags": [
+        "master"
+      ]
     }
   },
   "sprint2": {

@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 import logging
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -155,6 +155,12 @@ app.include_router(batch_reprocessing.router, prefix=settings.API_V1_STR, tags=[
 
 # PDF Coordinate Prediction (Phase 5: LayoutLM Integration)
 app.include_router(pdf_coordinates.router, prefix=settings.API_V1_STR, tags=["pdf-coordinates"])
+
+# Model Optimization (Phase 6: GPU & Incremental Learning)
+app.include_router(model_optimization.router, prefix=settings.API_V1_STR, tags=["model-optimization"])
+
+# Portfolio Analytics (Phase 7: Cross-Property Intelligence)
+app.include_router(portfolio_analytics.router, prefix=settings.API_V1_STR, tags=["portfolio-analytics"])
 
 
 @app.get("/")

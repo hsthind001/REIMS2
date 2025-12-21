@@ -58,6 +58,25 @@ if PYOD_AVAILABLE:
 
 from app.models.pyod_model_selection_log import PyODModelSelectionLog
 from app.core.config import settings
+from app.core.feature_flags import FeatureFlags
+from app.models.anomaly_model_cache import AnomalyModelCache
+
+# Try to import GPU accelerator
+try:
+    from app.services.gpu_accelerated_detector import GPUAcceleratedDetector
+    GPU_ACCELERATOR_AVAILABLE = True
+except ImportError:
+    GPU_ACCELERATOR_AVAILABLE = False
+    logger.warning("GPU accelerator not available")
+
+# Try to import incremental learning service
+try:
+    from app.services.incremental_learning_service import IncrementalLearningService
+    from app.services.model_cache_service import ModelCacheService
+    INCREMENTAL_LEARNING_AVAILABLE = True
+except ImportError:
+    INCREMENTAL_LEARNING_AVAILABLE = False
+    logger.warning("Incremental learning services not available")
 
 
 class PyODAnomalyDetector:
@@ -85,6 +104,36 @@ class PyODAnomalyDetector:
         """Initialize PyOD detector."""
         self.db = db
         self.llm_selection_enabled = getattr(settings, 'PYOD_LLM_MODEL_SELECTION', False)
+        self.feature_flags = FeatureFlags()
+        
+        # Initialize GPU accelerator if available
+        self.gpu_detector = None
+        if GPU_ACCELERATOR_AVAILABLE:
+            try:
+                self.gpu_detector = GPUAcceleratedDetector(db)
+                if self.gpu_detector.use_gpu:
+                    logger.info("GPU acceleration enabled for PyOD detector")
+                else:
+                    logger.info("GPU acceleration available but not enabled (using CPU)")
+            except Exception as e:
+                logger.warning(f"Failed to initialize GPU accelerator: {e}")
+                self.gpu_detector = None
+        
+        # Initialize incremental learning service if available
+        self.incremental_service = None
+        self.model_cache_service = None
+        if INCREMENTAL_LEARNING_AVAILABLE:
+            try:
+                self.incremental_service = IncrementalLearningService(db)
+                self.model_cache_service = ModelCacheService(db)
+                if self.incremental_service.enabled:
+                    logger.info("Incremental learning enabled for PyOD detector")
+                else:
+                    logger.info("Incremental learning available but not enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize incremental learning: {e}")
+                self.incremental_service = None
+                self.model_cache_service = None
         
         # Add extended algorithms if available
         if PYOD_AVAILABLE and EXTENDED_ALGORITHMS_AVAILABLE:
@@ -225,15 +274,23 @@ class PyODAnomalyDetector:
         X: np.ndarray,
         algorithm: str = 'iforest',
         contamination: float = 0.1,
+        property_id: Optional[int] = None,
+        account_code: Optional[str] = None,
+        use_incremental: Optional[bool] = None,
         **kwargs
     ) -> Any:
         """
         Train a PyOD model on the provided data.
         
+        Uses incremental learning if cached model exists and incremental learning is enabled.
+        
         Args:
             X: Feature matrix (n_samples, n_features)
             algorithm: Algorithm name (iforest, lof, ocsvm, etc.)
             contamination: Expected proportion of anomalies (0-1)
+            property_id: Property ID (for caching and incremental learning)
+            account_code: Account code (for caching and incremental learning)
+            use_incremental: Force incremental learning (None = auto-detect)
             **kwargs: Additional algorithm-specific parameters
         
         Returns:
@@ -244,6 +301,9 @@ class PyODAnomalyDetector:
         
         if algorithm not in self.AVAILABLE_ALGORITHMS:
             raise ValueError(f"Algorithm '{algorithm}' not available. Available: {self.get_available_algorithms()}")
+        
+        import time
+        start_time = time.time()
         
         try:
             # Get algorithm class
@@ -256,11 +316,83 @@ class PyODAnomalyDetector:
             }
             model_params.update(kwargs)
             
-            # Instantiate and train
+            # Check if we should use incremental learning
+            should_use_incremental = False
+            cached_model_record = None
+            
+            if use_incremental is not None:
+                should_use_incremental = use_incremental
+            elif (self.incremental_service is not None and 
+                  self.model_cache_service is not None and 
+                  self.incremental_service.enabled and
+                  property_id is not None):
+                # Check for cached model
+                cache_key = self.model_cache_service._generate_cache_key(
+                    property_id, account_code, algorithm, model_params
+                )
+                from sqlalchemy import and_
+                from datetime import datetime
+                cached_model_record = self.db.query(AnomalyModelCache).filter(
+                    and_(
+                        AnomalyModelCache.model_key == cache_key,
+                        AnomalyModelCache.is_active == True,
+                        AnomalyModelCache.expires_at > datetime.now()
+                    )
+                ).first()
+                
+                if cached_model_record:
+                    should_use_incremental = True
+            
+            # Use incremental learning if appropriate
+            if should_use_incremental and cached_model_record and self.incremental_service:
+                try:
+                    # Load cached model
+                    import joblib
+                    import io
+                    model_bytes = io.BytesIO(cached_model_record.model_binary)
+                    model = joblib.load(model_bytes)
+                    
+                    # Perform incremental update
+                    logger.info(f"Using incremental learning for {algorithm} model (cache_id={cached_model_record.id})")
+                    model, update_stats = self.incremental_service.incremental_fit(
+                        model=model,
+                        new_data=X,
+                        model_cache_id=cached_model_record.id
+                    )
+                    
+                    if update_stats.get('updated'):
+                        elapsed_time = time.time() - start_time
+                        speedup_estimate = update_stats.get('update_time_ms', 0) / (elapsed_time * 1000) if elapsed_time > 0 else 1.0
+                        logger.info(f"Incremental update completed in {update_stats.get('update_time_ms', 0):.2f}ms "
+                                  f"(estimated speedup: {speedup_estimate:.1f}x)")
+                        return model
+                    else:
+                        logger.warning(f"Incremental update failed: {update_stats.get('reason', 'unknown')} - falling back to full retrain")
+                
+                except Exception as e:
+                    logger.warning(f"Incremental learning failed: {e} - falling back to full retrain")
+            
+            # Full retrain (either no cache or incremental failed)
             model = algorithm_class(**model_params)
             model.fit(X)
             
-            logger.info(f"Trained {algorithm} model on {X.shape[0]} samples with {X.shape[1]} features")
+            elapsed_time = time.time() - start_time
+            logger.info(f"Trained {algorithm} model on {X.shape[0]} samples with {X.shape[1]} features "
+                       f"in {elapsed_time*1000:.2f}ms")
+            
+            # Cache the model if caching is enabled
+            if self.model_cache_service and property_id is not None:
+                try:
+                    self.model_cache_service.cache_model(
+                        property_id=property_id,
+                        account_code=account_code,
+                        model_type=algorithm,
+                        model=model,
+                        config=model_params,
+                        training_data_size=X.shape[0]
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to cache model: {e}")
             
             return model
         
@@ -274,6 +406,7 @@ class PyODAnomalyDetector:
         algorithm: str = 'iforest',
         contamination: float = 0.1,
         model: Optional[Any] = None,
+        use_gpu: Optional[bool] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -284,6 +417,7 @@ class PyODAnomalyDetector:
             algorithm: Algorithm name (iforest, lof, ocsvm, etc.)
             contamination: Expected proportion of anomalies (0-1)
             model: Pre-trained model (optional, will train if not provided)
+            use_gpu: Force GPU usage (None = auto-detect)
             **kwargs: Additional algorithm-specific parameters
         
         Returns:
@@ -291,30 +425,71 @@ class PyODAnomalyDetector:
             - labels: Binary labels (0=normal, 1=anomaly)
             - scores: Anomaly scores
             - anomalies: List of anomaly indices
+            - gpu_used: Whether GPU was used
+            - device: Device used (cpu/cuda)
         """
         if not PYOD_AVAILABLE:
             raise ValueError("PyOD is not available - install pyod package")
+        
+        import time
+        start_time = time.time()
+        gpu_used = False
+        device_used = "cpu"
         
         try:
             # Train model if not provided
             if model is None:
                 model = self.train_model(X, algorithm, contamination, **kwargs)
             
-            # Predict anomalies
-            labels = model.predict(X)  # 0=normal, 1=anomaly
-            scores = model.decision_function(X)  # Anomaly scores
+            # Determine if GPU should be used
+            should_use_gpu = False
+            if use_gpu is not None:
+                should_use_gpu = use_gpu
+            elif self.gpu_detector is not None:
+                should_use_gpu = self.gpu_detector.use_gpu
+            
+            # Use GPU for batch predictions if available and enabled
+            if should_use_gpu and self.gpu_detector is not None and X.shape[0] > 100:
+                # Use GPU for batch detection when we have enough samples
+                try:
+                    logger.debug(f"Using GPU acceleration for {X.shape[0]} samples")
+                    scores = self.gpu_detector.detect_anomalies_batch(X, model)
+                    labels = model.predict(X)  # Still use CPU for predict (some models don't support GPU predict)
+                    gpu_used = True
+                    device_used = "cuda"
+                except Exception as e:
+                    logger.warning(f"GPU detection failed, falling back to CPU: {e}")
+                    scores = model.decision_function(X)
+                    labels = model.predict(X)
+            else:
+                # CPU fallback
+                labels = model.predict(X)  # 0=normal, 1=anomaly
+                scores = model.decision_function(X)  # Anomaly scores
             
             # Get anomaly indices
             anomaly_indices = np.where(labels == 1)[0].tolist()
             
-            return {
+            elapsed_time = time.time() - start_time
+            
+            result = {
                 "labels": labels.tolist(),
-                "scores": scores.tolist(),
+                "scores": scores.tolist() if isinstance(scores, np.ndarray) else scores,
                 "anomalies": anomaly_indices,
                 "algorithm": algorithm,
                 "n_anomalies": len(anomaly_indices),
-                "n_samples": len(X)
+                "n_samples": len(X),
+                "gpu_used": gpu_used,
+                "device": device_used,
+                "detection_time_ms": elapsed_time * 1000
             }
+            
+            # Log performance metrics
+            if gpu_used:
+                logger.info(f"GPU-accelerated detection completed in {elapsed_time*1000:.2f}ms for {X.shape[0]} samples")
+            else:
+                logger.debug(f"CPU detection completed in {elapsed_time*1000:.2f}ms for {X.shape[0]} samples")
+            
+            return result
         
         except Exception as e:
             logger.error(f"Error detecting anomalies with {algorithm}: {str(e)}", exc_info=True)
