@@ -1,304 +1,283 @@
 """
-Active Learning Service for REIMS2
-Implements feedback loop for continuous improvement from human corrections.
+Active Learning Service for Anomaly Detection
 
-Sprint 2: AI/ML Intelligence Layer
+Implements active learning to improve anomaly detection accuracy over time:
+- User feedback collection and analysis
+- Pattern learning from feedback
+- Auto-suppression of learned false positives
+- Confidence calibration
+- Model retraining triggers
 """
-from typing import List, Dict, Optional, Any
+
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import and_, func
+import logging
 
-from app.models.extraction_field_metadata import ExtractionFieldMetadata
-from app.models.validation_result import ValidationResult
-from app.db.database import get_db
+from app.models.anomaly_detection import AnomalyDetection
+from app.models.anomaly_feedback import AnomalyFeedback, AnomalyLearningPattern
+from app.core.config import settings
+from app.core.feature_flags import FeatureFlags
+
+logger = logging.getLogger(__name__)
 
 
 class ActiveLearningService:
     """
-    Service to identify uncertain fields and improve extraction over time.
+    Active learning service for improving anomaly detection through user feedback.
     
     Features:
-    - Identifies low-confidence fields for human review
-    - Tracks correction patterns
-    - Updates confidence thresholds based on validation history
-    - Queues fields for retraining (future: Sprint 5)
+    - Collects and analyzes user feedback on anomalies
+    - Learns patterns from feedback to suppress false positives
+    - Calibrates confidence scores based on historical accuracy
+    - Triggers model retraining when patterns change
     """
     
     def __init__(self, db: Session):
-        """
-        Initialize active learning service.
-        
-        Args:
-            db: Database session
-        """
+        """Initialize active learning service."""
         self.db = db
-        self.confidence_threshold = 0.70  # Initial threshold
-        self.review_priority_map = {
-            (0.0, 0.5): 'critical',
-            (0.5, 0.7): 'high',
-            (0.7, 0.8): 'medium',
-            (0.8, 1.0): 'low'
-        }
+        self.enabled = FeatureFlags.is_active_learning_enabled()
+        self.auto_suppression_enabled = FeatureFlags.is_auto_suppression_enabled()
+        self.feedback_lookback_days = settings.FEEDBACK_LOOKBACK_DAYS
+        self.auto_suppression_threshold = settings.AUTO_SUPPRESSION_CONFIDENCE_THRESHOLD
     
-    def identify_uncertain_fields(
+    def record_feedback(
         self,
-        document_id: Optional[int] = None,
-        table_name: Optional[str] = None,
-        limit: int = 100
-    ) -> List[ExtractionFieldMetadata]:
+        anomaly_id: int,
+        user_id: int,
+        feedback_type: str,  # 'true_positive', 'false_positive', 'needs_review'
+        feedback_notes: Optional[str] = None,
+        business_context: Optional[Dict[str, Any]] = None
+    ) -> AnomalyFeedback:
         """
-        Identify fields with low confidence that need human review.
+        Record user feedback on an anomaly detection.
         
         Args:
-            document_id: Optional filter by document
-            table_name: Optional filter by table (balance_sheet, income_statement, etc.)
-            limit: Maximum number of fields to return
-            
+            anomaly_id: ID of the anomaly detection
+            user_id: ID of the user providing feedback
+            feedback_type: Type of feedback
+            feedback_notes: Optional notes from user
+            business_context: Optional business context information
+        
         Returns:
-            List of uncertain field metadata ordered by priority
+            AnomalyFeedback object
         """
-        query = self.db.query(ExtractionFieldMetadata).filter(
-            ExtractionFieldMetadata.needs_review == True,
-            ExtractionFieldMetadata.reviewed_at.is_(None)
+        if not self.enabled:
+            logger.warning("Active learning is disabled")
+            return None
+        
+        # Get anomaly
+        anomaly = self.db.query(AnomalyDetection).filter(
+            AnomalyDetection.id == anomaly_id
+        ).first()
+        
+        if not anomaly:
+            raise ValueError(f"Anomaly {anomaly_id} not found")
+        
+        # Create feedback record
+        feedback = AnomalyFeedback(
+            anomaly_detection_id=anomaly_id,
+            user_id=user_id,
+            feedback_type=feedback_type,
+            notes=feedback_notes,
+            business_context=business_context,
+            feedback_confidence=1.0,  # User feedback is always high confidence
+            is_anomaly=feedback_type == 'true_positive',  # Set based on feedback type
+            account_code=anomaly.account_code,
+            anomaly_type=anomaly.anomaly_type,
+            severity=anomaly.severity
         )
         
-        if document_id:
-            query = query.filter(ExtractionFieldMetadata.document_id == document_id)
+        self.db.add(feedback)
+        self.db.commit()
+        self.db.refresh(feedback)
         
-        if table_name:
-            query = query.filter(ExtractionFieldMetadata.table_name == table_name)
+        # Analyze feedback for pattern learning
+        if feedback_type == 'false_positive':
+            self._learn_false_positive_pattern(anomaly, feedback)
         
-        # Order by review priority and confidence (lowest first)
-        query = query.order_by(
-            ExtractionFieldMetadata.review_priority.desc(),
-            ExtractionFieldMetadata.confidence_score.asc()
-        )
-        
-        return query.limit(limit).all()
+        return feedback
     
-    def queue_for_human_review(
+    def _learn_false_positive_pattern(
         self,
-        metadata_id: int,
-        reason: str,
-        priority: str = 'medium'
-    ) -> bool:
-        """
-        Queue a field for human review with specific reason.
-        
-        Args:
-            metadata_id: ID of extraction field metadata
-            reason: Reason for review
-            priority: Priority level (critical, high, medium, low)
-            
-        Returns:
-            True if successfully queued
-        """
-        try:
-            metadata = self.db.query(ExtractionFieldMetadata).filter(
-                ExtractionFieldMetadata.id == metadata_id
-            ).first()
-            
-            if not metadata:
-                return False
-            
-            metadata.needs_review = True
-            metadata.review_priority = priority
-            metadata.flagged_reason = reason
-            
-            self.db.commit()
-            return True
-        except Exception as e:
-            self.db.rollback()
-            print(f"Error queuing field for review: {e}")
-            return False
-    
-    def record_human_correction(
-        self,
-        metadata_id: int,
-        corrected_value: str,
-        reviewer_id: int
-    ) -> Dict[str, Any]:
-        """
-        Record a human correction and calculate accuracy metrics.
-        
-        Args:
-            metadata_id: ID of extraction field metadata
-            corrected_value: Human-corrected value
-            reviewer_id: ID of user who made correction
-            
-        Returns:
-            Dict with correction metrics
-        """
-        try:
-            metadata = self.db.query(ExtractionFieldMetadata).filter(
-                ExtractionFieldMetadata.id == metadata_id
-            ).first()
-            
-            if not metadata:
-                return {'error': 'Metadata not found'}
-            
-            # Get original extracted value (from record)
-            original_value = self._get_field_value(
-                metadata.table_name,
-                metadata.record_id,
-                metadata.field_name
-            )
-            
-            # Calculate if correction was needed
-            was_correct = self._values_match(original_value, corrected_value)
-            
-            # Update metadata
-            metadata.reviewed_at = datetime.utcnow()
-            metadata.reviewed_by = reviewer_id
-            metadata.needs_review = False
-            
-            self.db.commit()
-            
-            # Learn from this correction
-            self._update_engine_performance(
-                engine_name=metadata.extraction_engine,
-                field_name=metadata.field_name,
-                was_correct=was_correct,
-                confidence=float(metadata.confidence_score)
-            )
-            
-            return {
-                'metadata_id': metadata_id,
-                'was_correct': was_correct,
-                'original_value': original_value,
-                'corrected_value': corrected_value,
-                'confidence_score': float(metadata.confidence_score),
-                'engine': metadata.extraction_engine
-            }
-        except Exception as e:
-            self.db.rollback()
-            return {'error': str(e)}
-    
-    def update_confidence_thresholds(
-        self,
-        lookback_days: int = 30
-    ) -> Dict[str, float]:
-        """
-        Update confidence thresholds based on validation history.
-        
-        Analyzes the last N days of validations to determine optimal thresholds
-        for each engine and field type.
-        
-        Args:
-            lookback_days: Number of days to analyze
-            
-        Returns:
-            Dict of updated thresholds by engine
-        """
-        cutoff_date = datetime.utcnow() - timedelta(days=lookback_days)
-        
-        # Get validation statistics by engine
-        stats = self.db.query(
-            ExtractionFieldMetadata.extraction_engine,
-            func.avg(ExtractionFieldMetadata.confidence_score).label('avg_confidence'),
-            func.count(ExtractionFieldMetadata.id).label('total'),
-            func.sum(
-                func.cast(ExtractionFieldMetadata.needs_review == False, func.Integer())
-            ).label('correct')
-        ).filter(
-            ExtractionFieldMetadata.created_at >= cutoff_date,
-            ExtractionFieldMetadata.reviewed_at.isnot(None)
-        ).group_by(
-            ExtractionFieldMetadata.extraction_engine
-        ).all()
-        
-        updated_thresholds = {}
-        
-        for engine, avg_conf, total, correct in stats:
-            if total > 10:  # Minimum sample size
-                accuracy_rate = (correct or 0) / total
-                
-                # If accuracy is high (>95%), we can lower the review threshold
-                if accuracy_rate > 0.95:
-                    new_threshold = max(0.6, avg_conf * 0.8)
-                # If accuracy is low (<85%), raise the threshold
-                elif accuracy_rate < 0.85:
-                    new_threshold = min(0.9, avg_conf * 1.2)
-                else:
-                    new_threshold = 0.70  # Default
-                
-                updated_thresholds[engine] = round(new_threshold, 2)
-        
-        return updated_thresholds
-    
-    def get_learning_statistics(self) -> Dict[str, Any]:
-        """
-        Get statistics on active learning progress.
-        
-        Returns:
-            Dict with learning metrics
-        """
-        # Fields reviewed in last 30 days
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        
-        reviewed_count = self.db.query(func.count(ExtractionFieldMetadata.id)).filter(
-            ExtractionFieldMetadata.reviewed_at.isnot(None),
-            ExtractionFieldMetadata.reviewed_at >= thirty_days_ago
-        ).scalar()
-        
-        # Fields pending review
-        pending_count = self.db.query(func.count(ExtractionFieldMetadata.id)).filter(
-            ExtractionFieldMetadata.needs_review == True,
-            ExtractionFieldMetadata.reviewed_at.is_(None)
-        ).scalar()
-        
-        # Average confidence by engine
-        engine_stats = self.db.query(
-            ExtractionFieldMetadata.extraction_engine,
-            func.avg(ExtractionFieldMetadata.confidence_score).label('avg_confidence'),
-            func.count(ExtractionFieldMetadata.id).label('count')
-        ).group_by(
-            ExtractionFieldMetadata.extraction_engine
-        ).all()
-        
-        return {
-            'reviewed_last_30_days': reviewed_count or 0,
-            'pending_review': pending_count or 0,
-            'engine_statistics': [
-                {
-                    'engine': engine,
-                    'avg_confidence': float(avg_conf) if avg_conf else 0.0,
-                    'sample_count': count
-                }
-                for engine, avg_conf, count in engine_stats
-            ],
-            'current_threshold': self.confidence_threshold
-        }
-    
-    def _get_field_value(self, table_name: str, record_id: int, field_name: str) -> Optional[str]:
-        """Get the actual field value from the data table."""
-        # This would query the actual data table (balance_sheet_data, etc.)
-        # For now, return None as placeholder
-        # TODO: Implement dynamic table query based on table_name
-        return None
-    
-    def _values_match(self, value1: Any, value2: Any) -> bool:
-        """Check if two values match (accounting for formatting differences)."""
-        if value1 is None or value2 is None:
-            return value1 == value2
-        
-        normalizer = NumericNormalizer()
-        return normalizer.normalize(value1) == normalizer.normalize(value2)
-    
-    def _update_engine_performance(
-        self,
-        engine_name: str,
-        field_name: str,
-        was_correct: bool,
-        confidence: float
+        anomaly: AnomalyDetection,
+        feedback: AnomalyFeedback
     ):
         """
-        Update engine performance metrics (to be implemented in Sprint 5).
+        Learn patterns from false positive feedback to suppress similar anomalies.
         
-        This will be used to adjust engine weights and confidence thresholds.
+        Args:
+            anomaly: The anomaly that was marked as false positive
+            feedback: The feedback record
         """
-        # Placeholder for future implementation
-        # Will track: engine accuracy by field type, confidence calibration, etc.
-        pass
-
+        if not self.auto_suppression_enabled:
+            return
+        
+        # Check if similar pattern already exists
+        existing_pattern = self.db.query(AnomalyLearningPattern).filter(
+            and_(
+                AnomalyLearningPattern.property_id == anomaly.property_id,
+                AnomalyLearningPattern.account_code == anomaly.account_code,
+                AnomalyLearningPattern.anomaly_type == anomaly.anomaly_type,
+                AnomalyLearningPattern.pattern_active == True
+            )
+        ).first()
+        
+        if existing_pattern:
+            # Update existing pattern
+            existing_pattern.occurrence_count += 1
+            existing_pattern.last_applied_at = datetime.utcnow()
+            existing_pattern.confidence = min(
+                1.0,
+                float(existing_pattern.confidence or 0.5) + 0.1
+            )
+        else:
+            # Create new pattern
+            pattern = AnomalyLearningPattern(
+                property_id=anomaly.property_id,
+                account_code=anomaly.account_code,
+                anomaly_type=anomaly.anomaly_type,
+                pattern_type='always_dismiss',  # False positives should be dismissed
+                condition=f'{{"anomaly_type": "{anomaly.anomaly_type}", "account_code": "{anomaly.account_code}"}}',
+                occurrence_count=1,
+                confidence=0.5,  # Start with moderate confidence
+                auto_suppress=True  # Enable auto-suppression
+            )
+            self.db.add(pattern)
+        
+        self.db.commit()
+    
+    def should_suppress_anomaly(
+        self,
+        anomaly: AnomalyDetection
+    ) -> tuple[bool, Optional[AnomalyLearningPattern]]:
+        """
+        Check if an anomaly should be suppressed based on learned patterns.
+        
+        Args:
+            anomaly: The anomaly to check
+        
+        Returns:
+            Tuple of (should_suppress, pattern) where pattern is the matching pattern if found
+        """
+        if not self.auto_suppression_enabled:
+            return False, None
+        
+        # Find matching patterns
+        patterns = self.db.query(AnomalyLearningPattern).filter(
+            and_(
+                AnomalyLearningPattern.property_id == anomaly.property_id,
+                AnomalyLearningPattern.account_code == anomaly.account_code,
+                AnomalyLearningPattern.anomaly_type == anomaly.anomaly_type,
+                AnomalyLearningPattern.auto_suppress == True,
+                AnomalyLearningPattern.confidence >= self.auto_suppression_threshold
+            )
+        ).all()
+        
+        if patterns:
+            # Use the pattern with highest confidence
+            best_pattern = max(patterns, key=lambda p: float(p.confidence or 0))
+            return True, best_pattern
+        
+        return False, None
+    
+    def get_feedback_statistics(
+        self,
+        property_id: Optional[int] = None,
+        days: int = 90
+    ) -> Dict[str, Any]:
+        """
+        Get feedback statistics for analysis.
+        
+        Args:
+            property_id: Optional property ID to filter by
+            days: Number of days to look back
+        
+        Returns:
+            Dictionary with feedback statistics
+        """
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = self.db.query(AnomalyFeedback).join(
+            AnomalyDetection
+        ).filter(
+            AnomalyFeedback.created_at >= cutoff_date
+        )
+        
+        if property_id:
+            query = query.filter(AnomalyDetection.property_id == property_id)
+        
+        feedbacks = query.all()
+        
+        stats = {
+            'total_feedback': len(feedbacks),
+            'true_positives': sum(1 for f in feedbacks if f.feedback_type == 'true_positive'),
+            'false_positives': sum(1 for f in feedbacks if f.feedback_type == 'false_positive'),
+            'needs_review': sum(1 for f in feedbacks if f.feedback_type == 'needs_review'),
+            'accuracy_rate': 0.0,
+            'false_positive_rate': 0.0
+        }
+        
+        if stats['total_feedback'] > 0:
+            reviewed = stats['true_positives'] + stats['false_positives']
+            if reviewed > 0:
+                stats['accuracy_rate'] = stats['true_positives'] / reviewed
+                stats['false_positive_rate'] = stats['false_positives'] / reviewed
+        
+        return stats
+    
+    def get_learned_patterns(
+        self,
+        property_id: Optional[int] = None,
+        active_only: bool = True
+    ) -> List[AnomalyLearningPattern]:
+        """
+        Get learned patterns for analysis or review.
+        
+        Args:
+            property_id: Optional property ID to filter by
+            active_only: Only return active patterns
+        
+        Returns:
+            List of AnomalyLearningPattern objects
+        """
+        query = self.db.query(AnomalyLearningPattern)
+        
+        if property_id:
+            query = query.filter(AnomalyLearningPattern.property_id == property_id)
+        
+        if active_only:
+            query = query.filter(AnomalyLearningPattern.pattern_active == True)
+        
+        return query.order_by(
+            AnomalyLearningPattern.confidence.desc()
+        ).all()
+    
+    def deactivate_pattern(
+        self,
+        pattern_id: int,
+        reason: Optional[str] = None
+    ) -> bool:
+        """
+        Deactivate a learned pattern (e.g., if it's no longer valid).
+        
+        Args:
+            pattern_id: ID of the pattern to deactivate
+            reason: Optional reason for deactivation
+        
+        Returns:
+            True if successful
+        """
+        pattern = self.db.query(AnomalyLearningPattern).filter(
+            AnomalyLearningPattern.id == pattern_id
+        ).first()
+        
+        if not pattern:
+            return False
+        
+        pattern.auto_suppress = False
+        pattern.updated_at = datetime.utcnow()
+        
+        self.db.commit()
+        return True

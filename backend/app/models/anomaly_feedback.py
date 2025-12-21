@@ -38,13 +38,19 @@ class AnomalyFeedback(Base):
     anomaly_type = Column(String(50), nullable=True)  # Type of anomaly (z_score, percentage_change, etc.)
     severity = Column(String(20), nullable=True)  # Severity level
     
+    # Enhanced feedback fields (from migration 20251221_0000)
+    feedback_confidence = Column(DECIMAL(5, 4), nullable=True, server_default='1.0')  # User's confidence in feedback
+    business_context = Column(Text, nullable=True)  # Business context for the feedback
+    learned_applied = Column(Boolean, default=False, nullable=True)  # Whether learning pattern was applied
+    similar_anomalies_suppressed = Column(Integer, default=0, nullable=True)  # Count of suppressed similar anomalies
+    
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    anomaly_detection = relationship("AnomalyDetection", backref="feedback")
-    user = relationship("User", backref="anomaly_feedback")
+    anomaly_detection = relationship("AnomalyDetection", back_populates="feedback")
+    user = relationship("User")
     
     def __repr__(self):
         return f"<AnomalyFeedback(id={self.id}, feedback_type='{self.feedback_type}', is_anomaly={self.is_anomaly})>"

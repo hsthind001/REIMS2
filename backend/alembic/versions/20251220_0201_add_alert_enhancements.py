@@ -21,7 +21,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20251220_0201_add_alert_enhancements'
-down_revision = '20251220_0200_add_alert_rules_enhancements'
+down_revision = '20251220_0200'  # Shortened revision ID
 branch_labels = None
 depends_on = None
 
@@ -29,15 +29,29 @@ depends_on = None
 def upgrade():
     """Add enhancements to committee_alerts table"""
     
-    # Add new columns to committee_alerts table
-    op.add_column('committee_alerts', sa.Column('priority_score', sa.Numeric(10, 4), nullable=True))
-    op.add_column('committee_alerts', sa.Column('correlation_group_id', sa.Integer(), nullable=True))
-    op.add_column('committee_alerts', sa.Column('escalation_level', sa.Integer(), nullable=True, server_default='0'))
-    op.add_column('committee_alerts', sa.Column('escalated_at', sa.DateTime(), nullable=True))
-    op.add_column('committee_alerts', sa.Column('resolution_template_id', sa.Integer(), nullable=True))
-    op.add_column('committee_alerts', sa.Column('related_alert_ids', postgresql.JSONB, nullable=True))
-    op.add_column('committee_alerts', sa.Column('alert_tags', postgresql.JSONB, nullable=True))
-    op.add_column('committee_alerts', sa.Column('performance_impact', sa.String(100), nullable=True))
+    # Check if columns already exist
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    existing_columns = [col['name'] for col in inspector.get_columns('committee_alerts')]
+    
+    # Add new columns to committee_alerts table (only if they don't exist)
+    if 'priority_score' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('priority_score', sa.Numeric(10, 4), nullable=True))
+    if 'correlation_group_id' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('correlation_group_id', sa.Integer(), nullable=True))
+    if 'escalation_level' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('escalation_level', sa.Integer(), nullable=True, server_default='0'))
+    if 'escalated_at' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('escalated_at', sa.DateTime(), nullable=True))
+    if 'resolution_template_id' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('resolution_template_id', sa.Integer(), nullable=True))
+    if 'related_alert_ids' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('related_alert_ids', postgresql.JSONB, nullable=True))
+    if 'alert_tags' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('alert_tags', postgresql.JSONB, nullable=True))
+    if 'performance_impact' not in existing_columns:
+        op.add_column('committee_alerts', sa.Column('performance_impact', sa.String(100), nullable=True))
     
     # Add indexes for performance
     op.create_index('ix_committee_alerts_priority_score', 'committee_alerts', ['priority_score'])

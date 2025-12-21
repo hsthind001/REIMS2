@@ -10,7 +10,8 @@ celery_app = Celery(
     include=[
         "app.tasks.example_tasks",
         "app.tasks.extraction_tasks",
-        "app.tasks.anomaly_detection_tasks"  # BR-008: Nightly anomaly detection
+        "app.tasks.anomaly_detection_tasks",  # BR-008: Nightly anomaly detection
+        "app.tasks.batch_reprocessing_tasks"  # Phase 1: Batch reprocessing for anomaly detection
     ]
 )
 

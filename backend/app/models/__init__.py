@@ -52,9 +52,16 @@ from app.models.document_chunk import DocumentChunk
 # Concordance models
 from app.models.concordance_table import ConcordanceTable
 
-# Anomaly threshold models
+# Anomaly detection models
+from app.models.anomaly_detection import AnomalyDetection
 from app.models.anomaly_threshold import AnomalyThreshold, SystemConfig
 from app.models.anomaly_feedback import AnomalyFeedback, AnomalyLearningPattern
+from app.models.anomaly_explanation import AnomalyExplanation
+from app.models.anomaly_model_cache import AnomalyModelCache
+from app.models.cross_property_benchmark import CrossPropertyBenchmark
+from app.models.batch_reprocessing_job import BatchReprocessingJob
+from app.models.pdf_field_coordinate import PDFFieldCoordinate
+from app.models.pyod_model_selection_log import PyODModelSelectionLog
 
 __all__ = [
     "User",
@@ -104,10 +111,19 @@ __all__ = [
     "DocumentChunk",
     # Concordance
     "ConcordanceTable",
+    # Anomaly detection
+    "AnomalyDetection",
     # Anomaly feedback
     "AnomalyFeedback",
     "AnomalyLearningPattern",
     # Anomaly thresholds
     "AnomalyThreshold",
     "SystemConfig",
+    # Anomaly enhancement models (Phase 1)
+    "AnomalyExplanation",
+    "AnomalyModelCache",
+    "CrossPropertyBenchmark",
+    "BatchReprocessingJob",
+    "PDFFieldCoordinate",
+    "PyODModelSelectionLog",
 ]

@@ -20,8 +20,8 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '20251220_0200_add_alert_rules_enhancements'
-down_revision = '20251219_1901_add_mortgage_statement_tables'
+revision = '20251220_0200'  # Shortened to fit VARCHAR(32) limit
+down_revision = '20251219_1901'  # Shortened revision ID
 branch_labels = None
 depends_on = None
 
@@ -29,21 +29,40 @@ depends_on = None
 def upgrade():
     """Add enhancements to alert_rules table"""
     
-    # Add new columns to alert_rules table
-    op.add_column('alert_rules', sa.Column('rule_expression', postgresql.JSONB, nullable=True))
-    op.add_column('alert_rules', sa.Column('severity_mapping', postgresql.JSONB, nullable=True))
-    op.add_column('alert_rules', sa.Column('cooldown_period', sa.Integer(), nullable=True, server_default='60'))
-    op.add_column('alert_rules', sa.Column('rule_dependencies', postgresql.JSONB, nullable=True))
-    op.add_column('alert_rules', sa.Column('property_specific', sa.Boolean(), nullable=True, server_default='false'))
-    op.add_column('alert_rules', sa.Column('rule_template_id', sa.Integer(), nullable=True))
-    op.add_column('alert_rules', sa.Column('execution_count', sa.Integer(), nullable=True, server_default='0'))
-    op.add_column('alert_rules', sa.Column('last_triggered_at', sa.DateTime(timezone=True), nullable=True))
-    op.add_column('alert_rules', sa.Column('property_id', sa.Integer(), nullable=True))
+    # Check if columns already exist
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    existing_columns = [col['name'] for col in inspector.get_columns('alert_rules')]
+    existing_indexes = [idx['name'] for idx in inspector.get_indexes('alert_rules')]
     
-    # Add indexes for performance
-    op.create_index('ix_alert_rules_property_id', 'alert_rules', ['property_id'])
-    op.create_index('ix_alert_rules_template_id', 'alert_rules', ['rule_template_id'])
-    op.create_index('ix_alert_rules_last_triggered', 'alert_rules', ['last_triggered_at'])
+    # Add new columns to alert_rules table (only if they don't exist)
+    if 'rule_expression' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('rule_expression', postgresql.JSONB, nullable=True))
+    if 'severity_mapping' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('severity_mapping', postgresql.JSONB, nullable=True))
+    if 'cooldown_period' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('cooldown_period', sa.Integer(), nullable=True, server_default='60'))
+    if 'rule_dependencies' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('rule_dependencies', postgresql.JSONB, nullable=True))
+    if 'property_specific' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('property_specific', sa.Boolean(), nullable=True, server_default='false'))
+    if 'rule_template_id' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('rule_template_id', sa.Integer(), nullable=True))
+    if 'execution_count' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('execution_count', sa.Integer(), nullable=True, server_default='0'))
+    if 'last_triggered_at' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('last_triggered_at', sa.DateTime(timezone=True), nullable=True))
+    if 'property_id' not in existing_columns:
+        op.add_column('alert_rules', sa.Column('property_id', sa.Integer(), nullable=True))
+    
+    # Add indexes for performance (only if they don't exist)
+    if 'ix_alert_rules_property_id' not in existing_indexes:
+        op.create_index('ix_alert_rules_property_id', 'alert_rules', ['property_id'])
+    if 'ix_alert_rules_template_id' not in existing_indexes:
+        op.create_index('ix_alert_rules_template_id', 'alert_rules', ['rule_template_id'])
+    if 'ix_alert_rules_last_triggered' not in existing_indexes:
+        op.create_index('ix_alert_rules_last_triggered', 'alert_rules', ['last_triggered_at'])
     
     # Add foreign key for property_id if properties table exists
     try:

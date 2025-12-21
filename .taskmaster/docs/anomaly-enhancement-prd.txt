@@ -1,0 +1,324 @@
+# REIMS2 Anomaly Detection Enhancement - Product Requirements Document
+
+## Executive Summary
+
+Transform REIMS2's anomaly detection system into a world-class, AI-powered intelligence platform. This enhancement spans 7 phases over 19 weeks, creating 24 new files, modifying 8 existing files, and adding 7 new database tables. The system will leverage cutting-edge ML algorithms, explainable AI, active learning, and cross-property intelligence to provide actionable anomaly insights.
+
+## Project Goals
+
+1. Reduce false positive rate to <10%
+2. Achieve model cache hit rate >70%
+3. Provide explainable AI insights for every anomaly
+4. Enable batch reprocessing of historical documents
+5. Support 45+ ML anomaly detection algorithms
+6. Implement active learning from user feedback
+7. Enable cross-property portfolio benchmarking
+8. Support ML-based coordinate prediction for PDF highlighting
+
+## Technology Stack
+
+- Backend: Python 3.11+, FastAPI, PostgreSQL 14+, Celery + Redis
+- ML Libraries: PyOD 2.0, SHAP, LIME, Prophet, ARIMA, Transformers
+- PDF Processing: PDFPlumber, PyMuPDF, EasyOCR
+- Infrastructure: Docker, MinIO, GPU support (optional)
+
+## Phase 1: Foundation & Infrastructure (Weeks 1-3)
+
+### Database Schema Enhancements
+
+Create 7 new database tables:
+
+1. **anomaly_explanations** - Stores XAI explanations (SHAP, LIME, root causes, actions)
+   - Columns: root_cause_type, root_cause_description, shap_values, lime_explanation, suggested_actions
+   - Foreign key to anomaly_detections
+   - Indexes on anomaly_detection_id and root_cause_type
+
+2. **anomaly_model_cache** - Serialized trained models with metadata
+   - Columns: model_key (unique), property_id, account_code, model_type, model_binary, model_metadata
+   - Performance metrics: training_accuracy, validation_accuracy, precision_score, recall_score, f1_score
+   - Cache management: is_active, expires_at, use_count, last_used_at
+   - Indexes on model_key, property_id, model_type, is_active+expires_at
+
+3. **cross_property_benchmarks** - Portfolio statistical benchmarks
+   - Columns: account_code, benchmark_period, property_group
+   - Statistics: portfolio_mean, portfolio_median, portfolio_std, percentiles (25th, 75th, 90th, 95th)
+   - Sample info: property_count, property_ids (JSONB)
+   - Unique constraint on account_code + benchmark_period + property_group
+
+4. **batch_reprocessing_jobs** - Batch job tracking and progress
+   - Columns: job_name, initiated_by, property_ids, date_range_start, date_range_end
+   - Status tracking: status, celery_task_id, total_documents, processed_documents
+   - Results: successful_count, failed_count, skipped_count, results_summary
+   - Timing: started_at, completed_at, estimated_completion_at
+
+5. **pdf_field_coordinates** - Dedicated coordinate storage with confidence
+   - Columns: document_upload_id, table_name, record_id, field_name
+   - Coordinates: page_number, x0, y0, x1, y1
+   - Extraction: extraction_method, confidence, matched_text
+
+6. **pyod_model_selection_log** - LLM model selection reasoning
+   - Columns: property_id, account_code, data_characteristics (JSONB)
+   - LLM selection: llm_recommended_models, selected_model, selection_reasoning
+   - Performance: cross_validation_score, actual_precision, actual_recall
+
+7. **anomaly_feedback** (update existing) - Enhanced with 4 new columns
+   - New columns: feedback_confidence, business_context, learned_applied, similar_anomalies_suppressed
+
+Migration file: `backend/alembic/versions/20251221_world_class_anomaly_system.py`
+
+### Batch Reprocessing System
+
+Create a complete batch reprocessing system:
+
+1. **Service**: `backend/app/services/batch_reprocessing_service.py`
+   - Methods: create_batch_job(), start_batch_job(), get_job_status(), cancel_job(), list_jobs()
+   - Filter documents by property_ids, date_range, document_types, extraction_status
+   - Track progress and provide ETA calculations
+
+2. **Celery Task**: `backend/app/tasks/batch_reprocessing_tasks.py`
+   - Async task: reprocess_documents_batch(job_id)
+   - Process documents in chunks of 10
+   - Update job progress after each chunk
+   - Handle errors gracefully with retries
+
+3. **API**: `backend/app/api/v1/batch_reprocessing.py`
+   - POST /api/v1/batch-reprocessing/reprocess - Create and start job
+   - GET /api/v1/batch-reprocessing/jobs/{job_id} - Get job status
+   - POST /api/v1/batch-reprocessing/jobs/{job_id}/cancel - Cancel job
+   - GET /api/v1/batch-reprocessing/jobs - List jobs
+
+4. **Schemas**: `backend/app/schemas/batch_reprocessing.py`
+   - BatchJobCreate, BatchJobResponse, BatchJobStatusResponse
+
+### PyOD 2.0 Integration
+
+Create PyOD anomaly detector service:
+
+1. **Service**: `backend/app/services/pyod_anomaly_detector.py`
+   - Support 45+ PyOD algorithms (Isolation Forest, LOF, OCSVM, ECOD, COPOD, etc.)
+   - LLM-powered model selection (optional, requires OpenAI API key)
+   - Integration with model caching service
+   - Log model selection decisions to pyod_model_selection_log table
+
+2. **Key Methods**:
+   - select_optimal_model_llm() - Use LLM to recommend best algorithm
+   - train_model() - Train PyOD model on historical data
+   - detect_anomalies() - Detect anomalies using trained model
+   - get_available_algorithms() - List all supported algorithms
+
+### Model Caching Service
+
+Create model caching service for 50x performance improvement:
+
+1. **Service**: `backend/app/services/model_cache_service.py`
+   - Methods: get_or_train_model(), cache_model(), invalidate_cache(), should_invalidate()
+   - Serialization with joblib (compress=3)
+   - Cache key generation using SHA256 hash
+   - Cache invalidation rules: age >30 days, accuracy < threshold, distribution change (KS test)
+
+2. **Cache Key Format**:
+   - Hash of: property_id, account_code, model_type, config
+   - Stored in model_key column (unique)
+
+3. **Performance Targets**:
+   - Cache hit rate >50% in Phase 1, >70% overall
+   - 50x speedup when cache hit vs training new model
+
+### Feature Flags Module
+
+Create feature flags for gradual rollout:
+
+1. **Module**: `backend/app/core/feature_flags.py`
+   - Phase 1 flags: PYOD_ENABLED, MODEL_CACHE_ENABLED, BATCH_REPROCESSING_ENABLED
+   - Phase 2 flags: ACTIVE_LEARNING_ENABLED, AUTO_SUPPRESSION_ENABLED
+   - Phase 3 flags: SHAP_ENABLED, LIME_ENABLED
+   - Phase 4 flags: PORTFOLIO_BENCHMARKS_ENABLED
+   - Phase 5 flags: LAYOUTLM_ENABLED
+   - Phase 6 flags: INCREMENTAL_LEARNING_ENABLED, GPU_ACCELERATION_ENABLED
+   - All flags read from environment variables
+
+### Configuration Updates
+
+1. **Update**: `backend/app/core/config.py`
+   - Add all anomaly enhancement settings (see master guide for full list)
+   - Settings for PyOD, model caching, GPU, XAI, active learning, benchmarks, LayoutLM, batch processing
+
+2. **Update**: `backend/requirements.txt`
+   - Add: pyod==2.0.0 (or >=1.1.0), dtaianomaly==1.0.0, llama-index==0.9.48
+   - Add: scipy>=1.11.0, joblib>=1.3.0, tqdm>=4.66.0
+
+3. **Update**: `backend/.env`
+   - Add all environment variables from master guide (30+ variables)
+
+## Phase 2: Active Learning & Feedback Loop (Weeks 4-6)
+
+### Adaptive Threshold Service
+
+- Service: `backend/app/services/adaptive_threshold_service.py`
+- Adjust detection thresholds based on user feedback
+- Maximize F1 score using historical feedback data
+- Support per-account and per-property thresholds
+
+### Pattern Learning Service
+
+- Service: `backend/app/services/pattern_learning_service.py`
+- Discover suppression patterns (e.g., "User always dismisses X for account Y")
+- Lookback period: 90 days
+- Minimum confidence: 80%
+- Auto-suppress learned false positives
+
+## Phase 3: Explainability (XAI) (Weeks 7-9)
+
+### SHAP Integration
+
+- Service: `backend/app/services/shap_explainer.py`
+- Global feature importance
+- TreeExplainer for tree models, KernelExplainer for others
+- Background samples: 100 (configurable)
+- Run in background Celery tasks (not blocking)
+
+### LIME Integration
+
+- Service: `backend/app/services/lime_explainer.py`
+- Local explanations (fast, on-demand)
+- LimeTabularExplainer
+- Response time target: <500ms
+
+### Anomaly Explainer
+
+- Service: `backend/app/services/anomaly_explainer.py`
+- Unified explainability service
+- Root cause classification (6 types: trend_break, seasonal_deviation, outlier, cross_account_inconsistency, volatility_spike, missing_data)
+- Natural language explanation generation
+- Action suggestion engine (50+ account codes)
+
+## Phase 4: Cross-Property Intelligence (Weeks 10-12)
+
+### Portfolio Benchmark Service
+
+- Service: `backend/app/services/portfolio_benchmark_service.py`
+- Calculate benchmarks: mean, median, std, percentiles (25th, 75th, 90th, 95th)
+- Property grouping: by size (<50, 50-200, 200+ units), location, type
+- Cross-property anomaly detection (outside 5th-95th percentile)
+- Scheduled refresh: Monthly (Celery Beat)
+
+### Portfolio Analytics API
+
+- API: `backend/app/api/v1/portfolio_analytics.py`
+- Comparative analysis endpoints
+- Peer comparison ("Above 85% of peers")
+
+## Phase 5: ML-Based Coordinate Prediction (Weeks 13-15)
+
+### LayoutLM Integration
+
+- Service: `backend/app/services/layoutlm_coordinate_predictor.py`
+- LayoutLM v3 for document understanding
+- Fallback when auto-extraction fails
+- Confidence threshold: 0.75
+
+### Coordinate Storage
+
+- Service: `backend/app/services/coordinate_storage_service.py`
+- Model: `backend/app/models/pdf_field_coordinate.py`
+- PDFPlumber word extraction integration
+- Fuzzy value-to-word matching (tolerance 0.9)
+- Store coordinates in pdf_field_coordinates table
+
+## Phase 6: Model Optimization (Weeks 16-17)
+
+### Incremental Learning
+
+- Service: `backend/app/services/incremental_learning_service.py`
+- Update models with new data without full retrain
+- 10x speedup vs full retrain
+- Sliding window approach
+
+### Parallel Processing
+
+- Task: `backend/app/tasks/anomaly_detection_tasks.py`
+- Celery groups for batch detection
+- Linear scaling up to 4 workers
+- GPU acceleration support (optional)
+
+## Phase 7: UI/UX Enhancements (Weeks 18-19)
+
+### Enhanced Anomaly Detail API
+
+- Update: `backend/app/api/v1/anomalies.py`
+- GET /api/v1/anomalies/{anomaly_id}/detailed
+- Returns: anomaly data, explanation, coordinates, similar_anomalies, feedback_stats, cross_property_context
+
+### WebSocket Real-Time Updates
+
+- API: `backend/app/api/websockets/anomaly_updates.py`
+- WS /ws/batch-job/{job_id}
+- Send updates every 2 seconds: status, progress_pct, processed, total
+
+### Export Service
+
+- Service: `backend/app/services/export_service.py`
+- Export to CSV/XLSX/JSON
+- Include explanations in export
+
+### Uncertain Anomalies Endpoint
+
+- GET /api/v1/anomalies/uncertain?limit=10
+- Returns anomalies most needing feedback (sorted by uncertainty)
+
+## Success Criteria
+
+### Phase 1
+- ✅ 7 tables created and migrated
+- ✅ Batch reprocessing API works
+- ✅ PyOD models train and cache
+- ✅ Model cache hit rate >50%
+
+### Overall
+- Model cache hit rate >70%
+- False positive rate <10%
+- Explanation generation <5s
+- API response time <200ms
+- Test coverage >85%
+
+## Dependencies
+
+### Phase 1
+- pyod==2.0.0 (or >=1.1.0 if 2.0 not available)
+- dtaianomaly==1.0.0
+- llama-index==0.9.48
+- scipy>=1.11.0
+- joblib>=1.3.0
+- tqdm>=4.66.0
+
+### Phase 3
+- shap==0.44.0
+- lime==0.2.0.1
+
+### Phase 5
+- layoutparser==0.3.4
+
+## Testing Requirements
+
+- Unit tests: >85% coverage for services
+- API tests: >80% coverage
+- Integration tests: Critical paths
+- Performance tests: Cache speedup, parallel scaling
+
+## Risk Mitigation
+
+1. PyOD 2.0 not released: Use PyOD >=1.1.0, plan upgrade
+2. SHAP too slow: Run in background Celery tasks
+3. LayoutLM too large: Use quantized models or fallback
+4. Insufficient data: Require minimum 10 points, fallback to statistical
+
+## Implementation Order
+
+1. Phase 1: Foundation (database, batch processing, PyOD, caching)
+2. Phase 2: Active Learning (adaptive thresholds, pattern learning)
+3. Phase 3: Explainability (SHAP, LIME, root causes)
+4. Phase 4: Cross-Property (benchmarks, portfolio analytics)
+5. Phase 5: ML Coordinates (LayoutLM, PDFPlumber)
+6. Phase 6: Optimization (incremental learning, GPU, parallel)
+7. Phase 7: UI/UX (enhanced APIs, WebSocket, export)
+

@@ -1428,100 +1428,294 @@
   "frontend-redesign": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Setup Development Environment",
         "description": "Initialize the development environment with necessary tools and libraries.",
         "details": "Install Node.js, Python, and Docker. Set up a PostgreSQL database and MinIO for object storage. Ensure Redis and Celery are configured for task queuing. Use Vite for building the frontend and FastAPI for the backend.",
         "testStrategy": "Verify environment setup by running a simple React app and a FastAPI endpoint.",
         "priority": "medium",
         "dependencies": [],
-        "status": "done",
-        "subtasks": []
+        "status": "in-progress",
+        "subtasks": [],
+        "updatedAt": "2025-12-21T19:27:46.195Z"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Design System Setup",
         "description": "Create a design system using Tailwind CSS and Headless UI.",
         "details": "Install Tailwind CSS and Headless UI. Define color palette variables and create core components like buttons, cards, and typography. Set up Lucide Icons for UI elements.\n<info added on 2025-11-15T02:37:35.021Z>\nDesign System Setup Progress:\n\n✅ Installed dependencies:\n- Tailwind CSS, PostCSS, Autoprefixer\n- @headlessui/react, @heroicons/react\n- lucide-react (for icons)\n- framer-motion (for animations)\n\n✅ Created configuration files:\n- tailwind.config.js with complete color palette (Primary, Semantic, UI colors)\n- postcss.config.js for PostCSS processing\n- Updated src/index.css with Tailwind directives and component classes\n\n✅ Created core design system components:\n- Button.tsx (with variants: primary, success, danger, premium)\n- Card.tsx (with status variants and glow effects)\n- ProgressBar.tsx (with animated progress and variants)\n- MetricCard.tsx (for dashboard metrics with sparklines)\n- index.ts (exports all components)\n\n✅ Design system features implemented:\n- Color palette: Success Green, Info Blue, Warning Amber, Danger Red, Premium Purple\n- Semantic colors: Profit, Loss, Metric, Asset, Equity\n- Gradient backgrounds for buttons and cards\n- Glow effects for premium features\n- Responsive typography (H1, H2, H3)\n- Animation support with Framer Motion\n\nNext steps: Test components and integrate into existing pages.\n</info added on 2025-11-15T02:37:35.021Z>",
         "testStrategy": "Ensure all components render correctly and adhere to the design specifications.",
         "priority": "medium",
         "dependencies": [
-          1
+          "1"
         ],
         "status": "done",
         "subtasks": []
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Implement Command Center Page",
         "description": "Develop the Command Center page consolidating multiple dashboards.",
         "details": "Use React and Tailwind CSS to build the Command Center page. Include a portfolio health score section, key metrics cards, critical alerts, and an AI insights widget. Implement file upload and property addition functionalities.\n<info added on 2025-11-15T02:41:25.016Z>\nCommand Center Page Implementation Progress:\n\n✅ Created CommandCenter.tsx page with:\n- Portfolio Health Score hero section (gradient background with score display)\n- 4 Key Metrics Cards (Total Value, Portfolio NOI, Average Occupancy, Portfolio IRR) with sparklines\n- Critical Alerts section (red glow borders, pulse animations, progress bars)\n- Portfolio Performance Grid (interactive table with sparklines, color-coded rows)\n- AI Insights Widget (purple accent, animated typing effect ready)\n- Quick Actions floating button (Upload Document, Add Property, Ask AI, Generate Report)\n- File upload modal integration (DocumentUpload component)\n- Property addition modal (navigation to Properties page)\n\n✅ Integrated design system components:\n- MetricCard for key metrics\n- Card for sections with status variants\n- Button with variants (primary, success, danger, premium)\n- ProgressBar for compliance tracking\n\n✅ Features implemented:\n- Real-time data loading from APIs\n- Auto-refresh every 5 minutes\n- Loading states\n- Error handling\n- Responsive grid layout\n- Color-coded status indicators (red/amber/green)\n\n✅ Updated App.tsx to use CommandCenter for dashboard route\n\nNext: Test the page and ensure all API integrations work correctly\n</info added on 2025-11-15T02:41:25.016Z>",
         "testStrategy": "Test UI responsiveness and functionality across different devices and browsers.",
         "priority": "medium",
         "dependencies": [
-          2
+          "2"
         ],
         "status": "done",
         "subtasks": []
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Develop Portfolio Hub Page",
         "description": "Create the Portfolio Hub page with master-detail layout.",
         "details": "Build the Portfolio Hub using React. Implement color-coded property cards, property details tabs, and market intelligence visualizations. Include tenant matching engine UI and property cost tracking.",
         "testStrategy": "Validate data display accuracy and UI interactions.",
         "priority": "medium",
         "dependencies": [
-          3
+          "3"
         ],
         "status": "done",
         "subtasks": []
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Build Financial Command Page",
         "description": "Construct the Financial Command page with financial metrics and AI features.",
         "details": "Develop the Financial Command page with a financial statements carousel, variance analysis heatmap, and AI chat interface. Ensure all financial metrics are displayed as specified.",
         "testStrategy": "Check the accuracy of financial data and responsiveness of AI features.",
         "priority": "medium",
         "dependencies": [
-          4
+          "4"
         ],
         "status": "done",
         "subtasks": []
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Create Data Control Center Page",
         "description": "Develop the Data Control Center page for data quality management.",
         "details": "Implement quality score widgets, real-time task monitoring, and validation rules manager. Include bulk import interface and review queue workflow.",
         "testStrategy": "Test data import functionality and validation rule application.",
         "priority": "medium",
         "dependencies": [
-          5
+          "5"
         ],
         "status": "done",
         "subtasks": []
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Develop Admin Hub Page",
         "description": "Build the Admin Hub page for user and role management.",
         "details": "Create user management interface with RBAC matrix view. Implement settings panel and audit log viewer using React and Tailwind CSS.",
         "testStrategy": "Verify role-based access control and audit log accuracy.",
         "priority": "medium",
         "dependencies": [
-          6
+          "6"
         ],
         "status": "done",
         "subtasks": []
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Implement Multi-Format Data Ingestion",
         "description": "Enable data ingestion from PDF, CSV, and Excel formats.",
         "details": "Use Python libraries like Pandas and PyPDF2 for data extraction. Normalize data into a unified schema and ensure ≥99% accuracy.",
         "testStrategy": "Test ingestion accuracy with various document formats and layouts.",
+        "priority": "medium",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "9",
+        "title": "Develop Field-Level Confidence Scoring",
+        "description": "Compute and display confidence scores for extracted data.",
+        "details": "Implement a scoring algorithm to compute confidence scores for each extracted field. Display scores in the UI and halt calculations for scores < 0.99.",
+        "testStrategy": "Validate score computation and UI display for different data sets.",
+        "priority": "medium",
+        "dependencies": [
+          "8"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "10",
+        "title": "Implement Risk Alerts and Workflow Locks",
+        "description": "Create risk alerts and manage workflow locks based on business rules.",
+        "details": "Develop logic to pause workflows when DSCR < 1.25 or occupancy thresholds are breached. Notify relevant committees and manage workflow locks.",
+        "testStrategy": "Simulate risk scenarios and verify alert generation and workflow locking.",
+        "priority": "medium",
+        "dependencies": [
+          "9"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "11",
+        "title": "Develop Exit-Strategy Intelligence",
+        "description": "Calculate and persist exit-strategy metrics with AI insights.",
+        "details": "Use AI models to calculate cap-rate trends, interest-rate impacts, and IRR. Persist results with recommendation confidence ≥ 0.70.",
+        "testStrategy": "Test accuracy of AI-generated insights and recommendation confidence.",
+        "priority": "medium",
+        "dependencies": [
+          "10"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "12",
+        "title": "Implement Adaptive Parsing Accuracy",
+        "description": "Enhance parsing accuracy using rule-based and ML techniques.",
+        "details": "Combine rule-based parsing with OCR/ML fallbacks to achieve ≥99% extraction accuracy. Support all document formats and layouts.",
+        "testStrategy": "Evaluate parsing accuracy across diverse document samples.",
+        "priority": "medium",
+        "dependencies": [
+          "8"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "13",
+        "title": "Ensure Security and Compliance",
+        "description": "Implement security measures and ensure compliance with standards.",
+        "details": "Encrypt data at rest and in transit using AWS KMS and Keychain. Implement JWT/OAuth2 for API security and RBAC for user roles. Log actions in audit_log.",
+        "testStrategy": "Conduct security audits and penetration testing to verify compliance.",
+        "priority": "medium",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "14",
+        "title": "Develop Traceability and Audit Features",
+        "description": "Provide end-to-end data lineage and audit capabilities.",
+        "details": "Implement features to track data lineage from ingestion to analytics. Enable export of audit bundles for regulatory purposes.",
+        "testStrategy": "Test data lineage tracking and audit bundle export functionality.",
+        "priority": "medium",
+        "dependencies": [
+          "13"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "15",
+        "title": "Implement Dynamic Tolerance Management",
+        "description": "Enable API-editable tolerances and anomaly detection.",
+        "details": "Develop APIs for editing tolerances and implement nightly batch jobs for anomaly detection using Z-score and CUSUM methods.",
+        "testStrategy": "Validate anomaly detection accuracy and API functionality.",
+        "priority": "medium",
+        "dependencies": [
+          "12"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "16",
+        "title": "Develop Property Cost Management",
+        "description": "Track various property-related costs in the system.",
+        "details": "Implement features to track insurance, mortgage, utility, and other property costs. Ensure data is accurately reflected in the Portfolio Hub.",
+        "testStrategy": "Verify cost tracking accuracy and data integration in the UI.",
+        "priority": "medium",
+        "dependencies": [
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "17",
+        "title": "Implement Square Footage and Unit Management",
+        "description": "Manage square footage and unit data for properties.",
+        "details": "Develop features to track total square footage, individual store space, and unit counts. Display data in the Portfolio Hub.",
+        "testStrategy": "Test data accuracy and UI display for square footage and unit management.",
+        "priority": "medium",
+        "dependencies": [
+          "16"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "18",
+        "title": "Develop Occupancy Management Features",
+        "description": "Track and display occupancy status for properties.",
+        "details": "Implement features to track occupied and available units. Display occupancy status in the Portfolio Hub UI.",
+        "testStrategy": "Validate occupancy data accuracy and UI representation.",
+        "priority": "medium",
+        "dependencies": [
+          "17"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "19",
+        "title": "Integrate Agentic AI and Generative AI",
+        "description": "Leverage AI for insights and recommendations.",
+        "details": "Integrate AI models for geo-locational analysis, political impact analysis, and tenant recommendations. Use GPT-OSS for natural language queries and document summarization.",
+        "testStrategy": "Test AI model accuracy and response times for various queries.",
+        "priority": "medium",
+        "dependencies": [
+          "11"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "20",
+        "title": "Optimize Performance and Conduct Testing",
+        "description": "Ensure system performance and conduct comprehensive testing.",
+        "details": "Optimize frontend and backend performance using lazy loading and code splitting. Conduct accessibility, cross-browser, and mobile responsive testing. Perform user acceptance testing and integration testing for all business requirements.",
+        "testStrategy": "Use performance monitoring tools to verify optimization. Conduct thorough testing to ensure all requirements are met.",
+        "priority": "medium",
+        "dependencies": [
+          "19"
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2025-12-21T19:27:46.197Z",
+      "taskCount": 20,
+      "completedCount": 6,
+      "tags": [
+        "frontend-redesign"
+      ]
+    }
+  },
+  "anomaly-enhancement": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Database Schema Enhancements",
+        "description": "Create 7 new database tables and update existing ones for anomaly detection.",
+        "details": "Implement the database schema enhancements as specified in the PRD. Use PostgreSQL 14+ to create tables such as anomaly_explanations, anomaly_model_cache, and others. Ensure proper indexing and foreign key constraints are applied.",
+        "testStrategy": "Verify table creation and indexing through database migration tests. Ensure data integrity with foreign key constraints.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Batch Reprocessing System Service",
+        "description": "Develop the batch reprocessing service for document processing.",
+        "details": "Create the batch_reprocessing_service.py with methods like create_batch_job(), start_batch_job(), and others. Use FastAPI for API endpoints and Celery for task management.",
+        "testStrategy": "Write unit tests for each service method. Use mock data to simulate batch processing and verify job status updates.",
         "priority": "medium",
         "dependencies": [
           1
@@ -1530,24 +1724,98 @@
         "subtasks": []
       },
       {
-        "id": 9,
-        "title": "Develop Field-Level Confidence Scoring",
-        "description": "Compute and display confidence scores for extracted data.",
-        "details": "Implement a scoring algorithm to compute confidence scores for each extracted field. Display scores in the UI and halt calculations for scores < 0.99.",
-        "testStrategy": "Validate score computation and UI display for different data sets.",
+        "id": 3,
+        "title": "Batch Reprocessing Celery Task",
+        "description": "Implement Celery tasks for batch document reprocessing.",
+        "details": "Develop reprocess_documents_batch(job_id) in batch_reprocessing_tasks.py. Ensure tasks process documents in chunks and handle errors with retries.",
+        "testStrategy": "Test task execution with Celery workers. Simulate failures to verify retry logic.",
         "priority": "medium",
         "dependencies": [
-          8
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Batch Reprocessing API",
+        "description": "Create API endpoints for batch reprocessing operations.",
+        "details": "Develop endpoints in batch_reprocessing.py for creating, starting, and managing batch jobs. Use FastAPI for implementation.",
+        "testStrategy": "Perform API tests to ensure endpoints respond correctly and handle edge cases.",
+        "priority": "medium",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "PyOD Anomaly Detector Service",
+        "description": "Integrate PyOD 2.0 for anomaly detection.",
+        "details": "Create pyod_anomaly_detector.py to support 45+ algorithms. Implement model selection and anomaly detection methods.",
+        "testStrategy": "Validate model training and detection with unit tests. Use a variety of datasets to ensure algorithm coverage.",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Model Caching Service",
+        "description": "Develop a caching service for trained models.",
+        "details": "Implement model_cache_service.py with methods for caching and retrieving models. Use joblib for serialization and SHA256 for cache keys.",
+        "testStrategy": "Test cache hit/miss scenarios and performance improvements. Verify cache invalidation logic.",
+        "priority": "medium",
+        "dependencies": [
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Feature Flags Module",
+        "description": "Implement feature flags for phased rollout.",
+        "details": "Create feature_flags.py to manage feature toggles. Use environment variables to control feature activation.",
+        "testStrategy": "Test feature flag toggling in different environments. Ensure features are enabled/disabled as expected.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Configuration Updates",
+        "description": "Update configuration files for new enhancements.",
+        "details": "Modify config.py, requirements.txt, and .env to include new settings and dependencies. Ensure compatibility with existing configurations.",
+        "testStrategy": "Verify configuration changes through integration tests. Ensure all services start with updated settings.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Adaptive Threshold Service",
+        "description": "Develop a service to adjust detection thresholds based on feedback.",
+        "details": "Create adaptive_threshold_service.py to adjust thresholds using historical feedback. Implement methods to maximize F1 score.",
+        "testStrategy": "Test threshold adjustments with historical data. Validate improvements in detection accuracy.",
+        "priority": "medium",
+        "dependencies": [
+          5
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 10,
-        "title": "Implement Risk Alerts and Workflow Locks",
-        "description": "Create risk alerts and manage workflow locks based on business rules.",
-        "details": "Develop logic to pause workflows when DSCR < 1.25 or occupancy thresholds are breached. Notify relevant committees and manage workflow locks.",
-        "testStrategy": "Simulate risk scenarios and verify alert generation and workflow locking.",
+        "title": "Pattern Learning Service",
+        "description": "Implement a service to discover suppression patterns.",
+        "details": "Develop pattern_learning_service.py to identify and auto-suppress false positives. Use a 90-day lookback period and 80% confidence threshold.",
+        "testStrategy": "Test pattern detection with historical data. Verify suppression logic and confidence calculations.",
         "priority": "medium",
         "dependencies": [
           9
@@ -1557,36 +1825,50 @@
       },
       {
         "id": 11,
-        "title": "Develop Exit-Strategy Intelligence",
-        "description": "Calculate and persist exit-strategy metrics with AI insights.",
-        "details": "Use AI models to calculate cap-rate trends, interest-rate impacts, and IRR. Persist results with recommendation confidence ≥ 0.70.",
-        "testStrategy": "Test accuracy of AI-generated insights and recommendation confidence.",
+        "title": "SHAP Integration",
+        "description": "Integrate SHAP for global feature importance explanations.",
+        "details": "Create shap_explainer.py to provide feature importance using SHAP. Implement TreeExplainer and KernelExplainer as needed.",
+        "testStrategy": "Test SHAP explanations with various models. Validate explanation accuracy and performance.",
         "priority": "medium",
         "dependencies": [
-          10
+          5
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 12,
-        "title": "Implement Adaptive Parsing Accuracy",
-        "description": "Enhance parsing accuracy using rule-based and ML techniques.",
-        "details": "Combine rule-based parsing with OCR/ML fallbacks to achieve ≥99% extraction accuracy. Support all document formats and layouts.",
-        "testStrategy": "Evaluate parsing accuracy across diverse document samples.",
+        "title": "LIME Integration",
+        "description": "Integrate LIME for local explanations.",
+        "details": "Develop lime_explainer.py to provide on-demand local explanations using LimeTabularExplainer.",
+        "testStrategy": "Test LIME explanations for speed and accuracy. Ensure response times meet targets.",
         "priority": "medium",
         "dependencies": [
-          8
+          11
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 13,
-        "title": "Ensure Security and Compliance",
-        "description": "Implement security measures and ensure compliance with standards.",
-        "details": "Encrypt data at rest and in transit using AWS KMS and Keychain. Implement JWT/OAuth2 for API security and RBAC for user roles. Log actions in audit_log.",
-        "testStrategy": "Conduct security audits and penetration testing to verify compliance.",
+        "title": "Anomaly Explainer Service",
+        "description": "Create a unified service for anomaly explanations.",
+        "details": "Implement anomaly_explainer.py to classify root causes and generate natural language explanations. Include an action suggestion engine.",
+        "testStrategy": "Test explanation generation for accuracy and clarity. Validate action suggestions with domain experts.",
+        "priority": "medium",
+        "dependencies": [
+          11,
+          12
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "Portfolio Benchmark Service",
+        "description": "Develop a service for cross-property benchmarks.",
+        "details": "Create portfolio_benchmark_service.py to calculate statistical benchmarks and detect cross-property anomalies.",
+        "testStrategy": "Test benchmark calculations with sample data. Validate anomaly detection against expected results.",
         "priority": "medium",
         "dependencies": [
           1
@@ -1595,50 +1877,37 @@
         "subtasks": []
       },
       {
-        "id": 14,
-        "title": "Develop Traceability and Audit Features",
-        "description": "Provide end-to-end data lineage and audit capabilities.",
-        "details": "Implement features to track data lineage from ingestion to analytics. Enable export of audit bundles for regulatory purposes.",
-        "testStrategy": "Test data lineage tracking and audit bundle export functionality.",
-        "priority": "medium",
-        "dependencies": [
-          13
-        ],
-        "status": "pending",
-        "subtasks": []
-      },
-      {
         "id": 15,
-        "title": "Implement Dynamic Tolerance Management",
-        "description": "Enable API-editable tolerances and anomaly detection.",
-        "details": "Develop APIs for editing tolerances and implement nightly batch jobs for anomaly detection using Z-score and CUSUM methods.",
-        "testStrategy": "Validate anomaly detection accuracy and API functionality.",
+        "title": "Portfolio Analytics API",
+        "description": "Create API endpoints for portfolio analytics.",
+        "details": "Develop portfolio_analytics.py to provide comparative analysis and peer comparison endpoints.",
+        "testStrategy": "Perform API tests to ensure accurate data retrieval and analysis.",
         "priority": "medium",
         "dependencies": [
-          12
+          14
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 16,
-        "title": "Develop Property Cost Management",
-        "description": "Track various property-related costs in the system.",
-        "details": "Implement features to track insurance, mortgage, utility, and other property costs. Ensure data is accurately reflected in the Portfolio Hub.",
-        "testStrategy": "Verify cost tracking accuracy and data integration in the UI.",
+        "title": "LayoutLM Integration",
+        "description": "Integrate LayoutLM for ML-based coordinate prediction.",
+        "details": "Develop layoutlm_coordinate_predictor.py to use LayoutLM v3 for document understanding. Implement confidence threshold logic.",
+        "testStrategy": "Test coordinate predictions with various document types. Validate accuracy against manual annotations.",
         "priority": "medium",
         "dependencies": [
-          4
+          1
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 17,
-        "title": "Implement Square Footage and Unit Management",
-        "description": "Manage square footage and unit data for properties.",
-        "details": "Develop features to track total square footage, individual store space, and unit counts. Display data in the Portfolio Hub.",
-        "testStrategy": "Test data accuracy and UI display for square footage and unit management.",
+        "title": "Coordinate Storage Service",
+        "description": "Implement a service for storing PDF field coordinates.",
+        "details": "Create coordinate_storage_service.py to store extracted coordinates in the pdf_field_coordinates table. Integrate with PDFPlumber for extraction.",
+        "testStrategy": "Test coordinate storage and retrieval. Validate integration with PDFPlumber.",
         "priority": "medium",
         "dependencies": [
           16
@@ -1648,48 +1917,48 @@
       },
       {
         "id": 18,
-        "title": "Develop Occupancy Management Features",
-        "description": "Track and display occupancy status for properties.",
-        "details": "Implement features to track occupied and available units. Display occupancy status in the Portfolio Hub UI.",
-        "testStrategy": "Validate occupancy data accuracy and UI representation.",
+        "title": "Incremental Learning Service",
+        "description": "Develop a service for model updates without full retrain.",
+        "details": "Implement incremental_learning_service.py to update models using a sliding window approach. Aim for a 10x speedup over full retrain.",
+        "testStrategy": "Test model updates with new data. Validate performance improvements and accuracy retention.",
         "priority": "medium",
         "dependencies": [
-          17
+          5
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 19,
-        "title": "Integrate Agentic AI and Generative AI",
-        "description": "Leverage AI for insights and recommendations.",
-        "details": "Integrate AI models for geo-locational analysis, political impact analysis, and tenant recommendations. Use GPT-OSS for natural language queries and document summarization.",
-        "testStrategy": "Test AI model accuracy and response times for various queries.",
+        "title": "Parallel Processing Task",
+        "description": "Implement parallel processing for anomaly detection tasks.",
+        "details": "Develop anomaly_detection_tasks.py to use Celery groups for batch detection. Support linear scaling and optional GPU acceleration.",
+        "testStrategy": "Test parallel processing with multiple workers. Validate scaling efficiency and GPU utilization.",
         "priority": "medium",
         "dependencies": [
-          11
+          5
         ],
         "status": "pending",
         "subtasks": []
       },
       {
         "id": 20,
-        "title": "Optimize Performance and Conduct Testing",
-        "description": "Ensure system performance and conduct comprehensive testing.",
-        "details": "Optimize frontend and backend performance using lazy loading and code splitting. Conduct accessibility, cross-browser, and mobile responsive testing. Perform user acceptance testing and integration testing for all business requirements.",
-        "testStrategy": "Use performance monitoring tools to verify optimization. Conduct thorough testing to ensure all requirements are met.",
+        "title": "Enhanced Anomaly Detail API",
+        "description": "Update API to provide detailed anomaly information.",
+        "details": "Enhance anomalies.py to include detailed anomaly data, explanations, and context. Implement WebSocket updates for real-time information.",
+        "testStrategy": "Test API responses for completeness and accuracy. Validate WebSocket updates for timeliness and reliability.",
         "priority": "medium",
         "dependencies": [
-          19
+          13
         ],
         "status": "pending",
         "subtasks": []
       }
     ],
     "metadata": {
-      "created": "2025-11-15T02:36:18.038Z",
-      "updated": "2025-11-15T02:45:07.729Z",
-      "description": "Tasks for frontend-redesign context"
+      "created": "2025-12-21T19:27:11.394Z",
+      "updated": "2025-12-21T19:27:11.394Z",
+      "description": "Tasks for anomaly-enhancement context"
     }
   }
 }

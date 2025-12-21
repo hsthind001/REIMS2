@@ -29,6 +29,33 @@ from app.services.active_learning_service import ActiveLearningService
 from app.services.model_monitoring_service import ModelMonitoringService
 from app.services.anomaly_detector import StatisticalAnomalyDetector
 from app.services.concordance_service import ConcordanceService
+try:
+    from app.services.xai_explanation_service import XAIExplanationService
+    XAI_AVAILABLE = True
+except ImportError:
+    XAI_AVAILABLE = False
+    logger.warning("XAI service not available")
+
+try:
+    from app.services.active_learning_service import ActiveLearningService as AnomalyActiveLearning
+    ACTIVE_LEARNING_AVAILABLE = True
+except ImportError:
+    ACTIVE_LEARNING_AVAILABLE = False
+    logger.warning("Active learning service not available")
+
+try:
+    from app.services.cross_property_intelligence import CrossPropertyIntelligenceService
+    CROSS_PROP_AVAILABLE = True
+except ImportError:
+    CROSS_PROP_AVAILABLE = False
+    logger.warning("Cross-property intelligence not available")
+
+try:
+    from app.services.pyod_anomaly_detector import PyODAnomalyDetector
+    PYOD_AVAILABLE = True
+except ImportError:
+    PYOD_AVAILABLE = False
+    logger.warning("PyOD detector not available")
 from app.db.minio_client import download_file
 from app.core.config import settings
 from app.services.deduplication_service import get_deduplication_service
@@ -49,6 +76,10 @@ class ExtractionOrchestrator:
         self.metadata_service = MetadataStorageService(db, self.confidence_engine)
         self.active_learning = ActiveLearningService(db)
         self.model_monitoring = ModelMonitoringService(db)
+        self.xai_service = XAIExplanationService(db) if XAI_AVAILABLE else None
+        self.anomaly_active_learning = AnomalyActiveLearning(db) if ACTIVE_LEARNING_AVAILABLE else None
+        self.cross_property_intel = CrossPropertyIntelligenceService(db) if CROSS_PROP_AVAILABLE else None
+        self.pyod_detector = PyODAnomalyDetector(db) if PYOD_AVAILABLE and FeatureFlags.is_pyod_enabled() else None
     
     def extract_and_parse_document(self, upload_id: int) -> Dict:
         """
@@ -2261,9 +2292,20 @@ class ExtractionOrchestrator:
         z_score: Optional[float] = None,
         percentage_change: Optional[float] = None,
         confidence: float = 0.85
-    ):
-        """Create an anomaly_detection record"""
+    ) -> Optional[int]:
+        """
+        Create an anomaly_detection record with integrated intelligence.
+        
+        Features:
+        - Active learning auto-suppression
+        - Cross-property intelligence checks
+        - Automatic XAI explanation generation (optional)
+        
+        Returns:
+            Anomaly ID if created, None if suppressed
+        """
         from sqlalchemy import text
+        from app.models.anomaly_detection import AnomalyDetection
         
         # Map severity to database values
         severity_map = {
@@ -2274,25 +2316,93 @@ class ExtractionOrchestrator:
         }
         db_severity = severity_map.get(severity.lower(), 'medium')
         
+        # Create anomaly detection object first (for active learning check)
+        anomaly = AnomalyDetection(
+            document_id=upload.id,
+            property_id=upload.property_id,
+            account_code=field_name,
+            field_name=field_name,
+            field_value=field_value[:500],
+            expected_value=expected_value[:500],
+            actual_value=float(field_value) if field_value.replace('.', '').replace('-', '').isdigit() else None,
+            anomaly_type=anomaly_type,
+            severity=db_severity,
+            confidence=confidence,
+            z_score=z_score,
+            percentage_change=percentage_change,
+            detected_at=datetime.utcnow()
+        )
+        
+        # Check for auto-suppression using active learning
+        if self.anomaly_active_learning:
+            should_suppress, pattern = self.anomaly_active_learning.should_suppress_anomaly(anomaly)
+            if should_suppress:
+                logger.info(f"Anomaly auto-suppressed by learned pattern: {pattern.id if pattern else 'unknown'}")
+                return None  # Suppressed, don't create
+        
+        # Check cross-property intelligence
+        if self.cross_property_intel and anomaly.actual_value is not None:
+            try:
+                cross_prop_anomaly = self.cross_property_intel.detect_cross_property_anomalies(
+                    property_id=upload.property_id,
+                    account_code=field_name,
+                    value=anomaly.actual_value,
+                    metric_type=upload.document_type
+                )
+                if cross_prop_anomaly:
+                    # Enhance anomaly with cross-property information
+                    import json
+                    anomaly.metadata_json = json.dumps({
+                        'cross_property': cross_prop_anomaly,
+                        'portfolio_z_score': cross_prop_anomaly.get('z_score'),
+                        'percentile_rank': cross_prop_anomaly.get('percentile_rank')
+                    })
+                    # Adjust severity if cross-property indicates extreme outlier
+                    if cross_prop_anomaly.get('severity') == 'high' and db_severity != 'critical':
+                        db_severity = 'high'
+            except Exception as e:
+                logger.warning(f"Cross-property intelligence check failed: {e}")
+        
         # Insert anomaly detection record
         sql = text("""
             INSERT INTO anomaly_detections 
-            (document_id, field_name, field_value, expected_value, anomaly_type, severity, confidence, z_score, percentage_change, detected_at)
-            VALUES (:document_id, :field_name, :field_value, :expected_value, :anomaly_type, :severity, :confidence, :z_score, :percentage_change, NOW())
+            (document_id, property_id, account_code, field_name, field_value, expected_value, actual_value, 
+             anomaly_type, severity, confidence, z_score, percentage_change, metadata_json, detected_at)
+            VALUES (:document_id, :property_id, :account_code, :field_name, :field_value, :expected_value, :actual_value,
+                    :anomaly_type, :severity, :confidence, :z_score, :percentage_change, :metadata_json, NOW())
+            RETURNING id
         """)
         
-        self.db.execute(sql, {
+        result = self.db.execute(sql, {
             'document_id': upload.id,
+            'property_id': upload.property_id,
+            'account_code': field_name,
             'field_name': field_name,
-            'field_value': field_value[:500],  # Limit to 500 chars
+            'field_value': field_value[:500],
             'expected_value': expected_value[:500],
+            'actual_value': anomaly.actual_value,
             'anomaly_type': anomaly_type,
             'severity': db_severity,
             'confidence': confidence,
             'z_score': z_score,
-            'percentage_change': percentage_change
+            'percentage_change': percentage_change,
+            'metadata_json': anomaly.metadata_json
         })
+        
+        anomaly_id = result.scalar()
         self.db.commit()
+        
+        # Auto-generate XAI explanation for high-severity anomalies (optional, can be feature-flagged)
+        if self.xai_service and db_severity in ('high', 'critical') and FeatureFlags.is_shap_enabled():
+            try:
+                self.xai_service.generate_explanation(
+                    anomaly_id=anomaly_id,
+                    method='root_cause'  # Fast root cause analysis for auto-generation
+                )
+            except Exception as e:
+                logger.warning(f"Failed to auto-generate XAI explanation: {e}")
+        
+        return anomaly_id
     
     def _extract_with_tables(self, pdf_data: bytes, document_type: str) -> Dict:
         """

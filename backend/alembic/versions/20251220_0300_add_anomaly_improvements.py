@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20251220_0300'
-down_revision = '20251220_0202'  # Update this to match your latest migration
+down_revision = '20251220_0202_add_alert_history'  # Update this to match your latest migration
 branch_labels = None
 depends_on = None
 

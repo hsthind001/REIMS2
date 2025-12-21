@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 
 # revision identifiers, used by Alembic.
-revision = '20251219_1901_add_mortgage_statement_tables'
+revision = '20251219_1901'  # Shortened to fit VARCHAR(32) limit
 down_revision = '45d5e95beac4'
 branch_labels = None
 depends_on = None
@@ -25,9 +25,16 @@ depends_on = None
 def upgrade():
     """Create mortgage statement tables and update existing tables."""
     
+    # Check if tables already exist (for cases where tables were created manually)
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    existing_tables = inspector.get_table_names()
+    
     # 1. Create mortgage_statement_data table
-    op.create_table(
-        'mortgage_statement_data',
+    if 'mortgage_statement_data' not in existing_tables:
+        op.create_table(
+            'mortgage_statement_data',
         sa.Column('id', sa.Integer(), nullable=False),
         
         # Foreign Keys
@@ -122,17 +129,18 @@ def upgrade():
         
         # Unique Constraint
         sa.UniqueConstraint('property_id', 'period_id', 'loan_number', name='uq_mortgage_property_period_loan')
-    )
-    
-    # Create indexes for mortgage_statement_data
-    op.create_index('idx_mortgage_property_period', 'mortgage_statement_data', ['property_id', 'period_id'])
-    op.create_index('idx_mortgage_lender', 'mortgage_statement_data', ['lender_id'])
-    op.create_index('idx_mortgage_review', 'mortgage_statement_data', ['needs_review', 'property_id'])
-    op.create_index('idx_mortgage_statement_date', 'mortgage_statement_data', ['statement_date'])
-    op.create_index('idx_mortgage_maturity', 'mortgage_statement_data', ['maturity_date'])
+        )
+        
+        # Create indexes for mortgage_statement_data
+        op.create_index('idx_mortgage_property_period', 'mortgage_statement_data', ['property_id', 'period_id'])
+        op.create_index('idx_mortgage_lender', 'mortgage_statement_data', ['lender_id'])
+        op.create_index('idx_mortgage_review', 'mortgage_statement_data', ['needs_review', 'property_id'])
+        op.create_index('idx_mortgage_statement_date', 'mortgage_statement_data', ['statement_date'])
+        op.create_index('idx_mortgage_maturity', 'mortgage_statement_data', ['maturity_date'])
     
     # 2. Create mortgage_payment_history table
-    op.create_table(
+    if 'mortgage_payment_history' not in existing_tables:
+        op.create_table(
         'mortgage_payment_history',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('mortgage_id', sa.Integer(), nullable=False),
@@ -168,21 +176,32 @@ def upgrade():
         
         # Unique Constraint
         sa.UniqueConstraint('mortgage_id', 'payment_date', name='uq_mortgage_payment')
-    )
+        )
+        
+        # Create indexes for mortgage_payment_history
+        op.create_index('idx_payment_mortgage', 'mortgage_payment_history', ['mortgage_id'])
+        op.create_index('idx_payment_date', 'mortgage_payment_history', ['payment_date'])
     
-    # Create indexes for mortgage_payment_history
-    op.create_index('idx_payment_mortgage', 'mortgage_payment_history', ['mortgage_id'])
-    op.create_index('idx_payment_date', 'mortgage_payment_history', ['payment_date'])
+    # 3. Add mortgage-specific columns to financial_metrics table (if they don't exist)
+    from sqlalchemy import text
+    existing_columns = [col['name'] for col in inspector.get_columns('financial_metrics')]
     
-    # 3. Add mortgage-specific columns to financial_metrics table
-    op.add_column('financial_metrics', sa.Column('total_mortgage_debt', sa.Numeric(15, 2), nullable=True))
-    op.add_column('financial_metrics', sa.Column('weighted_avg_interest_rate', sa.Numeric(6, 4), nullable=True))
-    op.add_column('financial_metrics', sa.Column('total_monthly_debt_service', sa.Numeric(12, 2), nullable=True))
-    op.add_column('financial_metrics', sa.Column('total_annual_debt_service', sa.Numeric(15, 2), nullable=True))
-    op.add_column('financial_metrics', sa.Column('dscr', sa.Numeric(10, 4), nullable=True))
-    op.add_column('financial_metrics', sa.Column('interest_coverage_ratio', sa.Numeric(10, 4), nullable=True))
-    op.add_column('financial_metrics', sa.Column('debt_yield', sa.Numeric(10, 4), nullable=True))
-    op.add_column('financial_metrics', sa.Column('break_even_occupancy', sa.Numeric(5, 2), nullable=True))
+    if 'total_mortgage_debt' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('total_mortgage_debt', sa.Numeric(15, 2), nullable=True))
+    if 'weighted_avg_interest_rate' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('weighted_avg_interest_rate', sa.Numeric(6, 4), nullable=True))
+    if 'total_monthly_debt_service' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('total_monthly_debt_service', sa.Numeric(12, 2), nullable=True))
+    if 'total_annual_debt_service' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('total_annual_debt_service', sa.Numeric(15, 2), nullable=True))
+    if 'dscr' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('dscr', sa.Numeric(10, 4), nullable=True))
+    if 'interest_coverage_ratio' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('interest_coverage_ratio', sa.Numeric(10, 4), nullable=True))
+    if 'debt_yield' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('debt_yield', sa.Numeric(10, 4), nullable=True))
+    if 'break_even_occupancy' not in existing_columns:
+        op.add_column('financial_metrics', sa.Column('break_even_occupancy', sa.Numeric(5, 2), nullable=True))
     
     # 4. Update document_uploads constraint to include mortgage_statement
     # First, drop the existing constraint if it exists

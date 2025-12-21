@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251219_extraction_task_id'
-down_revision = '20251126_1500'  # Update to latest revision
+down_revision = '20251126_1500_semantic_cache'  # Update to latest revision
 branch_labels = None
 depends_on = None
 
