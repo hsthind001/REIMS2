@@ -153,3 +153,4 @@ structlog==22.3.0
 prophet==1.1.5  # Facebook's time series forecasting
 statsmodels==0.14.2  # ARIMA, seasonal decomposition, statistical models
 ruptures==1.1.9  # Change point detection (PELT algorithm)
+layoutparser==0.3.4  # LayoutLM v3 for PDF coordinate prediction (Phase 5)
