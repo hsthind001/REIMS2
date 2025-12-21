@@ -74,7 +74,9 @@
       "Bash(sudo apt update:*)",
       "Bash(apt list:*)",
       "Bash(/tmp/wifi-health-check.sh:*)",
-      "Bash(sync)"
+      "Bash(sync)",
+      "Bash(pip install:*)",
+      "Bash(docker-compose build:*)"
     ]
   }
 }

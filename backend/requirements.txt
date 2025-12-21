@@ -107,6 +107,10 @@ tqdm>=4.66.0  # Progress bars for batch operations
 PyJWT==2.10.1
 slowapi==0.1.9
 
+# XAI (Explainable AI) - Phase 3
+shap==0.46.0  # SHAP explanations for global feature importance (NumPy 2.x compatible)
+lime==0.2.0.1  # LIME explanations for fast local interpretability
+
 # Next-Level Features Dependencies (November 2025)
 
 # AI/LLM for Multi-Agent System & NLQ
