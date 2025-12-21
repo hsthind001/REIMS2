@@ -134,3 +134,8 @@ scipy==1.14.1
 
 # Structured Logging
 structlog==22.3.0
+
+# Enhanced Anomaly Detection Dependencies
+prophet==1.1.5  # Facebook's time series forecasting
+statsmodels==0.14.2  # ARIMA, seasonal decomposition, statistical models
+ruptures==1.1.9  # Change point detection (PELT algorithm)

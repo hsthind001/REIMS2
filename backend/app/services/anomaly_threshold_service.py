@@ -9,10 +9,19 @@ manage the global default threshold.
 
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func, and_
+import statistics
+import numpy as np
 from app.models.anomaly_threshold import AnomalyThreshold, SystemConfig
 from app.models.chart_of_accounts import ChartOfAccounts
+from app.models.income_statement_data import IncomeStatementData
+from app.models.balance_sheet_data import BalanceSheetData
+from app.models.financial_period import FinancialPeriod
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AnomalyThresholdService:
@@ -31,16 +40,228 @@ class AnomalyThresholdService:
             AnomalyThreshold.is_active == True
         ).first()
     
-    def get_threshold_value(self, account_code: str) -> Decimal:
+    def get_threshold_value(
+        self,
+        account_code: str,
+        property_id: Optional[int] = None,
+        use_adaptive: bool = True
+    ) -> Decimal:
         """
         Get threshold value for an account code.
-        Returns custom threshold if exists, otherwise returns default threshold.
-        """
-        threshold = self.get_threshold(account_code)
-        if threshold:
-            return threshold.threshold_value
         
-        return self.get_default_threshold()
+        Enhanced with adaptive thresholds based on volatility.
+        
+        Args:
+            account_code: Account code
+            property_id: Optional property ID for property-specific thresholds
+            use_adaptive: Whether to apply volatility-based adaptive adjustment
+        
+        Returns:
+            Threshold value (as Decimal)
+        """
+        # Get base threshold (custom or default)
+        threshold = self.get_threshold(account_code)
+        base_threshold = threshold.threshold_value if threshold else self.get_default_threshold()
+        
+        # Apply adaptive adjustment if enabled
+        if use_adaptive and property_id:
+            adaptive_result = self._calculate_adaptive_threshold(
+                property_id,
+                account_code,
+                base_threshold
+            )
+            if adaptive_result.get('adjusted_threshold'):
+                return adaptive_result['adjusted_threshold']
+        
+        return base_threshold
+    
+    def _calculate_adaptive_threshold(
+        self,
+        property_id: int,
+        account_code: str,
+        base_threshold: Decimal
+    ) -> Dict[str, Any]:
+        """
+        Calculate adaptive threshold based on account volatility.
+        
+        High volatility accounts get higher thresholds automatically.
+        
+        Args:
+            property_id: Property ID
+            account_code: Account code
+            base_threshold: Base threshold value
+        
+        Returns:
+            Dict with adjusted_threshold and adjustment details
+        """
+        try:
+            # Get historical values for this account
+            historical_values = self._get_historical_values(property_id, account_code, lookback_months=24)
+            
+            if len(historical_values) < 6:
+                # Not enough data for volatility calculation
+                return {
+                    'adjusted_threshold': base_threshold,
+                    'volatility': None,
+                    'adjustment_factor': 1.0
+                }
+            
+            # Calculate volatility (coefficient of variation)
+            values_array = np.array(historical_values)
+            mean_val = np.mean(values_array)
+            std_val = np.std(values_array)
+            
+            if mean_val == 0:
+                return {
+                    'adjusted_threshold': base_threshold,
+                    'volatility': None,
+                    'adjustment_factor': 1.0
+                }
+            
+            coefficient_of_variation = std_val / abs(mean_val)
+            
+            # Adjust threshold based on volatility
+            # High volatility (CV > 0.5) -> increase threshold by up to 2x
+            # Medium volatility (CV 0.2-0.5) -> increase by up to 1.5x
+            # Low volatility (CV < 0.2) -> use base threshold
+            
+            if coefficient_of_variation > 0.5:
+                adjustment_factor = min(2.0, 1.0 + coefficient_of_variation)
+            elif coefficient_of_variation > 0.2:
+                adjustment_factor = 1.0 + (coefficient_of_variation - 0.2) * 1.67  # Scale to 1.5x max
+            else:
+                adjustment_factor = 1.0
+            
+            adjusted_threshold = Decimal(str(float(base_threshold) * adjustment_factor))
+            
+            return {
+                'adjusted_threshold': adjusted_threshold,
+                'volatility': float(coefficient_of_variation),
+                'adjustment_factor': float(adjustment_factor),
+                'base_threshold': base_threshold,
+                'historical_count': len(historical_values)
+            }
+        
+        except Exception as e:
+            logger.warning(f"Error calculating adaptive threshold: {e}")
+            return {
+                'adjusted_threshold': base_threshold,
+                'volatility': None,
+                'adjustment_factor': 1.0
+            }
+    
+    def _get_historical_values(
+        self,
+        property_id: int,
+        account_code: str,
+        lookback_months: int = 24
+    ) -> List[float]:
+        """Get historical values for an account code."""
+        cutoff_date = datetime.utcnow() - timedelta(days=lookback_months * 30)
+        
+        values = []
+        
+        # Try income statement first
+        income_data = self.db.query(IncomeStatementData).join(FinancialPeriod).filter(
+            and_(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.account_code == account_code,
+                FinancialPeriod.period_end_date >= cutoff_date
+            )
+        ).order_by(FinancialPeriod.period_end_date).all()
+        
+        if income_data:
+            for record in income_data:
+                if record.amount is not None:
+                    values.append(float(record.amount))
+            return values
+        
+        # Try balance sheet
+        balance_data = self.db.query(BalanceSheetData).join(FinancialPeriod).filter(
+            and_(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.account_code == account_code,
+                FinancialPeriod.period_end_date >= cutoff_date
+            )
+        ).order_by(FinancialPeriod.period_end_date).all()
+        
+        if balance_data:
+            for record in balance_data:
+                if record.amount is not None:
+                    values.append(float(record.amount))
+        
+        return values
+    
+    def get_account_category_threshold(
+        self,
+        account_code: str,
+        account_category: Optional[str] = None
+    ) -> Decimal:
+        """
+        Get threshold based on account category intelligence.
+        
+        Different account categories have different natural variability:
+        - Revenue: Lower variability (default threshold)
+        - Operating Expenses: Medium variability (1.5x threshold)
+        - Maintenance: High variability (2x threshold)
+        - One-time items: Very high variability (3x threshold)
+        """
+        # Determine category from account code if not provided
+        if not account_category:
+            account_category = self._infer_account_category(account_code)
+        
+        # Category-based multipliers
+        category_multipliers = {
+            'revenue': 1.0,
+            'income': 1.0,
+            'operating_expense': 1.5,
+            'expense': 1.5,
+            'maintenance': 2.0,
+            'repair': 2.0,
+            'one_time': 3.0,
+            'asset': 1.2,
+            'liability': 1.2,
+            'equity': 1.0
+        }
+        
+        # Find matching category
+        multiplier = 1.0
+        for cat, mult in category_multipliers.items():
+            if cat in account_category.lower():
+                multiplier = mult
+                break
+        
+        base_threshold = self.get_default_threshold()
+        adjusted_threshold = Decimal(str(float(base_threshold) * multiplier))
+        
+        return adjusted_threshold
+    
+    def _infer_account_category(self, account_code: str) -> str:
+        """Infer account category from account code."""
+        # Account code patterns (simplified)
+        code_prefix = account_code.split('-')[0] if '-' in account_code else account_code[:4]
+        
+        try:
+            code_num = int(code_prefix)
+            
+            # Chart of accounts ranges (simplified)
+            if 4000 <= code_num < 5000:
+                return 'revenue'
+            elif 5000 <= code_num < 6000:
+                if 5020 <= code_num < 5040:
+                    return 'maintenance'
+                else:
+                    return 'operating_expense'
+            elif 1000 <= code_num < 2000:
+                return 'asset'
+            elif 2000 <= code_num < 3000:
+                return 'liability'
+            elif 3000 <= code_num < 4000:
+                return 'equity'
+        except ValueError:
+            pass
+        
+        return 'unknown'
     
     def get_or_create_threshold(
         self,

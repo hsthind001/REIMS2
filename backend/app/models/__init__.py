@@ -54,6 +54,7 @@ from app.models.concordance_table import ConcordanceTable
 
 # Anomaly threshold models
 from app.models.anomaly_threshold import AnomalyThreshold, SystemConfig
+from app.models.anomaly_feedback import AnomalyFeedback, AnomalyLearningPattern
 
 __all__ = [
     "User",
@@ -103,6 +104,9 @@ __all__ = [
     "DocumentChunk",
     # Concordance
     "ConcordanceTable",
+    # Anomaly feedback
+    "AnomalyFeedback",
+    "AnomalyLearningPattern",
     # Anomaly thresholds
     "AnomalyThreshold",
     "SystemConfig",
