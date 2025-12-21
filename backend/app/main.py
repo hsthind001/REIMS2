@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 import logging
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -152,6 +152,9 @@ app.include_router(anomaly_thresholds.router, prefix=settings.API_V1_STR + "/ano
 
 # Batch reprocessing (Phase 1: Anomaly Enhancement)
 app.include_router(batch_reprocessing.router, prefix=settings.API_V1_STR, tags=["batch-reprocessing"])
+
+# PDF Coordinate Prediction (Phase 5: LayoutLM Integration)
+app.include_router(pdf_coordinates.router, prefix=settings.API_V1_STR, tags=["pdf-coordinates"])
 
 
 @app.get("/")
