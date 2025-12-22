@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import '../App.css'
+import { RefreshCw } from 'lucide-react'
 import { propertyService } from '../lib/property'
 import {
   getAllAccountsWithThresholds,
@@ -15,6 +16,8 @@ import {
   releaseLock,
   type WorkflowLock as WorkflowLockType
 } from '../lib/workflowLocks'
+import { anomaliesService } from '../lib/anomalies'
+import { documentService } from '../lib/document'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1'
 
@@ -97,6 +100,7 @@ export default function RiskManagement() {
   const [thresholdsLoading, setThresholdsLoading] = useState(false)
   const [selectedDocumentType, setSelectedDocumentType] = useState<string>('all')
   const [selectedAnomalyDocumentType, setSelectedAnomalyDocumentType] = useState<string>('all')
+  const [selectedAnomalyYear, setSelectedAnomalyYear] = useState<string>('all')
   const [dashboardStats, setDashboardStats] = useState<any>({
     total_critical_alerts: 0,
     total_active_alerts: 0,
@@ -108,6 +112,8 @@ export default function RiskManagement() {
   const [fieldViewerOpen, setFieldViewerOpen] = useState(false)
   const [selectedAnomalyForViewer, setSelectedAnomalyForViewer] = useState<Anomaly | null>(null)
   const [fieldViewerType, setFieldViewerType] = useState<'actual' | 'expected'>('actual')
+  const [rerunningDocumentId, setRerunningDocumentId] = useState<number | null>(null)
+  const [bulkRerunning, setBulkRerunning] = useState(false)
   const [dscrCalculationDetails, setDscrCalculationDetails] = useState<{
     noi?: number
     totalDebtService?: number
@@ -148,7 +154,7 @@ export default function RiskManagement() {
     if (selectedProperty && activeTab === 'anomalies') {
       fetchAnomalies(selectedProperty)
     }
-  }, [selectedAnomalyDocumentType, selectedProperty, activeTab])
+  }, [selectedAnomalyDocumentType, selectedAnomalyYear, selectedProperty, activeTab])
 
   useEffect(() => {
     if (activeTab === 'thresholds') {
@@ -307,6 +313,167 @@ export default function RiskManagement() {
       setAlerts([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRerunAnomaliesForDocument = async (documentId: number) => {
+    if (!documentId) {
+      alert('Document ID not available for this anomaly')
+      return
+    }
+
+    setRerunningDocumentId(documentId)
+    try {
+      const result = await anomaliesService.triggerAnomalyDetection(documentId)
+      
+      // Show success message
+      alert(`✅ Anomaly detection completed!\n\n${result.new_anomalies_detected} new anomalies detected.\n${result.deleted_old_anomalies} old anomalies removed.\n\n${result.message}`)
+      
+      // Reload anomalies if property is selected
+      if (selectedProperty) {
+        fetchAnomalies(selectedProperty)
+      }
+    } catch (error: any) {
+      console.error('Failed to re-run anomaly detection:', error)
+      
+      // Show error message with details
+      let errorMessage = 'Failed to re-run anomaly detection.'
+      if (error.message) {
+        errorMessage = error.message
+      } else if (error.response?.data?.detail) {
+        errorMessage = typeof error.response.data.detail === 'string' 
+          ? error.response.data.detail 
+          : error.response.data.detail.message || errorMessage
+      }
+      
+      alert(`❌ ${errorMessage}`)
+    } finally {
+      setRerunningDocumentId(null)
+    }
+  }
+
+  const handleBulkRerunAnomalies = async () => {
+    if (!selectedProperty) {
+      alert('Please select a property first')
+      return
+    }
+
+    // Find the selected property to get property_code
+    const property = properties.find(p => p.id === selectedProperty)
+    if (!property) {
+      alert('Selected property not found')
+      return
+    }
+
+    const propertyCode = property.property_code || property.code
+    if (!propertyCode) {
+      alert('Property code not available for this property')
+      return
+    }
+
+    // Confirm with user
+    const confirmMessage = `This will re-run anomaly detection for ALL completed documents of property "${property.property_name}". This may take several minutes.\n\nDo you want to continue?`
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    setBulkRerunning(true)
+    try {
+      console.log(`Starting bulk re-run for property: ${property.property_name} (code: ${propertyCode})`)
+      
+      // Fetch all completed documents for this property
+      let allDocuments: any[] = []
+      let skip = 0
+      const limit = 100
+      let hasMore = true
+
+      while (hasMore) {
+        const response = await documentService.getDocuments({
+          property_code: propertyCode,
+          extraction_status: 'completed',
+          skip,
+          limit
+        })
+
+        if (response.items && response.items.length > 0) {
+          allDocuments = allDocuments.concat(response.items)
+          console.log(`Fetched ${response.items.length} documents (total: ${allDocuments.length})`)
+          skip += limit
+          hasMore = response.items.length === limit
+        } else {
+          hasMore = false
+        }
+      }
+      
+      console.log(`Total completed documents found: ${allDocuments.length}`)
+
+      if (allDocuments.length === 0) {
+        alert('No completed documents found for this property')
+        setBulkRerunning(false)
+        return
+      }
+
+      // Process documents sequentially to avoid overwhelming the server
+      let successCount = 0
+      let errorCount = 0
+      let totalNewAnomalies = 0
+      let totalDeletedAnomalies = 0
+
+      // All document types are now supported (income_statement, balance_sheet, cash_flow, rent_roll, mortgage_statement)
+      if (allDocuments.length === 0) {
+        alert('No completed documents found for this property to re-run anomalies.')
+        setBulkRerunning(false)
+        return
+      }
+      
+      console.log(`Starting bulk anomaly detection for ${allDocuments.length} documents...`)
+      
+      for (let i = 0; i < allDocuments.length; i++) {
+        const doc = allDocuments[i]
+        console.log(`Processing document ${i + 1}/${allDocuments.length}: ${doc.file_name} (ID: ${doc.id}, type: ${doc.document_type})`)
+        try {
+          const result = await anomaliesService.triggerAnomalyDetection(doc.id)
+          successCount++
+          totalNewAnomalies += result.new_anomalies_detected || 0
+          totalDeletedAnomalies += result.deleted_old_anomalies || 0
+          console.log(`✅ Successfully processed ${doc.file_name}: ${result.new_anomalies_detected} new anomalies, ${result.deleted_old_anomalies} deleted`)
+        } catch (error: any) {
+          console.error(`❌ Failed to process document ${doc.id} (${doc.file_name}):`, error)
+          errorCount++
+        }
+      }
+      
+      console.log(`Bulk anomaly detection completed: ${successCount} successful, ${errorCount} failed`)
+
+      // Show summary
+      let summaryMessage = `✅ Bulk anomaly detection completed!\n\n`
+      summaryMessage += `Processed: ${allDocuments.length} documents\n`
+      summaryMessage += `✅ Successful: ${successCount}\n`
+      summaryMessage += `❌ Failed: ${errorCount}\n\n`
+      summaryMessage += `New anomalies detected: ${totalNewAnomalies}\n`
+      summaryMessage += `Old anomalies removed: ${totalDeletedAnomalies}`
+      
+      alert(summaryMessage)
+
+      // Reload anomalies if property is selected
+      if (selectedProperty) {
+        fetchAnomalies(selectedProperty)
+      }
+    } catch (error: any) {
+      console.error('Failed to bulk re-run anomaly detection:', error)
+      
+      let errorMessage = 'Failed to bulk re-run anomaly detection.'
+      if (error.message) {
+        errorMessage = error.message
+      } else if (error.response?.data?.detail) {
+        errorMessage = typeof error.response.data.detail === 'string' 
+          ? error.response.data.detail 
+          : error.response.data.detail.message || errorMessage
+      }
+      
+      alert(`❌ ${errorMessage}`)
+    } finally {
+      setBulkRerunning(false)
     }
   }
 
@@ -470,6 +637,11 @@ export default function RiskManagement() {
       // Add document_type filter if not 'all'
       if (selectedAnomalyDocumentType && selectedAnomalyDocumentType !== 'all') {
         params.append('document_type', selectedAnomalyDocumentType)
+      }
+      
+      // Add year filter if not 'all'
+      if (selectedAnomalyYear && selectedAnomalyYear !== 'all') {
+        params.append('year', selectedAnomalyYear)
       }
       
       // Use the anomalies endpoint which returns actual anomaly_detections with document info
@@ -731,7 +903,38 @@ export default function RiskManagement() {
 
       {/* Property Selector */}
       <div className="card">
-        <h3 className="card-title">Select Property</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 className="card-title" style={{ margin: 0 }}>Select Property</h3>
+          {selectedProperty && (
+            <button
+              onClick={handleBulkRerunAnomalies}
+              disabled={bulkRerunning}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: bulkRerunning ? '#e5e7eb' : '#3b82f6',
+                color: bulkRerunning ? '#9ca3af' : 'white',
+                border: 'none',
+                borderRadius: '0.375rem',
+                cursor: bulkRerunning ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s'
+              }}
+              title="Re-run anomaly detection for all completed documents of this property"
+            >
+              <RefreshCw 
+                size={16} 
+                style={{ 
+                  animation: bulkRerunning ? 'spin 1s linear infinite' : 'none'
+                }} 
+              />
+              {bulkRerunning ? 'Bulk Re-running Anomalies...' : 'Bulk Re-run Anomalies'}
+            </button>
+          )}
+        </div>
         {propertiesLoading ? (
           <div className="empty-state">
             <p>Loading properties...</p>
@@ -1153,6 +1356,35 @@ export default function RiskManagement() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <h3 className="card-title" style={{ margin: 0 }}>Detected Anomalies</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {selectedProperty && (
+                <button
+                  onClick={handleBulkRerunAnomalies}
+                  disabled={bulkRerunning}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: bulkRerunning ? '#e5e7eb' : '#3b82f6',
+                    color: bulkRerunning ? '#9ca3af' : 'white',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: bulkRerunning ? 'not-allowed' : 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    transition: 'all 0.2s'
+                  }}
+                  title="Re-run anomaly detection for all completed documents of this property"
+                >
+                  <RefreshCw 
+                    size={16} 
+                    style={{ 
+                      animation: bulkRerunning ? 'spin 1s linear infinite' : 'none'
+                    }} 
+                  />
+                  {bulkRerunning ? 'Bulk Re-running...' : 'Bulk Re-run Anomalies'}
+                </button>
+              )}
               <label style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
                 Filter by Document Type:
               </label>
@@ -1174,6 +1406,27 @@ export default function RiskManagement() {
                 <option value="balance_sheet">Balance Sheet</option>
                 <option value="cash_flow">Cash Flow Statement</option>
                 <option value="rent_roll">Rent Roll</option>
+              </select>
+              <label style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginLeft: '1rem' }}>
+                Filter by Year:
+              </label>
+              <select
+                value={selectedAnomalyYear}
+                onChange={(e) => setSelectedAnomalyYear(e.target.value)}
+                style={{
+                  padding: '0.5rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  fontSize: '0.875rem',
+                  backgroundColor: 'white',
+                  cursor: 'pointer',
+                  minWidth: '150px'
+                }}
+              >
+                <option value="all">All Years</option>
+                {Array.from(new Set(anomalies.map(a => a.details?.period_year).filter(Boolean))).sort((a, b) => (b as number) - (a as number)).map(year => (
+                  <option key={year} value={String(year)}>{year}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -1323,13 +1576,47 @@ export default function RiskManagement() {
                         <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: '600' }}>
                           📄 {anomaly.details.file_name || 'Unknown File'}
                         </h4>
-                        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>
-                          <span className="badge badge-info" style={{ marginRight: '0.5rem' }}>
-                            {anomaly.details.document_type?.replace('_', ' ').toUpperCase() || 'N/A'}
-                          </span>
-                          Period: {anomaly.details.period || 'N/A'}
-                          {anomaly.details.upload_date && (
-                            <> • Uploaded: {new Date(anomaly.details.upload_date).toLocaleDateString()}</>
+                        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span className="badge badge-info" style={{ marginRight: '0.5rem' }}>
+                              {anomaly.details.document_type?.replace('_', ' ').toUpperCase() || 'N/A'}
+                            </span>
+                            Period: {anomaly.details.period || 'N/A'}
+                            {anomaly.details.upload_date && (
+                              <> • Uploaded: {new Date(anomaly.details.upload_date).toLocaleDateString()}</>
+                            )}
+                          </div>
+                          {anomaly.details.document_id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRerunAnomaliesForDocument(anomaly.details.document_id!);
+                              }}
+                              disabled={rerunningDocumentId === anomaly.details.document_id}
+                              style={{
+                                padding: '0.5rem 1rem',
+                                backgroundColor: rerunningDocumentId === anomaly.details.document_id ? '#e5e7eb' : '#3b82f6',
+                                color: rerunningDocumentId === anomaly.details.document_id ? '#9ca3af' : 'white',
+                                border: 'none',
+                                borderRadius: '0.375rem',
+                                cursor: rerunningDocumentId === anomaly.details.document_id ? 'not-allowed' : 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                transition: 'all 0.2s'
+                              }}
+                              title="Re-run anomaly detection for this document"
+                            >
+                              <RefreshCw 
+                                size={14} 
+                                style={{ 
+                                  animation: rerunningDocumentId === anomaly.details.document_id ? 'spin 1s linear infinite' : 'none'
+                                }} 
+                              />
+                              {rerunningDocumentId === anomaly.details.document_id ? 'Running...' : 'Re-run Anomalies'}
+                            </button>
                           )}
                         </div>
                       </div>

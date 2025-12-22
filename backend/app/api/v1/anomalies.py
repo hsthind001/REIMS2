@@ -117,6 +117,10 @@ async def trigger_anomaly_detection(
             orchestrator._detect_balance_sheet_anomalies(upload, period, detector)
         elif upload.document_type == 'cash_flow':
             orchestrator._detect_cash_flow_anomalies(upload, period, detector)
+        elif upload.document_type == 'rent_roll':
+            orchestrator._detect_rent_roll_anomalies(upload, period, detector)
+        elif upload.document_type == 'mortgage_statement':
+            orchestrator._detect_mortgage_statement_anomalies(upload, period, detector)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -155,6 +159,7 @@ async def list_anomalies(
     property_id: Optional[int] = Query(None),
     severity: Optional[str] = Query(None),
     document_type: Optional[str] = Query(None, description="Filter by document type (income_statement, balance_sheet, cash_flow, rent_roll)"),
+    year: Optional[int] = Query(None, description="Filter by period year (e.g., 2023)"),
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db)
 ):
@@ -165,6 +170,7 @@ async def list_anomalies(
     - property_id: Filter by property
     - severity: Filter by severity (critical, high, medium, low)
     - document_type: Filter by document type (income_statement, balance_sheet, cash_flow, rent_roll)
+    - year: Filter by period year (e.g., 2023)
     - limit: Maximum results (default: 100, max: 1000)
     """
     from sqlalchemy import text
@@ -225,6 +231,10 @@ async def list_anomalies(
     if document_type:
         sql += " AND du.document_type = :document_type"
         params['document_type'] = document_type
+    
+    if year:
+        sql += " AND fp.period_year = :year"
+        params['year'] = year
     
     sql += " ORDER BY ad.detected_at DESC LIMIT :limit"
     params['limit'] = limit

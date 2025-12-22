@@ -1897,8 +1897,37 @@ class ExtractionOrchestrator:
         from app.services.anomaly_threshold_service import AnomalyThresholdService
         threshold_service = AnomalyThresholdService(self.db)
         
+        # Check for calculated fields - skip them (includes totals, subtotals, and calculated metrics)
+        from app.models.chart_of_accounts import ChartOfAccounts
+        calculated_accounts = set()
+        coa_records = self.db.query(ChartOfAccounts).filter(
+            ChartOfAccounts.account_code.in_(account_groups.keys()),
+            ChartOfAccounts.is_calculated == True
+        ).all()
+        for coa in coa_records:
+            calculated_accounts.add(coa.account_code)
+        
+        # Also check income_statement_data for is_calculated, is_total, and is_subtotal flags
+        # These are metrics derived from multiple line items and should not have anomalies
+        from app.models.income_statement_data import IncomeStatementData
+        from sqlalchemy import or_
+        isd_calculated = self.db.query(IncomeStatementData.account_code).filter(
+            IncomeStatementData.upload_id == upload.id,
+            or_(
+                IncomeStatementData.is_calculated == True,
+                IncomeStatementData.is_total == True,
+                IncomeStatementData.is_subtotal == True
+            )
+        ).distinct().all()
+        for (acc_code,) in isd_calculated:
+            calculated_accounts.add(acc_code)
+        
         # Detect anomalies for each account
         for account_code, data in account_groups.items():
+            # Skip calculated fields
+            if account_code in calculated_accounts:
+                continue
+            
             if not data['current']:
                 continue
             
@@ -2012,7 +2041,34 @@ class ExtractionOrchestrator:
         from app.services.anomaly_threshold_service import AnomalyThresholdService
         threshold_service = AnomalyThresholdService(self.db)
         
+        # Check for calculated fields - skip them
+        calculated_accounts = set()
+        coa_records = self.db.query(ChartOfAccounts).filter(
+            ChartOfAccounts.account_code.in_(account_groups.keys()),
+            ChartOfAccounts.is_calculated == True
+        ).all()
+        for coa in coa_records:
+            calculated_accounts.add(coa.account_code)
+        
+        # Also check balance_sheet_data for is_calculated, is_total, and is_subtotal flags
+        # These are metrics derived from multiple line items and should not have anomalies
+        from app.models.balance_sheet_data import BalanceSheetData
+        from sqlalchemy import or_
+        bsd_calculated = self.db.query(BalanceSheetData.account_code).filter(
+            BalanceSheetData.upload_id == upload.id,
+            or_(
+                BalanceSheetData.is_calculated == True,
+                BalanceSheetData.is_total == True,
+                BalanceSheetData.is_subtotal == True
+            )
+        ).distinct().all()
+        for (acc_code,) in bsd_calculated:
+            calculated_accounts.add(acc_code)
+        
         for account_code, data in account_groups.items():
+            # Skip calculated fields
+            if account_code in calculated_accounts:
+                continue
             if not data['current']:
                 continue
             
@@ -2126,8 +2182,36 @@ class ExtractionOrchestrator:
         from app.services.anomaly_threshold_service import AnomalyThresholdService
         threshold_service = AnomalyThresholdService(self.db)
         
+        # Check for calculated fields - skip them
+        calculated_accounts = set()
+        coa_records = self.db.query(ChartOfAccounts).filter(
+            ChartOfAccounts.account_code.in_(account_groups.keys()),
+            ChartOfAccounts.is_calculated == True
+        ).all()
+        for coa in coa_records:
+            calculated_accounts.add(coa.account_code)
+        
+        # Also check cash_flow_data for is_calculated, is_total, and is_subtotal flags
+        # These are metrics derived from multiple line items and should not have anomalies
+        from app.models.cash_flow_data import CashFlowData
+        from sqlalchemy import or_
+        cfd_calculated = self.db.query(CashFlowData.account_code).filter(
+            CashFlowData.upload_id == upload.id,
+            or_(
+                CashFlowData.is_calculated == True,
+                CashFlowData.is_total == True,
+                CashFlowData.is_subtotal == True
+            )
+        ).distinct().all()
+        for (acc_code,) in cfd_calculated:
+            calculated_accounts.add(acc_code)
+        
         # Detect anomalies for each account
         for account_code, data in account_groups.items():
+            # Skip calculated fields
+            if account_code in calculated_accounts:
+                continue
+            
             if not data['current']:
                 continue
             
@@ -2169,6 +2253,329 @@ class ExtractionOrchestrator:
                         field_name=account_code,
                         field_value=str(current_value),
                         expected_value=str(statistics.mean(historical_values_filtered)),
+                        anomaly_type=anomaly.get('type', 'statistical'),
+                        severity=anomaly.get('severity', 'medium'),
+                        z_score=anomaly.get('z_score'),
+                        percentage_change=anomaly.get('percentage_change'),
+                        confidence=confidence
+                    )
+    
+    def _detect_rent_roll_anomalies(
+        self,
+        upload: DocumentUpload,
+        period: 'FinancialPeriod',
+        detector: StatisticalAnomalyDetector
+    ):
+        """Detect anomalies in rent roll data"""
+        from app.models.rent_roll_data import RentRollData
+        from app.models.financial_period import FinancialPeriod
+        from app.core.constants import AccountCodeConstants
+        from datetime import timedelta
+        
+        # Get current period data
+        current_data = self.db.query(RentRollData).filter(
+            RentRollData.property_id == upload.property_id,
+            RentRollData.period_id == upload.period_id
+        ).all()
+        
+        if not current_data:
+            return
+        
+        # Get historical periods (last 12 months)
+        cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
+        historical_periods = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == upload.property_id,
+            FinancialPeriod.id != period.id,
+            FinancialPeriod.period_end_date >= cutoff_date
+        ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
+        
+        if len(historical_periods) < 1:
+            return
+        
+        # Aggregate current period metrics
+        # Filter out special unit types for occupancy calculations
+        leasable_units = [unit for unit in current_data if not AccountCodeConstants.is_special_unit_type(unit.unit_number)]
+        
+        total_units = len(leasable_units)
+        occupied_units = sum(1 for unit in leasable_units if unit.occupancy_status == 'occupied')
+        
+        # Calculate current period aggregated metrics
+        total_monthly_rent = sum(
+            float(unit.monthly_rent or 0) for unit in current_data if unit.monthly_rent is not None
+        )
+        total_annual_rent = sum(
+            float(unit.annual_rent or 0) for unit in current_data if unit.annual_rent is not None
+        )
+        # If annual not available, calculate from monthly
+        if total_annual_rent == 0 and total_monthly_rent > 0:
+            total_annual_rent = total_monthly_rent * 12
+        
+        total_leasable_sqft = sum(
+            float(unit.unit_area_sqft or 0) for unit in current_data if unit.unit_area_sqft is not None
+        )
+        occupied_sqft = sum(
+            float(unit.unit_area_sqft or 0) for unit in leasable_units
+            if unit.unit_area_sqft is not None and unit.occupancy_status == 'occupied'
+        )
+        
+        occupancy_rate = (occupied_units / total_units * 100) if total_units > 0 else 0
+        avg_rent_per_sqft = (total_monthly_rent / total_leasable_sqft) if total_leasable_sqft > 0 else 0
+        
+        # Get historical data
+        historical_period_ids = [p.id for p in historical_periods]
+        historical_data = self.db.query(RentRollData).filter(
+            RentRollData.property_id == upload.property_id,
+            RentRollData.period_id.in_(historical_period_ids)
+        ).all()
+        
+        # Aggregate historical metrics by period
+        historical_metrics_by_period = {}
+        for hist_period in historical_periods:
+            period_data = [r for r in historical_data if r.period_id == hist_period.id]
+            if not period_data:
+                continue
+            
+            hist_leasable = [unit for unit in period_data if not AccountCodeConstants.is_special_unit_type(unit.unit_number)]
+            hist_occupied = sum(1 for unit in hist_leasable if unit.occupancy_status == 'occupied')
+            hist_total_units = len(hist_leasable)
+            
+            hist_monthly_rent = sum(float(unit.monthly_rent or 0) for unit in period_data if unit.monthly_rent is not None)
+            hist_annual_rent = sum(float(unit.annual_rent or 0) for unit in period_data if unit.annual_rent is not None)
+            if hist_annual_rent == 0 and hist_monthly_rent > 0:
+                hist_annual_rent = hist_monthly_rent * 12
+            
+            hist_sqft = sum(float(unit.unit_area_sqft or 0) for unit in period_data if unit.unit_area_sqft is not None)
+            hist_occupied_sqft = sum(
+                float(unit.unit_area_sqft or 0) for unit in hist_leasable
+                if unit.unit_area_sqft is not None and unit.occupancy_status == 'occupied'
+            )
+            
+            hist_occupancy_rate = (hist_occupied / hist_total_units * 100) if hist_total_units > 0 else 0
+            hist_avg_rent_per_sqft = (hist_monthly_rent / hist_sqft) if hist_sqft > 0 else 0
+            
+            historical_metrics_by_period[hist_period.id] = {
+                'total_monthly_rent': hist_monthly_rent,
+                'total_annual_rent': hist_annual_rent,
+                'occupancy_rate': hist_occupancy_rate,
+                'occupied_sqft': hist_occupied_sqft,
+                'occupied_units': hist_occupied,
+                'avg_rent_per_sqft': hist_avg_rent_per_sqft
+            }
+        
+        # Get threshold service
+        from app.services.anomaly_threshold_service import AnomalyThresholdService
+        threshold_service = AnomalyThresholdService(self.db)
+        
+        # Define metrics to check
+        metrics_to_check = [
+            ('rent_roll_total_monthly_rent', total_monthly_rent, 'total_monthly_rent'),
+            ('rent_roll_total_annual_rent', total_annual_rent, 'total_annual_rent'),
+            ('rent_roll_occupancy_rate', occupancy_rate, 'occupancy_rate'),
+            ('rent_roll_occupied_sqft', occupied_sqft, 'occupied_sqft'),
+            ('rent_roll_occupied_units', occupied_units, 'occupied_units'),
+            ('rent_roll_avg_rent_per_sqft', avg_rent_per_sqft, 'avg_rent_per_sqft'),
+        ]
+        
+        # Detect anomalies for each metric
+        for field_name, current_value, metric_key in metrics_to_check:
+            # Skip None values
+            if current_value is None:
+                continue
+            
+            # Skip zero values for financial metrics (rent amounts should not be 0)
+            # But allow zero for occupancy metrics (can legitimately be 0%)
+            if current_value == 0:
+                if metric_key in ['total_monthly_rent', 'total_annual_rent', 'avg_rent_per_sqft']:
+                    continue  # Financial metrics should not be zero
+                # Allow zero for occupancy_rate, occupied_sqft, occupied_units (can be 0%)
+            
+            # Collect historical values for this metric (filter zero values for financial metrics)
+            historical_values = []
+            for pid in historical_metrics_by_period.keys():
+                hist_value = historical_metrics_by_period[pid][metric_key]
+                # For financial metrics, skip zero values; for occupancy metrics, include zeros
+                if metric_key in ['total_monthly_rent', 'total_annual_rent', 'avg_rent_per_sqft']:
+                    if hist_value != 0:
+                        historical_values.append(hist_value)
+                else:
+                    # For occupancy metrics, include all values (including zero)
+                    historical_values.append(hist_value)
+            
+            if len(historical_values) < 1:
+                continue
+            
+            # Get threshold (use 0.15 = 15% as default for rent roll metrics)
+            threshold_value = float(threshold_service.get_threshold_value(field_name))
+            if threshold_value == 0:
+                threshold_value = 0.15  # Default 15% threshold for rent roll
+            
+            # Run anomaly detection
+            result = detector.detect_anomalies(
+                document_id=upload.id,
+                field_name=field_name,
+                current_value=current_value,
+                historical_values=historical_values,
+                threshold_value=threshold_value
+            )
+            
+            # Create anomaly_detections records
+            if result.get('anomalies'):
+                for anomaly in result['anomalies']:
+                    confidence = self._calculate_anomaly_confidence(
+                        anomaly=anomaly,
+                        historical_count=len(historical_values),
+                        current_value=current_value,
+                        expected_value=statistics.mean(historical_values),
+                        upload=upload,
+                        field_name=field_name
+                    )
+                    
+                    self._create_anomaly_detection(
+                        upload=upload,
+                        field_name=field_name,
+                        field_value=str(current_value),
+                        expected_value=str(statistics.mean(historical_values)),
+                        anomaly_type=anomaly.get('type', 'statistical'),
+                        severity=anomaly.get('severity', 'medium'),
+                        z_score=anomaly.get('z_score'),
+                        percentage_change=anomaly.get('percentage_change'),
+                        confidence=confidence
+                    )
+    
+    def _detect_mortgage_statement_anomalies(
+        self,
+        upload: DocumentUpload,
+        period: 'FinancialPeriod',
+        detector: StatisticalAnomalyDetector
+    ):
+        """Detect anomalies in mortgage statement data"""
+        from app.models.mortgage_statement_data import MortgageStatementData
+        from app.models.financial_period import FinancialPeriod
+        from datetime import timedelta
+        
+        # Get current period mortgage statement (typically one per period)
+        current_data = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == upload.property_id,
+            MortgageStatementData.period_id == upload.period_id
+        ).first()
+        
+        if not current_data:
+            return
+        
+        # Get historical periods (last 12 months)
+        cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
+        historical_periods = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == upload.property_id,
+            FinancialPeriod.id != period.id,
+            FinancialPeriod.period_end_date >= cutoff_date
+        ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
+        
+        if len(historical_periods) < 1:
+            return
+        
+        # Get historical mortgage statements
+        historical_period_ids = [p.id for p in historical_periods]
+        historical_data = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == upload.property_id,
+            MortgageStatementData.period_id.in_(historical_period_ids)
+        ).all()
+        
+        # Extract current period metrics
+        current_metrics = {
+            'principal_balance': float(current_data.principal_balance or 0),
+            'monthly_payment': float(current_data.monthly_debt_service or current_data.total_payment_due or 0),
+            'interest_rate': float(current_data.interest_rate or 0) if current_data.interest_rate else None,
+            'escrow_balance': float((current_data.tax_escrow_balance or 0) + (current_data.insurance_escrow_balance or 0) + (current_data.other_escrow_balance or 0)),
+            'principal_paid': float(current_data.principal_due or 0),
+            'interest_paid': float(current_data.interest_due or 0),
+        }
+        
+        # Extract historical metrics by period
+        historical_metrics_by_period = {}
+        for hist_period in historical_periods:
+            hist_mortgage = next((m for m in historical_data if m.period_id == hist_period.id), None)
+            if not hist_mortgage:
+                continue
+            
+            historical_metrics_by_period[hist_period.id] = {
+                'principal_balance': float(hist_mortgage.principal_balance or 0),
+                'monthly_payment': float(hist_mortgage.monthly_debt_service or hist_mortgage.total_payment_due or 0),
+                'interest_rate': float(hist_mortgage.interest_rate or 0) if hist_mortgage.interest_rate else None,
+                'escrow_balance': float((hist_mortgage.tax_escrow_balance or 0) + (hist_mortgage.insurance_escrow_balance or 0) + (hist_mortgage.other_escrow_balance or 0)),
+                'principal_paid': float(hist_mortgage.principal_due or 0),
+                'interest_paid': float(hist_mortgage.interest_due or 0),
+            }
+        
+        # Get threshold service
+        from app.services.anomaly_threshold_service import AnomalyThresholdService
+        threshold_service = AnomalyThresholdService(self.db)
+        
+        # Define metrics to check
+        metrics_to_check = [
+            ('mortgage_principal_balance', current_metrics['principal_balance'], 'principal_balance'),
+            ('mortgage_monthly_payment', current_metrics['monthly_payment'], 'monthly_payment'),
+            ('mortgage_interest_rate', current_metrics['interest_rate'], 'interest_rate'),
+            ('mortgage_escrow_balance', current_metrics['escrow_balance'], 'escrow_balance'),
+            ('mortgage_principal_paid', current_metrics['principal_paid'], 'principal_paid'),
+            ('mortgage_interest_paid', current_metrics['interest_paid'], 'interest_paid'),
+        ]
+        
+        # Detect anomalies for each metric
+        for field_name, current_value, metric_key in metrics_to_check:
+            # Skip None values (interest_rate can be None for some loans)
+            if current_value is None:
+                if metric_key == 'interest_rate':
+                    continue
+                continue
+            # Skip zero values for key metrics (principal_balance should never be 0 unless loan is paid off)
+            if current_value == 0:
+                if metric_key == 'principal_balance':
+                    continue  # Skip if principal balance is 0 (loan paid off or error)
+                if metric_key in ['principal_paid', 'interest_paid']:
+                    continue  # These can be zero in some cases, skip to avoid false positives
+                continue
+            
+            # Collect historical values for this metric (filter out None and zero values)
+            historical_values = []
+            for pid in historical_metrics_by_period.keys():
+                hist_value = historical_metrics_by_period[pid][metric_key]
+                if hist_value is not None and hist_value != 0:
+                    historical_values.append(hist_value)
+            
+            if len(historical_values) < 1:
+                continue
+            
+            # Get threshold (use 0.10 = 10% as default for mortgage metrics, 0.05 = 5% for interest rate)
+            threshold_value = float(threshold_service.get_threshold_value(field_name))
+            if threshold_value == 0:
+                threshold_value = 0.05 if metric_key == 'interest_rate' else 0.10  # 5% for rate, 10% for others
+            
+            # Run anomaly detection
+            result = detector.detect_anomalies(
+                document_id=upload.id,
+                field_name=field_name,
+                current_value=current_value,
+                historical_values=historical_values,
+                threshold_value=threshold_value
+            )
+            
+            # Create anomaly_detections records
+            if result.get('anomalies'):
+                for anomaly in result['anomalies']:
+                    confidence = self._calculate_anomaly_confidence(
+                        anomaly=anomaly,
+                        historical_count=len(historical_values),
+                        current_value=current_value,
+                        expected_value=statistics.mean(historical_values),
+                        upload=upload,
+                        field_name=field_name
+                    )
+                    
+                    self._create_anomaly_detection(
+                        upload=upload,
+                        field_name=field_name,
+                        field_value=str(current_value),
+                        expected_value=str(statistics.mean(historical_values)),
                         anomaly_type=anomaly.get('type', 'statistical'),
                         severity=anomaly.get('severity', 'medium'),
                         z_score=anomaly.get('z_score'),
@@ -2262,6 +2669,32 @@ class ExtractionOrchestrator:
                         confidences = [float(item.extraction_confidence) for item in items if item.extraction_confidence is not None]
                         if confidences:
                             extraction_confidence = sum(confidences) / len(confidences)
+                        
+                elif upload.document_type == 'rent_roll':
+                    from app.models.rent_roll_data import RentRollData
+                    # For rent roll, field_name is like 'rent_roll_total_monthly_rent', etc.
+                    # We need to get all rent roll records for this upload and average their confidence
+                    items = self.db.query(RentRollData).filter(
+                        RentRollData.upload_id == upload.id,
+                        RentRollData.extraction_confidence.isnot(None)
+                    ).all()
+                    
+                    if items:
+                        confidences = [float(item.extraction_confidence) for item in items if item.extraction_confidence is not None]
+                        if confidences:
+                            extraction_confidence = sum(confidences) / len(confidences)
+                        
+                elif upload.document_type == 'mortgage_statement':
+                    from app.models.mortgage_statement_data import MortgageStatementData
+                    # For mortgage statement, field_name is like 'mortgage_principal_balance', etc.
+                    # Get the mortgage statement record for this upload
+                    item = self.db.query(MortgageStatementData).filter(
+                        MortgageStatementData.upload_id == upload.id,
+                        MortgageStatementData.extraction_confidence.isnot(None)
+                    ).first()
+                    
+                    if item and item.extraction_confidence is not None:
+                        extraction_confidence = float(item.extraction_confidence)
             except Exception as e:
                 # If query fails, fall back to default
                 import logging
