@@ -34,7 +34,7 @@ Levenshtein==0.27.3
 Mako==1.3.10
 MarkupSafe==3.0.3
 minio==7.2.18
-numpy==2.2.6
+numpy==2.2.6  # Note: Prophet may fail with NumPy 2.0+, but it's handled gracefully with lazy loading
 opencv-python-headless==4.12.0.88
 openpyxl==3.1.5
 packaging==25.0

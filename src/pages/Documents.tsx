@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { documentService } from '../lib/document'
 import { propertyService } from '../lib/property'
+import { anomaliesService } from '../lib/anomalies'
 import type { Property, DocumentUpload } from '../types/api'
 
 // Helper function to format extraction status for display
@@ -30,6 +32,7 @@ const Documents = () => {
   const [properties, setProperties] = useState<Property[]>([])
   const [recentUploads, setRecentUploads] = useState<DocumentUpload[]>([])
   const [loading, setLoading] = useState(false)
+  const [rerunning, setRerunning] = useState<number | null>(null)
 
   useEffect(() => {
     loadProperties()
@@ -54,6 +57,35 @@ const Documents = () => {
       console.error('Failed to load uploads:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRerunAnomalies = async (uploadId: number) => {
+    setRerunning(uploadId)
+    try {
+      const result = await anomaliesService.triggerAnomalyDetection(uploadId)
+      
+      // Show success message
+      alert(`✅ Anomaly detection completed!\n\n${result.new_anomalies_detected} new anomalies detected.\n${result.deleted_old_anomalies} old anomalies removed.\n\n${result.message}`)
+      
+      // Optionally refresh the document list
+      // loadRecentUploads()
+    } catch (error: any) {
+      console.error('Failed to re-run anomaly detection:', error)
+      
+      // Show error message with details
+      let errorMessage = 'Failed to re-run anomaly detection.'
+      if (error.message) {
+        errorMessage = error.message
+      } else if (error.response?.data?.detail) {
+        errorMessage = typeof error.response.data.detail === 'string' 
+          ? error.response.data.detail 
+          : error.response.data.detail.message || errorMessage
+      }
+      
+      alert(`❌ ${errorMessage}`)
+    } finally {
+      setRerunning(null)
     }
   }
 
@@ -399,6 +431,7 @@ const Documents = () => {
                     <th>Period</th>
                     <th>Status</th>
                     <th>Uploaded</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -416,6 +449,26 @@ const Documents = () => {
                         </span>
                       </td>
                       <td>{new Date(doc.upload_date).toLocaleString()}</td>
+                      <td>
+                        {doc.extraction_status === 'completed' && (
+                          <button
+                            onClick={() => handleRerunAnomalies(doc.id)}
+                            disabled={rerunning === doc.id}
+                            className={`flex items-center gap-1 px-3 py-1 text-sm rounded transition-all ${
+                              rerunning === doc.id
+                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                            }`}
+                            title="Re-run anomaly detection for this document"
+                          >
+                            <RefreshCw 
+                              size={14} 
+                              className={rerunning === doc.id ? 'animate-spin' : ''} 
+                            />
+                            {rerunning === doc.id ? 'Running...' : 'Re-run Anomalies'}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

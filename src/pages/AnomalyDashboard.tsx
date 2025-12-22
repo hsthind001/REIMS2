@@ -25,6 +25,7 @@ export default function AnomalyDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [severityFilter, setSeverityFilter] = useState<string>('')
   const [propertyId, setPropertyId] = useState<number | null>(null)
+  const [rerunningDocumentId, setRerunningDocumentId] = useState<number | null>(null)
 
   useEffect(() => {
     if (activeTab === 'all') {
@@ -68,6 +69,49 @@ export default function AnomalyDashboard() {
       setShowDetailModal(true)
     } catch (error) {
       console.error('Failed to load anomaly details:', error)
+    }
+  }
+
+  const handleRerunAnomaliesForDocument = async (documentId: number) => {
+    if (!documentId) {
+      alert('Document ID not available for this anomaly')
+      return
+    }
+
+    setRerunningDocumentId(documentId)
+    try {
+      const result = await anomaliesService.triggerAnomalyDetection(documentId)
+      
+      // Show success message
+      alert(`✅ Anomaly detection completed!\n\n${result.new_anomalies_detected} new anomalies detected.\n${result.deleted_old_anomalies} old anomalies removed.\n\n${result.message}`)
+      
+      // Reload anomalies to show updated data
+      if (activeTab === 'all') {
+        loadAnomalies()
+      } else if (activeTab === 'uncertain') {
+        loadUncertainAnomalies()
+      }
+      
+      // If detail modal is open, reload it
+      if (selectedAnomaly) {
+        handleViewDetails(selectedAnomaly.id)
+      }
+    } catch (error: any) {
+      console.error('Failed to re-run anomaly detection:', error)
+      
+      // Show error message with details
+      let errorMessage = 'Failed to re-run anomaly detection.'
+      if (error.message) {
+        errorMessage = error.message
+      } else if (error.response?.data?.detail) {
+        errorMessage = typeof error.response.data.detail === 'string' 
+          ? error.response.data.detail 
+          : error.response.data.detail.message || errorMessage
+      }
+      
+      alert(`❌ ${errorMessage}`)
+    } finally {
+      setRerunningDocumentId(null)
     }
   }
 
@@ -412,6 +456,32 @@ export default function AnomalyDashboard() {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Re-run Detection Button */}
+              {selectedAnomaly.document_id && (
+                <div className="mb-4 pb-4 border-b border-gray-200">
+                  <button
+                    onClick={() => handleRerunAnomaliesForDocument(selectedAnomaly.document_id!)}
+                    disabled={rerunningDocumentId === selectedAnomaly.document_id}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                      rerunningDocumentId === selectedAnomaly.document_id
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                    }`}
+                  >
+                    <RefreshCw 
+                      size={18} 
+                      className={rerunningDocumentId === selectedAnomaly.document_id ? 'animate-spin' : ''} 
+                    />
+                    {rerunningDocumentId === selectedAnomaly.document_id 
+                      ? 'Re-running Detection...' 
+                      : 'Re-run Anomaly Detection for This Document'}
+                  </button>
+                  <p className="text-sm text-gray-500 mt-2">
+                    This will delete existing anomalies and re-run detection for this document
+                  </p>
+                </div>
+              )}
+
               {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div>

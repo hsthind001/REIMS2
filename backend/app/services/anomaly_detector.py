@@ -23,13 +23,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Optional imports for advanced forecasting
-try:
-    from prophet import Prophet
-    PROPHET_AVAILABLE = True
-except ImportError:
-    PROPHET_AVAILABLE = False
-    logger.warning("Prophet not available - time series forecasting will be limited")
+# Prophet will be imported lazily when needed to avoid startup failures
+# (Prophet is incompatible with NumPy 2.0+, but we handle it gracefully)
+PROPHET_AVAILABLE = None  # Will be checked lazily
 
 try:
     from statsmodels.tsa.arima.model import ARIMA
@@ -247,8 +243,8 @@ class StatisticalAnomalyDetector:
         
         forecasts = []
         
-        # Try Prophet (best for seasonality)
-        if PROPHET_AVAILABLE and len(historical_values) >= 24:
+        # Try Prophet (best for seasonality) - lazy import to avoid startup failures
+        if len(historical_values) >= 24:
             try:
                 prophet_forecast = self._prophet_forecast(historical_values, historical_dates, target_date)
                 if prophet_forecast:
@@ -286,8 +282,15 @@ class StatisticalAnomalyDetector:
         dates: List[datetime],
         target_date: datetime
     ) -> Optional[Dict[str, Any]]:
-        """Forecast using Facebook Prophet."""
+        """Forecast using Facebook Prophet - lazy import to avoid startup failures."""
         try:
+            # Lazy import Prophet only when needed (handles NumPy 2.0+ incompatibility gracefully)
+            try:
+                from prophet import Prophet
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"Prophet not available (NumPy 2.0+ incompatibility): {e}")
+                return None
+            
             # Prepare data for Prophet
             df = pd.DataFrame({
                 'ds': pd.to_datetime(dates),

@@ -25,7 +25,8 @@ import {
   TrendingUp,
   TrendingDown,
   Minus
-} from 'lucide-react';
+} from 'lucide-react'
+import { anomaliesService } from '../lib/anomalies';
 import { Card, Button, ProgressBar } from '../components/design-system';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -119,6 +120,7 @@ export default function DataControlCenter() {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+  const [rerunningAnomalies, setRerunningAnomalies] = useState<number | null>(null);
   const [statusCounts, setStatusCounts] = useState({
     total: 0,
     completed: 0,
@@ -1971,12 +1973,13 @@ export default function DataControlCenter() {
                       <th className="text-left py-3 px-4 font-semibold">Period</th>
                       <th className="text-left py-3 px-4 font-semibold">Status</th>
                       <th className="text-left py-3 px-4 font-semibold">Uploaded</th>
+                      <th className="text-left py-3 px-4 font-semibold">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {documents.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-text-secondary">
+                        <td colSpan={7} className="py-8 text-center text-text-secondary">
                           No documents uploaded yet. Click "Upload Document" to get started.
                         </td>
                       </tr>
@@ -2016,6 +2019,26 @@ export default function DataControlCenter() {
                               second: '2-digit',
                               hour12: true
                             }) : 'N/A'}
+                          </td>
+                          <td className="py-3 px-4">
+                            {doc.extraction_status === 'completed' && (
+                              <button
+                                onClick={() => handleRerunAnomalies(doc.id)}
+                                disabled={rerunningAnomalies === doc.id}
+                                className={`flex items-center gap-1 px-3 py-1 text-sm rounded transition-all ${
+                                  rerunningAnomalies === doc.id
+                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                }`}
+                                title="Re-run anomaly detection for this document"
+                              >
+                                <RefreshCw 
+                                  size={14} 
+                                  className={rerunningAnomalies === doc.id ? 'animate-spin' : ''} 
+                                />
+                                {rerunningAnomalies === doc.id ? 'Running...' : 'Re-run Anomalies'}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))

@@ -440,4 +440,24 @@ export const anomaliesService = {
       throw new Error(error.message || 'Failed to export anomalies to JSON')
     }
   },
+
+  /**
+   * Trigger anomaly detection for a specific document upload
+   * Useful for re-running detection after threshold changes or on older documents
+   */
+  async triggerAnomalyDetection(uploadId: number): Promise<{
+    success: boolean
+    upload_id: number
+    document_type: string
+    deleted_old_anomalies: number
+    new_anomalies_detected: number
+    message: string
+  }> {
+    try {
+      return await api.post(`/anomalies/detect/${uploadId}`, {})
+    } catch (error: any) {
+      console.error('Failed to trigger anomaly detection:', error)
+      throw new Error(error.message || 'Failed to trigger anomaly detection')
+    }
+  },
 }
