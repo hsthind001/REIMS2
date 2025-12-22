@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import datetime
 import re
 import statistics
+import logging
 
 from app.utils.extraction_engine import MultiEngineExtractor
 from app.utils.template_extractor import TemplateExtractor
@@ -58,9 +59,12 @@ except ImportError:
     logger.warning("PyOD detector not available")
 from app.db.minio_client import download_file
 from app.core.config import settings
+from app.core.feature_flags import FeatureFlags
 from app.services.deduplication_service import get_deduplication_service
 from app.services.alert_trigger_service import AlertTriggerService
 import json
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionOrchestrator:
@@ -2316,21 +2320,25 @@ class ExtractionOrchestrator:
         }
         db_severity = severity_map.get(severity.lower(), 'medium')
         
+        # Calculate actual_value for active learning check (but don't store in model - use raw SQL for that)
+        try:
+            actual_value = float(field_value) if field_value and field_value.replace('.', '').replace('-', '').replace('e', '').replace('E', '').replace('+', '').isdigit() else None
+        except (ValueError, AttributeError):
+            actual_value = None
+        
         # Create anomaly detection object first (for active learning check)
+        # Note: Model doesn't have property_id, account_code, or actual_value fields
+        # These will be inserted via raw SQL below
         anomaly = AnomalyDetection(
             document_id=upload.id,
-            property_id=upload.property_id,
-            account_code=field_name,
             field_name=field_name,
-            field_value=field_value[:500],
-            expected_value=expected_value[:500],
-            actual_value=float(field_value) if field_value.replace('.', '').replace('-', '').isdigit() else None,
+            field_value=field_value[:500] if field_value else None,
+            expected_value=expected_value[:500] if expected_value else None,
             anomaly_type=anomaly_type,
             severity=db_severity,
             confidence=confidence,
             z_score=z_score,
-            percentage_change=percentage_change,
-            detected_at=datetime.utcnow()
+            percentage_change=percentage_change
         )
         
         # Check for auto-suppression using active learning
@@ -2341,12 +2349,12 @@ class ExtractionOrchestrator:
                 return None  # Suppressed, don't create
         
         # Check cross-property intelligence
-        if self.cross_property_intel and anomaly.actual_value is not None:
+        if self.cross_property_intel and actual_value is not None:
             try:
                 cross_prop_anomaly = self.cross_property_intel.detect_cross_property_anomalies(
                     property_id=upload.property_id,
                     account_code=field_name,
-                    value=anomaly.actual_value,
+                    value=actual_value,
                     metric_type=upload.document_type
                 )
                 if cross_prop_anomaly:
@@ -2364,29 +2372,56 @@ class ExtractionOrchestrator:
                 logger.warning(f"Cross-property intelligence check failed: {e}")
         
         # Insert anomaly detection record
+        # Note: Database table doesn't have property_id, account_code, or actual_value columns
+        # Store property_id and actual_value in metadata_json if needed for future reference
+        metadata = anomaly.metadata_json
+        if metadata is None:
+            import json
+            metadata = {}
+        else:
+            import json
+            metadata = json.loads(metadata) if isinstance(metadata, str) else metadata
+        
+        # Add property_id and actual_value to metadata for reference
+        metadata['property_id'] = upload.property_id
+        metadata['account_code'] = field_name
+        if actual_value is not None:
+            metadata['actual_value'] = actual_value
+        
         sql = text("""
             INSERT INTO anomaly_detections 
-            (document_id, property_id, account_code, field_name, field_value, expected_value, actual_value, 
-             anomaly_type, severity, confidence, z_score, percentage_change, metadata_json, detected_at)
-            VALUES (:document_id, :property_id, :account_code, :field_name, :field_value, :expected_value, :actual_value,
+            (document_id, field_name, field_value, expected_value, 
+             anomaly_type, severity, confidence, z_score, percentage_change, metadata, detected_at)
+            VALUES (:document_id, :field_name, :field_value, :expected_value,
                     :anomaly_type, :severity, :confidence, :z_score, :percentage_change, :metadata_json, NOW())
             RETURNING id
         """)
         
+        # Convert NumPy types to native Python types for database insertion
+        def convert_numpy(val):
+            if val is None:
+                return None
+            try:
+                import numpy as np
+                if isinstance(val, (np.integer, np.floating)):
+                    return float(val)
+                elif isinstance(val, np.ndarray):
+                    return float(val.item()) if val.size == 1 else None
+            except (ImportError, AttributeError, ValueError):
+                pass
+            return float(val) if isinstance(val, (int, float)) else val
+        
         result = self.db.execute(sql, {
             'document_id': upload.id,
-            'property_id': upload.property_id,
-            'account_code': field_name,
             'field_name': field_name,
-            'field_value': field_value[:500],
-            'expected_value': expected_value[:500],
-            'actual_value': anomaly.actual_value,
+            'field_value': field_value[:500] if field_value else None,
+            'expected_value': expected_value[:500] if expected_value else None,
             'anomaly_type': anomaly_type,
             'severity': db_severity,
-            'confidence': confidence,
-            'z_score': z_score,
-            'percentage_change': percentage_change,
-            'metadata_json': anomaly.metadata_json
+            'confidence': convert_numpy(confidence),
+            'z_score': convert_numpy(z_score),
+            'percentage_change': convert_numpy(percentage_change),
+            'metadata_json': json.dumps(metadata) if metadata else None
         })
         
         anomaly_id = result.scalar()

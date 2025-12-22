@@ -54,6 +54,36 @@ class FeatureFlags:
         return cls.INCREMENTAL_LEARNING_ENABLED
     
     @classmethod
+    def is_active_learning_enabled(cls) -> bool:
+        """Check if active learning is enabled."""
+        return cls.ACTIVE_LEARNING_ENABLED
+    
+    @classmethod
+    def is_auto_suppression_enabled(cls) -> bool:
+        """Check if auto suppression is enabled."""
+        return cls.AUTO_SUPPRESSION_ENABLED
+    
+    @classmethod
+    def is_pyod_enabled(cls) -> bool:
+        """Check if PyOD (Python Outlier Detection) is enabled."""
+        return cls.PYOD_ENABLED
+    
+    @classmethod
+    def is_shap_enabled(cls) -> bool:
+        """Check if SHAP explanations are enabled."""
+        return cls.SHAP_ENABLED
+    
+    @classmethod
+    def is_lime_enabled(cls) -> bool:
+        """Check if LIME explanations are enabled."""
+        return cls.LIME_ENABLED
+    
+    @classmethod
+    def is_portfolio_benchmarks_enabled(cls) -> bool:
+        """Check if portfolio benchmarks are enabled."""
+        return cls.PORTFOLIO_BENCHMARKS_ENABLED
+    
+    @classmethod
     def get_all_flags(cls) -> Dict[str, bool]:
         """
         Get all feature flags as a dictionary.
