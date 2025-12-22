@@ -44,3 +44,16 @@ backups/
 # Local environment files
 .env.local
 .git-credentials
+
+# Test result files (regenerable)
+*_TEST_RESULTS.json
+TEST_RESULTS.json
+FRONTEND_TEST_RESULTS.json
+API_TEST_RESULTS.json
+COMPLETE_VALIDATION_RESULTS.json
+EXTRACTION_VALIDATION_RESULTS.json
+final_quality_statistics.json
+
+# Generated files
+regenerated_*.pdf
+*_data_quality_report_*.html
