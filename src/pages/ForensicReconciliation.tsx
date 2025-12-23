@@ -119,6 +119,22 @@ export default function ForensicReconciliation() {
     
     try {
       setLoading(true);
+      setError(null);
+      
+      // First check data availability
+      const availability = await forensicReconciliationService.checkDataAvailability(selectedPropertyId, selectedPeriodId);
+      
+      if (!availability.can_reconcile) {
+        const recommendations = availability.recommendations || [];
+        setError(`No financial data available for reconciliation. ${recommendations.join(' ')}`);
+        setDashboardData(null);
+        setSession(null);
+        setMatches([]);
+        setDiscrepancies([]);
+        setHealthScore(null);
+        return;
+      }
+      
       const data = await forensicReconciliationService.getDashboard(selectedPropertyId, selectedPeriodId);
       setDashboardData(data);
       
@@ -134,6 +150,12 @@ export default function ForensicReconciliation() {
         // Load health score
         const healthData = await forensicReconciliationService.getHealthScore(selectedPropertyId, selectedPeriodId);
         setHealthScore(healthData.health_score);
+      } else {
+        // No session exists yet, but data is available
+        setSession(null);
+        setMatches([]);
+        setDiscrepancies([]);
+        setHealthScore(null);
       }
     } catch (err: any) {
       console.error('Failed to load dashboard:', err);
@@ -150,9 +172,16 @@ export default function ForensicReconciliation() {
       if (statusFilter !== 'all') filters.status = statusFilter;
       
       const data = await forensicReconciliationService.getMatches(sessionId, filters);
-      setMatches(data.matches);
-    } catch (err) {
+      console.log(`Loaded ${data.matches?.length || 0} matches for session ${sessionId}`, data);
+      setMatches(data.matches || []);
+      
+      if (data.matches && data.matches.length === 0 && data.total > 0) {
+        console.warn('Filters may be hiding matches. Total matches:', data.total);
+      }
+    } catch (err: any) {
       console.error('Failed to load matches:', err);
+      setError(err.response?.data?.detail || 'Failed to load matches');
+      setMatches([]);
     }
   };
 
@@ -366,12 +395,24 @@ export default function ForensicReconciliation() {
         {/* Error Display */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" />
-              <span>{error}</span>
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold mb-1">Issue Detected</p>
+                <p className="text-sm">{error}</p>
+                <div className="mt-3 p-3 bg-red-100 rounded border border-red-200">
+                  <p className="text-sm font-semibold mb-1">💡 Troubleshooting Steps:</p>
+                  <ul className="text-sm list-disc list-inside space-y-1">
+                    <li>Verify documents have been uploaded for this property and period</li>
+                    <li>Check that documents have been processed/extracted (go to Data Control Center)</li>
+                    <li>Ensure Balance Sheet and Income Statement data exists for cross-document matching</li>
+                    <li>Try selecting a different period that has financial data</li>
+                  </ul>
+                </div>
+              </div>
               <button
                 onClick={() => setError(null)}
-                className="ml-auto text-red-600 hover:text-red-800"
+                className="ml-2 text-red-600 hover:text-red-800 text-xl font-bold flex-shrink-0"
               >
                 ×
               </button>
@@ -433,20 +474,45 @@ export default function ForensicReconciliation() {
         {session && (
           <div>
             {activeTab === 'matches' && (
-              <MatchTable
-                matches={matches}
-                loading={loading}
-                onApprove={handleApproveMatch}
-                onReject={handleRejectMatch}
-                onViewDetails={setSelectedMatch}
-                matchTypeFilter={matchTypeFilter}
-                statusFilter={statusFilter}
-                onFilterChange={(type, status) => {
-                  setMatchTypeFilter(type);
-                  setStatusFilter(status);
-                  if (session) loadMatches(session.id);
-                }}
-              />
+              <>
+                {matches.length === 0 && !loading && session && (
+                  <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="flex items-center gap-2 text-yellow-800">
+                      <AlertTriangle className="w-5 h-5" />
+                      <div>
+                        <p className="font-semibold">No matches found</p>
+                        <p className="text-sm mt-1">
+                          {matchTypeFilter !== 'all' || statusFilter !== 'all' 
+                            ? 'Try adjusting your filters or check if a reconciliation has been run for this session.'
+                            : 'No matches were found. This could mean:'}
+                        </p>
+                        {matchTypeFilter === 'all' && statusFilter === 'all' && (
+                          <ul className="text-sm list-disc list-inside mt-2 space-y-1">
+                            <li>No financial data exists for this property/period</li>
+                            <li>Documents haven't been extracted yet</li>
+                            <li>Account codes don't match expected patterns</li>
+                            <li>Reconciliation hasn't been run yet - click "Start Reconciliation"</li>
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <MatchTable
+                  matches={matches}
+                  loading={loading}
+                  onApprove={handleApproveMatch}
+                  onReject={handleRejectMatch}
+                  onViewDetails={setSelectedMatch}
+                  matchTypeFilter={matchTypeFilter}
+                  statusFilter={statusFilter}
+                  onFilterChange={(type, status) => {
+                    setMatchTypeFilter(type);
+                    setStatusFilter(status);
+                    if (session) loadMatches(session.id);
+                  }}
+                />
+              </>
             )}
             
             {activeTab === 'discrepancies' && (

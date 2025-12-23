@@ -138,8 +138,25 @@ export default function MatchTable({
         </div>
       </Card>
 
+      {/* Match Count Info */}
+      {matches.length > 0 && (
+        <div className="text-sm text-gray-600 mb-2">
+          Showing {sortedMatches.length} of {matches.length} matches
+        </div>
+      )}
+
       {/* Table */}
       <Card className="overflow-hidden">
+        {sortedMatches.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <p className="text-lg font-medium mb-2">No matches found</p>
+            <p className="text-sm">
+              {matchTypeFilter !== 'all' || statusFilter !== 'all'
+                ? 'Try adjusting your filters to see more matches.'
+                : 'No matches were found for this session. Run reconciliation to find matches.'}
+            </p>
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

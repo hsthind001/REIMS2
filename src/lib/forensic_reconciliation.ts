@@ -225,5 +225,19 @@ export const forensicReconciliationService = {
   async validateSession(sessionId: number): Promise<any> {
     return api.post(`/forensic-reconciliation/sessions/${sessionId}/validate`);
   },
+
+  /**
+   * Check data availability for reconciliation
+   */
+  async checkDataAvailability(propertyId: number, periodId: number): Promise<{
+    document_uploads: Record<string, boolean>;
+    extracted_data: Record<string, { count: number; has_data: boolean }>;
+    key_accounts: Record<string, boolean>;
+    total_records: number;
+    can_reconcile: boolean;
+    recommendations: string[];
+  }> {
+    return api.get(`/forensic-reconciliation/data-availability/${propertyId}/${periodId}`);
+  },
 };
 

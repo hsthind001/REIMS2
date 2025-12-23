@@ -147,7 +147,20 @@ async def run_reconciliation(
     
     Runs all matching engines and finds matches across all document types.
     """
+    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+    
     service = ForensicReconciliationService(db)
+    
+    # Get session to check property and period
+    session = db.query(ForensicReconciliationSession).filter(
+        ForensicReconciliationSession.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
     
     if request is None:
         request = RunReconciliationRequest()
@@ -166,6 +179,19 @@ async def run_reconciliation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=result['error']
         )
+    
+    # Add diagnostic information if no matches found
+    if result.get('summary', {}).get('total_matches', 0) == 0:
+        result['diagnostic'] = {
+            'message': 'No matches found. This may indicate:',
+            'possible_reasons': [
+                'No financial data extracted for this property/period',
+                'Documents uploaded but not yet processed/extracted',
+                'Account codes do not match expected patterns',
+                'Data exists but no cross-document relationships found'
+            ],
+            'suggestion': 'Check that documents have been uploaded and extracted for this property and period'
+        }
     
     return result
 
@@ -402,7 +428,27 @@ async def get_dashboard(
         period_id=period_id
     )
     
+    # Add data availability check
+    data_availability = service.check_data_availability(property_id, period_id)
+    dashboard_data['data_availability'] = data_availability
+    
     return dashboard_data
+
+
+@router.get("/data-availability/{property_id}/{period_id}")
+async def check_data_availability(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: int = Path(..., description="Period ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Check what financial data is available for reconciliation
+    
+    Returns information about which document types have data and record counts.
+    """
+    service = ForensicReconciliationService(db)
+    return service.check_data_availability(property_id, period_id)
 
 
 @router.get("/health-score/{property_id}/{period_id}")

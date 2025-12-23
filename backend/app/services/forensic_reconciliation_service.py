@@ -182,11 +182,16 @@ class ForensicReconciliationService:
         
         # 1. Execute cross-document matching rules
         if use_rules:
+            # Log available data for debugging
+            logger.info(f"Checking available data for property {property_id}, period {period_id}")
+            self._log_available_data(property_id, period_id)
+            
             rule_matches = self.matching_rules.find_all_matches(
                 property_id=property_id,
                 period_id=period_id,
                 prior_period_id=prior_period_id
             )
+            logger.info(f"Found {len(rule_matches)} rule-based matches")
             all_matches.extend(rule_matches)
         
         # 2. Execute matching engines for document-to-document comparisons
@@ -870,6 +875,138 @@ class ForensicReconciliationService:
             'reviewed_at': match.reviewed_at.isoformat() if match.reviewed_at else None,
             'review_notes': match.review_notes
         }
+    
+    def check_data_availability(self, property_id: int, period_id: int) -> Dict[str, Any]:
+        """
+        Check what financial data is available for reconciliation
+        
+        Returns:
+            Dict with data availability information
+        """
+        # Check document uploads
+        document_types = ['balance_sheet', 'income_statement', 'cash_flow', 'rent_roll', 'mortgage_statement']
+        document_uploads = {}
+        for doc_type in document_types:
+            count = self.db.query(DocumentUpload).filter(
+                and_(
+                    DocumentUpload.property_id == property_id,
+                    DocumentUpload.period_id == period_id,
+                    DocumentUpload.document_type == doc_type,
+                    DocumentUpload.is_active == True
+                )
+            ).count()
+            document_uploads[doc_type] = count > 0
+        
+        # Check extracted data
+        bs_count = self.db.query(BalanceSheetData).filter(
+            and_(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == period_id
+            )
+        ).count()
+        
+        is_count = self.db.query(IncomeStatementData).filter(
+            and_(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id
+            )
+        ).count()
+        
+        cf_count = self.db.query(CashFlowData).filter(
+            and_(
+                CashFlowData.property_id == property_id,
+                CashFlowData.period_id == period_id
+            )
+        ).count()
+        
+        rr_count = self.db.query(RentRollData).filter(
+            and_(
+                RentRollData.property_id == property_id,
+                RentRollData.period_id == period_id
+            )
+        ).count()
+        
+        ms_count = self.db.query(MortgageStatementData).filter(
+            and_(
+                MortgageStatementData.property_id == property_id,
+                MortgageStatementData.period_id == period_id
+            )
+        ).count()
+        
+        # Check for key accounts needed for matching
+        key_accounts = {}
+        if bs_count > 0:
+            bs_earnings = self.db.query(BalanceSheetData).filter(
+                and_(
+                    BalanceSheetData.property_id == property_id,
+                    BalanceSheetData.period_id == period_id,
+                    BalanceSheetData.account_code == '3995-0000'
+                )
+            ).first()
+            key_accounts['balance_sheet_current_period_earnings'] = bs_earnings is not None
+        
+        if is_count > 0:
+            is_net_income = self.db.query(IncomeStatementData).filter(
+                and_(
+                    IncomeStatementData.property_id == property_id,
+                    IncomeStatementData.period_id == period_id,
+                    IncomeStatementData.account_code.like('909%')
+                )
+            ).first()
+            key_accounts['income_statement_net_income'] = is_net_income is not None
+        
+        return {
+            'document_uploads': document_uploads,
+            'extracted_data': {
+                'balance_sheet': {'count': bs_count, 'has_data': bs_count > 0},
+                'income_statement': {'count': is_count, 'has_data': is_count > 0},
+                'cash_flow': {'count': cf_count, 'has_data': cf_count > 0},
+                'rent_roll': {'count': rr_count, 'has_data': rr_count > 0},
+                'mortgage_statement': {'count': ms_count, 'has_data': ms_count > 0}
+            },
+            'key_accounts': key_accounts,
+            'total_records': bs_count + is_count + cf_count + rr_count + ms_count,
+            'can_reconcile': (bs_count > 0 or is_count > 0 or cf_count > 0 or rr_count > 0 or ms_count > 0),
+            'recommendations': self._get_recommendations(bs_count, is_count, cf_count, rr_count, ms_count, key_accounts)
+        }
+    
+    def _get_recommendations(
+        self,
+        bs_count: int,
+        is_count: int,
+        cf_count: int,
+        rr_count: int,
+        ms_count: int,
+        key_accounts: Dict[str, bool]
+    ) -> List[str]:
+        """Get recommendations based on available data"""
+        recommendations = []
+        
+        if bs_count == 0 and is_count == 0 and cf_count == 0 and rr_count == 0 and ms_count == 0:
+            recommendations.append("No financial data found. Please upload and extract documents first.")
+            return recommendations
+        
+        if bs_count == 0:
+            recommendations.append("Balance Sheet data not found. Upload a Balance Sheet document for this period.")
+        
+        if is_count == 0:
+            recommendations.append("Income Statement data not found. Upload an Income Statement document for this period.")
+        
+        if bs_count > 0 and not key_accounts.get('balance_sheet_current_period_earnings'):
+            recommendations.append("Balance Sheet missing Current Period Earnings account (3995-0000). This is required for reconciliation.")
+        
+        if is_count > 0 and not key_accounts.get('income_statement_net_income'):
+            recommendations.append("Income Statement missing Net Income account (9090-0000 or similar). This is required for reconciliation.")
+        
+        if bs_count > 0 and is_count > 0:
+            recommendations.append("Both Balance Sheet and Income Statement data found. Reconciliation should find matches.")
+        
+        return recommendations
+    
+    def _log_available_data(self, property_id: int, period_id: int) -> None:
+        """Log available data for debugging"""
+        availability = self.check_data_availability(property_id, period_id)
+        logger.info(f"Data availability: {availability}")
     
     def _discrepancy_to_dict(self, discrepancy: ForensicDiscrepancy) -> Dict[str, Any]:
         """Convert discrepancy to dictionary"""
