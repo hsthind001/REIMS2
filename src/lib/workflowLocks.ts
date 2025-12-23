@@ -480,3 +480,13 @@ class WorkflowLockService {
 
 // Export service instance
 export const workflowLockService = new WorkflowLockService();
+
+// Re-export types for better ES module compatibility
+export type {
+  WorkflowLock,
+  CreateLockRequest,
+  ReleaseLockRequest,
+  ApproveLockRequest,
+  RejectLockRequest,
+  OperationCheckResult
+}
