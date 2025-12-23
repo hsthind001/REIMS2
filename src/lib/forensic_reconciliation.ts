@@ -32,8 +32,14 @@ export interface ForensicMatch {
   session_id: number;
   source_document_type: string;
   source_record_id: number;
+  source_account_code?: string;
+  source_account_name?: string;
+  source_amount?: number;
   target_document_type: string;
   target_record_id: number;
+  target_account_code?: string;
+  target_account_name?: string;
+  target_amount?: number;
   match_type: 'exact' | 'fuzzy' | 'calculated' | 'inferred';
   confidence_score: number;
   amount_difference?: number;
@@ -42,9 +48,11 @@ export interface ForensicMatch {
   relationship_type?: string;
   relationship_formula?: string;
   status: 'pending' | 'approved' | 'rejected' | 'modified';
+  exception_tier?: 'tier_0_auto_close' | 'tier_1_auto_suggest' | 'tier_2_route' | 'tier_3_escalate';
   reviewed_by?: number;
   reviewed_at?: string;
   review_notes?: string;
+  created_at?: string;
 }
 
 export interface ForensicDiscrepancy {
@@ -53,6 +61,7 @@ export interface ForensicDiscrepancy {
   match_id?: number;
   discrepancy_type: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
+  exception_tier?: 'tier_0_auto_close' | 'tier_1_auto_suggest' | 'tier_2_route' | 'tier_3_escalate';
   source_value?: number;
   target_value?: number;
   expected_value?: number;
@@ -65,6 +74,7 @@ export interface ForensicDiscrepancy {
   resolved_by?: number;
   resolved_at?: string;
   resolution_notes?: string;
+  created_at?: string;
 }
 
 export interface ReconciliationDashboard {
@@ -238,6 +248,55 @@ export const forensicReconciliationService = {
     recommendations: string[];
   }> {
     return api.get(`/forensic-reconciliation/data-availability/${propertyId}/${periodId}`);
+  },
+
+  /**
+   * Classify match into exception tier
+   */
+  async classifyMatchTier(matchId: number, autoResolve: boolean = true): Promise<any> {
+    return api.post(`/forensic-reconciliation/matches/${matchId}/classify-tier?auto_resolve=${autoResolve}`);
+  },
+
+  /**
+   * Get suggested fix for tier 1 match
+   */
+  async suggestMatchFix(matchId: number): Promise<any> {
+    return api.post(`/forensic-reconciliation/matches/${matchId}/suggest-fix`);
+  },
+
+  /**
+   * Bulk classify matches into tiers
+   */
+  async bulkClassifyTiers(matchIds: number[], autoResolve: boolean = true): Promise<any> {
+    return api.post(`/forensic-reconciliation/matches/bulk-tier`, { match_ids: matchIds, auto_resolve: autoResolve });
+  },
+
+  /**
+   * Get health score with persona
+   */
+  async getHealthScoreWithPersona(propertyId: number, periodId: number, persona: string = 'controller'): Promise<any> {
+    return api.get(`/forensic-reconciliation/health-score/${propertyId}/${periodId}?persona=${persona}`);
+  },
+
+  /**
+   * Get health score trend
+   */
+  async getHealthScoreTrend(propertyId: number, periods: number = 6): Promise<any> {
+    return api.get(`/forensic-reconciliation/health-score/${propertyId}/trend?periods=${periods}`);
+  },
+
+  /**
+   * Get health score configuration
+   */
+  async getHealthScoreConfig(persona: string): Promise<any> {
+    return api.get(`/forensic-reconciliation/health-score-configs/${persona}`);
+  },
+
+  /**
+   * Update health score configuration
+   */
+  async updateHealthScoreConfig(persona: string, config: any): Promise<any> {
+    return api.put(`/forensic-reconciliation/health-score-configs/${persona}`, config);
   },
 };
 

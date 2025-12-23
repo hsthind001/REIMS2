@@ -16,6 +16,8 @@ class ForensicDiscrepancy(Base):
     # Discrepancy Details
     discrepancy_type = Column(String(100), nullable=False, comment='amount_mismatch, missing_source, missing_target, date_mismatch')
     severity = Column(String(50), nullable=False, index=True, comment='critical, high, medium, low')
+    exception_tier = Column(String(50), nullable=True, index=True, comment='tier_0_auto_close, tier_1_auto_suggest, tier_2_route, tier_3_escalate')
+    auto_resolution_rule_id = Column(Integer, ForeignKey('auto_resolution_rules.id', ondelete='SET NULL'), nullable=True, comment='Rule that auto-resolved this discrepancy')
     
     # Values
     source_value = Column(Numeric(15, 2), nullable=True)
@@ -42,11 +44,13 @@ class ForensicDiscrepancy(Base):
     session = relationship("ForensicReconciliationSession", back_populates="discrepancies")
     match = relationship("ForensicMatch", back_populates="discrepancies")
     resolver = relationship("User", foreign_keys=[resolved_by])
+    auto_resolution_rule = relationship("AutoResolutionRule", foreign_keys=[auto_resolution_rule_id])
     
     # Composite indexes
     __table_args__ = (
         Index('idx_forensic_discrepancies_severity', 'severity', 'status'),
         Index('idx_forensic_discrepancies_status', 'status', 'created_at'),
+        Index('idx_forensic_discrepancies_tier', 'exception_tier', 'severity'),
     )
     
     def __repr__(self):

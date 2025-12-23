@@ -12,6 +12,8 @@ from app.db.database import get_db
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.services.alert_service import AlertService
+from app.services.alert_workflow_service import AlertWorkflowService
+from fastapi import Body, Path
 
 # Note: Alert models not yet created, using direct SQL queries
 
@@ -192,5 +194,104 @@ async def test_alert(
     return {
         "channels_tested": channels,
         "delivery_status": results
+    }
+
+
+# ==================== ALERT WORKFLOW ENDPOINTS ====================
+
+@router.post("/{alert_id}/snooze")
+async def snooze_alert(
+    alert_id: int = Path(..., description="Alert ID"),
+    until_period_id: Optional[int] = Body(None, description="Snooze until this period ID"),
+    until_date: Optional[str] = Body(None, description="Snooze until this date (ISO format)"),
+    reason: Optional[str] = Body(None, description="Reason for snoozing"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Snooze an alert until next period or date"""
+    from datetime import datetime
+    
+    workflow_service = AlertWorkflowService(db)
+    
+    until_dt = None
+    if until_date:
+        try:
+            until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00'))
+        except:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use ISO format.")
+    
+    result = workflow_service.snooze_alert(
+        alert_id=alert_id,
+        until_period_id=until_period_id,
+        until_date=until_dt,
+        reason=reason,
+        snoozed_by=current_user.id
+    )
+    
+    return result
+
+
+@router.post("/{alert_id}/suppress")
+async def suppress_alert(
+    alert_id: int = Path(..., description="Alert ID"),
+    reason: str = Body(..., description="Suppression reason"),
+    expires_at: Optional[str] = Body(None, description="Expiry date (ISO format)"),
+    expires_after_periods: Optional[int] = Body(None, description="Expire after N periods"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Suppress an alert with optional expiry"""
+    from datetime import datetime
+    
+    workflow_service = AlertWorkflowService(db)
+    
+    expires_dt = None
+    if expires_at:
+        try:
+            expires_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+        except:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use ISO format.")
+    
+    result = workflow_service.suppress_alert(
+        alert_id=alert_id,
+        reason=reason,
+        expires_at=expires_dt,
+        expires_after_periods=expires_after_periods,
+        suppressed_by=current_user.id
+    )
+    
+    return result
+
+
+@router.get("/suppression-rules")
+async def get_suppression_rules(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get active suppression rules"""
+    workflow_service = AlertWorkflowService(db)
+    rules = workflow_service.get_suppression_rules(property_id=property_id)
+    
+    return rules
+
+
+@router.get("/{alert_id}/workflow-status")
+async def get_alert_workflow_status(
+    alert_id: int = Path(..., description="Alert ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get workflow status for an alert (snoozed, suppressed, etc.)"""
+    workflow_service = AlertWorkflowService(db)
+    
+    is_snoozed = workflow_service.is_alert_snoozed(alert_id)
+    is_suppressed = workflow_service.is_alert_suppressed(alert_id=alert_id)
+    
+    return {
+        'alert_id': alert_id,
+        'is_snoozed': is_snoozed,
+        'is_suppressed': is_suppressed,
+        'is_active': not (is_snoozed or is_suppressed)
     }
 

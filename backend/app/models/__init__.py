@@ -81,6 +81,13 @@ from app.models.model_performance_metrics import ModelPerformanceMetrics
 from app.models.forensic_reconciliation_session import ForensicReconciliationSession
 from app.models.forensic_match import ForensicMatch
 from app.models.forensic_discrepancy import ForensicDiscrepancy
+from app.models.materiality_config import MaterialityConfig, AccountRiskClass
+from app.models.auto_resolution_rule import AutoResolutionRule
+from app.models.account_synonym import AccountSynonym
+from app.models.account_mapping import AccountMapping
+from app.models.calculated_rule import CalculatedRule
+from app.models.health_score_config import HealthScoreConfig
+from app.models.alert_suppression import AlertSuppression, AlertSnooze, AlertSuppressionRule
 
 __all__ = [
     "User",
@@ -163,4 +170,14 @@ __all__ = [
     "ForensicReconciliationSession",
     "ForensicMatch",
     "ForensicDiscrepancy",
+    "MaterialityConfig",
+    "AccountRiskClass",
+    "AutoResolutionRule",
+    "AccountSynonym",
+    "AccountMapping",
+    "CalculatedRule",
+    "HealthScoreConfig",
+    "AlertSuppression",
+    "AlertSnooze",
+    "AlertSuppressionRule",
 ]

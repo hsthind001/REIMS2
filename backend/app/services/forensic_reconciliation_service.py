@@ -34,6 +34,7 @@ from app.services.matching_engines import (
     MatchResult
 )
 from app.services.forensic_matching_rules import ForensicMatchingRules
+from app.services.exception_tiering_service import ExceptionTieringService
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class ForensicReconciliationService:
         self.calculated_engine = CalculatedMatchEngine()
         self.inferred_engine = InferredMatchEngine()
         self.matching_rules = ForensicMatchingRules(db)
+        self.tiering_service = ExceptionTieringService(db)
     
     def start_reconciliation_session(
         self,
@@ -242,6 +244,21 @@ class ForensicReconciliationService:
         
         self.db.commit()
         
+        # Apply exception tiering to all matches
+        tiering_results = []
+        for match in stored_matches:
+            try:
+                tiering_result = self.tiering_service.classify_and_apply_tiering(
+                    match,
+                    auto_resolve=True  # Auto-resolve tier 0 matches
+                )
+                tiering_results.append(tiering_result)
+                # Refresh match to get updated status
+                self.db.refresh(match)
+            except Exception as e:
+                logger.error(f"Error applying tiering to match {match.id}: {e}")
+                # Continue with other matches even if one fails
+        
         # Group matches by type
         matches_by_type = {
             'exact': [m for m in stored_matches if m.match_type == 'exact'],
@@ -250,7 +267,14 @@ class ForensicReconciliationService:
             'inferred': [m for m in stored_matches if m.match_type == 'inferred']
         }
         
-        # Calculate summary
+        # Calculate summary with tiering breakdown
+        tier_breakdown = {
+            'tier_0_auto_close': len([m for m in stored_matches if m.exception_tier == 'tier_0_auto_close']),
+            'tier_1_auto_suggest': len([m for m in stored_matches if m.exception_tier == 'tier_1_auto_suggest']),
+            'tier_2_route': len([m for m in stored_matches if m.exception_tier == 'tier_2_route']),
+            'tier_3_escalate': len([m for m in stored_matches if m.exception_tier == 'tier_3_escalate'])
+        }
+        
         summary = {
             'total_matches': len(stored_matches),
             'exact_matches': len(matches_by_type['exact']),
@@ -259,7 +283,8 @@ class ForensicReconciliationService:
             'inferred_matches': len(matches_by_type['inferred']),
             'pending_review': len([m for m in stored_matches if m.status == 'pending']),
             'approved': len([m for m in stored_matches if m.status == 'approved']),
-            'rejected': len([m for m in stored_matches if m.status == 'rejected'])
+            'rejected': len([m for m in stored_matches if m.status == 'rejected']),
+            'tier_breakdown': tier_breakdown
         }
         
         # Update session summary

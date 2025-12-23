@@ -27,6 +27,9 @@ import MatchTable from '../components/forensic/MatchTable';
 import DiscrepancyPanel from '../components/forensic/DiscrepancyPanel';
 import MatchDetailModal from '../components/forensic/MatchDetailModal';
 import ReconciliationHealthGauge from '../components/forensic/ReconciliationHealthGauge';
+import ReconciliationWorkQueue from '../components/forensic/ReconciliationWorkQueue';
+import ReconciliationFilters from '../components/forensic/ReconciliationFilters';
+import EvidencePanel from '../components/forensic/EvidencePanel';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -48,7 +51,14 @@ export default function ForensicReconciliation() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<ForensicMatch | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'discrepancies'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'discrepancies' | 'cockpit'>('overview');
+  
+  // Cockpit filters
+  const [cockpitSeverityFilter, setCockpitSeverityFilter] = useState<string>('all');
+  const [cockpitTierFilter, setCockpitTierFilter] = useState<string>('all');
+  const [cockpitNeedsMe, setCockpitNeedsMe] = useState<boolean>(false);
+  const [cockpitCommitteeId, setCockpitCommitteeId] = useState<number | null>(null);
+  const [cockpitSLADue, setCockpitSLADue] = useState<boolean>(false);
   
   // Filters
   const [matchTypeFilter, setMatchTypeFilter] = useState<string>('all');
@@ -444,6 +454,7 @@ export default function ForensicReconciliation() {
               <nav className="-mb-px flex space-x-8">
                 {[
                   { id: 'overview', label: 'Overview', icon: FileText },
+                  { id: 'cockpit', label: 'Cockpit', icon: TrendingUp },
                   { id: 'matches', label: 'Matches', icon: CheckCircle },
                   { id: 'discrepancies', label: 'Discrepancies', icon: AlertTriangle },
                 ].map(tab => {
@@ -473,6 +484,58 @@ export default function ForensicReconciliation() {
         {/* Tab Content */}
         {session && (
           <div>
+            {activeTab === 'cockpit' && (
+              <div className="grid grid-cols-12 gap-6">
+                {/* Left Rail - Filters */}
+                <div className="col-span-3">
+                  <ReconciliationFilters
+                    properties={properties}
+                    periods={periods}
+                    selectedPropertyId={selectedPropertyId}
+                    selectedPeriodId={selectedPeriodId}
+                    onPropertyChange={setSelectedPropertyId}
+                    onPeriodChange={setSelectedPeriodId}
+                    onSeverityFilter={setCockpitSeverityFilter}
+                    onTierFilter={setCockpitTierFilter}
+                    onNeedsMeFilter={setCockpitNeedsMe}
+                    onCommitteeFilter={setCockpitCommitteeId}
+                    onSLAFilter={setCockpitSLADue}
+                    severityFilter={cockpitSeverityFilter}
+                    tierFilter={cockpitTierFilter}
+                    needsMe={cockpitNeedsMe}
+                    committeeId={cockpitCommitteeId}
+                    slaDue={cockpitSLADue}
+                  />
+                </div>
+
+                {/* Center - Work Queue */}
+                <div className="col-span-6">
+                  <ReconciliationWorkQueue
+                    matches={matches}
+                    discrepancies={discrepancies}
+                    onApprove={handleApproveMatch}
+                    onReject={handleRejectMatch}
+                    onViewDetails={setSelectedMatch}
+                    filters={{
+                      severity: cockpitSeverityFilter !== 'all' ? cockpitSeverityFilter : undefined,
+                      tier: cockpitTierFilter !== 'all' ? cockpitTierFilter : undefined,
+                      needsMe: cockpitNeedsMe,
+                      assignedTo: cockpitCommitteeId || undefined
+                    }}
+                  />
+                </div>
+
+                {/* Right Panel - Evidence */}
+                <div className="col-span-3">
+                  <EvidencePanel
+                    match={selectedMatch}
+                    onApprove={handleApproveMatch}
+                    onReject={handleRejectMatch}
+                  />
+                </div>
+              </div>
+            )}
+            
             {activeTab === 'matches' && (
               <>
                 {matches.length === 0 && !loading && session && (

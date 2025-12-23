@@ -43,6 +43,7 @@ class ForensicMatch(Base):
     
     # Review Status
     status = Column(String(50), nullable=False, server_default='pending', index=True, comment='pending, approved, rejected, modified')
+    exception_tier = Column(String(50), nullable=True, index=True, comment='tier_0_auto_close, tier_1_auto_suggest, tier_2_route, tier_3_escalate')
     reviewed_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     review_notes = Column(Text, nullable=True)

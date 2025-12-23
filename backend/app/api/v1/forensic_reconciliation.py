@@ -19,6 +19,17 @@ from pydantic import BaseModel
 from app.api.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services.forensic_reconciliation_service import ForensicReconciliationService
+from app.services.materiality_service import MaterialityService
+from app.services.exception_tiering_service import ExceptionTieringService
+from app.services.chart_of_accounts_service import ChartOfAccountsService
+from app.services.calculated_rules_engine import CalculatedRulesEngine
+from app.services.health_score_service import HealthScoreService
+from app.models.materiality_config import MaterialityConfig, AccountRiskClass
+from app.models.auto_resolution_rule import AutoResolutionRule
+from app.models.account_synonym import AccountSynonym
+from app.models.account_mapping import AccountMapping
+from app.models.calculated_rule import CalculatedRule
+from app.models.health_score_config import HealthScoreConfig
 
 
 router = APIRouter(prefix="/forensic-reconciliation", tags=["forensic-reconciliation"])
@@ -455,19 +466,18 @@ async def check_data_availability(
 async def get_health_score(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
+    persona: str = Query("controller", description="Persona type (controller, analyst, investor, auditor)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get reconciliation health score
+    Get reconciliation health score with persona-specific configuration
     
     Returns the health score (0-100) for a property/period reconciliation.
     """
-    service = ForensicReconciliationService(db)
-    
-    # Get most recent session
     from app.models.forensic_reconciliation_session import ForensicReconciliationSession
     
+    # Get most recent session
     session = db.query(ForensicReconciliationSession).filter(
         ForensicReconciliationSession.property_id == property_id,
         ForensicReconciliationSession.period_id == period_id
@@ -481,16 +491,39 @@ async def get_health_score(
             "message": "No reconciliation session found"
         }
     
-    # Run validation to get health score
-    validation_result = service.validate_matches(session.id)
+    # Use new HealthScoreService
+    health_service = HealthScoreService(db)
+    score_data = health_service.calculate_health_score(session.id, persona=persona)
+    
+    if 'error' in score_data:
+        return score_data
     
     return {
         "property_id": property_id,
         "period_id": period_id,
         "session_id": session.id,
-        "health_score": validation_result.get('health_score', 0.0),
-        "total_matches": validation_result.get('total_matches', 0),
-        "discrepancies": validation_result.get('discrepancies', 0)
+        "persona": persona,
+        "health_score": score_data['health_score'],
+        "breakdown": score_data['breakdown'],
+        "statistics": score_data['statistics']
+    }
+
+
+@router.get("/health-score/{property_id}/trend")
+async def get_health_score_trend(
+    property_id: int = Path(..., description="Property ID"),
+    periods: int = Query(6, description="Number of periods to include"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get health score trend over multiple periods"""
+    health_service = HealthScoreService(db)
+    trend = health_service.get_health_score_trend(property_id, periods=periods)
+    
+    return {
+        "property_id": property_id,
+        "trend": trend,
+        "periods_included": len(trend)
     }
 
 
@@ -517,3 +550,620 @@ async def validate_session(
     
     return result
 
+
+# ==================== MATERIALITY ENDPOINTS ====================
+
+class MaterialityConfigCreate(BaseModel):
+    """Request model for creating materiality config"""
+    property_id: Optional[int] = None
+    statement_type: Optional[str] = None
+    account_code: Optional[str] = None
+    absolute_threshold: float
+    relative_threshold_percent: Optional[float] = None
+    risk_class: str  # critical, high, medium, low
+    tolerance_type: str = "standard"  # strict, standard, loose
+    tolerance_absolute: Optional[float] = None
+    tolerance_percent: Optional[float] = None
+    effective_date: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+@router.post("/materiality-configs", status_code=status.HTTP_201_CREATED)
+async def create_materiality_config(
+    request: MaterialityConfigCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new materiality configuration"""
+    from datetime import date
+    
+    config = MaterialityConfig(
+        property_id=request.property_id,
+        statement_type=request.statement_type,
+        account_code=request.account_code,
+        absolute_threshold=Decimal(str(request.absolute_threshold)),
+        relative_threshold_percent=Decimal(str(request.relative_threshold_percent)) if request.relative_threshold_percent else None,
+        risk_class=request.risk_class,
+        tolerance_type=request.tolerance_type,
+        tolerance_absolute=Decimal(str(request.tolerance_absolute)) if request.tolerance_absolute else None,
+        tolerance_percent=Decimal(str(request.tolerance_percent)) if request.tolerance_percent else None,
+        effective_date=date.fromisoformat(request.effective_date) if request.effective_date else date.today(),
+        expires_at=date.fromisoformat(request.expires_at) if request.expires_at else None,
+        created_by=current_user.id
+    )
+    
+    db.add(config)
+    db.commit()
+    db.refresh(config)
+    
+    return {
+        "id": config.id,
+        "property_id": config.property_id,
+        "statement_type": config.statement_type,
+        "account_code": config.account_code,
+        "absolute_threshold": float(config.absolute_threshold),
+        "relative_threshold_percent": float(config.relative_threshold_percent) if config.relative_threshold_percent else None,
+        "risk_class": config.risk_class,
+        "tolerance_type": config.tolerance_type
+    }
+
+
+@router.get("/materiality-configs/{property_id}")
+async def get_materiality_configs(
+    property_id: int = Path(..., description="Property ID"),
+    statement_type: Optional[str] = Query(None, description="Filter by statement type"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get materiality configurations for a property"""
+    from datetime import date
+    
+    query = db.query(MaterialityConfig).filter(
+        MaterialityConfig.property_id == property_id,
+        MaterialityConfig.effective_date <= date.today(),
+        (MaterialityConfig.expires_at.is_(None) | (MaterialityConfig.expires_at >= date.today()))
+    )
+    
+    if statement_type:
+        query = query.filter(MaterialityConfig.statement_type == statement_type)
+    
+    configs = query.all()
+    
+    return [
+        {
+            "id": c.id,
+            "property_id": c.property_id,
+            "statement_type": c.statement_type,
+            "account_code": c.account_code,
+            "absolute_threshold": float(c.absolute_threshold),
+            "relative_threshold_percent": float(c.relative_threshold_percent) if c.relative_threshold_percent else None,
+            "risk_class": c.risk_class,
+            "tolerance_type": c.tolerance_type
+        }
+        for c in configs
+    ]
+
+
+@router.get("/account-risk-classes")
+async def get_account_risk_classes(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all account risk classes"""
+    risk_classes = db.query(AccountRiskClass).filter(
+        AccountRiskClass.is_active == True
+    ).all()
+    
+    return [
+        {
+            "id": rc.id,
+            "account_code_pattern": rc.account_code_pattern,
+            "account_name_pattern": rc.account_name_pattern,
+            "risk_class": rc.risk_class,
+            "default_tolerance_absolute": float(rc.default_tolerance_absolute) if rc.default_tolerance_absolute else None,
+            "default_tolerance_percent": float(rc.default_tolerance_percent) if rc.default_tolerance_percent else None,
+            "reconciliation_frequency": rc.reconciliation_frequency
+        }
+        for rc in risk_classes
+    ]
+
+
+# ==================== EXCEPTION TIERING ENDPOINTS ====================
+
+@router.post("/matches/{match_id}/classify-tier")
+async def classify_match_tier(
+    match_id: int = Path(..., description="Match ID"),
+    auto_resolve: bool = Query(True, description="Auto-resolve tier 0 matches"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Classify a match into an exception tier"""
+    from app.models.forensic_match import ForensicMatch
+    
+    match = db.query(ForensicMatch).filter(ForensicMatch.id == match_id).first()
+    if not match:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Match {match_id} not found"
+        )
+    
+    tiering_service = ExceptionTieringService(db)
+    result = tiering_service.classify_and_apply_tiering(match, auto_resolve=auto_resolve)
+    
+    return result
+
+
+@router.post("/matches/{match_id}/suggest-fix")
+async def suggest_match_fix(
+    match_id: int = Path(..., description="Match ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get suggested fix for a tier 1 match"""
+    from app.models.forensic_match import ForensicMatch
+    
+    match = db.query(ForensicMatch).filter(ForensicMatch.id == match_id).first()
+    if not match:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Match {match_id} not found"
+        )
+    
+    tiering_service = ExceptionTieringService(db)
+    result = tiering_service.suggest_tier_1_fix(match)
+    
+    return result
+
+
+@router.post("/matches/bulk-tier")
+async def bulk_classify_tiers(
+    match_ids: List[int] = Body(..., description="List of match IDs"),
+    auto_resolve: bool = Body(True, description="Auto-resolve tier 0 matches"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Bulk classify matches into exception tiers"""
+    from app.models.forensic_match import ForensicMatch
+    
+    matches = db.query(ForensicMatch).filter(ForensicMatch.id.in_(match_ids)).all()
+    
+    tiering_service = ExceptionTieringService(db)
+    results = []
+    
+    for match in matches:
+        try:
+            result = tiering_service.classify_and_apply_tiering(match, auto_resolve=auto_resolve)
+            results.append(result)
+        except Exception as e:
+            results.append({
+                'match_id': match.id,
+                'success': False,
+                'error': str(e)
+            })
+    
+    return {
+        'total': len(matches),
+        'processed': len(results),
+        'results': results
+    }
+
+
+# ==================== AUTO-RESOLUTION RULES ENDPOINTS ====================
+
+class AutoResolutionRuleCreate(BaseModel):
+    """Request model for creating auto-resolution rule"""
+    rule_name: str
+    pattern_type: str  # rounding, timing, synonym, mapping
+    condition_json: dict
+    action_type: str  # auto_close, suggest_fix, route_to_queue
+    suggested_mapping: Optional[dict] = None
+    confidence_threshold: float
+    property_id: Optional[int] = None
+    statement_type: Optional[str] = None
+    description: Optional[str] = None
+    priority: int = 0
+
+
+@router.get("/auto-resolution-rules")
+async def list_auto_resolution_rules(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    pattern_type: Optional[str] = Query(None, description="Filter by pattern type"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List auto-resolution rules"""
+    query = db.query(AutoResolutionRule).filter(
+        AutoResolutionRule.is_active == True
+    )
+    
+    if property_id:
+        query = query.filter(
+            (AutoResolutionRule.property_id == property_id) |
+            (AutoResolutionRule.property_id.is_(None))
+        )
+    
+    if pattern_type:
+        query = query.filter(AutoResolutionRule.pattern_type == pattern_type)
+    
+    rules = query.order_by(AutoResolutionRule.priority.desc()).all()
+    
+    return [
+        {
+            "id": r.id,
+            "rule_name": r.rule_name,
+            "pattern_type": r.pattern_type,
+            "condition_json": r.condition_json,
+            "action_type": r.action_type,
+            "suggested_mapping": r.suggested_mapping,
+            "confidence_threshold": float(r.confidence_threshold),
+            "property_id": r.property_id,
+            "statement_type": r.statement_type,
+            "priority": r.priority,
+            "description": r.description
+        }
+        for r in rules
+    ]
+
+
+@router.post("/auto-resolution-rules", status_code=status.HTTP_201_CREATED)
+async def create_auto_resolution_rule(
+    request: AutoResolutionRuleCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new auto-resolution rule"""
+    
+    rule = AutoResolutionRule(
+        rule_name=request.rule_name,
+        pattern_type=request.pattern_type,
+        condition_json=request.condition_json,
+        action_type=request.action_type,
+        suggested_mapping=request.suggested_mapping,
+        confidence_threshold=Decimal(str(request.confidence_threshold)),
+        property_id=request.property_id,
+        statement_type=request.statement_type,
+        description=request.description,
+        priority=request.priority,
+        created_by=current_user.id
+    )
+    
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    
+    return {
+        "id": rule.id,
+        "rule_name": rule.rule_name,
+        "pattern_type": rule.pattern_type,
+        "action_type": rule.action_type,
+        "confidence_threshold": float(rule.confidence_threshold)
+    }
+
+
+# ==================== CHART OF ACCOUNTS ENDPOINTS ====================
+
+@router.get("/account-synonyms")
+async def get_account_synonyms(
+    account_name: Optional[str] = Query(None, description="Search by account name"),
+    account_code: Optional[str] = Query(None, description="Filter by account code"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get account synonyms"""
+    service = ChartOfAccountsService(db)
+    
+    if account_name:
+        synonyms = service.find_synonyms(account_name, account_code)
+        return synonyms
+    
+    # Return all active synonyms
+    synonyms = db.query(AccountSynonym).filter(
+        AccountSynonym.is_active == True
+    ).limit(100).all()
+    
+    return [
+        {
+            "id": s.id,
+            "account_code": s.account_code,
+            "synonym": s.synonym,
+            "canonical_name": s.canonical_name,
+            "confidence": float(s.confidence),
+            "source": s.source
+        }
+        for s in synonyms
+    ]
+
+
+@router.post("/account-synonyms", status_code=status.HTTP_201_CREATED)
+async def create_account_synonym(
+    synonym: str = Body(..., description="Synonym text"),
+    canonical_name: str = Body(..., description="Canonical account name"),
+    account_code: Optional[str] = Body(None, description="Account code"),
+    confidence: float = Body(100.0, description="Confidence score"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new account synonym"""
+    service = ChartOfAccountsService(db)
+    result = service.add_synonym(synonym, canonical_name, account_code, confidence)
+    
+    return {
+        "id": result.id,
+        "synonym": result.synonym,
+        "canonical_name": result.canonical_name,
+        "account_code": result.account_code,
+        "confidence": float(result.confidence)
+    }
+
+
+@router.get("/account-mappings/suggest")
+async def suggest_account_mappings(
+    source_account_code: str = Query(..., description="Source account code"),
+    source_document_type: Optional[str] = Query(None, description="Source document type"),
+    target_document_type: Optional[str] = Query(None, description="Target document type"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get suggested account mappings based on historical approvals"""
+    service = ChartOfAccountsService(db)
+    suggestions = service.suggest_mapping(
+        source_account_code,
+        source_document_type=source_document_type,
+        target_document_type=target_document_type
+    )
+    
+    return suggestions
+
+
+@router.post("/account-mappings/approve")
+async def approve_account_mapping(
+    source_account_code: str = Body(..., description="Source account code"),
+    target_account_code: str = Body(..., description="Target account code"),
+    source_document_type: Optional[str] = Body(None, description="Source document type"),
+    target_document_type: Optional[str] = Body(None, description="Target document type"),
+    mapping_type: str = Body("exact", description="Mapping type"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Record approval of an account mapping (learns from user decisions)"""
+    service = ChartOfAccountsService(db)
+    mapping = service.record_approval(
+        source_account_code,
+        target_account_code,
+        source_document_type,
+        target_document_type,
+        mapping_type,
+        approved_by=current_user.id
+    )
+    
+    return {
+        "id": mapping.id,
+        "source_account_code": mapping.source_account_code,
+        "target_account_code": mapping.target_account_code,
+        "confidence": float(mapping.confidence_score),
+        "approved_count": mapping.approved_count
+    }
+
+
+# ==================== CALCULATED RULES ENDPOINTS ====================
+
+class CalculatedRuleCreate(BaseModel):
+    """Request model for creating calculated rule"""
+    rule_id: str
+    rule_name: str
+    formula: str
+    description: Optional[str] = None
+    property_scope: Optional[dict] = None  # JSON: property IDs or "all"
+    doc_scope: dict  # JSON: document types
+    tolerance_absolute: Optional[float] = None
+    tolerance_percent: Optional[float] = None
+    materiality_threshold: Optional[float] = None
+    severity: str = "medium"  # critical, high, medium, low
+    failure_explanation_template: Optional[str] = None
+    effective_date: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+@router.get("/calculated-rules")
+async def list_calculated_rules(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all calculated rules"""
+    engine = CalculatedRulesEngine(db)
+    
+    if property_id:
+        rules = engine.get_active_rules(property_id)
+    else:
+        # Get all active rules
+        from datetime import date
+        rules = db.query(CalculatedRule).filter(
+            and_(
+                CalculatedRule.is_active == True,
+                CalculatedRule.effective_date <= date.today(),
+                (CalculatedRule.expires_at.is_(None) | (CalculatedRule.expires_at >= date.today()))
+            )
+        ).order_by(CalculatedRule.rule_id, CalculatedRule.version.desc()).all()
+        
+        # Deduplicate by rule_id
+        seen = set()
+        unique_rules = []
+        for rule in rules:
+            if rule.rule_id not in seen:
+                seen.add(rule.rule_id)
+                unique_rules.append(rule)
+        rules = unique_rules
+    
+    return [
+        {
+            "id": r.id,
+            "rule_id": r.rule_id,
+            "version": r.version,
+            "rule_name": r.rule_name,
+            "formula": r.formula,
+            "description": r.description,
+            "tolerance_absolute": float(r.tolerance_absolute) if r.tolerance_absolute else None,
+            "tolerance_percent": float(r.tolerance_percent) if r.tolerance_percent else None,
+            "severity": r.severity,
+            "effective_date": r.effective_date.isoformat() if r.effective_date else None,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None
+        }
+        for r in rules
+    ]
+
+
+@router.post("/calculated-rules", status_code=status.HTTP_201_CREATED)
+async def create_calculated_rule(
+    request: CalculatedRuleCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new calculated rule (creates new version if rule_id exists)"""
+    from datetime import date
+    
+    # Get latest version for this rule_id
+    latest = db.query(CalculatedRule).filter(
+        CalculatedRule.rule_id == request.rule_id
+    ).order_by(CalculatedRule.version.desc()).first()
+    
+    new_version = (latest.version + 1) if latest else 1
+    
+    rule = CalculatedRule(
+        rule_id=request.rule_id,
+        version=new_version,
+        rule_name=request.rule_name,
+        formula=request.formula,
+        description=request.description,
+        property_scope=request.property_scope,
+        doc_scope=request.doc_scope,
+        tolerance_absolute=Decimal(str(request.tolerance_absolute)) if request.tolerance_absolute else None,
+        tolerance_percent=Decimal(str(request.tolerance_percent)) if request.tolerance_percent else None,
+        materiality_threshold=Decimal(str(request.materiality_threshold)) if request.materiality_threshold else None,
+        severity=request.severity,
+        failure_explanation_template=request.failure_explanation_template,
+        effective_date=date.fromisoformat(request.effective_date) if request.effective_date else date.today(),
+        expires_at=date.fromisoformat(request.expires_at) if request.expires_at else None,
+        created_by=current_user.id
+    )
+    
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    
+    return {
+        "id": rule.id,
+        "rule_id": rule.rule_id,
+        "version": rule.version,
+        "rule_name": rule.rule_name
+    }
+
+
+@router.post("/calculated-rules/{rule_id}/test")
+async def test_calculated_rule(
+    rule_id: str = Path(..., description="Rule ID"),
+    property_id: int = Body(..., description="Property ID"),
+    period_id: int = Body(..., description="Period ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Test a calculated rule against a property and period"""
+    engine = CalculatedRulesEngine(db)
+    
+    # Get latest version of rule
+    rule = db.query(CalculatedRule).filter(
+        CalculatedRule.rule_id == rule_id
+    ).order_by(CalculatedRule.version.desc()).first()
+    
+    if not rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rule {rule_id} not found"
+        )
+    
+    result = engine.evaluate_rule(rule, property_id, period_id)
+    
+    if result:
+        return {
+            "success": True,
+            "match": {
+                "source_record_id": result.source_record_id,
+                "target_record_id": result.target_record_id,
+                "confidence": result.confidence_score,
+                "amount_difference": float(result.amount_difference) if result.amount_difference else None,
+                "relationship_formula": result.relationship_formula
+            }
+        }
+    else:
+        return {
+            "success": False,
+            "message": "Rule did not match"
+        }
+
+
+
+# ==================== HEALTH SCORE CONFIGURATION ENDPOINTS ====================
+
+class HealthScoreConfigUpdate(BaseModel):
+    """Request model for updating health score config"""
+    weights_json: dict
+    trend_weight: Optional[float] = None
+    volatility_weight: Optional[float] = None
+    blocked_close_rules: Optional[list] = None
+    description: Optional[str] = None
+
+
+@router.get("/health-score-configs/{persona}")
+async def get_health_score_config(
+    persona: str = Path(..., description="Persona type (controller, analyst, investor, auditor)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get health score configuration for a persona"""
+    health_service = HealthScoreService(db)
+    config = health_service.get_config(persona)
+    
+    return config
+
+
+@router.put("/health-score-configs/{persona}")
+async def update_health_score_config(
+    persona: str = Path(..., description="Persona type"),
+    request: HealthScoreConfigUpdate = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update health score configuration for a persona"""
+    config = db.query(HealthScoreConfig).filter(
+        HealthScoreConfig.persona == persona
+    ).first()
+    
+    if config:
+        # Update existing
+        config.weights_json = request.weights_json
+        config.trend_weight = Decimal(str(request.trend_weight)) if request.trend_weight else None
+        config.volatility_weight = Decimal(str(request.volatility_weight)) if request.volatility_weight else None
+        config.blocked_close_rules = request.blocked_close_rules
+        config.description = request.description
+    else:
+        # Create new
+        config = HealthScoreConfig(
+            persona=persona,
+            weights_json=request.weights_json,
+            trend_weight=Decimal(str(request.trend_weight)) if request.trend_weight else None,
+            volatility_weight=Decimal(str(request.volatility_weight)) if request.volatility_weight else None,
+            blocked_close_rules=request.blocked_close_rules,
+            description=request.description
+        )
+        db.add(config)
+    
+    db.commit()
+    db.refresh(config)
+    
+    return {
+        "persona": config.persona,
+        "weights": config.weights_json,
+        "trend_weight": float(config.trend_weight) if config.trend_weight else None,
+        "volatility_weight": float(config.volatility_weight) if config.volatility_weight else None,
+        "blocked_close_rules": config.blocked_close_rules
+    }
