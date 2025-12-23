@@ -207,9 +207,6 @@ class MultiEngineExtractor:
             for page in pages[:2]:
                 sample_text += page.get("text", "")
             
-            # Extract years (2020-2030)
-            years = re.findall(r'\b(202[0-9]|2030)\b', sample_text)
-            
             # Extract months (names and numbers)
             month_names = {
                 'january': 1, 'jan': 1,
@@ -226,20 +223,39 @@ class MultiEngineExtractor:
                 'december': 12, 'dec': 12
             }
 
-            # Get most common year (not just first one)
             detected_year = None
-            if years:
-                # Count occurrences of each year
-                from collections import Counter
-                year_counts = Counter(years)
-                # Get most common year
-                detected_year = int(year_counts.most_common(1)[0][0])
+            detected_month = None
+            
+            # PRIORITY 0: For Rent Roll documents, look for "From Date" pattern first
+            # Pattern: "From Date: MM/DD/YYYY" or "From Date MM/DD/YYYY"
+            from_date_patterns = [
+                r'(?:from date|from date:)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+                r'(?:property:.*?from date)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+            ]
+            
+            for pattern in from_date_patterns:
+                match = re.search(pattern, sample_text, re.IGNORECASE)
+                if match:
+                    try:
+                        month = int(match.group(1))
+                        day = int(match.group(2))
+                        year = int(match.group(3))
+                        if 1 <= month <= 12 and 1 <= day <= 31 and 2020 <= year <= 2030:
+                            detected_month = month
+                            detected_year = year
+                            # High confidence for "From Date" - this is the document period
+                            break
+                    except (ValueError, IndexError):
+                        continue
 
             # PRIORITY 1: Look for statement date patterns (mortgage statements, financial docs)
             # Patterns like "As of Date 2/21/2025" or "Statement Date: 12/31/2024"
-            detected_month = None
+            # Check for statement date even if we found a year (statement date is more reliable)
             statement_date_patterns = [
-                r'(?:as of date|statement date|report date|loan information as of date|payment information as of date)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+                r'(?:statement date|statement date:)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',  # Highest priority - exact "Statement Date"
+                r'(?:as of date|as of date:)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+                r'(?:report date|report date:)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
+                r'(?:loan information as of date|payment information as of date)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
                 r'(?:as of|dated?|for the (?:period|month) ending?)[:\s]+(\d{1,2})/(\d{1,2})/(\d{4})',
                 r'(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+statement)',
             ]
@@ -251,35 +267,70 @@ class MultiEngineExtractor:
                         month = int(match.group(1))
                         day = int(match.group(2))
                         year = int(match.group(3))
-                        if 1 <= month <= 12 and 1 <= day <= 31:
+                        if 1 <= month <= 12 and 1 <= day <= 31 and 2020 <= year <= 2030:
+                            # Statement date is authoritative - use it
                             detected_month = month
-                            if detected_year is None:
-                                detected_year = year
+                            detected_year = year
                             break  # Found a high-confidence statement date
                     except (ValueError, IndexError):
                         continue
 
             # PRIORITY 2: If no statement date found, look for date in format MM/DD/YYYY
-            if detected_month is None:
+            # But exclude dates that are clearly lease expiration dates (for rent roll documents)
+            if detected_month is None or detected_year is None:
                 date_matches = re.findall(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b', sample_text)
                 if date_matches:
-                    # Get most common month from dates
                     from collections import Counter
                     months_in_dates = []
+                    years_in_dates = []
+                    
+                    # Filter out lease expiration dates (common in rent roll documents)
+                    # Look for dates that appear near "Lease To", "Lease Expiration", etc.
+                    sample_lower = sample_text.lower()
+                    lease_keywords = ['lease to', 'lease expiration', 'expiration date', 'lease end']
+                    
                     for match in date_matches:
                         try:
                             month = int(match[0])
                             day = int(match[1])
-                            if 1 <= month <= 12 and 1 <= day <= 31:
-                                months_in_dates.append(month)
-                        except ValueError:
+                            year = int(match[2])  # match[2] is the year in MM/DD/YYYY format
+                            if 1 <= month <= 12 and 1 <= day <= 31 and 2020 <= year <= 2030:
+                                # Check if this date appears near lease keywords (likely expiration date)
+                                date_str = f"{match[0]}/{match[1]}/{match[2]}"
+                                date_pos = sample_text.find(date_str)
+                                if date_pos >= 0:
+                                    # Check 50 characters before and after the date
+                                    context_start = max(0, date_pos - 50)
+                                    context_end = min(len(sample_text), date_pos + len(date_str) + 50)
+                                    context = sample_text[context_start:context_end].lower()
+                                    
+                                    # Skip if it's clearly a lease expiration date
+                                    is_lease_date = any(keyword in context for keyword in lease_keywords)
+                                    if not is_lease_date:
+                                        months_in_dates.append(month)
+                                        years_in_dates.append(year)
+                        except (ValueError, IndexError):
                             continue
 
                     if months_in_dates:
                         month_counts = Counter(months_in_dates)
                         detected_month = month_counts.most_common(1)[0][0]
+                    
+                    if detected_year is None and years_in_dates:
+                        year_counts = Counter(years_in_dates)
+                        detected_year = int(year_counts.most_common(1)[0][0])
 
-            # PRIORITY 3: Fall back to month name search (least reliable)
+            # PRIORITY 3: Fall back to extracting all years and using most common
+            # But only if we haven't found a year from priority patterns
+            if detected_year is None:
+                years = re.findall(r'\b(202[0-9]|2030)\b', sample_text)
+                if years:
+                    from collections import Counter
+                    year_counts = Counter(years)
+                    # Get most common year
+                    detected_year = int(year_counts.most_common(1)[0][0])
+            
+            # PRIORITY 4: Fall back to month name search (least reliable)
             if detected_month is None:
                 found_months = []
                 sample_lower = sample_text.lower()
@@ -292,9 +343,13 @@ class MultiEngineExtractor:
             # Calculate confidence
             confidence = 0
             if detected_year:
-                confidence += 50
+                # Higher confidence if we found it from "From Date" or statement date patterns
+                if any(pattern in sample_text.lower() for pattern in ['from date', 'as of date', 'statement date']):
+                    confidence += 70
+                else:
+                    confidence += 50
             if detected_month:
-                confidence += 50
+                confidence += 30
             
             # Find period text for display
             period_text = ""
@@ -350,46 +405,105 @@ class MultiEngineExtractor:
                 sample_text += page.get("text", "").lower()
             
             # Define keyword patterns for each document type
-            keywords = {
-                "balance_sheet": [
-                    "assets", "liabilities", "equity", "current assets", "long-term assets",
-                    "current liabilities", "stockholders equity", "total assets", "balance sheet"
+            # Priority keywords (exact phrases) are checked first and weighted higher
+            priority_keywords = {
+                "cash_flow": [
+                    "cash flow statement",  # Highest priority - exact phrase
+                    "statement of cash flows",  # Alternative format
                 ],
                 "income_statement": [
-                    "revenue", "income statement", "profit and loss", "p&l", "operating income",
-                    "net income", "operating expenses", "gross income", "income and expense", "statement of operations"
+                    "income statement",  # Must be exact phrase, not just "statement"
+                    "statement of operations",  # Alternative format
+                    "profit and loss statement",  # P&L statement
+                ],
+                "balance_sheet": [
+                    "balance sheet",  # Exact phrase
+                    "statement of financial position",  # Alternative format
+                ],
+                "rent_roll": [
+                    "rent roll",  # Exact phrase
+                    "tenant roll",  # Alternative
+                ]
+            }
+            
+            # Secondary keywords (individual words/phrases)
+            secondary_keywords = {
+                "balance_sheet": [
+                    "assets", "liabilities", "equity", "current assets", "long-term assets",
+                    "current liabilities", "stockholders equity", "total assets"
+                ],
+                "income_statement": [
+                    "revenue", "profit and loss", "p&l", "operating income",
+                    "net income", "gross income", "income and expense"
                 ],
                 "cash_flow": [
-                    "cash flow", "operating activities", "investing activities", "financing activities",
+                    "cash flow",  # Individual phrase (lower priority than "cash flow statement")
+                    "operating activities", "investing activities", "financing activities",
                     "net cash", "cash from operations", "beginning cash", "ending cash"
                 ],
                 "rent_roll": [
-                    "tenant", "unit", "rent roll", "lease", "sq ft", "square feet",
+                    "tenant", "unit", "lease", "sq ft", "square feet",
                     "lease expiration", "monthly rent", "annual rent", "occupancy"
                 ]
             }
             
-            # Count keywords for each type
+            # Count keywords for each type with weighted scoring
             scores = {}
             found_keywords = {}
             
-            for doc_type, keyword_list in keywords.items():
-                count = 0
-                found = []
+            # First, check priority keywords (exact phrases) - these get 3x weight
+            for doc_type, keyword_list in priority_keywords.items():
+                if doc_type not in scores:
+                    scores[doc_type] = 0
+                    found_keywords[doc_type] = []
+                
                 for keyword in keyword_list:
-                    if keyword in sample_text:
-                        count += 1
-                        found.append(keyword)
-                scores[doc_type] = count
-                found_keywords[doc_type] = found
+                    # Use case-insensitive search but check for whole phrase
+                    keyword_lower = keyword.lower()
+                    if keyword_lower in sample_text:
+                        scores[doc_type] += 3  # 3x weight for priority keywords
+                        found_keywords[doc_type].append(keyword)
+            
+            # Then, check secondary keywords - these get 1x weight
+            for doc_type, keyword_list in secondary_keywords.items():
+                if doc_type not in scores:
+                    scores[doc_type] = 0
+                    found_keywords[doc_type] = []
+                
+                for keyword in keyword_list:
+                    keyword_lower = keyword.lower()
+                    # For secondary keywords, check if they exist but avoid false positives
+                    # Skip if this keyword is part of a priority phrase that was already matched
+                    if keyword_lower in sample_text:
+                        # Avoid double-counting: if "cash flow statement" was found, don't count "cash flow" again
+                        if doc_type == "cash_flow" and keyword == "cash flow":
+                            # Only count if "cash flow statement" wasn't already found
+                            if "cash flow statement" not in " ".join(found_keywords[doc_type]).lower():
+                                scores[doc_type] += 1
+                                found_keywords[doc_type].append(keyword)
+                        # Avoid false positive: "income statement" should not match "cash flow statement"
+                        elif doc_type == "income_statement" and keyword == "income statement":
+                            # Only count if it's not part of "cash flow statement"
+                            if "cash flow statement" not in sample_text:
+                                scores[doc_type] += 1
+                                found_keywords[doc_type].append(keyword)
+                        else:
+                            scores[doc_type] += 1
+                            found_keywords[doc_type].append(keyword)
             
             # Determine most likely type
             if max(scores.values()) == 0:
                 return {"detected_type": "unknown", "confidence": 0, "keywords_found": []}
             
             detected_type = max(scores, key=scores.get)
-            total_keywords = len(keywords[detected_type])
-            confidence = (scores[detected_type] / total_keywords) * 100
+            max_score = scores[detected_type]
+            
+            # Calculate confidence based on score relative to maximum possible
+            # Priority keywords are worth 3 points, secondary keywords are worth 1 point
+            # Maximum possible score for cash_flow: 3 (cash flow statement) + 3 (statement of cash flows) + 8 (secondary) = 14
+            # But we normalize to percentage based on actual matches
+            total_possible = len(priority_keywords[detected_type]) * 3 + len(secondary_keywords[detected_type])
+            confidence = min((max_score / max(total_possible, 1)) * 100, 100)
             
             return {
                 "detected_type": detected_type,

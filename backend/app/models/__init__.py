@@ -89,6 +89,11 @@ from app.models.calculated_rule import CalculatedRule
 from app.models.health_score_config import HealthScoreConfig
 from app.models.alert_suppression import AlertSuppression, AlertSnooze, AlertSuppressionRule
 
+# Self-learning system models
+from app.models.issue_knowledge_base import IssueKnowledgeBase
+from app.models.issue_capture import IssueCapture
+from app.models.prevention_rule import PreventionRule
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -180,4 +185,8 @@ __all__ = [
     "AlertSuppression",
     "AlertSnooze",
     "AlertSuppressionRule",
+    # Self-learning system
+    "IssueKnowledgeBase",
+    "IssueCapture",
+    "PreventionRule",
 ]

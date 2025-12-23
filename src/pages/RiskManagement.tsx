@@ -16,7 +16,7 @@ import '../App.css'
 import { 
   Shield, AlertTriangle, Lock, TrendingUp, TrendingDown, 
   RefreshCw, Filter, Search, Download, Settings, BarChart3,
-  CheckCircle, XCircle, Clock, Activity, Zap, Eye, EyeOff
+  CheckCircle, XCircle, Clock, Activity, Zap, Eye, EyeOff, Trash2
 } from 'lucide-react'
 import { propertyService } from '../lib/property'
 import { anomaliesService } from '../lib/anomalies'
@@ -315,6 +315,149 @@ export default function RiskManagement() {
     }
   }
 
+  const handleDelete = async (item: RiskItem) => {
+    if (item.type !== 'alert') {
+      alert('Only alerts can be deleted from this view')
+      return
+    }
+
+    if (!confirm(`Are you sure you want to delete this alert and all related anomalies/warnings/alerts for this property? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      // Get property ID from the item - try multiple sources
+      let propertyId: number | null = null
+      
+      if (item.property_id && item.property_id > 0) {
+        propertyId = item.property_id
+      } else if (item.metadata?.property_id) {
+        propertyId = parseInt(item.metadata.property_id)
+      } else if (filters.propertyId) {
+        propertyId = filters.propertyId
+      } else if (selectedProperty) {
+        propertyId = selectedProperty
+      } else {
+        // Try to find property by code from metadata
+        const propertyCode = item.metadata?.property_code || item.property_name
+        if (propertyCode) {
+          const property = properties.find(p => 
+            p.property_code === propertyCode || 
+            p.property_name === propertyCode
+          )
+          if (property) {
+            propertyId = property.id
+          }
+        }
+      }
+      
+      if (!propertyId || propertyId <= 0) {
+        alert('Could not determine property for this alert. Please select a property filter or use bulk delete.')
+        return
+      }
+
+      await deleteAlertsForProperty(propertyId)
+    } catch (err: any) {
+      console.error('Error deleting alert:', err)
+      alert(`Failed to delete alert: ${err.message || 'Unknown error'}`)
+    }
+  }
+
+  const deleteAlertsForProperty = async (propertyId: number) => {
+    try {
+      const params = new URLSearchParams()
+      params.append('property_ids', propertyId.toString())
+      
+      // Apply current filters
+      if (filters.documentType) {
+        params.append('document_type', filters.documentType)
+      }
+
+      const response = await fetch(`${API_BASE_URL}/documents/anomalies-warnings-alerts/delete-filtered?${params}`, {
+        method: 'POST',
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(`Successfully deleted ${data.total_deleted} records (alerts, anomalies, etc.)`)
+        await loadUnifiedRiskItems()
+        await loadDashboardStats()
+      } else {
+        const error = await response.json()
+        alert(`Failed to delete: ${error.detail || 'Unknown error'}`)
+      }
+    } catch (err: any) {
+      throw new Error(err.message || 'Failed to delete alerts')
+    }
+  }
+
+  const handleBulkDeleteAlerts = async () => {
+    const alertItems = filteredItems.filter(item => item.type === 'alert')
+    
+    if (alertItems.length === 0) {
+      alert('No alerts to delete')
+      return
+    }
+
+    // Get unique property IDs from alerts
+    const propertyIds = Array.from(new Set(
+      alertItems
+        .map(item => {
+          if (item.property_id) return item.property_id
+          const property = properties.find(p => p.property_code === item.metadata?.property_code)
+          return property?.id
+        })
+        .filter((id): id is number => id !== undefined && id !== null)
+    ))
+
+    if (propertyIds.length === 0) {
+      alert('Could not determine properties for alerts. Please use the Data Control Center to delete.')
+      return
+    }
+
+    const confirmMessage = `Are you sure you want to delete all alerts for ${propertyIds.length} property(ies)?\n\n` +
+      `This will delete:\n` +
+      `- ${alertItems.length} alert(s) currently visible\n` +
+      `- All related anomalies, warnings, and alerts for the selected properties\n\n` +
+      `This action cannot be undone.`
+
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    try {
+      const params = new URLSearchParams()
+      propertyIds.forEach(id => params.append('property_ids', id.toString()))
+      
+      // Apply current filters
+      if (filters.documentType) {
+        params.append('document_type', filters.documentType)
+      }
+
+      const response = await fetch(`${API_BASE_URL}/documents/anomalies-warnings-alerts/delete-filtered?${params}`, {
+        method: 'POST',
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(`Successfully deleted ${data.total_deleted} records!\n\n` +
+          `- Anomalies: ${data.deletion_counts.anomaly_detections}\n` +
+          `- Alerts: ${data.deletion_counts.alerts}\n` +
+          `- Committee Alerts: ${data.deletion_counts.committee_alerts}`)
+        await loadUnifiedRiskItems()
+        await loadDashboardStats()
+      } else {
+        const error = await response.json()
+        alert(`Failed to delete: ${error.detail || 'Unknown error'}`)
+      }
+    } catch (err: any) {
+      console.error('Error bulk deleting alerts:', err)
+      alert(`Failed to delete alerts: ${err.message || 'Unknown error'}`)
+    }
+  }
+
   const filteredItems = useMemo(() => {
     if (!riskItems || !Array.isArray(riskItems)) {
       return []
@@ -583,13 +726,28 @@ export default function RiskManagement() {
         )}
 
         {viewMode === 'unified' && (
-          <RiskWorkbenchTable
-            items={filteredItems}
-            loading={loading}
-            onItemClick={handleItemClick}
-            onAcknowledge={handleAcknowledge}
-            onResolve={handleResolve}
-          />
+          <>
+            {filteredItems.filter(item => item.type === 'alert').length > 0 && (
+              <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={handleBulkDeleteAlerts}
+                  className="btn btn-sm btn-danger"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <Trash2 size={16} />
+                  Delete All Visible Alerts
+                </button>
+              </div>
+            )}
+            <RiskWorkbenchTable
+              items={filteredItems}
+              loading={loading}
+              onItemClick={handleItemClick}
+              onAcknowledge={handleAcknowledge}
+              onResolve={handleResolve}
+              onDelete={handleDelete}
+            />
+          </>
         )}
 
         {viewMode === 'analytics' && (

@@ -99,6 +99,9 @@ export default function BulkImport() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<any>(null)
+  const [showMonitoring, setShowMonitoring] = useState(false)
+  const [monitoringData, setMonitoringData] = useState<any>(null)
+  const [monitoringInterval, setMonitoringInterval] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     fetchProperties()
@@ -299,6 +302,45 @@ export default function BulkImport() {
     }
   }
 
+  const fetchMonitoringData = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents/monitoring-status`, {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setMonitoringData(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch monitoring data:', err)
+    }
+  }
+
+  const startMonitoring = () => {
+    setShowMonitoring(true)
+    fetchMonitoringData()
+    // Refresh every 10 seconds
+    const interval = setInterval(fetchMonitoringData, 10000)
+    setMonitoringInterval(interval)
+  }
+
+  const stopMonitoring = () => {
+    setShowMonitoring(false)
+    if (monitoringInterval) {
+      clearInterval(monitoringInterval)
+      setMonitoringInterval(null)
+    }
+  }
+
+  useEffect(() => {
+    // Cleanup interval on unmount
+    return () => {
+      if (monitoringInterval) {
+        clearInterval(monitoringInterval)
+      }
+    }
+  }, [monitoringInterval])
+
   const getDocumentTypeLabel = (type: string): string => {
     const labels: Record<string, string> = {
       'balance_sheet': 'Balance Sheet',
@@ -336,18 +378,45 @@ export default function BulkImport() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-            <button
-              className="btn-secondary"
-              onClick={() => window.location.hash = ''}
-              style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
-            >
-              ← Back to Data Control Center
-            </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => window.location.hash = ''}
+                style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+              >
+                ← Back to Data Control Center
+              </button>
+            </div>
+            <h1 className="page-title">📂 Bulk Document Upload</h1>
+            <p className="page-subtitle">Upload multiple documents (PDF, CSV, Excel, DOC) for a selected year. Document types are auto-detected from filenames.</p>
           </div>
-          <h1 className="page-title">📂 Bulk Document Upload</h1>
-          <p className="page-subtitle">Upload multiple documents (PDF, CSV, Excel, DOC) for a selected year. Document types are auto-detected from filenames.</p>
+          <button
+            className="btn btn-primary"
+            onClick={showMonitoring ? stopMonitoring : startMonitoring}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              padding: '0.75rem 1.5rem',
+              fontSize: '0.9rem',
+              marginLeft: '1rem',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {showMonitoring ? (
+              <>
+                <span>⏸️</span>
+                <span>Stop Monitoring</span>
+              </>
+            ) : (
+              <>
+                <span>📊</span>
+                <span>Start Monitoring</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 

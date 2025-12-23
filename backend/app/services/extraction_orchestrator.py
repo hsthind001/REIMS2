@@ -208,6 +208,30 @@ class ExtractionOrchestrator:
                 upload.extraction_completed_at = datetime.now()
                 upload.notes = f"Data parsing/validation failed: {parse_result.get('error')}"
                 self.db.commit()
+                
+                # Capture issue for learning
+                try:
+                    from app.services.issue_capture_service import IssueCaptureService
+                    capture_service = IssueCaptureService(self.db)
+                    capture_service.capture_extraction_issue(
+                        error=None,
+                        error_message=f"Data parsing/validation failed: {parse_result.get('error')}",
+                        extraction_engine=extraction_result.get("engine_used"),
+                        file_size=len(pdf_data),
+                        page_count=extraction_result.get("validation", {}).get("total_pages"),
+                        upload_id=upload_id,
+                        document_type=upload.document_type,
+                        context={
+                            "upload_id": upload_id,
+                            "property_id": upload.property_id,
+                            "period_id": upload.period_id,
+                            "extraction_engine": extraction_result.get("engine_used"),
+                            "file_size": len(pdf_data)
+                        }
+                    )
+                except Exception as capture_error:
+                    logger.warning(f"Failed to capture extraction issue: {capture_error}")
+                
                 return {
                     "success": False,
                     "error": parse_result.get("error"),

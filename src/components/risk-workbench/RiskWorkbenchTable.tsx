@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Download, Filter, Save, Share2, CheckCircle, XCircle, Eye, AlertCircle } from 'lucide-react';
+import { Download, Filter, Save, Share2, CheckCircle, XCircle, Eye, AlertCircle, Trash2 } from 'lucide-react';
 import { ExportButton } from '../ExportButton';
 import { exportToExcel, exportToCSV } from '../../lib/exportUtils';
 
@@ -39,6 +39,7 @@ interface RiskWorkbenchTableProps {
   onAcknowledge?: (item: RiskItem) => void;
   onResolve?: (item: RiskItem) => void;
   onReview?: (item: RiskItem) => void;
+  onDelete?: (item: RiskItem) => void;
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -68,6 +69,7 @@ export default function RiskWorkbenchTable({
   onAcknowledge,
   onResolve,
   onReview,
+  onDelete,
 }: RiskWorkbenchTableProps) {
   const [filters, setFilters] = useState({
     property: '',
@@ -415,6 +417,30 @@ export default function RiskWorkbenchTable({
                           }}
                         >
                           Review
+                        </button>
+                      )}
+                      {item.type === 'alert' && onDelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(item);
+                          }}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '0.75rem',
+                            border: '1px solid #dc3545',
+                            backgroundColor: '#fff',
+                            color: '#dc3545',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                          }}
+                          title="Delete this alert"
+                        >
+                          <Trash2 size={12} />
+                          Delete
                         </button>
                       )}
                     </div>

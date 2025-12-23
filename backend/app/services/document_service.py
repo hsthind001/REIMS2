@@ -126,7 +126,9 @@ class DocumentService:
         period_confidence = period_detection.get("confidence", 0)
         
         # Check document type mismatch
-        if detected_type != "unknown" and detected_type != document_type and type_confidence >= 30:
+        # Only flag mismatch if confidence is high enough (>= 50%) to avoid false positives
+        # Lower confidence detections are often incorrect, especially for cash flow vs income statement
+        if detected_type != "unknown" and detected_type != document_type and type_confidence >= 50:
             type_names = {
                 "balance_sheet": "Balance Sheet",
                 "income_statement": "Income Statement",
@@ -147,7 +149,9 @@ class DocumentService:
             }
         
         # Check year mismatch
-        # SKIP for rent_roll: contains future lease dates that interfere with "As of Date" detection
+        # SKIP for rent_roll: contains future lease dates that interfere with year detection
+        # The year detection now prioritizes "From Date" for rent roll, but still skip warnings
+        # to avoid false positives from lease expiration dates in the data
         if (document_type != "rent_roll" and 
             detected_year and detected_year != period_year and period_confidence >= 50):
             print(f"⚠️  Year mismatch detected!")
@@ -689,29 +693,46 @@ class DocumentService:
                 
                 result["document_type"] = detected_type
                 
-                # Step 3: Detect month from filename
-                detected_month = detector.detect_month_from_filename(file.filename or "", year)
-                if detected_month is None:
-                    detected_month = 1  # Default to January
+                # Step 2.5: Pre-flight check for known issues
+                try:
+                    from app.services.preflight_check_service import PreflightCheckService
+                    preflight_service = PreflightCheckService(self.db)
+                    preflight_result = preflight_service.check_before_upload(
+                        document_type=detected_type,
+                        property_code=property_code,
+                        filename=file.filename,
+                        file_size=None,  # Will be available after reading
+                        context={"year": year}
+                    )
+                    
+                    # Apply auto-fixes
+                    if preflight_result.get("auto_fixes"):
+                        for auto_fix in preflight_result["auto_fixes"]:
+                            if auto_fix.get("type") == "skip_validation":
+                                # Skip specific validation
+                                print(f"ℹ️  Auto-fix: Skipping {auto_fix.get('validation_rule')} based on learned pattern")
+                    
+                    # Log warnings
+                    if preflight_result.get("warnings"):
+                        for warning in preflight_result["warnings"]:
+                            print(f"⚠️  Pre-flight warning: {warning}")
+                except Exception as e:
+                    print(f"⚠️  Pre-flight check failed: {e}")
                 
-                result["month"] = detected_month
+                # Step 3: Detect month from filename (initial guess)
+                filename_month = detector.detect_month_from_filename(file.filename or "", year)
                 
-                # Step 4: Get or create period
-                period = self.get_or_create_period(
-                    property_obj.id,
-                    year,
-                    detected_month
-                )
-                
-                # Step 5: Read file content
+                # Step 4: Read file content early to detect month from PDF for mortgage statements
                 file_content = await file.read()
                 file.file.seek(0)  # Reset for potential reuse
 
-                # Step 5.5: INTELLIGENT PDF CONTENT ANALYSIS (if PDF)
+                # Step 5: INTELLIGENT PDF CONTENT ANALYSIS (if PDF)
+                # For mortgage statements, prioritize statement date over filename date
                 anomalies = []
                 pdf_detected_type = None
                 pdf_detected_year = None
                 pdf_detected_month = None
+                pdf_period_confidence = 0
 
                 if format_validation["file_type"] == "pdf":
                     try:
@@ -728,19 +749,75 @@ class DocumentService:
                         pdf_detected_year = pdf_period_detection.get("year")
                         pdf_detected_month = pdf_period_detection.get("month")
                         pdf_period_confidence = pdf_period_detection.get("confidence", 0)
+                        
+                        # For mortgage statements, prioritize statement date over filename
+                        # Statement date is the actual document period, filename date might be generation date
+                        # Also prioritize statement date for other documents if found with high confidence (>= 70%)
+                        if pdf_detected_month and pdf_period_confidence >= 50:
+                            # Always use statement date for mortgage statements
+                            # For other documents, use if confidence is very high (>= 70%)
+                            if detected_type == "mortgage_statement" or pdf_period_confidence >= 70:
+                                detected_month = pdf_detected_month
+                                if detected_type == "mortgage_statement":
+                                    print(f"✅ Using PDF statement date for mortgage statement: month {detected_month} (confidence: {pdf_period_confidence}%)")
+                                else:
+                                    print(f"✅ Using PDF statement date: month {detected_month} (confidence: {pdf_period_confidence}%)")
+                            elif filename_month is None:
+                                # Use PDF month if no filename month detected
+                                detected_month = pdf_detected_month
+                        elif filename_month is not None:
+                            detected_month = filename_month
+                        else:
+                            detected_month = 1  # Default to January
 
                         # ANOMALY DETECTION: Compare filename vs PDF content
-                        # Type mismatch
-                        if pdf_detected_type and pdf_detected_type != detected_type and pdf_type_confidence >= 30:
-                            anomalies.append(f"Document type mismatch: Filename suggests '{detected_type}' but PDF content indicates '{pdf_detected_type}' (confidence: {pdf_type_confidence}%)")
+                        # Type mismatch - only flag if confidence is high (>= 50%) to avoid false positives
+                        # Cash flow statements often contain income/expense keywords that can be misclassified
+                        if pdf_detected_type and pdf_detected_type != detected_type and pdf_type_confidence >= 50:
+                            anomaly_msg = f"Document type mismatch: Filename suggests '{detected_type}' but PDF content indicates '{pdf_detected_type}' (confidence: {pdf_type_confidence}%)"
+                            anomalies.append(anomaly_msg)
+                            
+                            # Capture issue for learning (will update upload_id after upload is created)
+                            # Store for later capture
+                            pass  # Will capture after upload_id is available
 
-                        # Year mismatch
-                        if pdf_detected_year and pdf_detected_year != year:
+                        # Year mismatch - SKIP for rent_roll to avoid false positives from lease dates
+                        if (detected_type != "rent_roll" and 
+                            pdf_detected_year and pdf_detected_year != year):
                             anomalies.append(f"Year mismatch: Expected {year} but PDF content shows {pdf_detected_year}")
 
-                        # Month mismatch
-                        if pdf_detected_month and pdf_detected_month != detected_month and pdf_period_confidence >= 30:
-                            anomalies.append(f"Month mismatch: Filename suggests month {detected_month} but PDF content indicates month {pdf_detected_month} (confidence: {pdf_period_confidence}%)")
+                        # Month mismatch - only flag if confidence is high and not already corrected
+                        # For mortgage statements, we already use statement date, so skip this warning
+                        # For other documents, only warn if confidence is high (>= 50%) to avoid false positives
+                        if (detected_type != "mortgage_statement" and 
+                            filename_month is not None and
+                            pdf_detected_month and 
+                            pdf_detected_month != filename_month and 
+                            pdf_period_confidence >= 50):
+                            anomaly_msg = f"Month mismatch: Filename suggests month {filename_month} but PDF content indicates month {pdf_detected_month} (confidence: {pdf_period_confidence}%)"
+                            anomalies.append(anomaly_msg)
+                            
+                            # Capture issue for learning
+                            try:
+                                from app.services.issue_capture_service import IssueCaptureService
+                                capture_service = IssueCaptureService(self.db)
+                                capture_service.capture_validation_issue(
+                                    validation_type="month_mismatch",
+                                    expected_value=filename_month,
+                                    detected_value=pdf_detected_month,
+                                    confidence=pdf_period_confidence,
+                                    upload_id=None,  # Will be set after upload is created
+                                    document_type=detected_type,
+                                    property_id=property_obj.id,
+                                    period_id=period.id if period else None,
+                                    context={
+                                        "filename": file.filename,
+                                        "detected_type": detected_type,
+                                        "expected_type": detected_type
+                                    }
+                                )
+                            except Exception as e:
+                                print(f"⚠️  Failed to capture issue: {e}")
 
                         # Use PDF content detection if higher confidence
                         if pdf_detected_type and pdf_type_confidence > 60:
@@ -748,11 +825,13 @@ class DocumentService:
                             result["document_type"] = detected_type
                             print(f"✅ Using PDF content detection for type: {detected_type} (confidence: {pdf_type_confidence}%)")
 
-                        if pdf_detected_month and pdf_period_confidence > 50:
+                        # For non-mortgage documents, use PDF content if confidence is high
+                        # (Mortgage statements already handled above)
+                        if (detected_type != "mortgage_statement" and 
+                            pdf_detected_month and 
+                            pdf_period_confidence > 50):
                             detected_month = pdf_detected_month
                             result["month"] = detected_month
-                            # Re-get period with corrected month
-                            period = self.get_or_create_period(property_obj.id, year, detected_month)
                             print(f"✅ Using PDF content detection for month: {detected_month} (confidence: {pdf_period_confidence}%)")
 
                         # Add anomalies to result
@@ -764,8 +843,29 @@ class DocumentService:
                     except Exception as e:
                         print(f"⚠️  PDF content analysis failed for {file.filename}: {e}")
                         # Continue with filename-based detection
+                        if detected_month is None:
+                            if filename_month is not None:
+                                detected_month = filename_month
+                            else:
+                                detected_month = 1  # Default to January
+                
+                # Set final month in result (if not already set)
+                if detected_month is None:
+                    if filename_month is not None:
+                        detected_month = filename_month
+                    else:
+                        detected_month = 1  # Default to January
+                
+                result["month"] = detected_month
+                
+                # Step 6: Get or create period (after month is finalized)
+                period = self.get_or_create_period(
+                    property_obj.id,
+                    year,
+                    detected_month
+                )
 
-                # Step 6: Calculate file hash
+                # Step 7: Calculate file hash
                 file_hash = hashlib.md5(file_content).hexdigest()
 
                 # Step 7: Intelligent duplicate handling with strategy

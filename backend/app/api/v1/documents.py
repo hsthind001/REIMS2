@@ -81,6 +81,21 @@ async def upload_document(
     """
     # Validate file type
     if not file.content_type or file.content_type != "application/pdf":
+        # Capture issue for learning
+        try:
+            from app.services.issue_capture_service import IssueCaptureService
+            capture_service = IssueCaptureService(db)
+            capture_service.capture_frontend_error(
+                error_message=f"Invalid file type: {file.content_type}. Expected application/pdf",
+                api_endpoint="/documents/upload",
+                context={
+                    "filename": file.filename,
+                    "content_type": file.content_type
+                }
+            )
+        except Exception:
+            pass  # Don't fail upload if issue capture fails
+        
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be a PDF (application/pdf)"
@@ -314,14 +329,15 @@ async def get_queue_status(db: Session = Depends(get_db)):
         
         # Count extraction tasks across all workers
         extraction_tasks = 0
-        for worker_tasks in [active, scheduled, reserved].values():
-            if worker_tasks:
-                for tasks in worker_tasks.values():
-                    extraction_tasks += len([
-                        t for t in tasks 
-                        if 'extract_document' in t.get('name', '') or 
-                           'extract_document' in str(t.get('task', ''))
-                    ])
+        for worker_tasks_dict in [active, scheduled, reserved]:
+            if worker_tasks_dict:
+                for worker_name, tasks in worker_tasks_dict.items():
+                    if tasks:
+                        extraction_tasks += len([
+                            t for t in tasks 
+                            if 'extract_document' in t.get('name', '') or 
+                               'extract_document' in str(t.get('task', ''))
+                        ])
         
         # Get worker stats
         stats = inspect.stats() or {}
@@ -352,6 +368,163 @@ async def get_queue_status(db: Session = Depends(get_db)):
             "pending_uploads": pending_uploads,
             "workers": [],
             "error": "Celery unavailable"
+        }
+
+
+@router.get("/documents/monitoring-status")
+async def get_monitoring_status(db: Session = Depends(get_db)):
+    """
+    Get comprehensive monitoring status for bulk uploads.
+    Returns queue status, recent uploads, failed uploads, stuck uploads, and service status.
+    """
+    from sqlalchemy import text
+    from app.models.document_upload import DocumentUpload
+    from celery import current_app
+    
+    try:
+        # Queue status
+        inspect = current_app.control.inspect()
+        active = inspect.active() or {}
+        scheduled = inspect.scheduled() or {}
+        reserved = inspect.reserved() or {}
+        stats = inspect.stats() or {}
+        
+        # Count extraction tasks
+        extraction_tasks = 0
+        for worker_tasks_dict in [active, scheduled, reserved]:
+            if worker_tasks_dict:
+                for worker_name, tasks in worker_tasks_dict.items():
+                    if tasks:
+                        extraction_tasks += len([
+                            t for t in tasks 
+                            if 'extract_document' in t.get('name', '') or 
+                               'extract_document' in str(t.get('task', ''))
+                        ])
+        
+        workers_available = len(stats)
+        pending_uploads = db.query(DocumentUpload).filter(
+            DocumentUpload.extraction_status == 'pending'
+        ).count()
+        
+        # Recent uploads (last 5 minutes)
+        recent_uploads = db.execute(
+            text("""
+                SELECT id, file_name, document_type, extraction_status, 
+                       EXTRACT(EPOCH FROM (NOW() - upload_date))/60 as minutes_ago,
+                       extraction_task_id
+                FROM document_uploads 
+                WHERE upload_date > NOW() - INTERVAL '5 minutes'
+                ORDER BY upload_date DESC
+                LIMIT 10
+            """)
+        ).fetchall()
+        
+        # Failed uploads (last hour)
+        failed_uploads = db.execute(
+            text("""
+                SELECT id, file_name, extraction_status, 
+                       LEFT(notes, 200) as error_summary,
+                       EXTRACT(EPOCH FROM (NOW() - upload_date))/60 as minutes_ago
+                FROM document_uploads 
+                WHERE extraction_status = 'failed' 
+                  AND upload_date > NOW() - INTERVAL '1 hour'
+                ORDER BY upload_date DESC
+                LIMIT 5
+            """)
+        ).fetchall()
+        
+        # Stuck uploads (pending > 10 minutes)
+        stuck_uploads = db.execute(
+            text("""
+                SELECT id, file_name, extraction_status, 
+                       EXTRACT(EPOCH FROM (NOW() - upload_date))/60 as minutes_pending
+                FROM document_uploads 
+                WHERE extraction_status = 'pending' 
+                  AND upload_date < NOW() - INTERVAL '10 minutes'
+                ORDER BY upload_date ASC
+                LIMIT 5
+            """)
+        ).fetchall()
+        
+        # Upload summary by status (last hour)
+        upload_summary = db.execute(
+            text("""
+                SELECT extraction_status, COUNT(*) as count
+                FROM document_uploads
+                WHERE upload_date > NOW() - INTERVAL '1 hour'
+                GROUP BY extraction_status
+                ORDER BY count DESC
+            """)
+        ).fetchall()
+        
+        return {
+            "queue_status": {
+                "queue_depth": extraction_tasks,
+                "workers_available": workers_available,
+                "pending_uploads": pending_uploads,
+                "workers": list(stats.keys()) if stats else []
+            },
+            "recent_uploads": [
+                {
+                    "id": row[0],
+                    "file_name": row[1],
+                    "document_type": row[2],
+                    "extraction_status": row[3],
+                    "minutes_ago": float(row[4]) if row[4] else 0,
+                    "extraction_task_id": row[5]
+                }
+                for row in recent_uploads
+            ],
+            "failed_uploads": [
+                {
+                    "id": row[0],
+                    "file_name": row[1],
+                    "extraction_status": row[2],
+                    "error_summary": row[3],
+                    "minutes_ago": float(row[4]) if row[4] else 0
+                }
+                for row in failed_uploads
+            ],
+            "stuck_uploads": [
+                {
+                    "id": row[0],
+                    "file_name": row[1],
+                    "extraction_status": row[2],
+                    "minutes_pending": float(row[3]) if row[3] else 0
+                }
+                for row in stuck_uploads
+            ],
+            "upload_summary": [
+                {
+                    "status": row[0],
+                    "count": row[1]
+                }
+                for row in upload_summary
+            ],
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to get monitoring status: {e}")
+        # Return safe defaults
+        pending_uploads = db.query(DocumentUpload).filter(
+            DocumentUpload.extraction_status == 'pending'
+        ).count()
+        return {
+            "queue_status": {
+                "queue_depth": 0,
+                "workers_available": 0,
+                "pending_uploads": pending_uploads,
+                "workers": [],
+                "error": "Monitoring unavailable"
+            },
+            "recent_uploads": [],
+            "failed_uploads": [],
+            "stuck_uploads": [],
+            "upload_summary": [],
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
         }
 
 
@@ -880,12 +1053,26 @@ async def delete_all_upload_history(
     **Returns:**
     - Count of deleted records
     """
+    import logging
+    from sqlalchemy import text
+    
+    logger = logging.getLogger(__name__)
+    
     try:
-        # Get all document uploads
+        # Step 1: Delete orphaned anomaly_detections records (where document_id is null)
+        # These orphaned records violate the NOT NULL constraint and prevent cascade deletion
+        logger.info("Cleaning up orphaned anomaly_detections records...")
+        orphaned_count = db.execute(
+            text("DELETE FROM anomaly_detections WHERE document_id IS NULL")
+        ).rowcount
+        if orphaned_count > 0:
+            logger.info(f"Deleted {orphaned_count} orphaned anomaly_detections records")
+        
+        # Step 2: Get all document uploads
         all_uploads = db.query(DocumentUpload).all()
         deleted_count = len(all_uploads)
         
-        # Delete files from MinIO and database records
+        # Step 3: Delete files from MinIO and database records
         for upload in all_uploads:
             # Delete file from MinIO if file_path exists
             if upload.file_path:
@@ -893,30 +1080,496 @@ async def delete_all_upload_history(
                     delete_file(upload.file_path)
                 except Exception as e:
                     # Log error but continue deletion
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.warning(f"Failed to delete file from MinIO: {upload.file_path}, error: {str(e)}")
             
             # Delete database record (cascade will handle related data)
             db.delete(upload)
         
-        # Commit all deletions
+        # Step 4: Commit all deletions
         db.commit()
         
         return {
             "message": f"Successfully deleted {deleted_count} document upload records",
-            "deleted_count": deleted_count
+            "deleted_count": deleted_count,
+            "orphaned_anomalies_deleted": orphaned_count
         }
     
     except Exception as e:
         db.rollback()
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to delete upload history: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete upload history: {str(e)}"
         )
+
+
+@router.delete("/documents/anomalies-warnings-alerts/delete-all", status_code=status.HTTP_200_OK)
+async def delete_all_anomalies_warnings_alerts(
+    db: Session = Depends(get_db)
+):
+    """
+    Delete all anomalies, warnings, and alerts data from the database
+    
+    **Warning:** This operation:
+    - Deletes ALL anomaly detection records
+    - Deletes ALL alerts (from alerts table)
+    - Deletes ALL committee alerts
+    - Deletes ALL alert history
+    - Deletes ALL alert suppressions and snoozes
+    - Deletes ALL alert suppression rules
+    - **KEEPS** alert_rules (rule definitions are preserved)
+    - This action CANNOT be undone
+    
+    **Use Cases:**
+    - Clean up old anomaly/alert data before re-uploading documents
+    - Reset system for testing with new anomaly detection implementation
+    - Remove all generated alerts/anomalies to regenerate with updated logic
+    
+    **Returns:**
+    - Count of deleted records for each table
+    """
+    import logging
+    from sqlalchemy import text
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        deletion_counts = {}
+        
+        # Step 1: Delete alert_history (must be first due to foreign key to committee_alerts)
+        logger.info("Deleting alert_history records...")
+        deletion_counts['alert_history'] = db.execute(
+            text("DELETE FROM alert_history")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['alert_history']} alert_history records")
+        
+        # Step 2: Delete alert_snoozes
+        logger.info("Deleting alert_snoozes records...")
+        deletion_counts['alert_snoozes'] = db.execute(
+            text("DELETE FROM alert_snoozes")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['alert_snoozes']} alert_snoozes records")
+        
+        # Step 3: Delete alert_suppressions
+        logger.info("Deleting alert_suppressions records...")
+        deletion_counts['alert_suppressions'] = db.execute(
+            text("DELETE FROM alert_suppressions")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['alert_suppressions']} alert_suppressions records")
+        
+        # Step 4: Delete alert_suppression_rules
+        logger.info("Deleting alert_suppression_rules records...")
+        deletion_counts['alert_suppression_rules'] = db.execute(
+            text("DELETE FROM alert_suppression_rules")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['alert_suppression_rules']} alert_suppression_rules records")
+        
+        # Step 5: Delete committee_alerts
+        logger.info("Deleting committee_alerts records...")
+        deletion_counts['committee_alerts'] = db.execute(
+            text("DELETE FROM committee_alerts")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['committee_alerts']} committee_alerts records")
+        
+        # Step 6: Delete alerts (from alerts table)
+        logger.info("Deleting alerts records...")
+        deletion_counts['alerts'] = db.execute(
+            text("DELETE FROM alerts")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['alerts']} alerts records")
+        
+        # Step 7: Delete anomaly_detections (including orphaned records)
+        logger.info("Deleting anomaly_detections records...")
+        deletion_counts['anomaly_detections'] = db.execute(
+            text("DELETE FROM anomaly_detections")
+        ).rowcount
+        logger.info(f"Deleted {deletion_counts['anomaly_detections']} anomaly_detections records")
+        
+        # Step 8: Delete related feedback/explanation records if they exist
+        # Check if tables exist before deleting
+        try:
+            logger.info("Deleting anomaly_feedback records...")
+            deletion_counts['anomaly_feedback'] = db.execute(
+                text("DELETE FROM anomaly_feedback")
+            ).rowcount
+            logger.info(f"Deleted {deletion_counts['anomaly_feedback']} anomaly_feedback records")
+        except Exception as e:
+            logger.warning(f"anomaly_feedback table may not exist: {str(e)}")
+            deletion_counts['anomaly_feedback'] = 0
+        
+        try:
+            logger.info("Deleting anomaly_explanations records...")
+            deletion_counts['anomaly_explanations'] = db.execute(
+                text("DELETE FROM anomaly_explanations")
+            ).rowcount
+            logger.info(f"Deleted {deletion_counts['anomaly_explanations']} anomaly_explanations records")
+        except Exception as e:
+            logger.warning(f"anomaly_explanations table may not exist: {str(e)}")
+            deletion_counts['anomaly_explanations'] = 0
+        
+        # Commit all deletions
+        db.commit()
+        
+        total_deleted = sum(deletion_counts.values())
+        
+        return {
+            "message": f"Successfully deleted all anomalies, warnings, and alerts data. Total records deleted: {total_deleted}",
+            "total_deleted": total_deleted,
+            "deletion_counts": deletion_counts,
+            "note": "alert_rules (rule definitions) were preserved and not deleted"
+        }
+    
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete anomalies/warnings/alerts: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete anomalies/warnings/alerts: {str(e)}"
+        )
+
+
+@router.post("/documents/anomalies-warnings-alerts/delete-filtered", status_code=status.HTTP_200_OK)
+async def delete_filtered_anomalies_warnings_alerts(
+    property_ids: Optional[List[int]] = Query(None, description="List of property IDs (required)"),
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by period year (optional)"),
+    document_type: Optional[DocumentTypeEnum] = Query(None, description="Filter by document type (optional)"),
+    period_id: Optional[int] = Query(None, description="Filter by specific period ID (optional)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete anomalies, warnings, and alerts data with intelligent filtering
+    
+    **Filters:**
+    - **property_ids** (required): List of property IDs to filter by
+    - **year** (optional): Filter by financial period year
+    - **document_type** (optional): Filter by document type (balance_sheet, income_statement, etc.)
+    - **period_id** (optional): Filter by specific financial period ID
+    
+    **Warning:** This operation:
+    - Deletes anomaly detection records matching filters
+    - Deletes alerts (from alerts table) matching filters
+    - Deletes committee alerts matching filters
+    - Deletes alert history for matching alerts
+    - Deletes alert suppressions/snoozes for matching alerts
+    - **KEEPS** alert_rules (rule definitions are preserved)
+    - This action CANNOT be undone
+    
+    **Returns:**
+    - Count of deleted records for each table
+    - Preview of what will be deleted (before deletion)
+    """
+    import logging
+    from sqlalchemy import text, and_, or_
+    from app.models.document_upload import DocumentUpload
+    from app.models.financial_period import FinancialPeriod
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate required filters
+        if not property_ids or len(property_ids) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="property_ids is required and must contain at least one property ID"
+            )
+        
+        # Build query to find matching document_uploads
+        query = db.query(DocumentUpload.id).join(
+            FinancialPeriod, DocumentUpload.period_id == FinancialPeriod.id
+        ).filter(
+            DocumentUpload.property_id.in_(property_ids)
+        )
+        
+        # Apply optional filters
+        if year:
+            query = query.filter(FinancialPeriod.period_year == year)
+        
+        if document_type:
+            query = query.filter(DocumentUpload.document_type == document_type.value)
+        
+        if period_id:
+            query = query.filter(DocumentUpload.period_id == period_id)
+        
+        # Get matching document upload IDs
+        matching_upload_ids = [row[0] for row in query.all()]
+        
+        if not matching_upload_ids:
+            return {
+                "message": "No documents found matching the specified filters",
+                "total_deleted": 0,
+                "deletion_counts": {},
+                "matching_documents": 0,
+                "filters_applied": {
+                    "property_ids": property_ids,
+                    "year": year,
+                    "document_type": document_type.value if document_type else None,
+                    "period_id": period_id
+                }
+            }
+        
+        logger.info(f"Found {len(matching_upload_ids)} documents matching filters. Upload IDs: {matching_upload_ids[:10]}...")
+        
+        deletion_counts = {}
+        
+        # Step 1: Delete alert_history for matching committee_alerts
+        logger.info("Deleting alert_history records...")
+        from app.models.alert_history import AlertHistory
+        from app.models.committee_alert import CommitteeAlert
+        
+        committee_alert_ids = db.query(CommitteeAlert.id).filter(
+            CommitteeAlert.property_id.in_(property_ids)
+        )
+        if period_id:
+            committee_alert_ids = committee_alert_ids.filter(CommitteeAlert.financial_period_id == period_id)
+        
+        committee_alert_ids_list = [row[0] for row in committee_alert_ids.all()]
+        if committee_alert_ids_list:
+            deletion_counts['alert_history'] = db.query(AlertHistory).filter(
+                AlertHistory.alert_id.in_(committee_alert_ids_list)
+            ).delete(synchronize_session=False)
+        else:
+            deletion_counts['alert_history'] = 0
+        logger.info(f"Deleted {deletion_counts['alert_history']} alert_history records")
+        
+        # Step 2: Delete alert_snoozes for matching alerts
+        logger.info("Deleting alert_snoozes records...")
+        from app.models.alert_suppression import AlertSnooze
+        from app.models.alert_rule import AlertRule
+        from app.models.anomaly_detection import AnomalyDetection
+        
+        alert_ids_to_delete = []
+        if matching_upload_ids:
+            # Get alert IDs from alerts table
+            alert_ids_from_alerts = db.execute(
+                text("SELECT id FROM alerts WHERE document_id = ANY(:upload_ids)"),
+                {"upload_ids": matching_upload_ids}
+            ).fetchall()
+            alert_ids_to_delete.extend([row[0] for row in alert_ids_from_alerts])
+        
+        # Add committee alert IDs
+        alert_ids_to_delete.extend(committee_alert_ids_list)
+        
+        if alert_ids_to_delete:
+            deletion_counts['alert_snoozes'] = db.query(AlertSnooze).filter(
+                AlertSnooze.alert_id.in_(alert_ids_to_delete)
+            ).delete(synchronize_session=False)
+        else:
+            deletion_counts['alert_snoozes'] = 0
+        logger.info(f"Deleted {deletion_counts['alert_snoozes']} alert_snoozes records")
+        
+        # Step 3: Delete alert_suppressions for matching alerts
+        logger.info("Deleting alert_suppressions records...")
+        from app.models.alert_suppression import AlertSuppression
+        
+        if alert_ids_to_delete:
+            deletion_counts['alert_suppressions'] = db.query(AlertSuppression).filter(
+                AlertSuppression.alert_id.in_(alert_ids_to_delete)
+            ).delete(synchronize_session=False)
+        else:
+            deletion_counts['alert_suppressions'] = 0
+        logger.info(f"Deleted {deletion_counts['alert_suppressions']} alert_suppressions records")
+        
+        # Step 4: Delete committee_alerts
+        logger.info("Deleting committee_alerts records...")
+        committee_query = db.query(CommitteeAlert).filter(
+            CommitteeAlert.property_id.in_(property_ids)
+        )
+        if period_id:
+            committee_query = committee_query.filter(CommitteeAlert.financial_period_id == period_id)
+        deletion_counts['committee_alerts'] = committee_query.delete(synchronize_session=False)
+        logger.info(f"Deleted {deletion_counts['committee_alerts']} committee_alerts records")
+        
+        # Step 5: Delete alerts (from alerts table) for matching documents
+        logger.info("Deleting alerts records...")
+        if matching_upload_ids:
+            # Use raw SQL for alerts table (no model exists)
+            # Use IN clause with tuple unpacking for PostgreSQL
+            placeholders = ','.join([':id' + str(i) for i in range(len(matching_upload_ids))])
+            params = {f'id{i}': upload_id for i, upload_id in enumerate(matching_upload_ids)}
+            deletion_counts['alerts'] = db.execute(
+                text(f"DELETE FROM alerts WHERE document_id IN ({placeholders})"),
+                params
+            ).rowcount
+        else:
+            deletion_counts['alerts'] = 0
+        logger.info(f"Deleted {deletion_counts['alerts']} alerts records")
+        
+        # Step 6: Delete anomaly_detections for matching documents
+        logger.info("Deleting anomaly_detections records...")
+        if matching_upload_ids:
+            deletion_counts['anomaly_detections'] = db.query(AnomalyDetection).filter(
+                AnomalyDetection.document_id.in_(matching_upload_ids)
+            ).delete(synchronize_session=False)
+        else:
+            deletion_counts['anomaly_detections'] = 0
+        logger.info(f"Deleted {deletion_counts['anomaly_detections']} anomaly_detections records")
+        
+        # Step 7: Delete related feedback/explanation records
+        try:
+            logger.info("Deleting anomaly_feedback records...")
+            from app.models.anomaly_feedback import AnomalyFeedback
+            if matching_upload_ids:
+                # Get anomaly detection IDs first
+                anomaly_ids = db.query(AnomalyDetection.id).filter(
+                    AnomalyDetection.document_id.in_(matching_upload_ids)
+                ).all()
+                anomaly_ids_list = [row[0] for row in anomaly_ids]
+                if anomaly_ids_list:
+                    deletion_counts['anomaly_feedback'] = db.query(AnomalyFeedback).filter(
+                        AnomalyFeedback.anomaly_detection_id.in_(anomaly_ids_list)
+                    ).delete(synchronize_session=False)
+                else:
+                    deletion_counts['anomaly_feedback'] = 0
+            else:
+                deletion_counts['anomaly_feedback'] = 0
+            logger.info(f"Deleted {deletion_counts['anomaly_feedback']} anomaly_feedback records")
+        except Exception as e:
+            logger.warning(f"anomaly_feedback table may not exist: {str(e)}")
+            deletion_counts['anomaly_feedback'] = 0
+        
+        try:
+            logger.info("Deleting anomaly_explanations records...")
+            from app.models.anomaly_explanation import AnomalyExplanation
+            if matching_upload_ids:
+                # Get anomaly detection IDs first
+                anomaly_ids = db.query(AnomalyDetection.id).filter(
+                    AnomalyDetection.document_id.in_(matching_upload_ids)
+                ).all()
+                anomaly_ids_list = [row[0] for row in anomaly_ids]
+                if anomaly_ids_list:
+                    deletion_counts['anomaly_explanations'] = db.query(AnomalyExplanation).filter(
+                        AnomalyExplanation.anomaly_detection_id.in_(anomaly_ids_list)
+                    ).delete(synchronize_session=False)
+                else:
+                    deletion_counts['anomaly_explanations'] = 0
+            else:
+                deletion_counts['anomaly_explanations'] = 0
+            logger.info(f"Deleted {deletion_counts['anomaly_explanations']} anomaly_explanations records")
+        except Exception as e:
+            logger.warning(f"anomaly_explanations table may not exist: {str(e)}")
+            deletion_counts['anomaly_explanations'] = 0
+        
+        # Commit all deletions
+        db.commit()
+        
+        total_deleted = sum(deletion_counts.values())
+        
+        return {
+            "message": f"Successfully deleted anomalies, warnings, and alerts data. Total records deleted: {total_deleted}",
+            "total_deleted": total_deleted,
+            "deletion_counts": deletion_counts,
+            "matching_documents": len(matching_upload_ids),
+            "filters_applied": {
+                "property_ids": property_ids,
+                "year": year,
+                "document_type": document_type.value if document_type else None,
+                "period_id": period_id
+            },
+            "note": "alert_rules (rule definitions) were preserved and not deleted"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete filtered anomalies/warnings/alerts: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete filtered anomalies/warnings/alerts: {str(e)}"
+        )
+
+
+@router.get("/documents/anomalies-warnings-alerts/preview", status_code=status.HTTP_200_OK)
+async def preview_filtered_anomalies_warnings_alerts(
+    property_ids: Optional[List[int]] = Query(None, description="List of property IDs (required)"),
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by period year (optional)"),
+    document_type: Optional[DocumentTypeEnum] = Query(None, description="Filter by document type (optional)"),
+    period_id: Optional[int] = Query(None, description="Filter by specific period ID (optional)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview what will be deleted before actually deleting
+    
+    Returns counts of records that would be deleted without actually deleting them.
+    """
+    from sqlalchemy import text
+    from app.models.document_upload import DocumentUpload
+    from app.models.financial_period import FinancialPeriod
+    
+    if not property_ids or len(property_ids) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="property_ids is required and must contain at least one property ID"
+        )
+    
+    # Build query to find matching document_uploads
+    query = db.query(DocumentUpload.id).join(
+        FinancialPeriod, DocumentUpload.period_id == FinancialPeriod.id
+    ).filter(
+        DocumentUpload.property_id.in_(property_ids)
+    )
+    
+    if year:
+        query = query.filter(FinancialPeriod.period_year == year)
+    
+    if document_type:
+        query = query.filter(DocumentUpload.document_type == document_type.value)
+    
+    if period_id:
+        query = query.filter(DocumentUpload.period_id == period_id)
+    
+    matching_upload_ids = [row[0] for row in query.all()]
+    
+    from app.models.anomaly_detection import AnomalyDetection
+    from app.models.committee_alert import CommitteeAlert
+    
+    preview_counts = {}
+    
+    if matching_upload_ids:
+        # Count anomaly_detections
+        preview_counts['anomaly_detections'] = db.query(AnomalyDetection).filter(
+            AnomalyDetection.document_id.in_(matching_upload_ids)
+        ).count()
+        
+        # Count alerts (using raw SQL since no model exists)
+        if matching_upload_ids:
+            placeholders = ','.join([':id' + str(i) for i in range(len(matching_upload_ids))])
+            params = {f'id{i}': upload_id for i, upload_id in enumerate(matching_upload_ids)}
+            preview_counts['alerts'] = db.execute(
+                text(f"SELECT COUNT(*) FROM alerts WHERE document_id IN ({placeholders})"),
+                params
+            ).scalar()
+        else:
+            preview_counts['alerts'] = 0
+        
+        # Count committee_alerts
+        committee_query = db.query(CommitteeAlert).filter(
+            CommitteeAlert.property_id.in_(property_ids)
+        )
+        if period_id:
+            committee_query = committee_query.filter(CommitteeAlert.financial_period_id == period_id)
+        preview_counts['committee_alerts'] = committee_query.count()
+    else:
+        preview_counts = {
+            'anomaly_detections': 0,
+            'alerts': 0,
+            'committee_alerts': 0
+        }
+    
+    total_preview = sum(preview_counts.values())
+    
+    return {
+        "message": f"Preview: {total_preview} records would be deleted",
+        "total_preview": total_preview,
+        "preview_counts": preview_counts,
+        "matching_documents": len(matching_upload_ids),
+        "filters_applied": {
+            "property_ids": property_ids,
+            "year": year,
+            "document_type": document_type.value if document_type else None,
+            "period_id": period_id
+        }
+    }
 
 
 @router.get("/documents/uploads/{upload_id}/regenerate-pdf")

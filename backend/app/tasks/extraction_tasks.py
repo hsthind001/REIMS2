@@ -139,6 +139,27 @@ def extract_document(self, upload_id: int):
                 upload.extraction_status = 'failed'
                 upload.notes = "Extraction timeout: Task exceeded 9-minute processing limit"
                 db.commit()
+                
+                # Capture timeout issue for learning
+                try:
+                    from app.services.issue_capture_service import IssueCaptureService
+                    capture_service = IssueCaptureService(db)
+                    capture_service.capture_extraction_issue(
+                        error=None,
+                        error_message="Extraction timeout: Task exceeded 9-minute processing limit",
+                        extraction_engine=None,
+                        file_size=None,
+                        upload_id=upload_id,
+                        document_type=upload.document_type,
+                        context={
+                            "upload_id": upload_id,
+                            "timeout_type": "soft_time_limit",
+                            "time_limit_seconds": 540
+                        }
+                    )
+                except Exception as capture_error:
+                    logger.warning(f"Failed to capture timeout issue: {capture_error}")
+            
             db.close()
         except Exception as db_error:
             logger.error(f"Failed to update database after timeout: {db_error}")
@@ -170,6 +191,27 @@ def extract_document(self, upload_id: int):
                 upload.extraction_status = 'failed'
                 upload.notes = f"Extraction error: {str(e)}"
                 db.commit()
+                
+                # Capture issue for learning
+                try:
+                    from app.services.issue_capture_service import IssueCaptureService
+                    capture_service = IssueCaptureService(db)
+                    capture_service.capture_extraction_issue(
+                        error=e,
+                        error_message=str(e),
+                        extraction_engine=None,  # Could extract from context
+                        file_size=None,  # Could get from upload
+                        upload_id=upload_id,
+                        document_type=upload.document_type,
+                        context={
+                            "upload_id": upload_id,
+                            "property_id": upload.property_id,
+                            "period_id": upload.period_id
+                        }
+                    )
+                except Exception as capture_error:
+                    logger.warning(f"Failed to capture extraction issue: {capture_error}")
+            
             db.close()
         except Exception as db_error:
             logger.error(f"Failed to update database after exception: {db_error}")

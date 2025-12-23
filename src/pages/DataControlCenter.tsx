@@ -121,6 +121,18 @@ export default function DataControlCenter() {
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [rerunningAnomalies, setRerunningAnomalies] = useState<number | null>(null);
+  
+  // Filtered deletion state
+  const [showDeleteFiltersModal, setShowDeleteFiltersModal] = useState(false);
+  const [deleteFilters, setDeleteFilters] = useState({
+    propertyIds: [] as number[],
+    year: '' as string | number,
+    documentType: '' as string,
+    periodId: '' as string | number
+  });
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [properties, setProperties] = useState<any[]>([]);
   const [statusCounts, setStatusCounts] = useState({
     total: 0,
     completed: 0,
@@ -392,6 +404,120 @@ export default function DataControlCenter() {
     } catch (error) {
       console.error('Failed to delete history:', error);
       alert('Failed to delete history. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Load properties for filter dropdown
+  useEffect(() => {
+    const loadProperties = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/properties`, {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setProperties(data.properties || []);
+        }
+      } catch (error) {
+        console.error('Failed to load properties:', error);
+      }
+    };
+    loadProperties();
+  }, []);
+
+  // Preview what will be deleted
+  const handlePreviewDeletion = async () => {
+    if (deleteFilters.propertyIds.length === 0) {
+      alert('Please select at least one property');
+      return;
+    }
+
+    try {
+      setLoadingPreview(true);
+      const params = new URLSearchParams();
+      deleteFilters.propertyIds.forEach(id => params.append('property_ids', id.toString()));
+      if (deleteFilters.year) params.append('year', deleteFilters.year.toString());
+      if (deleteFilters.documentType) params.append('document_type', deleteFilters.documentType);
+      if (deleteFilters.periodId) params.append('period_id', deleteFilters.periodId.toString());
+
+      const response = await fetch(`${API_BASE_URL}/documents/anomalies-warnings-alerts/preview?${params}`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPreviewData(data);
+      } else {
+        const error = await response.json();
+        alert(`Failed to preview: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to preview deletion:', error);
+      alert('Failed to preview deletion. Please try again.');
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  // Delete with filters
+  const handleDeleteFiltered = async () => {
+    if (deleteFilters.propertyIds.length === 0) {
+      alert('Please select at least one property');
+      return;
+    }
+
+    if (!previewData) {
+      alert('Please preview the deletion first to see what will be deleted');
+      return;
+    }
+
+    const confirmMessage = `Are you sure you want to delete ${previewData.total_preview} records?\n\n` +
+      `- Anomalies: ${previewData.preview_counts.anomaly_detections}\n` +
+      `- Alerts: ${previewData.preview_counts.alerts}\n` +
+      `- Committee Alerts: ${previewData.preview_counts.committee_alerts}\n\n` +
+      `This action cannot be undone.`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      const params = new URLSearchParams();
+      deleteFilters.propertyIds.forEach(id => params.append('property_ids', id.toString()));
+      if (deleteFilters.year) params.append('year', deleteFilters.year.toString());
+      if (deleteFilters.documentType) params.append('document_type', deleteFilters.documentType);
+      if (deleteFilters.periodId) params.append('period_id', deleteFilters.periodId.toString());
+
+      const response = await fetch(`${API_BASE_URL}/documents/anomalies-warnings-alerts/delete-filtered?${params}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Successfully deleted ${data.total_deleted} records!\n\n` +
+          `- Anomalies: ${data.deletion_counts.anomaly_detections}\n` +
+          `- Alerts: ${data.deletion_counts.alerts}\n` +
+          `- Committee Alerts: ${data.deletion_counts.committee_alerts}`);
+        setShowDeleteFiltersModal(false);
+        setPreviewData(null);
+        setDeleteFilters({
+          propertyIds: [],
+          year: '',
+          documentType: '',
+          periodId: ''
+        });
+        loadData(); // Reload the data
+      } else {
+        const error = await response.json();
+        alert(`Failed to delete: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete:', error);
+      alert('Failed to delete. Please try again.');
     } finally {
       setDeleting(false);
     }
@@ -1995,9 +2121,195 @@ export default function DataControlCenter() {
                     >
                       {deleting ? 'Deleting...' : 'Delete All History'}
                     </Button>
+                    <Button 
+                      variant="warning" 
+                      icon={<Filter className="w-4 h-4" />} 
+                      onClick={() => setShowDeleteFiltersModal(true)}
+                      disabled={deleting}
+                    >
+                      Delete with Filters
+                    </Button>
                   </div>
                 </div>
               </div>
+
+              {/* Filtered Deletion Modal */}
+              {showDeleteFiltersModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-background rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-2xl font-bold text-text-primary">Delete Anomalies, Warnings & Alerts</h2>
+                      <button
+                        onClick={() => {
+                          setShowDeleteFiltersModal(false);
+                          setPreviewData(null);
+                        }}
+                        className="text-text-secondary hover:text-text-primary"
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Property Selection (Required) */}
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-text-primary">
+                          Properties <span className="text-danger">*</span>
+                        </label>
+                        <div className="border border-border rounded p-2 max-h-40 overflow-y-auto">
+                          {properties.length === 0 ? (
+                            <p className="text-text-secondary text-sm">Loading properties...</p>
+                          ) : (
+                            properties.map((prop) => (
+                              <label key={prop.id} className="flex items-center space-x-2 py-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={deleteFilters.propertyIds.includes(prop.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setDeleteFilters({
+                                        ...deleteFilters,
+                                        propertyIds: [...deleteFilters.propertyIds, prop.id]
+                                      });
+                                    } else {
+                                      setDeleteFilters({
+                                        ...deleteFilters,
+                                        propertyIds: deleteFilters.propertyIds.filter(id => id !== prop.id)
+                                      });
+                                    }
+                                    setPreviewData(null); // Reset preview when filters change
+                                  }}
+                                  className="rounded"
+                                />
+                                <span className="text-sm text-text-primary">
+                                  {prop.property_code} - {prop.property_name || 'Unnamed'}
+                                </span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                        {deleteFilters.propertyIds.length > 0 && (
+                          <p className="text-xs text-text-secondary mt-1">
+                            {deleteFilters.propertyIds.length} property(ies) selected
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Year Filter (Optional) */}
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-text-primary">
+                          Year (Optional)
+                        </label>
+                        <input
+                          type="number"
+                          min="2000"
+                          max="2100"
+                          value={deleteFilters.year}
+                          onChange={(e) => {
+                            setDeleteFilters({ ...deleteFilters, year: e.target.value });
+                            setPreviewData(null);
+                          }}
+                          placeholder="e.g., 2023"
+                          className="w-full px-3 py-2 border border-border rounded bg-background text-text-primary"
+                        />
+                      </div>
+
+                      {/* Document Type Filter (Optional) */}
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-text-primary">
+                          Document Type (Optional)
+                        </label>
+                        <select
+                          value={deleteFilters.documentType}
+                          onChange={(e) => {
+                            setDeleteFilters({ ...deleteFilters, documentType: e.target.value });
+                            setPreviewData(null);
+                          }}
+                          className="w-full px-3 py-2 border border-border rounded bg-background text-text-primary"
+                        >
+                          <option value="">All Types</option>
+                          <option value="balance_sheet">Balance Sheet</option>
+                          <option value="income_statement">Income Statement</option>
+                          <option value="cash_flow">Cash Flow</option>
+                          <option value="rent_roll">Rent Roll</option>
+                          <option value="mortgage_statement">Mortgage Statement</option>
+                        </select>
+                      </div>
+
+                      {/* Period ID Filter (Optional) */}
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-text-primary">
+                          Period ID (Optional)
+                        </label>
+                        <input
+                          type="number"
+                          value={deleteFilters.periodId}
+                          onChange={(e) => {
+                            setDeleteFilters({ ...deleteFilters, periodId: e.target.value });
+                            setPreviewData(null);
+                          }}
+                          placeholder="Specific period ID"
+                          className="w-full px-3 py-2 border border-border rounded bg-background text-text-primary"
+                        />
+                      </div>
+
+                      {/* Preview Section */}
+                      {previewData && (
+                        <div className="bg-info-light border border-info rounded p-4">
+                          <h3 className="font-semibold mb-2 text-text-primary">Preview</h3>
+                          <div className="space-y-1 text-sm">
+                            <p><strong>Total Records:</strong> {previewData.total_preview}</p>
+                            <p><strong>Matching Documents:</strong> {previewData.matching_documents}</p>
+                            <div className="mt-2 pt-2 border-t border-info">
+                              <p><strong>Breakdown:</strong></p>
+                              <ul className="list-disc list-inside ml-2">
+                                <li>Anomalies: {previewData.preview_counts.anomaly_detections}</li>
+                                <li>Alerts: {previewData.preview_counts.alerts}</li>
+                                <li>Committee Alerts: {previewData.preview_counts.committee_alerts}</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 pt-4">
+                        <Button
+                          variant="info"
+                          icon={<Eye className="w-4 h-4" />}
+                          onClick={handlePreviewDeletion}
+                          disabled={deleteFilters.propertyIds.length === 0 || loadingPreview}
+                        >
+                          {loadingPreview ? 'Loading...' : 'Preview Deletion'}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          icon={<Trash2 className="w-4 h-4" />}
+                          onClick={handleDeleteFiltered}
+                          disabled={!previewData || deleting || deleteFilters.propertyIds.length === 0}
+                        >
+                          {deleting ? 'Deleting...' : 'Delete'}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setShowDeleteFiltersModal(false);
+                            setPreviewData(null);
+                            setDeleteFilters({
+                              propertyIds: [],
+                              year: '',
+                              documentType: '',
+                              periodId: ''
+                            });
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="w-full">
