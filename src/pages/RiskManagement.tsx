@@ -207,8 +207,15 @@ export default function RiskManagement() {
 
       const data = await response.json()
       
+      // Ensure data.items exists and is an array
+      if (!data || !Array.isArray(data.items)) {
+        console.warn('Invalid response format:', data)
+        setRiskItems([])
+        return
+      }
+      
       // Get property names map for better display
-      const propertyMap = new Map(properties.map(p => [p.property_code, p.property_name]))
+      const propertyMap = new Map((properties || []).map(p => [p.property_code, p.property_name]))
       
       // Transform to RiskItem format
       const transformedItems: RiskItem[] = data.items.map((item: any) => {
@@ -302,6 +309,9 @@ export default function RiskManagement() {
   }
 
   const filteredItems = useMemo(() => {
+    if (!riskItems || !Array.isArray(riskItems)) {
+      return []
+    }
     let filtered = [...riskItems]
     
     if (filters.searchQuery) {
