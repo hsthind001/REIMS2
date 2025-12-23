@@ -66,12 +66,21 @@ class BatchJobStatusResponse(BaseModel):
 
 
 class BatchJobListItem(BaseModel):
-    """Batch job list item."""
+    """Batch job list item with full details for frontend display."""
     id: int
     job_name: Optional[str]
     status: str
     total_documents: int
     processed_documents: int
+    successful_count: int
+    failed_count: int
+    skipped_count: int
+    progress_pct: int
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    estimated_completion_at: Optional[datetime]
+    celery_task_id: Optional[str]
+    results_summary: Optional[Dict[str, Any]]
     created_at: datetime
     initiated_by: Optional[int]
 
