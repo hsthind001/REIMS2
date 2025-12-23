@@ -86,4 +86,3 @@ class BatchJobListItem(BaseModel):
 
     class Config:
         from_attributes = True
-
