@@ -21,7 +21,7 @@ import {
 import { propertyService } from '../lib/property'
 import { anomaliesService } from '../lib/anomalies'
 import { workflowLockService, WorkflowLock } from '../lib/workflowLocks'
-import { batchReprocessingService, BatchReprocessingJob } from '../lib/batchReprocessing'
+import { batchReprocessingService, type BatchReprocessingJob } from '../lib/batchReprocessing'
 import RiskWorkbenchTable, { RiskItem } from '../components/risk-workbench/RiskWorkbenchTable'
 import { BatchReprocessingForm } from '../components/anomalies/BatchReprocessingForm'
 import { ExportButton } from '../components/ExportButton'
