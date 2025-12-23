@@ -178,15 +178,34 @@ async def list_jobs(
             limit=limit
         )
         
-        return [BatchJobListItem(
-            id=job.id,
-            job_name=job.job_name,
-            status=job.status,
-            total_documents=job.total_documents,
-            processed_documents=job.processed_documents,
-            created_at=job.created_at,
-            initiated_by=job.initiated_by
-        ) for job in jobs]
+        # Convert jobs to list items with all required fields
+        result = []
+        for job in jobs:
+            # Calculate progress percentage
+            progress_pct = 0
+            if job.total_documents > 0:
+                progress_pct = int((job.processed_documents / job.total_documents) * 100)
+            
+            result.append(BatchJobListItem(
+                id=job.id,
+                job_name=job.job_name,
+                status=job.status,
+                total_documents=job.total_documents,
+                processed_documents=job.processed_documents,
+                successful_count=job.successful_count,
+                failed_count=job.failed_count,
+                skipped_count=job.skipped_count,
+                progress_pct=progress_pct,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+                estimated_completion_at=job.estimated_completion_at,
+                celery_task_id=job.celery_task_id,
+                results_summary=job.results_summary,
+                created_at=job.created_at,
+                initiated_by=job.initiated_by
+            ))
+        
+        return result
     
     except Exception as e:
         logger.error(f"Error listing jobs: {str(e)}", exc_info=True)
