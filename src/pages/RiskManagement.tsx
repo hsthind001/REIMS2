@@ -124,10 +124,17 @@ export default function RiskManagement() {
   const fetchProperties = async () => {
     try {
       const props = await propertyService.getAllProperties()
-      setProperties(props)
-      setDashboardStats(prev => ({ ...prev, total_properties: props.length }))
+      if (props && Array.isArray(props)) {
+        setProperties(props)
+        setDashboardStats(prev => ({ ...prev, total_properties: props.length }))
+      } else {
+        setProperties([])
+        setDashboardStats(prev => ({ ...prev, total_properties: 0 }))
+      }
     } catch (err: any) {
       console.error('Failed to fetch properties:', err)
+      setProperties([])
+      setDashboardStats(prev => ({ ...prev, total_properties: 0 }))
     }
   }
 
