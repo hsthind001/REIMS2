@@ -402,6 +402,16 @@ export default function ForensicReconciliation() {
               >
                 Refresh
               </Button>
+              {error && (
+                <Button
+                  onClick={() => window.location.hash = ''}
+                  variant="secondary"
+                  className="bg-green-600 text-white hover:bg-green-700"
+                  title="Go to Data Control Center to upload documents"
+                >
+                  📤 Upload Documents
+                </Button>
+              )}
             </div>
           </div>
         </Card>
