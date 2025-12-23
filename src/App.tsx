@@ -16,6 +16,7 @@ const BulkImport = lazy(() => import('./pages/BulkImport'))
 const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
 const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
+const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -64,6 +65,10 @@ function AppContent() {
       // If navigating to reports, ensure we're on reports page
       if (routeName === 'reports' && currentPage !== 'reports') {
         setCurrentPage('reports')
+      }
+      // If navigating to forensic-reconciliation, ensure we're on operations page
+      if (routeName === 'forensic-reconciliation' && currentPage !== 'operations') {
+        setCurrentPage('operations')
       }
     }
 
@@ -249,6 +254,10 @@ function AppContent() {
           ) : hashRoute === 'workflow-locks' ? (
             <Suspense fallback={<PageLoader />}>
               <WorkflowLocks />
+            </Suspense>
+          ) : hashRoute === 'forensic-reconciliation' ? (
+            <Suspense fallback={<PageLoader />}>
+              <ForensicReconciliation />
             </Suspense>
           ) : (
             renderPage()

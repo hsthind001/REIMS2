@@ -67,6 +67,7 @@ httpx==0.27.0.0
 pytz==2025.2
 PyYAML==6.0.3
 RapidFuzz==3.14.3
+networkx>=3.0  # Graph-based relationship mapping for forensic reconciliation
 redis==5.2.1
 six==1.17.0
 sniffio==1.3.1

@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 import logging
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 
@@ -117,6 +117,7 @@ app.include_router(review.router, prefix=settings.API_V1_STR, tags=["review"])
 app.include_router(reports.router, prefix=settings.API_V1_STR, tags=["reports"])
 app.include_router(exports.router, prefix=settings.API_V1_STR, tags=["exports"])
 app.include_router(reconciliation.router, prefix=settings.API_V1_STR, tags=["reconciliation"])
+app.include_router(forensic_reconciliation.router, prefix=settings.API_V1_STR, tags=["forensic-reconciliation"])
 app.include_router(anomalies.router, prefix=settings.API_V1_STR + "/anomalies", tags=["anomalies"])
 app.include_router(alerts.router, prefix=settings.API_V1_STR + "/alerts", tags=["alerts"])
 app.include_router(notifications.router, prefix=settings.API_V1_STR, tags=["notifications"])

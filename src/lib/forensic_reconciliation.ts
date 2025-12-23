@@ -1,0 +1,229 @@
+/**
+ * Forensic Reconciliation API Client
+ * 
+ * Provides functions to interact with forensic reconciliation endpoints
+ */
+
+import { api } from './api';
+
+export interface ForensicReconciliationSession {
+  id: number;
+  property_id: number;
+  period_id: number;
+  session_type: string;
+  status: string;
+  auditor_id?: number;
+  started_at: string | null;
+  completed_at: string | null;
+  summary?: {
+    total_matches?: number;
+    exact_matches?: number;
+    fuzzy_matches?: number;
+    calculated_matches?: number;
+    inferred_matches?: number;
+    discrepancies?: number;
+    health_score?: number;
+  };
+  notes?: string;
+}
+
+export interface ForensicMatch {
+  id: number;
+  session_id: number;
+  source_document_type: string;
+  source_record_id: number;
+  target_document_type: string;
+  target_record_id: number;
+  match_type: 'exact' | 'fuzzy' | 'calculated' | 'inferred';
+  confidence_score: number;
+  amount_difference?: number;
+  amount_difference_percent?: number;
+  match_algorithm?: string;
+  relationship_type?: string;
+  relationship_formula?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'modified';
+  reviewed_by?: number;
+  reviewed_at?: string;
+  review_notes?: string;
+}
+
+export interface ForensicDiscrepancy {
+  id: number;
+  session_id: number;
+  match_id?: number;
+  discrepancy_type: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  source_value?: number;
+  target_value?: number;
+  expected_value?: number;
+  actual_value?: number;
+  difference?: number;
+  difference_percent?: number;
+  description: string;
+  suggested_resolution?: string;
+  status: 'open' | 'investigating' | 'resolved' | 'accepted';
+  resolved_by?: number;
+  resolved_at?: string;
+  resolution_notes?: string;
+}
+
+export interface ReconciliationDashboard {
+  session_id?: number;
+  session_status?: string;
+  started_at?: string;
+  summary?: any;
+  matches?: {
+    total: number;
+    by_status: Record<string, number>;
+    by_type: Record<string, number>;
+  };
+  discrepancies?: {
+    total: number;
+    by_severity: Record<string, number>;
+    by_status: Record<string, number>;
+  };
+}
+
+export interface SessionCreateRequest {
+  property_id: number;
+  period_id: number;
+  session_type?: string;
+  auditor_id?: number;
+}
+
+export interface RunReconciliationRequest {
+  use_exact?: boolean;
+  use_fuzzy?: boolean;
+  use_calculated?: boolean;
+  use_inferred?: boolean;
+  use_rules?: boolean;
+}
+
+export interface ApproveMatchRequest {
+  notes?: string;
+}
+
+export interface RejectMatchRequest {
+  reason: string;
+}
+
+export interface ResolveDiscrepancyRequest {
+  resolution_notes: string;
+  new_value?: number;
+}
+
+export const forensicReconciliationService = {
+  /**
+   * Create a new forensic reconciliation session
+   */
+  async createSession(request: SessionCreateRequest): Promise<ForensicReconciliationSession> {
+    return api.post('/forensic-reconciliation/sessions', request);
+  },
+
+  /**
+   * Get session details
+   */
+  async getSession(sessionId: number): Promise<ForensicReconciliationSession> {
+    return api.get(`/forensic-reconciliation/sessions/${sessionId}`);
+  },
+
+  /**
+   * Run reconciliation for a session
+   */
+  async runReconciliation(
+    sessionId: number,
+    request?: RunReconciliationRequest
+  ): Promise<any> {
+    return api.post(`/forensic-reconciliation/sessions/${sessionId}/run`, request || {});
+  },
+
+  /**
+   * Get matches for a session
+   */
+  async getMatches(
+    sessionId: number,
+    filters?: {
+      match_type?: string;
+      status?: string;
+      min_confidence?: number;
+    }
+  ): Promise<{ session_id: number; total: number; matches: ForensicMatch[] }> {
+    const params = new URLSearchParams();
+    if (filters?.match_type) params.append('match_type', filters.match_type);
+    if (filters?.status) params.append('status_filter', filters.status);
+    if (filters?.min_confidence !== undefined) params.append('min_confidence', filters.min_confidence.toString());
+    
+    const queryString = params.toString();
+    const url = `/forensic-reconciliation/sessions/${sessionId}/matches${queryString ? `?${queryString}` : ''}`;
+    return api.get(url);
+  },
+
+  /**
+   * Get discrepancies for a session
+   */
+  async getDiscrepancies(
+    sessionId: number,
+    filters?: {
+      severity?: string;
+      status?: string;
+    }
+  ): Promise<{ session_id: number; total: number; discrepancies: ForensicDiscrepancy[] }> {
+    const params = new URLSearchParams();
+    if (filters?.severity) params.append('severity', filters.severity);
+    if (filters?.status) params.append('status_filter', filters.status);
+    
+    const queryString = params.toString();
+    const url = `/forensic-reconciliation/sessions/${sessionId}/discrepancies${queryString ? `?${queryString}` : ''}`;
+    return api.get(url);
+  },
+
+  /**
+   * Approve a match
+   */
+  async approveMatch(matchId: number, request?: ApproveMatchRequest): Promise<any> {
+    return api.post(`/forensic-reconciliation/matches/${matchId}/approve`, request || {});
+  },
+
+  /**
+   * Reject a match
+   */
+  async rejectMatch(matchId: number, request: RejectMatchRequest): Promise<any> {
+    return api.post(`/forensic-reconciliation/matches/${matchId}/reject`, request);
+  },
+
+  /**
+   * Resolve a discrepancy
+   */
+  async resolveDiscrepancy(discrepancyId: number, request: ResolveDiscrepancyRequest): Promise<any> {
+    return api.post(`/forensic-reconciliation/discrepancies/${discrepancyId}/resolve`, request);
+  },
+
+  /**
+   * Get dashboard data
+   */
+  async getDashboard(propertyId: number, periodId: number): Promise<ReconciliationDashboard> {
+    return api.get(`/forensic-reconciliation/dashboard/${propertyId}/${periodId}`);
+  },
+
+  /**
+   * Get health score
+   */
+  async getHealthScore(propertyId: number, periodId: number): Promise<any> {
+    return api.get(`/forensic-reconciliation/health-score/${propertyId}/${periodId}`);
+  },
+
+  /**
+   * Complete a session
+   */
+  async completeSession(sessionId: number): Promise<any> {
+    return api.post(`/forensic-reconciliation/sessions/${sessionId}/complete`);
+  },
+
+  /**
+   * Validate matches and calculate health score
+   */
+  async validateSession(sessionId: number): Promise<any> {
+    return api.post(`/forensic-reconciliation/sessions/${sessionId}/validate`);
+  },
+};
+

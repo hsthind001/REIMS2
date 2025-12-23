@@ -2590,13 +2590,169 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2025-12-23T00:30:00.525Z"
+      },
+      {
+        "id": "82",
+        "title": "Create Database Schema for Forensic Reconciliation System",
+        "description": "Design and implement a database schema for the forensic reconciliation system with three new tables and an Alembic migration file.",
+        "details": "Create three tables: `forensic_reconciliation_sessions`, `forensic_matches`, and `forensic_discrepancies`. \n\n1. **forensic_reconciliation_sessions**: \n   - Fields: `id` (primary key), `property_id` (foreign key), `period_id` (foreign key), `session_type` (string), `status` (string), `auditor_id` (foreign key), `summary` (JSONB).\n   - Indexes: Create indexes on `property_id`, `period_id`, and `auditor_id` for efficient querying.\n\n2. **forensic_matches**:\n   - Fields: `id` (primary key), `source_document_id` (foreign key), `target_document_id` (foreign key), `match_type` (string), `confidence_score` (float), `relationship_type` (string).\n   - Indexes: Create indexes on `source_document_id` and `target_document_id`.\n\n3. **forensic_discrepancies**:\n   - Fields: `id` (primary key), `discrepancy_type` (string), `severity` (string), `difference_amount` (float), `resolution_status` (string).\n   - Indexes: Create an index on `severity`.\n\nUse Alembic to generate a migration script that includes the creation of these tables with appropriate foreign key constraints and indexes. Ensure that the schema adheres to normalization principles and supports efficient data retrieval.",
+        "testStrategy": "1. Apply the Alembic migration to a test database to ensure tables are created with all specified fields, constraints, and indexes.\n2. Insert test data into each table to verify data integrity and constraint enforcement.\n3. Perform queries to validate data retrieval efficiency and index performance.\n4. Conduct unit tests to ensure foreign key constraints are correctly enforced and that JSONB fields handle data as expected.\n5. Review the migration script for adherence to best practices in schema design and Alembic usage.",
+        "status": "done",
+        "dependencies": [
+          "23",
+          "70"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T16:38:36.889Z"
+      },
+      {
+        "id": "83",
+        "title": "Create SQLAlchemy Models for Forensic Reconciliation",
+        "description": "Develop SQLAlchemy models for forensic reconciliation including ForensicReconciliationSession, ForensicMatch, and ForensicDiscrepancy.",
+        "details": "Create three SQLAlchemy model files following existing REIMS2 patterns:\n\n1. **ForensicReconciliationSession**:\n   - Fields: `id` (primary key), `property_id` (foreign key), `period_id` (foreign key), `session_type` (string), `status` (string), `auditor_id` (foreign key), `summary` (JSONB).\n   - Relationships: Link to Property, FinancialPeriod, and User models.\n   - Indexes: Create indexes on `property_id`, `period_id`, and `auditor_id`.\n\n2. **ForensicMatch**:\n   - Fields: `id` (primary key), `source_document` (string), `target_document` (string), `match_metadata` (JSONB), `review_status` (string).\n   - Relationships: Define necessary relationships for document linking.\n   - Indexes: Consider indexing `source_document` and `target_document` for performance.\n\n3. **ForensicDiscrepancy**:\n   - Fields: `id` (primary key), `discrepancy_details` (JSONB), `resolution_status` (string), `resolution_date` (datetime).\n   - Relationships: Track resolution progress and link to relevant sessions.\n   - Indexes: Index `resolution_status` for quick filtering.\n\nEnsure all models adhere to existing naming conventions and ORM practices used in the REIMS2 project.",
+        "testStrategy": "1. Implement unit tests for each model to verify field definitions, relationships, and constraints.\n2. Use a test database to apply migrations and ensure models are created correctly.\n3. Insert test data to validate relationships and indexing performance.\n4. Conduct integration tests to ensure models interact correctly with existing database tables and ORM layers.",
+        "status": "done",
+        "dependencies": [
+          "23",
+          "82"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T16:38:42.955Z"
+      },
+      {
+        "id": "84",
+        "title": "Implement Matching Engines in matching_engines.py",
+        "description": "Develop four matching engines using open source tools and implement a confidence scoring algorithm.",
+        "details": "Create a Python module named `matching_engines.py` containing four classes: `ExactMatchEngine`, `FuzzyMatchEngine`, `CalculatedMatchEngine`, and `InferredMatchEngine`. \n\n1. **ExactMatchEngine**: Implement logic to match transactions based on exact account code and amount.\n\n2. **FuzzyMatchEngine**: Use the `rapidfuzz` library to perform string similarity matching. Ensure `rapidfuzz>=3.0.0` is added to `requirements.txt`.\n\n3. **CalculatedMatchEngine**: Develop functionality to match transactions based on predefined formulas, such as Net Income = Current Period Earnings.\n\n4. **InferredMatchEngine**: Implement a machine learning-based engine to suggest matches. Consider using a pre-trained model or a simple ML algorithm for initial implementation.\n\n5. **Confidence Scoring**: Develop a scoring algorithm that combines `account_match_score`, `amount_match_score`, `date_match_score`, and `context_match_score` to provide a confidence level for each match.\n\nEnsure `networkx>=3.0` is also added to `requirements.txt` for potential graph-based calculations in future enhancements.",
+        "testStrategy": "1. **Unit Tests**: Develop unit tests for each matching engine to ensure they correctly identify matches based on their respective criteria. Use mock data to simulate various matching scenarios.\n\n2. **Integration Tests**: Test the integration of all engines within the module to ensure they can be used interchangeably and produce consistent results.\n\n3. **Performance Testing**: Evaluate the performance of each engine with large datasets to ensure scalability.\n\n4. **Validation of Confidence Scoring**: Verify the accuracy and reliability of the confidence scoring algorithm by comparing its output against known match scenarios.",
+        "status": "done",
+        "dependencies": [
+          "12",
+          "25",
+          "27"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T16:40:47.585Z"
+      },
+      {
+        "id": "85",
+        "title": "Implement Cross-Document Relationship Matching Rules",
+        "description": "Develop matching rules for cross-document relationships between financial documents, returning Match objects with confidence scores.",
+        "details": "Create a Python module to implement over 10 matching rules for cross-document relationships. Each rule should compare specific fields between documents such as Balance Sheet, Income Statement, Mortgage, Rent Roll, and Cash Flow. For example, match 'Current Period Earnings' from the Balance Sheet with 'Net Income' from the Income Statement, and 'Long-term Debt' with 'Mortgage Principal'. Implement logic to calculate confidence scores for each match and return Match objects containing these scores and relationship formulas. Use existing matching engines from `matching_engines.py` to facilitate these comparisons. Ensure the module is extensible for future rules and integrates with the anomaly detection system.",
+        "testStrategy": "Develop unit tests for each matching rule to verify correct identification of relationships and calculation of confidence scores. Use mock data to simulate various document scenarios and edge cases. Create integration tests to ensure the module interacts correctly with the existing anomaly detection system and matching engines. Validate the accuracy of confidence scores and the correctness of relationship formulas.",
+        "status": "done",
+        "dependencies": [
+          "12",
+          "25",
+          "84"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T16:43:07.664Z"
+      },
+      {
+        "id": "86",
+        "title": "Implement ForensicReconciliationService with Session Management and Validation Logic",
+        "description": "Develop the ForensicReconciliationService to manage reconciliation sessions, find matches, validate discrepancies, and integrate with existing services.",
+        "details": "Create a new file `forensic_reconciliation_service.py` with the following methods:\n\n1. **start_reconciliation_session()**: Validate that necessary documents exist and create a new session entry in the database. Ensure proper session management using SQLAlchemy.\n\n2. **find_all_matches()**: Execute all matching engines and group results by match type. Integrate with existing matching logic and ensure efficient data handling.\n\n3. **validate_matches()**: Implement validation rules to identify discrepancies and calculate a health score for each match. Utilize the existing `ValidationService` for rule execution.\n\n4. **get_reconciliation_dashboard()**: Provide a summary of reconciliation statistics and match details. Ensure data is aggregated efficiently for dashboard display.\n\n5. **approve_match()/reject_match()**: Implement an auditor review workflow with an audit trail for match approval or rejection.\n\n6. **resolve_discrepancy()**: Allow auditors to resolve discrepancies with a rationale, updating the database accordingly.\n\nEnsure the service integrates seamlessly with the existing database schema and utilizes SQLAlchemy sessions effectively.",
+        "testStrategy": "1. Write unit tests for each method to ensure correct functionality and integration with the database.\n2. Conduct integration tests to verify interaction with the `ValidationService` and database models.\n3. Simulate reconciliation sessions with test data to validate session management and match finding.\n4. Test the dashboard output for accuracy and performance under various data loads.\n5. Verify the audit trail functionality for match approval/rejection and discrepancy resolution.\n6. Perform load testing to assess service performance under high transaction volumes.",
+        "status": "done",
+        "dependencies": [
+          "82",
+          "83"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T16:45:30.216Z"
+      },
+      {
+        "id": "87",
+        "title": "Implement API Router for Forensic Reconciliation",
+        "description": "Develop an API router with endpoints for forensic reconciliation and integrate authentication.",
+        "details": "Create a new file named `forensic_reconciliation.py` to define the API router. Implement the following endpoints using FastAPI:\n\n1. `POST /sessions`: Create a new forensic reconciliation session.\n2. `GET /sessions/{id}`: Retrieve details of a specific session.\n3. `POST /sessions/{id}/run`: Execute reconciliation for a session.\n4. `GET /sessions/{id}/matches`: List all matches for a session.\n5. `GET /sessions/{id}/discrepancies`: List all discrepancies for a session.\n6. `POST /matches/{id}/approve`: Approve a specific match.\n7. `POST /matches/{id}/reject`: Reject a specific match.\n8. `POST /discrepancies/{id}/resolve`: Resolve a specific discrepancy.\n9. `GET /dashboard/{property_id}/{period_id}`: Retrieve dashboard data.\n10. `GET /health-score/{property_id}/{period_id}`: Retrieve health score data.\n11. `POST /sessions/{id}/complete`: Mark a session as complete.\n\nIntegrate authentication by using the `get_current_user` dependency to secure endpoints. Register the router in `main.py` to ensure it is part of the application.",
+        "testStrategy": "1. Write unit tests for each endpoint to verify correct request handling and response structure.\n2. Use mock data to simulate different scenarios and validate endpoint functionality.\n3. Test authentication by ensuring endpoints are inaccessible without valid credentials.\n4. Perform integration tests to verify the router's interaction with the database and other services.\n5. Conduct load testing to assess performance under concurrent requests.",
+        "status": "done",
+        "dependencies": [
+          "82",
+          "83"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T16:58:51.348Z"
+      },
+      {
+        "id": "88",
+        "title": "Develop Forensic Reconciliation Dashboard Page",
+        "description": "Create a forensic reconciliation dashboard with components for match table, discrepancy panel, and health score visualization.",
+        "details": "Implement the ForensicReconciliation.tsx page using React and TypeScript. Include the ReconciliationDashboard component with summary cards, filters, and action buttons. Develop the MatchTable component with a sortable table, color-coded by confidence, and inline approve/reject functionality. Create the DiscrepancyPanel to display discrepancies grouped by severity with a resolution workflow. Implement the MatchDetailModal for side-by-side comparison and algorithm explanation. Develop the ReconciliationHealthGauge to visualize the health score with a detailed breakdown. Use Tailwind CSS for styling and ensure responsiveness. Integrate with API endpoints for real-time updates, ensuring seamless interaction with the backend services.",
+        "testStrategy": "1. Conduct unit tests for each component to ensure correct rendering and functionality. 2. Verify the sortable table and color-coded confidence indicators in the MatchTable component. 3. Test the DiscrepancyPanel for correct grouping and resolution workflow. 4. Validate the MatchDetailModal for accurate side-by-side comparison and algorithm explanation. 5. Ensure the ReconciliationHealthGauge displays the health score accurately with a detailed breakdown. 6. Perform integration tests to verify real-time updates and API interactions.",
+        "status": "done",
+        "dependencies": [
+          "83",
+          "86",
+          "87"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T17:03:55.368Z"
+      },
+      {
+        "id": "89",
+        "title": "Develop Forensic Auditing Methodology Document",
+        "description": "Create a comprehensive methodology document detailing forensic auditing principles and best practices.",
+        "details": "Write a document named `FORENSIC_RECONCILIATION_METHODOLOGY.md` in the `docs/` folder. This document should cover the following sections: 1) Forensic auditing principles, 2) Core matching relationships between all five document types, 3) Three-tier matching approach (exact, fuzzy, inferred), 4) Confidence scoring formula, 5) Open source tools used (e.g., rapidfuzz, networkx), 6) Matching rules documentation, 7) Reconciliation workflow, 8) Auditor review process, 9) Discrepancy resolution procedures, and 10) Best practices aligned with Big 5 accounting firm standards. Ensure the document is structured with clear headings and subheadings for each section. Use Markdown syntax for formatting and include code snippets or examples where applicable. Research current best practices in forensic auditing and incorporate relevant methodologies and tools.",
+        "testStrategy": "1) Review the document for completeness and accuracy against the outlined sections. 2) Validate the inclusion of current best practices and tools in forensic auditing. 3) Ensure the document is well-structured and formatted correctly in Markdown. 4) Conduct a peer review with a forensic auditing expert to verify the content's relevance and applicability. 5) Test the document's usability by having a team member follow the methodology to perform a mock forensic audit.",
+        "status": "done",
+        "dependencies": [
+          "23",
+          "82",
+          "83"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T17:05:54.551Z"
+      },
+      {
+        "id": "90",
+        "title": "Develop Comprehensive Test Suite for Forensic Reconciliation System",
+        "description": "Create unit, integration, and end-to-end tests for the forensic reconciliation system using pytest, ensuring >85% code coverage.",
+        "details": "Develop a comprehensive test suite for the forensic reconciliation system. Implement unit tests for all matching engines, including exact, fuzzy, calculated, and inferred matching. Develop integration tests for API endpoints to test session creation, match finding, and approval workflows. Create end-to-end tests using real property data to validate the full reconciliation workflow. Ensure tests cover confidence scoring accuracy, discrepancy detection, and performance, with reconciliation completing in under 30 seconds. Use pytest as the testing framework and aim for over 85% code coverage.",
+        "testStrategy": "1. Implement unit tests for each matching engine to verify correct matching logic.\n2. Develop integration tests for API endpoints to ensure correct session management and workflow execution.\n3. Conduct end-to-end tests with real property data to validate the entire reconciliation process.\n4. Measure performance to ensure reconciliation completes within 30 seconds.\n5. Use coverage tools to ensure >85% code coverage is achieved.\n6. Validate confidence scoring and discrepancy detection accuracy through test assertions.",
+        "status": "done",
+        "dependencies": [
+          "83",
+          "86",
+          "87"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T17:08:17.191Z"
+      },
+      {
+        "id": "91",
+        "title": "Deploy Forensic Reconciliation System to Staging and Production",
+        "description": "Deploy the forensic reconciliation system to staging for user acceptance testing, then to production with monitoring and documentation.",
+        "details": "1. **Prepare Staging Environment**: Update `docker-compose.yml` if necessary to ensure all services are correctly configured. Verify that all dependencies are installed and up-to-date.\n2. **Database Migrations**: Run necessary database migrations to ensure the schema is compatible with the new system.\n3. **User Acceptance Testing (UAT)**: Deploy the system to the staging environment and conduct UAT using real property data. Gather feedback from users and document any issues.\n4. **Issue Resolution**: Address any issues identified during UAT, ensuring backward compatibility with the existing reconciliation system.\n5. **Deployment Documentation**: Create comprehensive deployment documentation outlining the deployment process, rollback procedures, and system requirements.\n6. **Production Deployment**: Deploy the system to the production environment. Implement monitoring to track system performance and errors.\n7. **Post-Deployment Monitoring**: Continuously monitor the system for any anomalies or performance issues post-deployment.",
+        "testStrategy": "1. Verify that `docker-compose.yml` is correctly configured and all services start without errors.\n2. Ensure database migrations run successfully and the schema is updated as expected.\n3. Conduct UAT by simulating real-world scenarios and gathering user feedback.\n4. Validate that all identified issues are resolved and the system remains backward compatible.\n5. Review deployment documentation for completeness and accuracy.\n6. Monitor the production environment for errors and performance issues post-deployment.",
+        "status": "pending",
+        "dependencies": [
+          "83",
+          "86",
+          "87",
+          "88"
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-23T00:30:00.528Z",
-      "taskCount": 81,
-      "completedCount": 81,
+      "lastModified": "2025-12-23T17:08:17.195Z",
+      "taskCount": 91,
+      "completedCount": 90,
       "tags": [
         "frontend-redesign"
       ]

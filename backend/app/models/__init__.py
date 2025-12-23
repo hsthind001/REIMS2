@@ -77,6 +77,11 @@ from app.models.notification import Notification
 # Model performance metrics
 from app.models.model_performance_metrics import ModelPerformanceMetrics
 
+# Forensic reconciliation models
+from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+from app.models.forensic_match import ForensicMatch
+from app.models.forensic_discrepancy import ForensicDiscrepancy
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -154,4 +159,8 @@ __all__ = [
     "Notification",
     # Model performance metrics
     "ModelPerformanceMetrics",
+    # Forensic reconciliation
+    "ForensicReconciliationSession",
+    "ForensicMatch",
+    "ForensicDiscrepancy",
 ]
