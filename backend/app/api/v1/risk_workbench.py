@@ -41,6 +41,7 @@ async def get_unified_risk_items(
     
     Returns columns: type, severity, property, age, impact, status, assignee, due_date
     """
+    try:
     # Build unified query
     # 1. Anomalies
     anomalies_query = db.query(
@@ -151,10 +152,15 @@ async def get_unified_risk_items(
             logger.warning(f"Error formatting item {item.id}: {e}")
             continue
     
-    return {
-        'items': results,
-        'total': total,
-        'page': page,
-        'page_size': page_size,
-        'total_pages': (total + page_size - 1) // page_size if total > 0 else 0
-    }
+        return {
+            'items': results,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total + page_size - 1) // page_size if total > 0 else 0
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_unified_risk_items: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to load unified risk items: {str(e)}")

@@ -1113,9 +1113,14 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
     
     # Count active workflow locks
     from app.models.workflow_lock import WorkflowLock, LockStatus
-    active_locks = db.query(WorkflowLock).filter(
-        WorkflowLock.status == LockStatus.ACTIVE
-    ).count()
+    from sqlalchemy import func
+    try:
+        active_locks = db.query(func.count(WorkflowLock.id)).filter(
+            WorkflowLock.status == LockStatus.ACTIVE
+        ).scalar() or 0
+    except Exception as e:
+        logger.warning(f"Error counting workflow locks (possibly schema mismatch): {e}")
+        active_locks = 0
 
     # Alerts by committee (from committee_alerts only)
     alerts_by_committee = {}
