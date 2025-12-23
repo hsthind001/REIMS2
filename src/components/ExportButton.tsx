@@ -139,7 +139,7 @@ export function ExportButton({
       variant={variant}
       size={size}
       onClick={() => handleExport(format)}
-      disabled={disabled || exporting || data.length === 0}
+      disabled={disabled || exporting || (data && (!Array.isArray(data) || data.length === 0))}
       className={`flex items-center gap-2 ${className}`}
     >
       {exporting ? (
