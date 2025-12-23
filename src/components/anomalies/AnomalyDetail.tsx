@@ -383,7 +383,7 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip />
-              <BaKey="value" fill="#0dcaf0">
+              <Bar dataKey="value" fill="#0dcaf0">
                 {contributionData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
