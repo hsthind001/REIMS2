@@ -300,7 +300,21 @@ async def get_anomaly(
     current_user: User = Depends(get_current_user)
 ):
     """Get detailed information about a specific anomaly."""
-    anomaly = db.query(AnomalyDetection).filter(
+    from sqlalchemy.orm import load_only
+    
+    anomaly = db.query(AnomalyDetection).options(
+        load_only(
+            AnomalyDetection.id,
+            AnomalyDetection.anomaly_type,
+            AnomalyDetection.severity,
+            AnomalyDetection.message,
+            AnomalyDetection.property_id,
+            AnomalyDetection.account_code,
+            AnomalyDetection.actual_value,
+            AnomalyDetection.expected_value,
+            AnomalyDetection.detected_at
+        )
+    ).filter(
         AnomalyDetection.id == anomaly_id
     ).first()
     
@@ -346,8 +360,32 @@ async def get_anomaly_detailed(
     import time
     start_time = time.time()
     
-    # Get anomaly
-    anomaly = db.query(AnomalyDetection).filter(
+    # Get anomaly - use load_only to avoid loading columns that don't exist in DB
+    from sqlalchemy.orm import load_only
+    
+    # Load only the columns we actually use to avoid missing column errors
+    anomaly = db.query(AnomalyDetection).options(
+        load_only(
+            AnomalyDetection.id,
+            AnomalyDetection.document_id,
+            AnomalyDetection.field_name,
+            AnomalyDetection.field_value,
+            AnomalyDetection.expected_value,
+            AnomalyDetection.z_score,
+            AnomalyDetection.percentage_change,
+            AnomalyDetection.anomaly_type,
+            AnomalyDetection.severity,
+            AnomalyDetection.confidence,
+            AnomalyDetection.detected_at,
+            AnomalyDetection.detection_method,
+            AnomalyDetection.context_suppressed,
+            AnomalyDetection.suppression_reason,
+            AnomalyDetection.property_id,
+            AnomalyDetection.account_code,
+            AnomalyDetection.message,
+            AnomalyDetection.actual_value
+        )
+    ).filter(
         AnomalyDetection.id == anomaly_id
     ).first()
     
@@ -433,7 +471,15 @@ async def get_anomaly_detailed(
         from sqlalchemy import and_
         from datetime import datetime, timedelta
         
-        similar = db.query(AnomalyDetection).filter(
+        similar = db.query(AnomalyDetection).options(
+            load_only(
+                AnomalyDetection.id,
+                AnomalyDetection.detected_at,
+                AnomalyDetection.actual_value,
+                AnomalyDetection.expected_value,
+                AnomalyDetection.severity
+            )
+        ).filter(
             and_(
                 AnomalyDetection.id != anomaly_id,
                 AnomalyDetection.account_code == anomaly.account_code,
