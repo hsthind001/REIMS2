@@ -18,6 +18,7 @@ import {
 } from '../lib/workflowLocks'
 import { anomaliesService } from '../lib/anomalies'
 import { documentService } from '../lib/document'
+import { useAuth } from '../components/AuthContext'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1'
 
@@ -78,6 +79,7 @@ interface Anomaly {
 }
 
 export default function RiskManagement() {
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'alerts' | 'locks' | 'anomalies' | 'thresholds'>('alerts')
   const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<number | null>(null)
@@ -497,10 +499,15 @@ export default function RiskManagement() {
       return
     }
     
+    if (!user?.id) {
+      alert('You must be logged in to approve locks')
+      return
+    }
+    
     setActionLoading(lockId)
     try {
       await approveLock(lockId, {
-        approved_by: 1, // TODO: Get actual user ID
+        approved_by: user.id, // Get from auth context
         resolution_notes: approveNotes
       })
       setApproveNotes('')
@@ -523,10 +530,15 @@ export default function RiskManagement() {
       return
     }
     
+    if (!user?.id) {
+      alert('You must be logged in to reject locks')
+      return
+    }
+    
     setActionLoading(lockId)
     try {
       await rejectLock(lockId, {
-        rejected_by: 1, // TODO: Get actual user ID
+        rejected_by: user.id, // Get from auth context
         rejection_reason: rejectReason
       })
       setRejectReason('')
@@ -549,10 +561,15 @@ export default function RiskManagement() {
       return
     }
     
+    if (!user?.id) {
+      alert('You must be logged in to release locks')
+      return
+    }
+    
     setActionLoading(lockId)
     try {
       await releaseLock(lockId, {
-        unlocked_by: 1, // TODO: Get actual user ID
+        unlocked_by: user.id, // Get from auth context
         resolution_notes: releaseNotes
       })
       setReleaseNotes('')

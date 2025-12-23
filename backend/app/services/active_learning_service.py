@@ -1,283 +1,204 @@
 """
-Active Learning Service for Anomaly Detection
+Active Learning Service
 
-Implements active learning to improve anomaly detection accuracy over time:
-- User feedback collection and analysis
-- Pattern learning from feedback
-- Auto-suppression of learned false positives
-- Confidence calibration
-- Model retraining triggers
+Monitors false positive rate, retrains models, adjusts detector weights,
+and tracks model performance over time.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional, Any, List
 from datetime import datetime, timedelta
+from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import func, and_
+import numpy as np
+import os
 import logging
 
 from app.models.anomaly_detection import AnomalyDetection
-from app.models.anomaly_feedback import AnomalyFeedback, AnomalyLearningPattern
-from app.core.config import settings
-from app.core.feature_flags import FeatureFlags
+from app.models.anomaly_feedback import AnomalyFeedback
+from app.services.anomaly_risk_scorer import AnomalyRiskScorer
+from app.services.enhanced_anomaly_ensemble import EnhancedAnomalyEnsemble
 
 logger = logging.getLogger(__name__)
 
 
 class ActiveLearningService:
     """
-    Active learning service for improving anomaly detection through user feedback.
+    Active learning service for continuous model improvement.
     
     Features:
-    - Collects and analyzes user feedback on anomalies
-    - Learns patterns from feedback to suppress false positives
-    - Calibrates confidence scores based on historical accuracy
-    - Triggers model retraining when patterns change
+    - Monitor false positive rate
+    - Trigger retraining when FPR exceeds threshold
+    - Adjust detector weights from feedback
+    - Track model performance metrics
     """
     
     def __init__(self, db: Session):
         """Initialize active learning service."""
         self.db = db
-        self.enabled = FeatureFlags.is_active_learning_enabled()
-        self.auto_suppression_enabled = FeatureFlags.is_auto_suppression_enabled()
-        self.feedback_lookback_days = settings.FEEDBACK_LOOKBACK_DAYS
-        self.auto_suppression_threshold = settings.AUTO_SUPPRESSION_CONFIDENCE_THRESHOLD
+        self.active_learning_enabled = os.getenv('ACTIVE_LEARNING_ENABLED', 'true').lower() == 'true'
+        self.fpr_threshold = 0.25  # 25% false positive rate triggers retraining
+        self.precision_threshold = 0.70  # Precision below 70% triggers retraining
+        self.risk_scorer = AnomalyRiskScorer(db)
+        self.ensemble = EnhancedAnomalyEnsemble(db)
     
-    def record_feedback(
-        self,
-        anomaly_id: int,
-        user_id: int,
-        feedback_type: str,  # 'true_positive', 'false_positive', 'needs_review'
-        feedback_notes: Optional[str] = None,
-        business_context: Optional[Dict[str, Any]] = None
-    ) -> AnomalyFeedback:
+    def monitor_and_retrain(self) -> Dict[str, Any]:
         """
-        Record user feedback on an anomaly detection.
-        
-        Args:
-            anomaly_id: ID of the anomaly detection
-            user_id: ID of the user providing feedback
-            feedback_type: Type of feedback
-            feedback_notes: Optional notes from user
-            business_context: Optional business context information
+        Monitor model performance and trigger retraining if needed.
         
         Returns:
-            AnomalyFeedback object
+            Dict with monitoring results and retraining status
         """
-        if not self.enabled:
-            logger.warning("Active learning is disabled")
-            return None
+        if not self.active_learning_enabled:
+            return {'enabled': False, 'message': 'Active learning disabled'}
         
-        # Get anomaly
-        anomaly = self.db.query(AnomalyDetection).filter(
-            AnomalyDetection.id == anomaly_id
-        ).first()
+        # Calculate performance metrics
+        metrics = self._calculate_performance_metrics()
         
-        if not anomaly:
-            raise ValueError(f"Anomaly {anomaly_id} not found")
+        # Check if retraining needed
+        retrain_needed = False
+        retrain_reason = None
         
-        # Create feedback record
-        feedback = AnomalyFeedback(
-            anomaly_detection_id=anomaly_id,
-            user_id=user_id,
-            feedback_type=feedback_type,
-            notes=feedback_notes,
-            business_context=business_context,
-            feedback_confidence=1.0,  # User feedback is always high confidence
-            is_anomaly=feedback_type == 'true_positive',  # Set based on feedback type
-            account_code=anomaly.account_code,
-            anomaly_type=anomaly.anomaly_type,
-            severity=anomaly.severity
-        )
+        if metrics['false_positive_rate'] > self.fpr_threshold:
+            retrain_needed = True
+            retrain_reason = f"False positive rate ({metrics['false_positive_rate']:.1%}) exceeds threshold ({self.fpr_threshold:.1%})"
         
-        self.db.add(feedback)
-        self.db.commit()
-        self.db.refresh(feedback)
+        if metrics['precision'] < self.precision_threshold:
+            retrain_needed = True
+            retrain_reason = f"Precision ({metrics['precision']:.1%}) below threshold ({self.precision_threshold:.1%})"
         
-        # Analyze feedback for pattern learning
-        if feedback_type == 'false_positive':
-            self._learn_false_positive_pattern(anomaly, feedback)
-        
-        return feedback
-    
-    def _learn_false_positive_pattern(
-        self,
-        anomaly: AnomalyDetection,
-        feedback: AnomalyFeedback
-    ):
-        """
-        Learn patterns from false positive feedback to suppress similar anomalies.
-        
-        Args:
-            anomaly: The anomaly that was marked as false positive
-            feedback: The feedback record
-        """
-        if not self.auto_suppression_enabled:
-            return
-        
-        # Check if similar pattern already exists
-        existing_pattern = self.db.query(AnomalyLearningPattern).filter(
-            and_(
-                AnomalyLearningPattern.property_id == anomaly.property_id,
-                AnomalyLearningPattern.account_code == anomaly.account_code,
-                AnomalyLearningPattern.anomaly_type == anomaly.anomaly_type,
-                AnomalyLearningPattern.pattern_active == True
-            )
-        ).first()
-        
-        if existing_pattern:
-            # Update existing pattern
-            existing_pattern.occurrence_count += 1
-            existing_pattern.last_applied_at = datetime.utcnow()
-            existing_pattern.confidence = min(
-                1.0,
-                float(existing_pattern.confidence or 0.5) + 0.1
-            )
+        if retrain_needed:
+            # Trigger retraining
+            retraining_results = self._trigger_retraining(retrain_reason)
+            
+            return {
+                'enabled': True,
+                'retrain_triggered': True,
+                'retrain_reason': retrain_reason,
+                'metrics': metrics,
+                'retraining_results': retraining_results
+            }
         else:
-            # Create new pattern
-            pattern = AnomalyLearningPattern(
-                property_id=anomaly.property_id,
-                account_code=anomaly.account_code,
-                anomaly_type=anomaly.anomaly_type,
-                pattern_type='always_dismiss',  # False positives should be dismissed
-                condition=f'{{"anomaly_type": "{anomaly.anomaly_type}", "account_code": "{anomaly.account_code}"}}',
-                occurrence_count=1,
-                confidence=0.5,  # Start with moderate confidence
-                auto_suppress=True  # Enable auto-suppression
-            )
-            self.db.add(pattern)
-        
-        self.db.commit()
+            return {
+                'enabled': True,
+                'retrain_triggered': False,
+                'metrics': metrics,
+                'message': 'Performance within acceptable range'
+            }
     
-    def should_suppress_anomaly(
+    def _calculate_performance_metrics(
         self,
-        anomaly: AnomalyDetection
-    ) -> tuple[bool, Optional[AnomalyLearningPattern]]:
+        lookback_days: int = 30
+    ) -> Dict[str, float]:
         """
-        Check if an anomaly should be suppressed based on learned patterns.
-        
-        Args:
-            anomaly: The anomaly to check
+        Calculate model performance metrics from feedback.
         
         Returns:
-            Tuple of (should_suppress, pattern) where pattern is the matching pattern if found
+            Dict with precision, recall, F1-score, false positive rate
         """
-        if not self.auto_suppression_enabled:
-            return False, None
+        cutoff_date = datetime.utcnow() - timedelta(days=lookback_days)
         
-        # Find matching patterns
-        patterns = self.db.query(AnomalyLearningPattern).filter(
-            and_(
-                AnomalyLearningPattern.property_id == anomaly.property_id,
-                AnomalyLearningPattern.account_code == anomaly.account_code,
-                AnomalyLearningPattern.anomaly_type == anomaly.anomaly_type,
-                AnomalyLearningPattern.auto_suppress == True,
-                AnomalyLearningPattern.confidence >= self.auto_suppression_threshold
-            )
+        feedback = self.db.query(AnomalyFeedback).filter(
+            AnomalyFeedback.created_at >= cutoff_date
         ).all()
         
-        if patterns:
-            # Use the pattern with highest confidence
-            best_pattern = max(patterns, key=lambda p: float(p.confidence or 0))
-            return True, best_pattern
+        if len(feedback) < 10:
+            return {
+                'precision': 0.0,
+                'recall': 0.0,
+                'f1_score': 0.0,
+                'false_positive_rate': 0.0,
+                'sample_size': len(feedback)
+            }
         
-        return False, None
+        # Calculate metrics
+        true_positives = sum(1 for fb in feedback if fb.is_anomaly and fb.feedback_type == 'confirmed')
+        false_positives = sum(1 for fb in feedback if not fb.is_anomaly or fb.feedback_type == 'dismissed')
+        false_negatives = sum(1 for fb in feedback if fb.is_anomaly and fb.feedback_type == 'dismissed')
+        
+        # Precision = TP / (TP + FP)
+        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
+        
+        # Recall = TP / (TP + FN)
+        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+        
+        # F1 Score = 2 * (Precision * Recall) / (Precision + Recall)
+        f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+        
+        # False Positive Rate = FP / (FP + TN)
+        # For simplicity, assume all non-anomalies are true negatives
+        false_positive_rate = false_positives / len(feedback) if len(feedback) > 0 else 0.0
+        
+        return {
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1_score,
+            'false_positive_rate': false_positive_rate,
+            'true_positives': true_positives,
+            'false_positives': false_positives,
+            'false_negatives': false_negatives,
+            'sample_size': len(feedback)
+        }
     
-    def get_feedback_statistics(
-        self,
-        property_id: Optional[int] = None,
-        days: int = 90
-    ) -> Dict[str, Any]:
+    def _trigger_retraining(self, reason: str) -> Dict[str, Any]:
         """
-        Get feedback statistics for analysis.
+        Trigger model retraining and weight adjustment.
         
         Args:
-            property_id: Optional property ID to filter by
-            days: Number of days to look back
-        
+            reason: Reason for retraining
+            
         Returns:
-            Dictionary with feedback statistics
+            Dict with retraining results
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        logger.info(f"Triggering model retraining: {reason}")
         
-        query = self.db.query(AnomalyFeedback).join(
-            AnomalyDetection
-        ).filter(
-            AnomalyFeedback.created_at >= cutoff_date
-        )
+        # 1. Recalibrate ensemble weights
+        ensemble_weights = self.ensemble.calibrate_thresholds_from_feedback()
         
-        if property_id:
-            query = query.filter(AnomalyDetection.property_id == property_id)
+        # 2. Recalibrate risk scorer weights
+        risk_scorer_weights = self.risk_scorer.calibrate_weights_from_feedback()
         
-        feedbacks = query.all()
-        
-        stats = {
-            'total_feedback': len(feedbacks),
-            'true_positives': sum(1 for f in feedbacks if f.feedback_type == 'true_positive'),
-            'false_positives': sum(1 for f in feedbacks if f.feedback_type == 'false_positive'),
-            'needs_review': sum(1 for f in feedbacks if f.feedback_type == 'needs_review'),
-            'accuracy_rate': 0.0,
-            'false_positive_rate': 0.0
+        # 3. Log retraining event
+        retraining_log = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'reason': reason,
+            'ensemble_weights_updated': True,
+            'risk_scorer_weights_updated': True,
+            'new_weights': {
+                'ensemble': ensemble_weights,
+                'risk_scorer': risk_scorer_weights
+            }
         }
         
-        if stats['total_feedback'] > 0:
-            reviewed = stats['true_positives'] + stats['false_positives']
-            if reviewed > 0:
-                stats['accuracy_rate'] = stats['true_positives'] / reviewed
-                stats['false_positive_rate'] = stats['false_positives'] / reviewed
+        logger.info(f"Model retraining complete: {retraining_log}")
         
-        return stats
+        return retraining_log
     
-    def get_learned_patterns(
-        self,
-        property_id: Optional[int] = None,
-        active_only: bool = True
-    ) -> List[AnomalyLearningPattern]:
+    def track_model_performance(self) -> Dict[str, Any]:
         """
-        Get learned patterns for analysis or review.
-        
-        Args:
-            property_id: Optional property ID to filter by
-            active_only: Only return active patterns
+        Track and log model performance metrics over time.
         
         Returns:
-            List of AnomalyLearningPattern objects
+            Dict with performance tracking data
         """
-        query = self.db.query(AnomalyLearningPattern)
+        metrics = self._calculate_performance_metrics(lookback_days=90)
         
-        if property_id:
-            query = query.filter(AnomalyLearningPattern.property_id == property_id)
+        # Store metrics (in production, would store in model_performance_metrics table)
+        performance_log = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'metrics': metrics,
+            'status': 'healthy' if metrics['precision'] >= self.precision_threshold and metrics['false_positive_rate'] <= self.fpr_threshold else 'degraded'
+        }
         
-        if active_only:
-            query = query.filter(AnomalyLearningPattern.pattern_active == True)
+        logger.info(f"Model performance tracking: {performance_log}")
         
-        return query.order_by(
-            AnomalyLearningPattern.confidence.desc()
-        ).all()
+        return performance_log
     
-    def deactivate_pattern(
-        self,
-        pattern_id: int,
-        reason: Optional[str] = None
-    ) -> bool:
+    def adjust_detector_weights(self) -> Dict[str, float]:
         """
-        Deactivate a learned pattern (e.g., if it's no longer valid).
-        
-        Args:
-            pattern_id: ID of the pattern to deactivate
-            reason: Optional reason for deactivation
+        Adjust detector weights based on feedback.
         
         Returns:
-            True if successful
+            Updated weights dictionary
         """
-        pattern = self.db.query(AnomalyLearningPattern).filter(
-            AnomalyLearningPattern.id == pattern_id
-        ).first()
-        
-        if not pattern:
-            return False
-        
-        pattern.auto_suppress = False
-        pattern.updated_at = datetime.utcnow()
-        
-        self.db.commit()
-        return True
+        return self.risk_scorer.calibrate_weights_from_feedback()

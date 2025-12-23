@@ -821,11 +821,26 @@ export default function CommandCenter() {
         const noiSparkline = data.data.noi.map((n: number) => n / 1000000); // Convert to millions
         const occupancySparkline = data.data.occupancy;
 
-        // For DSCR, we'll need to calculate from historical data
-        // For now, use empty array - DSCR sparkline can be added later if needed
+        // Fetch DSCR historical data if a specific property is selected
         let dscrSparkline: number[] = [];
-        // TODO: Add DSCR historical data endpoint to generate sparkline
-        // For now, leave empty as DSCR calculation requires debt service data
+        if (selectedPropertyFilter !== 'all') {
+          const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
+          if (selectedProp) {
+            try {
+              const dscrResponse = await fetch(
+                `${API_BASE_URL}/metrics/${selectedProp.id}/dscr/historical?months=12`,
+                { credentials: 'include' }
+              );
+              if (dscrResponse.ok) {
+                const dscrData = await dscrResponse.json();
+                dscrSparkline = dscrData.dscr_values || [];
+              }
+            } catch (dscrErr) {
+              console.warn('Failed to load DSCR historical data:', dscrErr);
+              // Continue with empty DSCR array - sparkline will handle gracefully
+            }
+          }
+        }
 
         setSparklineData({
           value: valueSparkline,

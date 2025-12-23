@@ -9,6 +9,7 @@ from sqlalchemy import inspect
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from datetime import datetime
+import logging
 
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
@@ -18,6 +19,12 @@ from app.models.audit_trail import AuditTrail
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.document_upload import DocumentUpload
+from app.models.review_approval_chain import ReviewApprovalChain, ApprovalStatus
+from app.services.anomaly_impact_calculator import AnomalyImpactCalculator
+from app.services.dscr_monitoring_service import DSCRMonitoringService
+from functools import wraps
+
+logger = logging.getLogger(__name__)
 
 
 # Map table names to SQLAlchemy models
@@ -51,6 +58,8 @@ class ReviewService:
     
     def __init__(self, db: Session):
         self.db = db
+        self.impact_calculator = AnomalyImpactCalculator(db)
+        self.high_risk_threshold = Decimal('10000')  # $10,000 variance threshold
     
     def get_review_queue(
         self,
@@ -170,6 +179,8 @@ class ReviewService:
         """
         Approve a record (mark as reviewed without changes)
         
+        Supports dual approval for high-risk items.
+        
         Args:
             record_id: Record ID
             table_name: Table name (balance_sheet_data, etc.)
@@ -191,6 +202,13 @@ class ReviewService:
         if not record:
             raise ValueError(f"Record {record_id} not found in {table_name}")
         
+        # Check if high-risk (requires dual approval)
+        requires_dual_approval = self._requires_dual_approval(record, table_name)
+        
+        if requires_dual_approval:
+            return self._handle_dual_approval(record_id, table_name, user_id, notes, record)
+        
+        # Single approval for low-risk items
         # Already reviewed?
         if record.reviewed:
             return {
@@ -229,7 +247,8 @@ class ReviewService:
             "record_id": record_id,
             "table_name": table_name,
             "reviewed_at": record.reviewed_at,
-            "audit_trail_id": audit_entry.id
+            "audit_trail_id": audit_entry.id,
+            "dual_approval_required": False
         }
     
     def correct_record(
@@ -243,6 +262,8 @@ class ReviewService:
     ) -> Dict[str, Any]:
         """
         Correct field values in a record and mark as reviewed
+        
+        Supports dual approval for high-risk corrections.
         
         Args:
             record_id: Record ID
@@ -301,6 +322,18 @@ class ReviewService:
         if not changed_fields:
             return self.approve_record(record_id, table_name, user_id, notes)
         
+        # Calculate impact to determine if dual approval needed
+        impact = self._calculate_correction_impact(old_values, corrections, record)
+        requires_dual_approval = impact.get('requires_dual_approval', False)
+        
+        if requires_dual_approval:
+            # Use dual approval workflow for corrections
+            return self._handle_dual_approval_correction(
+                record_id, table_name, corrections, old_values, changed_fields,
+                user_id, notes, record, recalculate_metrics
+            )
+        
+        # Single approval for low-impact corrections
         # Mark as reviewed
         record.needs_review = False
         record.reviewed = True
@@ -336,7 +369,8 @@ class ReviewService:
             "new_values": corrections,
             "reviewed_at": record.reviewed_at,
             "audit_trail_id": audit_entry.id,
-            "metrics_recalculated": False
+            "metrics_recalculated": False,
+            "dual_approval_required": False
         }
         
         # Trigger metrics recalculation if needed
@@ -353,6 +387,441 @@ class ReviewService:
                 result["metrics_error"] = str(e)
         
         return result
+    
+    def _calculate_correction_impact(
+        self,
+        old_values: Dict[str, Any],
+        corrections: Dict[str, Any],
+        record: Any
+    ) -> Dict[str, Any]:
+        """
+        Calculate financial impact of corrections.
+        
+        Determines:
+        - Total variance amount
+        - Whether dual approval is required
+        - If corrections affect DSCR
+        - If corrections affect covenant compliance
+        """
+        total_variance = Decimal('0')
+        is_dscr_affecting = False
+        is_covenant_impacting = False
+        
+        # Calculate total variance
+        for field_name, new_value in corrections.items():
+            old_value = old_values.get(field_name)
+            if old_value and new_value:
+                try:
+                    variance = abs(Decimal(str(new_value)) - Decimal(str(old_value)))
+                    total_variance += variance
+                except (ValueError, TypeError):
+                    pass
+        
+        # Check if exceeds threshold
+        requires_dual_approval = total_variance > self.high_risk_threshold
+        
+        # Check for DSCR and covenant impact
+        try:
+            # Get property and period from record
+            property_id = getattr(record, 'property_id', None)
+            period_id = getattr(record, 'period_id', None)
+            
+            if property_id and period_id:
+                # Check if corrections affect DSCR-related accounts
+                dscr_affecting_accounts = self._get_dscr_affecting_accounts(record)
+                covenant_affecting_accounts = self._get_covenant_affecting_accounts(record)
+                
+                # Check if any corrected field affects DSCR
+                for field_name in corrections.keys():
+                    if field_name in dscr_affecting_accounts:
+                        is_dscr_affecting = True
+                        break
+                
+                # Check if any corrected field affects covenants
+                for field_name in corrections.keys():
+                    if field_name in covenant_affecting_accounts:
+                        is_covenant_impacting = True
+                        break
+                
+                # If DSCR-affecting, calculate actual DSCR impact
+                if is_dscr_affecting:
+                    dscr_impact = self._calculate_dscr_impact(
+                        property_id, period_id, old_values, corrections, record
+                    )
+                    is_dscr_affecting = dscr_impact.get('affects_dscr', False)
+                
+                # If covenant-affecting, check threshold proximity
+                if is_covenant_impacting:
+                    covenant_impact = self._calculate_covenant_impact(
+                        property_id, period_id, old_values, corrections, record
+                    )
+                    is_covenant_impacting = covenant_impact.get('affects_covenant', False)
+        
+        except Exception as e:
+            logger.warning(f"Error calculating DSCR/covenant impact: {e}")
+            # Default to safe values if calculation fails
+            is_dscr_affecting = False
+            is_covenant_impacting = False
+        
+        return {
+            'total_variance': float(total_variance),
+            'requires_dual_approval': requires_dual_approval,
+            'is_covenant_impacting': is_covenant_impacting,
+            'is_dscr_affecting': is_dscr_affecting
+        }
+    
+    def _get_dscr_affecting_accounts(self, record: Any) -> List[str]:
+        """
+        Get list of field names that affect DSCR calculation.
+        
+        DSCR = NOI / Total Debt Service
+        - NOI = Revenue (4xxx) - Operating Expenses (5xxx, 6xxx)
+        - Debt Service = Mortgage Interest (7010-0000)
+        """
+        dscr_fields = []
+        
+        # Check if record has account_code attribute
+        account_code = getattr(record, 'account_code', None)
+        
+        if account_code:
+            # Revenue accounts (affect NOI numerator)
+            if account_code.startswith('4'):
+                dscr_fields.append('period_amount')  # Revenue amount
+            # Operating expense accounts (affect NOI numerator)
+            elif account_code.startswith('5') or account_code.startswith('6'):
+                dscr_fields.append('period_amount')  # Expense amount
+            # Mortgage interest (affects debt service denominator)
+            elif account_code == '7010-0000' or 'mortgage' in str(account_code).lower():
+                dscr_fields.append('period_amount')  # Debt service amount
+        
+        # Also check common field names
+        if hasattr(record, 'net_operating_income'):
+            dscr_fields.append('net_operating_income')
+        if hasattr(record, 'total_debt_service'):
+            dscr_fields.append('total_debt_service')
+        
+        return dscr_fields
+    
+    def _get_covenant_affecting_accounts(self, record: Any) -> List[str]:
+        """
+        Get list of field names that affect covenant compliance.
+        
+        Covenant-affecting accounts include:
+        - DSCR-related accounts (already covered)
+        - LTV-related accounts (loan balance, property value)
+        - Occupancy-related accounts
+        - Key financial ratios
+        """
+        covenant_fields = []
+        
+        # Get DSCR-affecting accounts (covenants often include DSCR requirements)
+        covenant_fields.extend(self._get_dscr_affecting_accounts(record))
+        
+        account_code = getattr(record, 'account_code', None)
+        
+        if account_code:
+            # Loan balance accounts (affect LTV covenant)
+            if account_code.startswith('26') or account_code.startswith('24'):  # Debt accounts
+                covenant_fields.append('period_amount')
+            # Property value accounts
+            if account_code.startswith('1') and 'value' in str(account_code).lower():
+                covenant_fields.append('period_amount')
+        
+        # Common covenant-related fields
+        covenant_related_fields = [
+            'loan_balance', 'property_value', 'occupancy_rate',
+            'debt_to_equity', 'current_ratio', 'debt_service_coverage_ratio'
+        ]
+        
+        for field in covenant_related_fields:
+            if hasattr(record, field):
+                covenant_fields.append(field)
+        
+        return covenant_fields
+    
+    def _calculate_dscr_impact(
+        self,
+        property_id: int,
+        period_id: int,
+        old_values: Dict[str, Any],
+        corrections: Dict[str, Any],
+        record: Any
+    ) -> Dict[str, Any]:
+        """
+        Calculate if corrections would affect DSCR and cross thresholds.
+        
+        Returns:
+            Dict with 'affects_dscr' boolean and impact details
+        """
+        try:
+            dscr_service = DSCRMonitoringService(self.db)
+            
+            # Calculate current DSCR
+            current_dscr_result = dscr_service.calculate_dscr(property_id, period_id)
+            
+            if not current_dscr_result.get('success'):
+                return {'affects_dscr': False, 'reason': 'Could not calculate current DSCR'}
+            
+            current_dscr = Decimal(str(current_dscr_result.get('dscr', 0)))
+            threshold = DSCRMonitoringService.CRITICAL_THRESHOLD  # 1.25
+            
+            # Check if current DSCR is near threshold (within 10% buffer)
+            threshold_buffer = threshold * Decimal('0.10')  # 10% buffer
+            near_threshold = abs(current_dscr - threshold) <= threshold_buffer
+            
+            # Calculate impact of corrections
+            # For simplicity, if corrections affect NOI or debt service accounts,
+            # and we're near threshold, consider it DSCR-affecting
+            account_code = getattr(record, 'account_code', None)
+            is_noi_affecting = account_code and (
+                account_code.startswith('4') or  # Revenue
+                account_code.startswith('5') or  # Operating expenses
+                account_code.startswith('6')     # Additional operating expenses
+            )
+            is_debt_service_affecting = account_code and (
+                account_code == '7010-0000' or 'mortgage' in str(account_code).lower()
+            )
+            
+            # Calculate variance impact
+            total_variance = Decimal('0')
+            for field_name, new_value in corrections.items():
+                old_value = old_values.get(field_name)
+                if old_value and new_value:
+                    try:
+                        variance = abs(Decimal(str(new_value)) - Decimal(str(old_value)))
+                        total_variance += variance
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Significant variance (>$10,000) on DSCR-affecting accounts
+            significant_variance = total_variance > Decimal('10000')
+            
+            affects_dscr = (
+                (is_noi_affecting or is_debt_service_affecting) and
+                (near_threshold or significant_variance)
+            )
+            
+            return {
+                'affects_dscr': affects_dscr,
+                'current_dscr': float(current_dscr),
+                'threshold': float(threshold),
+                'near_threshold': near_threshold,
+                'variance': float(total_variance),
+                'significant_variance': significant_variance
+            }
+        
+        except Exception as e:
+            logger.error(f"Error calculating DSCR impact: {e}", exc_info=True)
+            return {'affects_dscr': False, 'error': str(e)}
+    
+    def _calculate_covenant_impact(
+        self,
+        property_id: int,
+        period_id: int,
+        old_values: Dict[str, Any],
+        corrections: Dict[str, Any],
+        record: Any
+    ) -> Dict[str, Any]:
+        """
+        Calculate if corrections would affect covenant compliance.
+        
+        Covenants typically include:
+        - DSCR requirements
+        - LTV (Loan-to-Value) requirements
+        - Occupancy requirements
+        - Debt service requirements
+        """
+        try:
+            # DSCR is a common covenant, so check that first
+            dscr_impact = self._calculate_dscr_impact(property_id, period_id, old_values, corrections, record)
+            
+            if dscr_impact.get('affects_dscr'):
+                return {
+                    'affects_covenant': True,
+                    'covenant_type': 'DSCR',
+                    'details': dscr_impact
+                }
+            
+            # Check for other covenant types
+            account_code = getattr(record, 'account_code', None)
+            
+            # LTV-related (loan balance or property value changes)
+            is_ltv_affecting = account_code and (
+                account_code.startswith('26') or  # Debt accounts
+                (account_code.startswith('1') and 'value' in str(account_code).lower())
+            )
+            
+            # Occupancy-related
+            is_occupancy_affecting = account_code and (
+                'occupancy' in str(account_code).lower() or
+                'rent' in str(account_code).lower()
+            )
+            
+            # Calculate variance
+            total_variance = Decimal('0')
+            for field_name, new_value in corrections.items():
+                old_value = old_values.get(field_name)
+                if old_value and new_value:
+                    try:
+                        variance = abs(Decimal(str(new_value)) - Decimal(str(old_value)))
+                        total_variance += variance
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Significant variance on covenant-related accounts
+            significant_variance = total_variance > Decimal('10000')
+            
+            affects_covenant = (
+                (is_ltv_affecting or is_occupancy_affecting) and
+                significant_variance
+            )
+            
+            return {
+                'affects_covenant': affects_covenant,
+                'covenant_types': {
+                    'ltv': is_ltv_affecting,
+                    'occupancy': is_occupancy_affecting,
+                    'dscr': dscr_impact.get('affects_dscr', False)
+                },
+                'variance': float(total_variance)
+            }
+        
+        except Exception as e:
+            logger.error(f"Error calculating covenant impact: {e}", exc_info=True)
+            return {'affects_covenant': False, 'error': str(e)}
+    
+    def _handle_dual_approval_correction(
+        self,
+        record_id: int,
+        table_name: str,
+        corrections: Dict[str, Any],
+        old_values: Dict[str, Any],
+        changed_fields: List[str],
+        user_id: int,
+        notes: Optional[str],
+        record: Any,
+        recalculate_metrics: bool
+    ) -> Dict[str, Any]:
+        """Handle dual approval for high-risk corrections."""
+        # Similar to _handle_dual_approval but for corrections
+        # Store corrections temporarily until second approval
+        
+        approval_chain = self.db.query(ReviewApprovalChain).filter(
+            ReviewApprovalChain.table_name == table_name,
+            ReviewApprovalChain.record_id == record_id
+        ).first()
+        
+        if not approval_chain:
+            approval_chain = ReviewApprovalChain(
+                table_name=table_name,
+                record_id=record_id,
+                status=ApprovalStatus.PENDING
+            )
+            self.db.add(approval_chain)
+        
+        # Store pending corrections in metadata (would use JSONB field)
+        # For now, create audit trail entry for first approval
+        if approval_chain.status == ApprovalStatus.PENDING:
+            approval_chain.first_approver_id = user_id
+            approval_chain.first_approved_at = datetime.utcnow()
+            approval_chain.first_approval_notes = notes or f"First approval for correction: {', '.join(changed_fields)}"
+            approval_chain.status = ApprovalStatus.FIRST_APPROVED
+            
+            # Store corrections in audit trail (pending)
+            audit_entry = AuditTrail(
+                table_name=table_name,
+                record_id=record_id,
+                action="correct_pending",
+                old_values=old_values,
+                new_values=corrections,
+                changed_fields=changed_fields,
+                changed_by=user_id,
+                reason=notes or f"Correction pending second approval: {', '.join(changed_fields)}"
+            )
+            self.db.add(audit_entry)
+            self.db.commit()
+            
+            return {
+                "success": True,
+                "message": "Correction submitted. Second approval required.",
+                "approval_chain_id": approval_chain.id,
+                "status": "pending_second_approval",
+                "requires_second_approval": True,
+                "changed_fields": changed_fields,
+                "audit_trail_id": audit_entry.id
+            }
+        
+        elif approval_chain.status == ApprovalStatus.FIRST_APPROVED:
+            if approval_chain.first_approver_id == user_id:
+                return {
+                    "success": False,
+                    "message": "Cannot provide both approvals. Different user required."
+                }
+            
+            # Apply corrections
+            for field_name, new_value in corrections.items():
+                if isinstance(new_value, (int, float, str)):
+                    mapper = inspect(type(record))
+                    column = mapper.columns.get(field_name)
+                    if column and str(column.type).startswith('DECIMAL'):
+                        new_value = Decimal(str(new_value))
+                setattr(record, field_name, new_value)
+            
+            # Mark as reviewed
+            record.needs_review = False
+            record.reviewed = True
+            record.reviewed_by = user_id
+            record.reviewed_at = datetime.utcnow()
+            
+            # Complete approval chain
+            approval_chain.second_approver_id = user_id
+            approval_chain.second_approved_at = datetime.utcnow()
+            approval_chain.second_approval_notes = notes or "Second approval - corrections applied"
+            approval_chain.status = ApprovalStatus.SECOND_APPROVED
+            
+            # Create final audit trail
+            audit_entry = AuditTrail(
+                table_name=table_name,
+                record_id=record_id,
+                action="correct",
+                old_values=old_values,
+                new_values=corrections,
+                changed_fields=changed_fields,
+                changed_by=user_id,
+                reason=notes or f"Correction approved and applied: {', '.join(changed_fields)}"
+            )
+            self.db.add(audit_entry)
+            self.db.commit()
+            
+            result = {
+                "success": True,
+                "message": "Dual approval completed. Corrections applied.",
+                "approval_chain_id": approval_chain.id,
+                "status": "fully_approved",
+                "changed_fields": changed_fields,
+                "reviewed_at": record.reviewed_at,
+                "audit_trail_id": audit_entry.id,
+                "metrics_recalculated": False
+            }
+            
+            # Recalculate metrics
+            if recalculate_metrics:
+                try:
+                    metrics_result = self._recalculate_metrics(
+                        property_id=record.property_id,
+                        period_id=record.period_id,
+                        table_name=table_name
+                    )
+                    result["metrics_recalculated"] = metrics_result.get("success", False)
+                except Exception as e:
+                    result["metrics_error"] = str(e)
+            
+            return result
+        
+        return {
+            "success": False,
+            "message": f"Invalid approval status: {approval_chain.status}"
+        }
     
     def _recalculate_metrics(
         self,

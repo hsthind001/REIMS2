@@ -4,7 +4,7 @@ Tracks risk alerts that require committee review/approval
 """
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, Text, Enum as SQLEnum, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from datetime import datetime
 import enum
 
@@ -124,6 +124,14 @@ class CommitteeAlert(Base):
     related_alert_ids = Column(JSONB, nullable=True)  # Array of related alert IDs
     alert_tags = Column(JSONB, nullable=True)  # Custom tags for filtering/grouping
     performance_impact = Column(String(100), nullable=True)  # Estimated impact description
+    
+    # World-class enhancement fields (from migration 20251222_0001)
+    business_impact_score = Column(Numeric(10, 4), nullable=True, index=True)  # Combined impact metric
+    sla_due_at = Column(DateTime(timezone=True), nullable=True, index=True)  # SLA deadline timestamp
+    mtta = Column(Integer, nullable=True)  # Mean time to acknowledge (minutes)
+    mttr = Column(Integer, nullable=True)  # Mean time to resolve (minutes)
+    incident_group_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # Group related alerts into incidents
+    alert_fatigue_score = Column(Numeric(5, 2), nullable=True, index=True)  # Fatigue risk indicator
 
     # Relationships
     property = relationship("Property", back_populates="committee_alerts")

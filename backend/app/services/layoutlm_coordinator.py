@@ -360,15 +360,29 @@ class LayoutLMCoordinator:
         self,
         training_data: List[Dict[str, Any]],
         epochs: int = 3,
-        learning_rate: float = 5e-5
+        learning_rate: float = 5e-5,
+        batch_size: int = 4,
+        validation_split: float = 0.2,
+        checkpoint_dir: Optional[str] = None,
+        save_best_model: bool = True
     ) -> bool:
         """
         Fine-tune LayoutLM model on custom data.
 
         Args:
-            training_data: List of training examples
+            training_data: List of training examples with format:
+                {
+                    'image': PIL.Image or path to image/PDF,
+                    'words': List[str],  # Words in the document
+                    'boxes': List[List[int]],  # Bounding boxes for each word
+                    'labels': List[int]  # Token classification labels
+                }
             epochs: Number of training epochs
             learning_rate: Learning rate
+            batch_size: Batch size for training
+            validation_split: Fraction of data to use for validation
+            checkpoint_dir: Directory to save model checkpoints
+            save_best_model: Whether to save the best model based on validation loss
 
         Returns:
             True if successful, False otherwise
@@ -377,18 +391,211 @@ class LayoutLMCoordinator:
             logger.error("LayoutLM not available for fine-tuning")
             return False
 
+        if not training_data:
+            logger.error("No training data provided")
+            return False
+
         try:
-            from torch.utils.data import DataLoader, Dataset
-            from transformers import AdamW
+            from torch.utils.data import DataLoader, Dataset, random_split
+            from transformers import AdamW, get_linear_schedule_with_warmup
+            from torch.nn import CrossEntropyLoss
+            from torch import nn
+            import torch
+            from PIL import Image
+            import os
+            from pathlib import Path
 
-            # TODO: Implement custom dataset and training loop
-            # This is a placeholder for future implementation
+            # Custom Dataset class for LayoutLM fine-tuning
+            class LayoutLMDataset(Dataset):
+                """Custom dataset for LayoutLM token classification"""
+                
+                def __init__(self, data: List[Dict[str, Any]], processor, device: str):
+                    self.data = data
+                    self.processor = processor
+                    self.device = device
+                
+                def __len__(self):
+                    return len(self.data)
+                
+                def __getitem__(self, idx):
+                    example = self.data[idx]
+                    
+                    # Load image if path provided
+                    if isinstance(example['image'], str):
+                        image = Image.open(example['image']).convert('RGB')
+                    else:
+                        image = example['image']
+                    
+                    words = example.get('words', [])
+                    boxes = example.get('boxes', [])
+                    labels = example.get('labels', [])
+                    
+                    # Process with LayoutLM processor
+                    encoding = self.processor(
+                        image,
+                        words,
+                        boxes=boxes,
+                        word_labels=labels,
+                        padding="max_length",
+                        truncation=True,
+                        return_tensors="pt"
+                    )
+                    
+                    # Move to device
+                    for key, value in encoding.items():
+                        encoding[key] = value.squeeze().to(self.device)
+                    
+                    return encoding
 
-            logger.info("Fine-tuning LayoutLM model...")
-            logger.warning("Fine-tuning not yet implemented - placeholder")
+            # Set up checkpoint directory
+            if checkpoint_dir is None:
+                checkpoint_dir = os.path.join(settings.MODEL_STORAGE_PATH, "layoutlm_checkpoints")
+            os.makedirs(checkpoint_dir, exist_ok=True)
 
+            # Switch model to training mode
+            self.model.train()
+            
+            # Create dataset
+            dataset = LayoutLMDataset(training_data, self.processor, self.device)
+            
+            # Split into train and validation
+            val_size = int(len(dataset) * validation_split)
+            train_size = len(dataset) - val_size
+            train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+            
+            # Create data loaders
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=0  # Set to 0 to avoid multiprocessing issues
+            )
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=0
+            )
+            
+            # Set up optimizer and scheduler
+            optimizer = AdamW(self.model.parameters(), lr=learning_rate)
+            total_steps = len(train_loader) * epochs
+            scheduler = get_linear_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=int(0.1 * total_steps),
+                num_training_steps=total_steps
+            )
+            
+            # Loss function
+            loss_fn = CrossEntropyLoss()
+            
+            # Training loop
+            best_val_loss = float('inf')
+            training_history = []
+            
+            logger.info(f"Starting fine-tuning for {epochs} epochs with {len(train_dataset)} training samples")
+            
+            for epoch in range(epochs):
+                # Training phase
+                self.model.train()
+                train_loss = 0.0
+                
+                for batch_idx, batch in enumerate(train_loader):
+                    optimizer.zero_grad()
+                    
+                    # Forward pass
+                    outputs = self.model(**batch)
+                    logits = outputs.logits
+                    
+                    # Calculate loss
+                    labels = batch['labels']
+                    loss = loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+                    
+                    # Backward pass
+                    loss.backward()
+                    
+                    # Gradient clipping for stability
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    
+                    optimizer.step()
+                    scheduler.step()
+                    
+                    train_loss += loss.item()
+                    
+                    if (batch_idx + 1) % 10 == 0:
+                        logger.info(
+                            f"Epoch {epoch + 1}/{epochs}, Batch {batch_idx + 1}/{len(train_loader)}, "
+                            f"Loss: {loss.item():.4f}"
+                        )
+                
+                avg_train_loss = train_loss / len(train_loader)
+                
+                # Validation phase
+                self.model.eval()
+                val_loss = 0.0
+                
+                with torch.no_grad():
+                    for batch in val_loader:
+                        outputs = self.model(**batch)
+                        logits = outputs.logits
+                        labels = batch['labels']
+                        loss = loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+                        val_loss += loss.item()
+                
+                avg_val_loss = val_loss / len(val_loader)
+                
+                logger.info(
+                    f"Epoch {epoch + 1}/{epochs} - "
+                    f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
+                )
+                
+                training_history.append({
+                    'epoch': epoch + 1,
+                    'train_loss': avg_train_loss,
+                    'val_loss': avg_val_loss
+                })
+                
+                # Save checkpoint
+                checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch + 1}.pt")
+                torch.save({
+                    'epoch': epoch + 1,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'train_loss': avg_train_loss,
+                    'val_loss': avg_val_loss,
+                }, checkpoint_path)
+                logger.info(f"Checkpoint saved: {checkpoint_path}")
+                
+                # Save best model
+                if save_best_model and avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
+                    torch.save({
+                        'epoch': epoch + 1,
+                        'model_state_dict': self.model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'val_loss': avg_val_loss,
+                    }, best_model_path)
+                    logger.info(f"Best model saved: {best_model_path} (Val Loss: {avg_val_loss:.4f})")
+            
+            # Load best model if available
+            if save_best_model:
+                best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
+                if os.path.exists(best_model_path):
+                    checkpoint = torch.load(best_model_path, map_location=self.device)
+                    self.model.load_state_dict(checkpoint['model_state_dict'])
+                    logger.info(f"Loaded best model from {best_model_path}")
+            
+            # Switch back to eval mode
+            self.model.eval()
+            
+            logger.info("Fine-tuning completed successfully")
             return True
 
+        except ImportError as e:
+            logger.error(f"Required library not available for fine-tuning: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error fine-tuning model: {e}")
+            logger.error(f"Error fine-tuning model: {e}", exc_info=True)
             return False

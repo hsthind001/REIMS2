@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": "66",
+        "id": 66,
         "title": "Integrate GPU Acceleration into PyOD Detector",
         "description": "Enhance the PyOD anomaly detector with GPU acceleration for improved performance.",
         "details": "Import `GPUAcceleratedDetector` from `app.services.gpu_accelerated_detector`. Initialize the GPU detector in the `__init__` method. Modify `detect_anomalies()` to check GPU availability and use it for batch predictions. Implement a fallback to CPU if GPU is unavailable. Add logic for GPU device selection and log performance metrics.",
@@ -14,7 +14,7 @@
         "updatedAt": "2025-12-21T21:47:23.072Z"
       },
       {
-        "id": "67",
+        "id": 67,
         "title": "Integrate Incremental Learning into Model Training",
         "description": "Implement incremental learning to optimize model training efficiency.",
         "details": "Import `IncrementalLearningService` and modify the training flow to use `incremental_fit()` when applicable. Check for cached models and update the cache post-training. Track statistics like speedup and accuracy changes. Implement a feature flag for incremental learning and handle model compatibility.",
@@ -26,7 +26,7 @@
         "updatedAt": "2025-12-21T21:48:39.105Z"
       },
       {
-        "id": "68",
+        "id": 68,
         "title": "Add Parallel Processing with Celery Groups",
         "description": "Implement parallel processing for anomaly detection using Celery.",
         "details": "Create `detect_anomalies_parallel()` Celery task using `celery.group()` for batch detection. Support up to 4 workers and aggregate results. Update `run_nightly_anomaly_detection` to utilize parallel processing. Implement error handling for parallel execution.",
@@ -38,7 +38,7 @@
         "updatedAt": "2025-12-21T21:50:00.654Z"
       },
       {
-        "id": "69",
+        "id": 69,
         "title": "Create Model Optimization API",
         "description": "Develop API endpoints for model optimization features.",
         "details": "Create endpoints in `backend/app/api/v1/model_optimization.py` for GPU status, enabling GPU, incremental stats, retraining, and performance metrics. Ensure proper authentication and error handling. Optimize response times to be under 200ms.",
@@ -50,7 +50,7 @@
         "updatedAt": "2025-12-21T21:51:11.955Z"
       },
       {
-        "id": "70",
+        "id": 70,
         "title": "Create Enhanced Anomaly Detail API",
         "description": "Develop a comprehensive API endpoint for detailed anomaly information.",
         "details": "Implement `GET /api/v1/anomalies/{anomaly_id}/detailed` to return detailed anomaly data including explanations, feedback, and model information. Ensure data aggregation and response time under 500ms.",
@@ -62,7 +62,7 @@
         "updatedAt": "2025-12-21T21:52:12.320Z"
       },
       {
-        "id": "71",
+        "id": 71,
         "title": "Add WebSocket for Batch Job Updates",
         "description": "Implement WebSocket for real-time updates on batch jobs.",
         "details": "Create WebSocket endpoint `WS /ws/batch-job/{job_id}` to send updates every 2 seconds. Include job status, progress, and ETA. Support multiple clients and handle disconnections gracefully.",
@@ -74,7 +74,7 @@
         "updatedAt": "2025-12-21T21:53:45.747Z"
       },
       {
-        "id": "72",
+        "id": 72,
         "title": "Create Anomaly Export Service",
         "description": "Develop a service to export anomalies in various formats.",
         "details": "Implement `anomaly_export_service.py` to export anomalies to CSV, XLSX, and JSON. Include filtering options and handle large exports efficiently with streaming and chunked processing.",
@@ -86,7 +86,7 @@
         "updatedAt": "2025-12-21T21:55:08.251Z"
       },
       {
-        "id": "73",
+        "id": 73,
         "title": "Add Anomaly Export API Endpoints",
         "description": "Create API endpoints for exporting anomalies.",
         "details": "Add endpoints in `backend/app/api/v1/anomalies.py` for exporting anomalies in CSV, Excel, and JSON formats. Ensure authentication, proper headers, and error handling.",
@@ -98,7 +98,7 @@
         "updatedAt": "2025-12-21T21:56:35.662Z"
       },
       {
-        "id": "74",
+        "id": 74,
         "title": "Create Uncertain Anomalies Endpoint",
         "description": "Develop an API endpoint to identify anomalies needing feedback.",
         "details": "Implement `GET /api/v1/anomalies/uncertain?limit=10` to return anomalies sorted by uncertainty score. Include anomaly details and apply filters for confidence and feedback count.",
@@ -110,7 +110,7 @@
         "updatedAt": "2025-12-21T21:57:16.388Z"
       },
       {
-        "id": "75",
+        "id": 75,
         "title": "Create Portfolio Analytics API",
         "description": "Develop API endpoints for portfolio-wide analytics.",
         "details": "Create endpoints in `backend/app/api/v1/portfolio_analytics.py` for calculating benchmarks, retrieving analytics, property comparison, and identifying outliers. Use `CrossPropertyIntelligenceService` for calculations.",
@@ -122,7 +122,7 @@
         "updatedAt": "2025-12-21T21:58:09.894Z"
       },
       {
-        "id": "76",
+        "id": 76,
         "title": "Update Main Router",
         "description": "Register new routers in the main application file.",
         "details": "Import and register `model_optimization` and `portfolio_analytics` routers in `backend/app/main.py`. Ensure proper OpenAPI documentation and verify existing WebSocket registration.",
@@ -134,7 +134,7 @@
         "updatedAt": "2025-12-21T21:59:18.452Z"
       },
       {
-        "id": "77",
+        "id": 77,
         "title": "Create Pydantic Schemas",
         "description": "Define Pydantic schemas for API requests and responses.",
         "details": "Create schemas in `backend/app/schemas/anomaly_export.py` for various API requests and responses. Ensure proper field descriptions, validation rules, and type hints.",
@@ -146,7 +146,7 @@
         "updatedAt": "2025-12-21T22:00:04.002Z"
       },
       {
-        "id": "78",
+        "id": 78,
         "title": "Testing and Verification",
         "description": "Conduct comprehensive testing and verification of all features.",
         "details": "Perform tests for GPU integration, incremental learning, parallel processing, and all new APIs. Conduct integration and performance testing to ensure all components work together seamlessly.",
@@ -165,7 +165,9 @@
       "completedCount": 13,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2025-12-22T22:20:20.288Z",
+      "description": "Tasks for master context"
     }
   },
   "sprint2": {
@@ -1406,9 +1408,9 @@
         "testStrategy": "Verify environment setup by running a simple React app and a FastAPI endpoint.",
         "priority": "medium",
         "dependencies": [],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [],
-        "updatedAt": "2025-12-21T19:27:46.195Z"
+        "updatedAt": "2025-12-22T23:22:25.719Z"
       },
       {
         "id": "2",
@@ -1498,8 +1500,9 @@
         "dependencies": [
           "1"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:05.239Z"
       },
       {
         "id": "9",
@@ -1511,8 +1514,9 @@
         "dependencies": [
           "8"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:06.484Z"
       },
       {
         "id": "10",
@@ -1524,8 +1528,9 @@
         "dependencies": [
           "9"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:37.447Z"
       },
       {
         "id": "11",
@@ -1537,8 +1542,9 @@
         "dependencies": [
           "10"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:20.506Z"
       },
       {
         "id": "12",
@@ -1550,8 +1556,9 @@
         "dependencies": [
           "8"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:21.926Z"
       },
       {
         "id": "13",
@@ -1563,8 +1570,9 @@
         "dependencies": [
           "1"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:38.513Z"
       },
       {
         "id": "14",
@@ -1576,8 +1584,9 @@
         "dependencies": [
           "13"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:23.152Z"
       },
       {
         "id": "15",
@@ -1589,8 +1598,9 @@
         "dependencies": [
           "12"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:24.258Z"
       },
       {
         "id": "16",
@@ -1602,8 +1612,9 @@
         "dependencies": [
           "4"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:07.855Z"
       },
       {
         "id": "17",
@@ -1615,8 +1626,9 @@
         "dependencies": [
           "16"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:09.335Z"
       },
       {
         "id": "18",
@@ -1628,8 +1640,9 @@
         "dependencies": [
           "17"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:10.462Z"
       },
       {
         "id": "19",
@@ -1641,8 +1654,9 @@
         "dependencies": [
           "11"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:18:48.786Z"
       },
       {
         "id": "20",
@@ -1654,15 +1668,935 @@
         "dependencies": [
           "19"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:22:07.380Z"
+      },
+      {
+        "id": "21",
+        "title": "Extend Anomaly Detection Schema",
+        "description": "Add new fields to the anomaly_detections table and create an Alembic migration file.",
+        "details": "Extend the existing anomaly_detections table by adding the following fields: anomaly_score (integer, 0-100), impact_amount (decimal), direction (enum: 'up', 'down'), root_cause_candidates (JSONB), baseline_type (enum: 'mean', 'seasonal', 'forecast', 'peer-group'), correlation_id (UUID), suppressed_until (timestamp), suppression_reason (text), anomaly_category (enum: 'data-quality', 'accounting', 'performance', 'covenant', 'extraction'), pattern_type (enum: 'point', 'trend', 'seasonality', 'structure'), is_one_off (boolean), is_recurrent (boolean), cross_property_pattern (boolean). Use Alembic to generate a migration script that applies these changes to the database schema. Ensure that the new fields are indexed appropriately for performance optimization, especially for fields like correlation_id and anomaly_category. Follow best practices for database migrations, including testing in a staging environment before production deployment.",
+        "testStrategy": "Verify the migration script by applying it to a test database and ensuring all fields are added correctly. Check that the data types and constraints are enforced as expected. Use test data to insert and query records, ensuring that the new fields function correctly. Validate that the indexing improves query performance for common queries involving the new fields. Conduct regression testing to ensure existing functionality is unaffected.",
+        "status": "done",
+        "dependencies": [
+          "19"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:28:31.507Z"
+      },
+      {
+        "id": "22",
+        "title": "Extend Alert Schema with New Fields",
+        "description": "Add new fields to the committee_alerts table and create an Alembic migration file.",
+        "details": "Extend the existing committee_alerts table by adding the following fields: business_impact_score (integer), sla_due_at (timestamp), mtta (integer, representing minutes), mttr (integer, representing minutes), incident_group_id (UUID), and alert_fatigue_score (integer). Create an Alembic migration script to apply these changes to the database schema. Ensure that each new field is appropriately indexed and constraints are applied where necessary. Update any related ORM models to reflect these changes.",
+        "testStrategy": "Apply the Alembic migration script to a test database and verify that all new fields are added correctly with the appropriate data types and constraints. Use test data to insert and query records, ensuring that the new fields function as expected. Validate that indexing and constraints are enforced. Conduct regression testing to ensure existing functionality is unaffected.",
+        "status": "done",
+        "dependencies": [
+          "21"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:29:15.942Z"
+      },
+      {
+        "id": "23",
+        "title": "Create Data Quality Schema",
+        "description": "Develop a new data_quality.py model and data_quality_scores table with specified fields and create an Alembic migration.",
+        "details": "Create a new Python model file named data_quality.py to define the DataQuality model. The model should include fields: document_id, period_id, property_id, quality_index (integer, 0-100), completeness, consistency, timeliness, validity (all as floats), extraction_confidence_avg, match_confidence_avg (both as floats), unmatched_accounts_count, and manual_corrections_count (both as integers). Ensure that document_id, period_id, and property_id are foreign keys referencing their respective tables. Implement validation logic to ensure quality_index is between 0 and 100. Create an Alembic migration script to generate the data_quality_scores table with the defined schema. Ensure all fields are indexed appropriately for performance optimization.",
+        "testStrategy": "Apply the Alembic migration to a test database and verify the table creation with all fields and constraints. Insert test data to ensure the model handles data correctly and constraints are enforced. Query the table to validate data retrieval and indexing efficiency. Conduct unit tests on the model to ensure validation logic works as expected.",
+        "status": "done",
+        "dependencies": [
+          "6",
+          "9"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:30:29.434Z"
+      },
+      {
+        "id": "24",
+        "title": "Implement Seasonal Baseline Detection Service",
+        "description": "Develop the seasonal_anomaly_detector.py service using Statsmodels STL decomposition for seasonal baseline detection.",
+        "details": "Create a new Python service, seasonal_anomaly_detector.py, utilizing the Statsmodels library to perform STL decomposition for seasonal baseline detection. Implement calculations for expected values using year-over-year (YoY) comparisons, a rolling 3-year month-of-year average, and seasonal index adjustments. Integrate this service with the existing AnomalyDetectionService, ensuring it can set baseline_type='seasonal' in anomaly records. Ensure the service is modular and can be easily updated or extended for future enhancements. Consider performance optimizations for handling large datasets and ensure the service is scalable.",
+        "testStrategy": "Develop unit tests to verify the accuracy of STL decomposition and expected value calculations. Create integration tests to ensure seamless interaction with the AnomalyDetectionService, including setting the baseline_type correctly. Perform load testing to assess performance under typical and peak data volumes. Validate the service against historical data to ensure it accurately detects seasonal anomalies.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "15"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:38:51.309Z"
+      },
+      {
+        "id": "25",
+        "title": "Implement Forecast-Residual Detection Service",
+        "description": "Develop the forecast_anomaly_detector.py service using ARIMA and ETS models to detect anomalies in forecast residuals.",
+        "details": "Create a Python service named forecast_anomaly_detector.py. Utilize the Statsmodels library to implement ARIMA models for time series with 12 or more periods and ETS models for shorter series. Calculate residuals as the difference between actual and forecasted values. Implement anomaly detection on residuals using the Z-score method. Ensure the service can handle data grouped by property and account group. Set 'baseline_type' to 'forecast' and include 'forecast_method' in anomaly records. Ensure modularity for easy updates and integration with existing systems.",
+        "testStrategy": "Develop unit tests to verify the accuracy of ARIMA and ETS model implementations and residual calculations. Create integration tests to ensure correct anomaly detection using Z-scores. Validate that the service correctly sets 'baseline_type' and 'forecast_method' in records. Perform load testing to assess performance under typical and peak conditions.",
+        "status": "done",
+        "dependencies": [
+          "15",
+          "21"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:41:20.513Z"
+      },
+      {
+        "id": "26",
+        "title": "Implement Robust Statistics for Anomaly Detection",
+        "description": "Develop the robust_anomaly_detector.py service using Median Absolute Deviation (MAD) for outlier detection.",
+        "details": "Create a Python service named robust_anomaly_detector.py. Implement the calculation of Median Absolute Deviation (MAD) to replace the standard deviation in anomaly detection. Use the robust Z-score formula: (value - median) / MAD, which is more resilient to outliers compared to the traditional Z-score. Integrate this service as an alternative detection method alongside the existing standard Z-score method. Ensure the service can handle data grouped by property and account group. Utilize libraries such as NumPy and SciPy for efficient computation of median and MAD. Ensure the service is modular to allow easy updates and integration with existing anomaly detection frameworks.",
+        "testStrategy": "Develop unit tests to verify the accuracy of median and MAD calculations. Create integration tests to ensure the robust_anomaly_detector.py service correctly identifies anomalies using the robust Z-score method. Compare results with the standard Z-score method to validate improved outlier resilience. Perform load testing to assess performance under typical and peak data loads.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:41:46.911Z"
+      },
+      {
+        "id": "27",
+        "title": "Implement Cross-Statement Consistency Checks",
+        "description": "Develop the cross_statement_anomaly_detector.py service for validating financial statement relationships.",
+        "details": "Create a Python service named cross_statement_anomaly_detector.py to perform cross-statement consistency checks. Implement validation rules for cash flow vs balance sheet roll-forward, NOI vs revenue/opex component drill-down, and DSCR change explanation (NOI change vs debt service change). Use Pandas for data manipulation and ensure the service can handle data grouped by property and account group. Integrate logging for detected anomalies and ensure the service is modular for future rule additions. Follow best practices for code readability and maintainability.",
+        "testStrategy": "Develop unit tests to verify the accuracy of each validation rule. Create integration tests to ensure the service correctly identifies inconsistencies across statements. Perform load testing to assess performance with large datasets. Validate logging functionality for detected anomalies and ensure modularity for adding new rules.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "15"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:43:04.108Z"
+      },
+      {
+        "id": "28",
+        "title": "Implement Unified Risk Score Engine",
+        "description": "Develop the anomaly_risk_scorer.py service to aggregate detector outputs into a unified risk score.",
+        "details": "Create a Python service named anomaly_risk_scorer.py that combines outputs from various anomaly detectors into a single risk score ranging from 0 to 100. Implement weighting logic based on account type (revenue vs expense), property maturity (new vs established), and historical accuracy of each detector. Use feedback data to calibrate the scoring model, ensuring it adapts over time. Store the calculated risk score in the anomaly_score field of the anomaly_detections table. Ensure the service is modular to allow easy updates and integration with existing anomaly detection services.",
+        "testStrategy": "Develop unit tests to verify the correct calculation of risk scores based on different input scenarios and weighting factors. Create integration tests to ensure the service correctly interacts with existing anomaly detection services and updates the anomaly_score field. Perform load testing to assess performance under typical and peak conditions. Validate calibration accuracy using historical feedback data.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "15",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:44:06.670Z"
+      },
+      {
+        "id": "29",
+        "title": "Enhance Ensemble Engine in anomaly_ensemble.py",
+        "description": "Update anomaly_ensemble.py to implement calibrated thresholds and a weighted ensemble approach for anomaly detection.",
+        "details": "1. Replace the fixed contamination parameter (0.1) with dynamically calibrated thresholds based on historical data analysis. Implement a calibration module that adjusts thresholds according to data distribution and anomaly frequency.\n2. Modify the anomaly_ensemble.py to output continuous anomaly scores from each detector, allowing for more granular analysis.\n3. Implement a weighted ensemble strategy:\n   - Use Z-score and percentage change for low-volume accounts.\n   - Combine Isolation Forest and Autoencoder for high-volume accounts.\n   - Integrate CUSUM and LSTM for detecting time-series trends.\n4. Develop a consensus detection mechanism that aggregates results from different models to improve detection accuracy.\n5. Ensure the ensemble engine is modular to allow easy addition of new models and strategies in the future.",
+        "testStrategy": "1. Develop unit tests for each new component, including threshold calibration and individual model outputs.\n2. Create integration tests to verify the ensemble's ability to handle different account volumes and time-series data.\n3. Conduct performance testing to ensure the ensemble engine operates efficiently with large datasets.\n4. Validate the consensus detection mechanism by comparing its results against known anomaly cases and ensuring improved accuracy over individual models.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "26",
+          "24"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:47:27.686Z"
+      },
+      {
+        "id": "30",
+        "title": "Implement Impact Calculator Service",
+        "description": "Develop the anomaly_impact_calculator.py service to calculate financial impact metrics for anomalies.",
+        "details": "Create a Python service named anomaly_impact_calculator.py. This service will calculate three key metrics for each detected anomaly: absolute dollar variance (|actual - expected|), percentage impact on the parent category, and covenant proximity (DSCR distance to threshold). Use Pandas for data manipulation and ensure calculations are efficient and scalable. Store the calculated impact in the 'impact_amount' field of the anomaly records. Integrate this service with the existing anomaly detection pipeline to enhance priority scoring based on calculated impacts. Ensure the service is modular to allow future enhancements and adjustments to calculation methods.",
+        "testStrategy": "Develop unit tests to verify the accuracy of each calculation metric, including edge cases such as zero or negative values. Create integration tests to ensure the service correctly updates the 'impact_amount' field in the anomaly records. Perform load testing to assess performance with large datasets. Validate the integration with the anomaly detection pipeline to ensure seamless operation and correct priority scoring adjustments.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:47:56.400Z"
+      },
+      {
+        "id": "31",
+        "title": "Enable SHAP/LIME Integration for Core ML Detectors",
+        "description": "Enhance xai_explanation_service.py to enable SHAP and LIME by default for core ML detectors and generate feature importance summaries.",
+        "details": "1. Modify `xai_explanation_service.py` to set `SHAP_ENABLED` and `LIME_ENABLED` flags to true by default for Isolation Forest, LOF, and OCSVM detectors. \n2. Implement logic to compute feature importance using SHAP and LIME for each detector. \n3. Store the top 3 features with their contribution percentages in a structured format. \n4. Develop a function to generate natural-language summaries of feature contributions, e.g., 'Expenses increased 42% vs 3-year average; this account historically varies ±8%'. \n5. Ensure the implementation is modular to allow easy updates and maintenance. \n6. Follow best practices for integrating explainability tools in ML pipelines, ensuring minimal performance overhead.",
+        "testStrategy": "1. Write unit tests to verify that SHAP and LIME are enabled by default and that feature importance is correctly calculated for each detector. \n2. Validate that the top 3 features and their contributions are stored accurately. \n3. Test the natural-language summary generation for correctness and readability. \n4. Conduct performance testing to ensure that enabling SHAP and LIME does not significantly impact the system's performance. \n5. Perform integration tests to ensure compatibility with existing ML detectors and anomaly detection workflows.",
+        "status": "done",
+        "dependencies": [
+          "29",
+          "21"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:48:31.897Z"
+      },
+      {
+        "id": "32",
+        "title": "Implement LLM-Powered Anomaly Reasoning Service",
+        "description": "Develop the llm_anomaly_reasoner.py service using Claude 3.5 Sonnet or GPT-4o to analyze anomalies and generate business-readable explanations.",
+        "details": "Create a Python service named llm_anomaly_reasoner.py. Utilize Claude 3.5 Sonnet or GPT-4o to process anomalies in full document context and generate explanations. Implement logic to extract relevant context from documents and pass it to the LLM for analysis. Use existing LLM API keys stored in .cursor/mcp.json for authentication. Store generated explanations in the 'root_cause_candidates' JSONB field of the anomaly_detections table. Ensure the service can handle concurrent requests efficiently and integrate logging for monitoring and debugging purposes.",
+        "testStrategy": "Develop unit tests to verify the integration with the LLM API and the correctness of generated explanations. Create integration tests to ensure the service correctly updates the 'root_cause_candidates' field in the anomaly_detections table. Perform load testing to assess the service's performance under concurrent requests. Validate logging functionality for error tracking and debugging.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "19"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:49:05.226Z"
+      },
+      {
+        "id": "33",
+        "title": "Implement Similar Cases & Precedent Lookup Service",
+        "description": "Develop anomaly_precedent_service.py to query similar anomalies and provide historical context in the anomaly detail view.",
+        "details": "Create a Python service named anomaly_precedent_service.py. This service will query the database for anomalies with similar characteristics, such as the same account, property, and month-of-year. Utilize SQLAlchemy to interact with the database, specifically querying the anomaly_feedback table to include resolution notes and true/false positive feedback. Implement caching mechanisms to optimize repeated queries. Integrate this service with the anomaly detail view to display historical context, aiding reviewers in understanding past anomalies and their resolutions. Ensure the service is modular to allow future enhancements, such as additional filtering criteria or integration with machine learning models for anomaly similarity scoring.",
+        "testStrategy": "Develop unit tests to verify the accuracy of database queries and the correct retrieval of similar anomalies. Create integration tests to ensure the service correctly interfaces with the anomaly detail view and displays the expected historical context. Perform load testing to assess performance under high query volumes. Validate caching effectiveness by measuring query response times before and after caching implementation.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:49:05.237Z"
+      },
+      {
+        "id": "34",
+        "title": "Implement Alert Deduplication Service",
+        "description": "Develop a service to deduplicate alerts based on specific criteria and update existing alerts instead of creating new ones.",
+        "details": "Create a Python service named `alert_deduplication_service.py`. This service should deduplicate alerts by checking combinations of property, period, metric/account, and anomaly_family. When a duplicate alert is detected, update the existing alert instead of creating a new one. Maintain a history of updates in the `alert_history` table to track changes over time. Ensure the service efficiently queries and updates the database, using indexes where necessary to optimize performance. Consider using SQLAlchemy for ORM and Alembic for database migrations if schema changes are needed. Implement logging to track deduplication actions and any errors encountered during processing.",
+        "testStrategy": "Develop unit tests to verify the deduplication logic, ensuring that alerts are correctly identified as duplicates based on the specified criteria. Create integration tests to ensure that updates to existing alerts are correctly recorded in the `alert_history` table. Perform load testing to assess the service's performance under high alert volumes. Validate logging functionality to ensure all deduplication actions are recorded accurately.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "22"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:49:41.947Z"
+      },
+      {
+        "id": "35",
+        "title": "Enhance Alert Correlation & Grouping in alert_correlation_service.py",
+        "description": "Enhance the alert correlation service to group related anomalies into a single incident based on shared properties, periods, or root causes.",
+        "details": "1. Update `alert_correlation_service.py` to implement logic for grouping anomalies into incidents. Use fields such as `correlation_id` and `incident_group_id` to manage relationships.\n2. Implement grouping by shared properties, periods, related accounts (e.g., utility expenses), or root causes.\n3. Create a parent alert that encapsulates child anomalies, ensuring that each child anomaly references the parent via `correlation_id`.\n4. Optimize database queries to efficiently retrieve and update alerts, using indexes on `correlation_id` and `incident_group_id`.\n5. Ensure backward compatibility with existing alert structures and maintain data integrity during updates.",
+        "testStrategy": "1. Develop unit tests to verify that anomalies are correctly grouped into incidents based on specified criteria.\n2. Create integration tests to ensure that parent-child relationships are accurately maintained in the database.\n3. Perform load testing to assess the performance of the correlation logic under high alert volumes.\n4. Validate that the service correctly updates existing alerts and maintains historical data integrity.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "22",
+          "34"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:49:41.959Z"
+      },
+      {
+        "id": "36",
+        "title": "Implement Business Impact Priority Scoring in Alert Prioritization Service",
+        "description": "Enhance alert_prioritization_service.py to calculate a business impact score and update the priority_score in the committee_alerts table.",
+        "details": "1. Modify `alert_prioritization_service.py` to calculate the `business_impact_score` by combining several factors:\n   - **Severity**: Assign scores based on severity levels (URGENT=100, CRITICAL=75, WARNING=50, INFO=25).\n   - **Dollar Impact**: Normalize the absolute variance of financial impact to a 0-100 scale.\n   - **Covenant Proximity**: Calculate the distance of the Debt Service Coverage Ratio (DSCR) to its threshold.\n   - **Portfolio Importance**: Weight by Net Operating Income (NOI) and loan balance.\n2. Update the `priority_score` in the `committee_alerts` table with the calculated `business_impact_score`.\n3. Ensure the service efficiently queries and updates the database, using indexes where necessary to optimize performance.\n4. Integrate logging to track score calculations and updates for auditing purposes.",
+        "testStrategy": "1. Develop unit tests to verify the accuracy of each component of the `business_impact_score` calculation.\n2. Create integration tests to ensure the service correctly updates the `priority_score` in the `committee_alerts` table.\n3. Perform load testing to assess performance with large datasets and ensure the service scales efficiently.\n4. Validate logging functionality to ensure all score calculations and updates are properly recorded.",
+        "status": "done",
+        "dependencies": [
+          "22",
+          "30"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:50:31.281Z"
+      },
+      {
+        "id": "37",
+        "title": "Implement Alert Suppression Rules Service",
+        "description": "Develop alert_suppression_service.py to automatically suppress alerts marked as false positives based on patterns.",
+        "details": "Create a Python service named `alert_suppression_service.py`. This service will automatically suppress alerts identified as false positives by analyzing patterns in the `anomaly_feedback` table. Use the environment variables `AUTO_SUPPRESSION_ENABLED` and `AUTO_SUPPRESSION_CONFIDENCE_THRESHOLD` to control the suppression logic. Store suppression details in the `suppressed_until` and `suppression_reason` fields of the `anomaly_detections` table. Implement logic to periodically review and update suppression rules based on feedback data. Ensure the service is modular and can be extended with additional suppression criteria in the future. Use SQLAlchemy for database interactions and implement logging for suppression actions.",
+        "testStrategy": "Develop unit tests to verify the suppression logic, ensuring alerts are correctly identified and suppressed based on feedback patterns. Create integration tests to ensure the service updates the `suppressed_until` and `suppression_reason` fields accurately. Perform load testing to assess the service's performance under high data volumes. Validate the use of environment variables in controlling suppression behavior.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "34"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:50:31.291Z"
+      },
+      {
+        "id": "38",
+        "title": "Implement Adaptive Threshold Service",
+        "description": "Develop adaptive_threshold_service.py to enable adaptive thresholds using anomaly feedback and recalibrate weekly via Celery.",
+        "details": "Create a Python service named adaptive_threshold_service.py. Enable ADAPTIVE_THRESHOLDS_ENABLED by default. Implement a Celery job to recalibrate thresholds weekly using anomaly_feedback data. Use rolling windows and seasonal baseline adjustments to calculate time-varying thresholds. Incorporate account-specific bands based on historical volatility. Store calculated thresholds in the anomaly_thresholds table. Ensure the service is modular to allow future enhancements and integrates seamlessly with existing anomaly detection services.",
+        "testStrategy": "Develop unit tests to verify the calculation of adaptive thresholds using various historical data scenarios. Create integration tests to ensure the Celery job correctly updates thresholds in the anomaly_thresholds table. Validate the service's ability to handle different account-specific configurations and historical volatility scenarios. Perform load testing to assess performance under high data volume conditions.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:51:14.486Z"
+      },
+      {
+        "id": "39",
+        "title": "Enhance Active Learning Loop in active_learning_service.py",
+        "description": "Enable ACTIVE_LEARNING_ENABLED by default, retrain models based on false positive rates, adjust detector weights from feedback, and track model performance.",
+        "details": "1. Modify `active_learning_service.py` to set `ACTIVE_LEARNING_ENABLED` to true by default.\n2. Implement logic to monitor the false positive rate and trigger model retraining when it exceeds a predefined threshold.\n3. Adjust detector weights dynamically based on user feedback stored in the `anomaly_feedback` table.\n4. Develop a mechanism to track and log model performance metrics over time, such as precision, recall, and F1-score.\n5. Set up alerts to trigger retraining when precision drops below a certain level.\n6. Ensure the system is modular to allow easy updates and integration with other services.",
+        "testStrategy": "1. Write unit tests to verify that `ACTIVE_LEARNING_ENABLED` is set to true by default.\n2. Develop tests to simulate changes in false positive rates and ensure retraining is triggered appropriately.\n3. Validate that detector weights are adjusted correctly based on feedback.\n4. Create tests to track model performance metrics and verify alerts are triggered when precision drops.\n5. Conduct integration tests to ensure seamless interaction with other services and data sources.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "26",
+          "37"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:51:14.496Z"
+      },
+      {
+        "id": "40",
+        "title": "Implement Feedback-Driven Calibration Task",
+        "description": "Develop a Celery task to analyze anomaly feedback and adjust detection thresholds weekly.",
+        "details": "Create a Python script named `feedback_calibration_tasks.py` to be executed as a Celery task. This task will run weekly to analyze the `anomaly_feedback` table, calculating the false positive rate for each detector and method. Use this data to adjust detection thresholds automatically. Update model weights in the ensemble based on feedback results. Ensure changes are logged in an audit trail for traceability. Use libraries such as Pandas for data manipulation and Celery for task scheduling. Implement robust error handling and logging to ensure reliability and maintainability.",
+        "testStrategy": "Develop unit tests to verify the accuracy of false positive rate calculations and threshold adjustments. Create integration tests to ensure the Celery task executes correctly and updates model weights and thresholds as expected. Validate that all changes are logged in the audit trail. Perform load testing to ensure the task can handle large volumes of feedback data efficiently.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "38"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:51:14.507Z"
+      },
+      {
+        "id": "41",
+        "title": "Implement Auto-Suggestion Engine for Account Mapping",
+        "description": "Develop a service to learn from corrections and auto-suggest account mappings with confidence scores.",
+        "details": "Create a Python service named `review_auto_suggestion_service.py`. This service will learn from user corrections by saving mapping rules from `raw_label` to `account_code` with associated confidence scores. Implement logic to auto-apply suggestions when confidence scores exceed a predefined threshold, and flag mappings for review if below. Store these mappings in a new database table named `account_mapping_rules`. Use a machine learning model to calculate confidence scores based on historical correction data. Ensure the service is modular to allow future enhancements and integrates seamlessly with existing systems. Consider using libraries such as Scikit-learn for model implementation and SQLAlchemy for database interactions.",
+        "testStrategy": "Develop unit tests to verify the accuracy of mapping rule storage and retrieval. Create integration tests to ensure the service correctly applies suggestions and flags low-confidence mappings. Validate the confidence score calculations using historical data. Perform load testing to assess performance with large datasets. Ensure the service integrates correctly with existing systems and that the `account_mapping_rules` table is updated as expected.",
+        "status": "done",
+        "dependencies": [
+          "12",
+          "15"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:02:38.363Z"
+      },
+      {
+        "id": "42",
+        "title": "Implement Dual Approval for High-Risk Items in review_service.py",
+        "description": "Enhance review_service.py to require dual approval for high-risk items and track approval chains in the audit trail.",
+        "details": "1. Modify `review_service.py` to introduce a dual approval (4-eyes) mechanism for items with a high financial impact (>$10,000 variance), covenant-impacting changes, or DSCR-affecting corrections.\n2. Implement logic to allow single-click approval for low-impact items.\n3. Update the database schema to include fields for tracking the approval chain, ensuring each approval step is logged with user ID, timestamp, and action taken.\n4. Use a decorator pattern to enforce dual approval logic, ensuring that two distinct users must approve high-risk items before they are finalized.\n5. Integrate with the existing audit trail system to log all approval actions, maintaining a comprehensive history of changes and approvals.\n6. Ensure the UI reflects the dual approval status, providing clear indicators for items requiring additional approval.",
+        "testStrategy": "1. Develop unit tests to verify that dual approval is enforced for high-risk items and that single-click approval is available for low-impact items.\n2. Create integration tests to ensure that the approval chain is correctly logged in the audit trail.\n3. Conduct user acceptance testing to validate the UI changes and ensure that the approval process is intuitive and correctly reflects the status of each item.\n4. Perform security testing to ensure that only authorized users can approve items and that the dual approval process cannot be bypassed.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "30"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:02:38.374Z"
+      },
+      {
+        "id": "43",
+        "title": "Implement Sampling-Based QA Service",
+        "description": "Develop review_sampling_service.py to randomly sample 1-2% of high-confidence extractions for audit and detect systemic drift in extraction quality.",
+        "details": "Create a Python service named `review_sampling_service.py`. This service will randomly select 1-2% of high-confidence extraction results for quality audit. Use a random sampling algorithm to ensure unbiased selection. Implement logic to track sampling results and analyze them for signs of systemic drift in extraction quality. Integrate with existing logging and alert systems to notify stakeholders if drift is detected. Consider using statistical methods to determine drift significance and thresholds. Ensure the service is modular to allow future enhancements and integrates seamlessly with existing QA processes.",
+        "testStrategy": "Develop unit tests to verify the random sampling algorithm and ensure correct percentage of extractions are selected. Create integration tests to validate the service's ability to detect and alert on systemic drift. Perform statistical tests to confirm the accuracy of drift detection. Validate logging and alerting functionality to ensure stakeholders are notified appropriately.",
+        "status": "done",
+        "dependencies": [
+          "12",
+          "41"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:02:38.388Z"
+      },
+      {
+        "id": "44",
+        "title": "Create Risk Workbench Backend API",
+        "description": "Develop the risk_workbench.py API endpoint to unify anomalies, alerts, and review items with specified columns and filters.",
+        "details": "Implement a new API endpoint in risk_workbench.py to aggregate data from anomalies, alerts, and review items. The endpoint should return data with columns: type, severity, property, age, impact, status, assignee, and due_date. Implement filtering capabilities for property, document_type, anomaly_category, and SLA_breach. Ensure the API supports pagination and sorting by any column. Use SQLAlchemy for ORM and Flask for the API framework. Consider using Marshmallow for data serialization and validation. Ensure the API is secure and follows RESTful principles. Implement error handling and logging for debugging and monitoring purposes.",
+        "testStrategy": "Develop unit tests to verify each filter and sorting functionality. Use mock data to test pagination and ensure correct data retrieval. Perform integration tests to validate the API's interaction with the database and other services. Conduct load testing to assess performance under high traffic. Verify security measures by testing authentication and authorization processes. Ensure comprehensive logging and error handling are in place.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "22",
+          "10"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.783Z"
+      },
+      {
+        "id": "45",
+        "title": "Implement SLA Tracking Service",
+        "description": "Develop sla_tracking_service.py to calculate SLA due times and track MTTA and MTTR metrics.",
+        "details": "Create a Python service named `sla_tracking_service.py`. Implement logic to calculate `sla_due_at` based on incident severity: URGENT (1 hour), CRITICAL (4 hours), WARNING (24 hours), INFO (72 hours). Use a dictionary to map severity levels to time deltas. Track `mtta` (mean time to acknowledge) and `mttr` (mean time to resolve) by recording timestamps of incident creation, acknowledgment, and resolution. Store these metrics in a database table with fields for `sla_due_at`, `mtta`, and `mttr`. Integrate with existing alert systems to update metrics in real-time. Provide a dashboard using a tool like Grafana to visualize SLA compliance and trends over time. Ensure the service is modular and can be extended for additional severity levels or custom SLAs.",
+        "testStrategy": "Develop unit tests to verify correct calculation of `sla_due_at` for each severity level. Create integration tests to ensure accurate tracking of `mtta` and `mttr` by simulating incident lifecycles. Validate dashboard metrics by comparing displayed data with raw database entries. Perform load testing to assess performance under high incident volumes. Ensure the service correctly updates metrics in real-time and handles edge cases such as simultaneous incidents.",
+        "status": "done",
+        "dependencies": [
+          "22"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.817Z"
+      },
+      {
+        "id": "46",
+        "title": "Create Risk Workbench Frontend",
+        "description": "Develop the RiskWorkbench.tsx page and RiskWorkbenchTable.tsx component with a unified table view of anomalies, alerts, and review items.",
+        "details": "Implement the RiskWorkbench.tsx page using React and TypeScript. Create the RiskWorkbenchTable.tsx component to display a unified table view of anomalies, alerts, and review items. Use Tailwind CSS for styling and ensure responsiveness. Integrate color-coded severity indicators using the design system's color palette. Implement inline actions such as acknowledge, resolve, and review using buttons with appropriate event handlers. Add filtering capabilities for properties, document types, and anomaly categories. Implement saved views functionality using local storage or a backend service. Enable Excel export functionality using a library like SheetJS. Ensure accessibility and performance optimizations are applied throughout the implementation.",
+        "testStrategy": "Conduct unit tests for each component to ensure correct rendering and functionality. Verify the color-coded severity indicators display correctly based on data input. Test inline actions to ensure they trigger the correct backend API calls. Validate filtering and saved views functionality by simulating user interactions. Test the Excel export feature to ensure data is correctly formatted and exported. Perform cross-browser testing to ensure compatibility. Conduct accessibility testing using tools like Axe to ensure compliance with WCAG standards.",
+        "status": "done",
+        "dependencies": [
+          "2",
+          "4",
+          "44"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:06:14.251Z"
+      },
+      {
+        "id": "47",
+        "title": "Implement Multi-Variate Correlation Anomaly Detector",
+        "description": "Develop multivariate_anomaly_detector.py using Vector Autoregression (VAR) to detect relationship anomalies across accounts.",
+        "details": "Create a Python service named `multivariate_anomaly_detector.py` utilizing the Vector Autoregression (VAR) model from the Statsmodels library. This service will analyze multivariate time series data to detect anomalies in relationships between different financial metrics, such as 'Repairs & Maintenance' and 'Tenant Complaints'. Implement logic to identify significant deviations from expected patterns, indicating potential risks like Deferred Maintenance. Ensure the service can handle data grouped by property and account group. Integrate logging for detected anomalies and ensure modularity for future enhancements. Consider using Pandas for data manipulation and ensure the service is scalable to handle large datasets.",
+        "testStrategy": "Develop unit tests to verify the accuracy of the VAR model implementation and anomaly detection logic. Create integration tests to ensure the service correctly identifies relationship anomalies across different accounts. Validate the service's ability to handle various data groupings and log detected anomalies. Perform load testing to assess performance with large datasets.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:57:46.619Z"
+      },
+      {
+        "id": "48",
+        "title": "Implement Predictive Covenant Monitoring Service",
+        "description": "Develop predictive_dscr_service.py to forecast DSCR 3-6 months ahead using trend analysis and alert on covenant breaches.",
+        "details": "Create a Python service named `predictive_dscr_service.py`. Utilize time series analysis techniques such as ARIMA or exponential smoothing to forecast the Debt Service Coverage Ratio (DSCR) for the next 3 to 6 months. Incorporate current 'Burn Rate' and 'Revenue Trend' data as inputs for the model. Implement logic to trigger alerts if the forecasted DSCR is projected to breach predefined covenant thresholds. Store the forecast results in a new database table named `dscr_forecasts`. Ensure the service is modular to allow for future enhancements and integrates seamlessly with existing alerting systems. Use libraries like Pandas for data manipulation and Statsmodels for time series forecasting.",
+        "testStrategy": "Develop unit tests to verify the accuracy of the forecasting model and the alerting logic. Create integration tests to ensure the service correctly stores forecasts in the `dscr_forecasts` table and triggers alerts when thresholds are breached. Perform load testing to assess the service's performance with large datasets. Validate the integration with existing alerting systems to ensure timely notifications.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.833Z"
+      },
+      {
+        "id": "49",
+        "title": "Implement Dynamic Thresholding Service",
+        "description": "Develop dynamic_threshold_service.py to adjust DSCR thresholds based on interest rates, market conditions, and property-specific risk profiles.",
+        "details": "Create a Python service named `dynamic_threshold_service.py`. This service will dynamically adjust Debt Service Coverage Ratio (DSCR) thresholds by analyzing current interest rate environments, market conditions, and property-specific risk profiles. Implement algorithms to evaluate these factors and adjust thresholds accordingly. Store historical threshold data in a dedicated database table to track changes over time. Integrate alerting mechanisms to notify stakeholders of significant threshold changes. Use libraries such as Pandas for data manipulation and NumPy for numerical computations. Ensure the service is modular to allow future enhancements and integrates seamlessly with existing systems.",
+        "testStrategy": "Develop unit tests to verify the accuracy of threshold adjustments based on simulated interest rate and market condition scenarios. Create integration tests to ensure the service correctly updates and stores threshold history. Validate alerting functionality by simulating threshold changes and checking notification delivery. Perform load testing to assess performance under various data loads.",
+        "status": "done",
+        "dependencies": [
+          "15",
+          "38"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:57:46.635Z"
+      },
+      {
+        "id": "50",
+        "title": "Implement Advanced Accounting Anomaly Detection Service",
+        "description": "Develop accounting_anomaly_detector.py to identify unusual account reclassifications, month-end close anomalies, currency mismatches, and apply Benford's Law checks.",
+        "details": "Create a Python service named `accounting_anomaly_detector.py`. Implement functionality to detect unusual account reclassifications and month-end close anomalies such as missing provisions and large last-day postings. Use the `benfordslaw` Python library to apply Benford's Law checks on high-risk lines like CAPEX and large invoices. Implement currency and FX mismatch detection by comparing transaction currencies against expected currency profiles. For duplicate pattern scans, use hashing techniques to identify repeated entries. Ensure the service is modular to allow easy updates and integration with existing anomaly detection frameworks. Use Pandas for data manipulation and logging for anomaly tracking.",
+        "testStrategy": "Develop unit tests to verify the detection logic for each anomaly type, including reclassifications, month-end anomalies, and currency mismatches. Create integration tests to ensure the service correctly applies Benford's Law checks and identifies duplicates. Validate the service's ability to handle large datasets efficiently. Perform regression testing to ensure new features do not disrupt existing functionality. Use mock data to simulate various anomaly scenarios and verify detection accuracy.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "27",
+          "30"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:57:46.647Z"
+      },
+      {
+        "id": "51",
+        "title": "Implement Model Performance Monitoring Service",
+        "description": "Develop model_monitoring_service.py to track and store model performance metrics.",
+        "details": "Create a Python service named `model_monitoring_service.py` to monitor various performance metrics of machine learning models. Implement functionality to track detection coverage (percentage of accounts/periods scanned), model runtime per batch, queue latency, alert volumes by severity, and false-positive ratios over time. Store these metrics in a new database table named `model_performance_metrics`. Use libraries such as Pandas for data manipulation and SQLAlchemy for database interactions. Ensure the service can generate periodic reports and integrate with existing logging systems for real-time monitoring. Consider implementing a dashboard for visualizing these metrics using a tool like Grafana or Tableau.",
+        "testStrategy": "Develop unit tests to verify the accuracy of each metric calculation. Create integration tests to ensure metrics are correctly stored in the `model_performance_metrics` table. Validate the service's ability to generate reports and integrate with logging systems. Perform load testing to assess performance under high data volumes. Use mock data to simulate various scenarios and verify the service's robustness.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.851Z"
+      },
+      {
+        "id": "52",
+        "title": "Implement Data Drift Detection Service",
+        "description": "Develop data_drift_detector.py to detect feature distribution changes using statistical tests and trigger recalibration.",
+        "details": "Create a Python script named `data_drift_detector.py` using the Evidently library and `scipy.stats.ks_2samp` to detect data drift in feature distributions for each property/account. Implement the Kolmogorov-Smirnov (KS) test and Population Stability Index (PSI) to identify significant distribution changes. When drift is detected, trigger a recalibration process for affected models. Store drift metrics in a dedicated database table for monitoring and analysis. Ensure the service is modular to allow integration with existing anomaly detection workflows.",
+        "testStrategy": "Develop unit tests to verify the accuracy of KS test and PSI calculations. Create integration tests to ensure the service correctly identifies drift and triggers recalibration. Validate the storage of drift metrics in the database. Perform load testing to assess performance with large datasets and multiple accounts.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.864Z"
+      },
+      {
+        "id": "53",
+        "title": "Implement Circuit Breaker Service for Anomaly Alerts",
+        "description": "Develop circuit_breaker_service.py to manage alert thresholds and notify admins of unexpected anomaly volumes.",
+        "details": "Create a Python service named `circuit_breaker_service.py`. This service will monitor anomaly alert volumes and apply circuit breaker patterns to prevent alert storms. Implement configurable thresholds to downgrade non-critical alerts and escalate notifications to admins when anomaly volumes exceed expected levels. Use a configuration file or environment variables to set these thresholds dynamically. Integrate with existing logging and alerting systems to ensure seamless notifications. Consider using a state machine to manage circuit breaker states (closed, open, half-open) and implement logic to transition between these states based on alert volume trends. Ensure the service is modular to allow future enhancements and integrates seamlessly with other anomaly detection services.",
+        "testStrategy": "Develop unit tests to verify the correct implementation of circuit breaker logic and state transitions. Create integration tests to ensure the service correctly downgrades alerts and escalates notifications based on configured thresholds. Simulate various alert volume scenarios to test the robustness of the circuit breaker mechanism. Validate integration with logging and alerting systems by checking that notifications are sent as expected. Perform load testing to assess the service's performance under high alert volumes.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "25",
+          "38"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.878Z"
+      },
+      {
+        "id": "54",
+        "title": "Create Risk Engine Health Dashboard",
+        "description": "Develop the risk_engine_health.py API endpoint and RiskEngineHealth.tsx frontend page to display key performance indicators and alerts.",
+        "details": "Implement the `risk_engine_health.py` API endpoint using Flask to provide data on KPIs such as coverage, runtime, latency, volumes, and false-positive rates. Use SQLAlchemy to query relevant metrics from the `model_performance_metrics` table. Ensure the API supports filtering by date range and severity. Develop the `RiskEngineHealth.tsx` page using React and TypeScript to display these KPIs, trend charts, and degradation alerts. Use D3.js for rendering interactive charts and Tailwind CSS for styling. Implement real-time updates using WebSockets to push alerts and KPI changes to the frontend.",
+        "testStrategy": "Develop unit tests for the API to verify data retrieval and filtering functionality. Use mock data to simulate various KPI scenarios and ensure correct API responses. For the frontend, conduct unit tests to verify correct rendering of KPIs and charts. Perform integration tests to ensure real-time updates via WebSockets are functioning correctly. Validate the responsiveness and accessibility of the dashboard across different devices and browsers.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "51"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:57:46.658Z"
+      },
+      {
+        "id": "55",
+        "title": "Implement Data Quality Score Calculation Service",
+        "description": "Develop data_quality_service.py to calculate a quality index for documents and periods, storing results in the data_quality_scores table.",
+        "details": "Create a Python service named `data_quality_service.py`. This service will aggregate metrics such as extraction_confidence, validation_pass_rate, unmatched_accounts, and manual_corrections to compute a quality index ranging from 0 to 100 for each document and period. Use a weighted formula to combine these metrics, ensuring that each component's impact on the final score is appropriately balanced. Store the calculated quality index in the `data_quality_scores` table. Implement logic to suppress or down-weight anomalies from low-quality data in downstream processes. Ensure the service is modular and can be extended with additional quality metrics in the future. Use SQLAlchemy for database interactions and Pandas for data manipulation.",
+        "testStrategy": "Develop unit tests to verify the accuracy of the quality index calculation, including edge cases such as missing or extreme values. Create integration tests to ensure the service correctly stores results in the `data_quality_scores` table. Validate the suppression and down-weighting logic by simulating low-quality data scenarios and checking the impact on anomaly detection processes. Perform load testing to assess performance with large datasets.",
+        "status": "done",
+        "dependencies": [
+          "23",
+          "9"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:53:03.901Z"
+      },
+      {
+        "id": "56",
+        "title": "Implement Data Quality Specifications (DQS) Model and Service",
+        "description": "Create data_quality_rule.py model and dqs_service.py to manage field-level quality requirements as metadata.",
+        "details": "Develop a Python model named `data_quality_rule.py` to define data quality rules. This model should include fields for rule_id, field_name, mandatory, numeric_validation, tolerance, and reconciliation_rules. Implement `dqs_service.py` to manage these rules, allowing CRUD operations via a RESTful API. Use SQLAlchemy to interact with a `data_quality_rules` table, storing rules as metadata. Implement a rules engine pattern to evaluate and apply these rules dynamically. Ensure the service is configurable and can be extended with new rules. Consider using a library like `jsonschema` for validation logic.",
+        "testStrategy": "Develop unit tests to verify CRUD operations on the `data_quality_rules` table. Create integration tests to ensure the rules engine correctly applies and evaluates rules. Validate API endpoints for rule management. Perform tests to ensure the service handles various rule configurations and edge cases, such as missing or invalid data.",
+        "status": "done",
+        "dependencies": [
+          "23",
+          "55"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:57:46.666Z"
+      },
+      {
+        "id": "57",
+        "title": "Implement Root Cause Tracking in Anomaly Detection Model",
+        "description": "Enhance anomaly_detection.py to include resolution_type enum and root_cause text field, and integrate with review workflow for reporting.",
+        "details": "1. Update the `anomaly_detection.py` model to include a new enum field `resolution_type` with values: `data_entry`, `extraction`, `mapping`, `business_change`, `covenant_issue`.\n2. Add a `root_cause` text field to capture detailed explanations of anomalies.\n3. Modify the review workflow to ensure these fields are captured and stored during anomaly reviews.\n4. Implement database schema changes using Alembic to add these fields to the `anomaly_detections` table.\n5. Develop reporting capabilities to generate reports for regulators and auditors, focusing on root cause analysis and resolution types.\n6. Ensure the model and workflow changes are backward compatible with existing data.",
+        "testStrategy": "1. Write unit tests to verify the correct addition of `resolution_type` and `root_cause` fields in the model.\n2. Create integration tests to ensure the review workflow correctly captures and stores the new fields.\n3. Validate the Alembic migration by applying it to a test database and checking the schema changes.\n4. Develop test cases for the reporting functionality to ensure accurate data representation for regulators and auditors.\n5. Perform regression testing to confirm backward compatibility with existing data and workflows.",
+        "status": "done",
+        "dependencies": [
+          "21"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T22:57:46.675Z"
+      },
+      {
+        "id": "58",
+        "title": "Enhance Anomaly Detail View in AnomalyDetail.tsx",
+        "description": "Enhance the AnomalyDetail.tsx component to include contribution waterfall, peer/cross-property comparison, direct links to review queue, PDF coordinates, SHAP/LIME visualizations, and similar cases display.",
+        "details": "1. **Contribution Waterfall**: Implement a visual representation of which accounts contribute most to the anomaly using D3.js or Chart.js. Ensure the waterfall chart is interactive and highlights key contributors.\n2. **Peer/Cross-Property Comparison**: Integrate a comparison view using existing data APIs to show how the anomaly compares across similar properties or peer groups.\n3. **Direct Links to Review Queue**: Add functionality to generate and display direct links to the review queue for quick access. Use React Router for seamless navigation.\n4. **PDF Coordinates for Verification**: Implement a feature to display PDF coordinates for quick verification. Use a library like PDF.js to extract and display coordinates.\n5. **SHAP/LIME Visualizations**: Integrate SHAP and LIME visualizations for feature importance. Utilize existing SHAP/LIME data from the backend (Task 31) and render using Plotly or a similar library.\n6. **Similar Cases Display**: Develop a section to display similar past anomalies using a similarity algorithm based on anomaly characteristics. Leverage existing data from the anomaly detection service.",
+        "testStrategy": "1. **Unit Tests**: Write tests to verify each new component and feature, ensuring correct rendering and data handling.\n2. **Integration Tests**: Test the integration of new features with existing components, focusing on data flow and user interactions.\n3. **UI/UX Testing**: Conduct user testing sessions to ensure the UI is intuitive and meets user needs.\n4. **Performance Testing**: Assess the performance impact of new visualizations and ensure the component remains responsive under typical load conditions.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "31",
+          "57"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:09:50.897Z"
+      },
+      {
+        "id": "59",
+        "title": "Implement AnomalyComparisonView.tsx Component",
+        "description": "Develop the AnomalyComparisonView.tsx component to display side-by-side PDF snippets with extracted and expected values, including quick correction options.",
+        "details": "Create a React component named AnomalyComparisonView.tsx. This component should render a side-by-side comparison of PDF snippets, extracted values, and expected values. Implement functionality to highlight coordinates in the PDF for easy reference. Include buttons for 'accept as-is' and 'correct' to allow quick user actions. Use libraries such as PDF.js for rendering PDF snippets and React hooks for state management. Ensure the component is responsive and integrates seamlessly with existing UI components. Consider accessibility and performance optimizations, such as lazy loading for large PDFs.",
+        "testStrategy": "Develop unit tests to verify the rendering of PDF snippets and the correct display of extracted and expected values. Create integration tests to ensure the component interacts correctly with the backend services for updating anomaly statuses. Validate the functionality of 'accept as-is' and 'correct' buttons through user interaction tests. Perform cross-browser testing to ensure consistent behavior across different environments.",
+        "status": "done",
+        "dependencies": [
+          "3",
+          "21"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:08:33.397Z"
+      },
+      {
+        "id": "60",
+        "title": "Implement BulkAnomalyActions.tsx Component",
+        "description": "Develop the BulkAnomalyActions.tsx component to enable bulk resolution of similar anomalies, incorporating a pattern matching UI.",
+        "details": "Create a React component named BulkAnomalyActions.tsx. This component should allow users to select multiple anomalies with similar characteristics (same account, similar magnitude, same cause) and resolve them in bulk. Implement a pattern matching UI to facilitate the identification of these anomalies. Use React hooks for state management and ensure the component is responsive. Integrate with existing anomaly detection services to fetch and update anomaly statuses. Consider using libraries like lodash for efficient data manipulation and Material-UI for consistent styling. Ensure the component is modular and can be easily integrated into the existing anomaly management dashboard.",
+        "testStrategy": "Develop unit tests to verify the correct rendering of the pattern matching UI and the bulk action functionality. Create integration tests to ensure the component interacts correctly with backend services for fetching and updating anomaly statuses. Validate the UI responsiveness and accessibility. Perform user acceptance testing to ensure the component meets user requirements and integrates seamlessly with the existing dashboard.",
+        "status": "done",
+        "dependencies": [
+          "21",
+          "59"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:08:33.411Z"
+      },
+      {
+        "id": "61",
+        "title": "Implement SavedViews.tsx Component for Personalization & Saved Views",
+        "description": "Develop the SavedViews.tsx component to allow users to save, default, and share filter views.",
+        "details": "Create a React component named SavedViews.tsx. This component should enable users to save custom filter views, such as 'My properties' or 'Critical DSCR alerts this month'. Implement functionality to set a default view based on the user's typical usage patterns. Allow users to share these views with their team members. Use React hooks for state management and ensure the component is responsive. Integrate with the backend to store and retrieve saved views, using RESTful APIs. Consider using libraries like React Router for navigation and Context API for managing global state. Ensure the component is accessible and follows best practices for user experience.",
+        "testStrategy": "Develop unit tests to verify the saving, defaulting, and sharing functionalities of the component. Create integration tests to ensure correct interaction with backend services for storing and retrieving views. Validate the component's responsiveness and accessibility across different devices and screen sizes. Perform user acceptance testing to ensure the component meets user requirements and expectations.",
+        "status": "done",
+        "dependencies": [
+          "21"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:08:33.423Z"
+      },
+      {
+        "id": "62",
+        "title": "Integrate User Authentication Context in Frontend Components",
+        "description": "Replace hardcoded user IDs with actual user context from AuthContext in WorkflowLocks.tsx, RiskManagement.tsx, and other components.",
+        "details": "Update the WorkflowLocks.tsx, RiskManagement.tsx, and any other components using hardcoded user IDs to utilize the AuthContext for retrieving the current user's ID. Ensure that the AuthContext is properly initialized and accessible in these components. Refactor the components to replace any instance of hardcoded user IDs (e.g., userId = 1) with dynamic retrieval from the context. Verify that the AuthContext is correctly providing the user information and that all components are updated to use this context. Consider potential impacts on component state and lifecycle methods when integrating the context.",
+        "testStrategy": "Develop unit tests to ensure that components correctly retrieve and use the user ID from AuthContext. Create integration tests to verify that the user context is correctly passed and utilized across different components. Test the application with different user scenarios to ensure that the correct user ID is used in all relevant operations. Validate that no hardcoded user IDs remain in the codebase.",
+        "status": "done",
+        "dependencies": [
+          "3"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:27:48.628Z"
+      },
+      {
+        "id": "63",
+        "title": "Implement DSCR Historical Data Endpoint and Sparkline Generation",
+        "description": "Develop an API endpoint to retrieve historical DSCR data and generate sparklines for visualization in the CommandCenter.tsx dashboard.",
+        "details": "Create a new API endpoint in the backend service to fetch historical DSCR (Debt Service Coverage Ratio) data. Ensure the endpoint supports filtering by date range and property ID. Use a time-series database or existing data storage to retrieve the historical data efficiently. Implement a data transformation layer to prepare the data for sparkline visualization. In the frontend, update CommandCenter.tsx to include a sparkline component that visualizes the DSCR data. Use a library like Chart.js or D3.js for rendering sparklines. Ensure the component is responsive and integrates seamlessly with the existing dashboard layout.",
+        "testStrategy": "Develop unit tests for the API endpoint to verify data retrieval accuracy and performance under various conditions. Create integration tests to ensure the frontend correctly displays sparklines with the fetched data. Validate the responsiveness and visual accuracy of the sparklines across different devices and screen sizes. Perform load testing on the API to ensure it can handle concurrent requests efficiently.",
+        "status": "done",
+        "dependencies": [
+          "3",
+          "25",
+          "27"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:28:58.408Z"
+      },
+      {
+        "id": "64",
+        "title": "Implement Workflow Lock Auto-Release Condition Checking",
+        "description": "Develop logic to automatically release workflow locks when specific conditions are met, such as DSCR improvements.",
+        "details": "Modify the `workflow_lock_service.py` to include a function that evaluates conditions for releasing locks. Implement logic to check if the Debt Service Coverage Ratio (DSCR) has improved above a predefined threshold. Use existing data retrieval methods to access DSCR values and compare them against the threshold. Ensure the function is triggered periodically or upon relevant data updates. Consider edge cases such as missing data or rapid fluctuations in DSCR values. Document the function and its integration points with other services.",
+        "testStrategy": "Create unit tests to verify that the condition checking logic correctly identifies when locks should be released based on DSCR values. Develop integration tests to ensure the function interacts correctly with data retrieval services and triggers lock releases as expected. Test with various DSCR scenarios, including edge cases, to ensure robustness.",
+        "status": "done",
+        "dependencies": [
+          "63"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:29:43.653Z"
+      },
+      {
+        "id": "65",
+        "title": "Implement Task Scheduling API in DataControlCenter",
+        "description": "Develop a backend API and frontend integration to schedule background tasks from the Data Control Center UI.",
+        "details": "1. **Backend API Development**: Create a new API endpoint in the DataControlCenter service to handle task scheduling requests. Use a RESTful approach to define endpoints for creating, updating, and deleting scheduled tasks. Implement authentication and authorization checks to ensure only authorized users can schedule tasks. Use a task queue like Celery or a similar library to manage background task execution.\n\n2. **Database Schema**: Design a database schema to store scheduled task details, including task type, schedule time, recurrence, and status. Ensure the schema supports querying for upcoming tasks and historical task logs.\n\n3. **Frontend Integration**: Update the Data Control Center UI to include a task scheduling interface. Use React to build a user-friendly form that allows users to specify task details such as type, schedule, and recurrence. Ensure the UI provides feedback on task scheduling status and any errors.\n\n4. **Error Handling and Logging**: Implement comprehensive error handling and logging for both the API and frontend components. Ensure logs capture sufficient detail for debugging and monitoring task execution.",
+        "testStrategy": "1. **Unit Tests**: Develop unit tests for the API endpoints to verify correct handling of task scheduling requests, including validation and error scenarios.\n\n2. **Integration Tests**: Create integration tests to ensure the API correctly interacts with the task queue and database. Verify that tasks are scheduled and executed as expected.\n\n3. **UI Tests**: Conduct UI tests to validate the task scheduling interface, ensuring it correctly captures user input and displays feedback.\n\n4. **End-to-End Tests**: Perform end-to-end testing to simulate real-world task scheduling scenarios, verifying the complete flow from UI input to task execution.\n\n5. **Load Testing**: Conduct load testing to assess the system's ability to handle a high volume of scheduled tasks and concurrent users.",
+        "status": "done",
+        "dependencies": [
+          "15",
+          "25"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:32:46.044Z"
+      },
+      {
+        "id": "66",
+        "title": "Implement Reconciliation Resolution Dialog in Reconciliation.tsx",
+        "description": "Develop a resolution dialog component to complete the reconciliation workflow for Phase 2.",
+        "details": "Create a React component named `ResolutionDialog` within `Reconciliation.tsx`. This component should provide users with options to resolve discrepancies identified during reconciliation. Implement a modal dialog that displays detailed information about the discrepancies, including extracted and expected values. Provide options for users to accept, reject, or manually adjust values. Ensure the dialog integrates with existing reconciliation logic and updates the backend with user decisions. Use React hooks for state management and ensure the component is responsive and accessible. Consider using libraries like Material-UI for consistent styling and user experience.",
+        "testStrategy": "Develop unit tests to verify the rendering of the dialog and the correct display of discrepancy details. Create integration tests to ensure the dialog interacts correctly with backend services for updating reconciliation statuses. Validate the functionality of user actions (accept, reject, adjust) and ensure data integrity. Test the dialog's responsiveness and accessibility across different devices and browsers.",
+        "status": "done",
+        "dependencies": [
+          "59",
+          "60"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:36:18.757Z"
+      },
+      {
+        "id": "67",
+        "title": "Replace Hardcoded User ID in Scheduled Task Endpoint",
+        "description": "Remove the hardcoded user ID in the scheduled task creation endpoint and use the authenticated user's context.",
+        "details": "In `backend/app/api/v1/tasks.py`, locate the `/tasks/scheduled` endpoint. Replace the hardcoded `created_by: int = 1` parameter with dynamic user information obtained from the `get_current_user` dependency. Ensure that the `get_current_user` function is correctly imported and utilized to retrieve the authenticated user's ID. Update any related logic to handle user context appropriately, ensuring that the endpoint correctly associates scheduled tasks with the current user. Review the authentication middleware to confirm that user context is consistently available across requests.",
+        "testStrategy": "Develop unit tests to verify that the endpoint correctly retrieves and uses the authenticated user's ID. Create integration tests to ensure that scheduled tasks are associated with the correct user in the database. Test with various user roles and permissions to confirm that only authorized users can create scheduled tasks. Validate that the endpoint handles scenarios where user context is unavailable or invalid.",
+        "status": "done",
+        "dependencies": [
+          "62",
+          "65"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:39:50.265Z"
+      },
+      {
+        "id": "68",
+        "title": "Integrate Real API for Notifications in NotificationCenter.tsx",
+        "description": "Replace mock notifications with an actual API call in NotificationCenter.tsx and implement the backend endpoint for fetching notifications.",
+        "details": "1. **Backend Implementation**: Develop a new API endpoint in the backend to fetch notifications. This should be added to the existing API structure, ensuring it follows the authentication and authorization protocols. Use the existing user context to fetch notifications specific to the authenticated user.\n   - File: `backend/app/api/v1/notifications.py`\n   - Endpoint: `/notifications`\n   - Method: `GET`\n   - Ensure the endpoint returns notifications in a JSON format with necessary fields like `id`, `message`, `timestamp`, and `readStatus`.\n\n2. **Frontend Integration**: Update `NotificationCenter.tsx` to replace the mock data with data fetched from the new API endpoint.\n   - Use `useEffect` to call the API when the component mounts.\n   - Store the fetched notifications in the component's state using `useState`.\n   - Update the UI to reflect real-time data changes, such as marking notifications as read.\n\n3. **Error Handling**: Implement error handling for API calls to manage scenarios like network failures or unauthorized access.",
+        "testStrategy": "1. **Backend Testing**: Develop unit tests for the new API endpoint to ensure it correctly fetches notifications for the authenticated user. Use mock data to simulate different scenarios.\n   - Test unauthorized access to ensure proper error responses.\n   - Validate the JSON response structure and data integrity.\n\n2. **Frontend Testing**: Create unit tests for `NotificationCenter.tsx` to verify that it correctly fetches and displays notifications.\n   - Mock API responses to test different notification scenarios.\n   - Ensure the component updates the UI correctly when notifications are marked as read.\n\n3. **Integration Testing**: Conduct end-to-end tests to ensure the frontend and backend integration works seamlessly.\n   - Test with different user roles to verify access control.\n   - Simulate network errors to test error handling mechanisms.",
+        "status": "done",
+        "dependencies": [
+          "62"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:41:35.784Z"
+      },
+      {
+        "id": "69",
+        "title": "Implement Model Performance Metrics Storage",
+        "description": "Store calculated model performance metrics in the database for monitoring and analysis.",
+        "details": "Modify the `model_monitoring_service.py` to store performance metrics in the `model_performance_metrics` database table. Ensure the table schema exists and is correctly defined to accommodate all necessary metrics fields. Update the service to persist metrics such as accuracy, precision, recall, and F1 score after each model evaluation. Use SQLAlchemy for database interactions and ensure proper error handling and logging. Review the existing logging mechanism to remove redundant logs now stored in the database.",
+        "testStrategy": "Verify the existence and correctness of the `model_performance_metrics` table schema. Develop unit tests to ensure metrics are correctly calculated and stored in the database. Create integration tests to validate the service's interaction with the database, ensuring metrics are persisted after model evaluations. Perform load testing to assess the service's performance under high data volumes.",
+        "status": "done",
+        "dependencies": [
+          "25",
+          "30"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:42:57.628Z"
+      },
+      {
+        "id": "70",
+        "title": "Create Alembic Migration for Model Performance Metrics Table",
+        "description": "Develop an Alembic migration file to create the model_performance_metrics table with specified fields and indexes.",
+        "details": "Create an Alembic migration script to define the model_performance_metrics table. The table should include the following fields: model_name (string), model_type (string), detector_method (string), detection_coverage (float), runtime_per_batch_ms (integer), queue_latency_ms (integer), alert_volumes_by_severity (JSONB), false_positive_rate (float), precision (float), f1_score (float), additional_metrics (JSONB), property_id (integer, foreign key), period_id (integer, foreign key), batch_id (integer, foreign key), created_at (timestamp), and updated_at (timestamp). Ensure that indexes are created on model_name, model_type, and property_id to optimize common query patterns. Use SQLAlchemy for ORM mapping and ensure the migration is reversible.",
+        "testStrategy": "Apply the migration to a test database and verify the table creation with all fields and constraints. Insert test data to ensure the model handles data correctly and constraints are enforced. Query the table to validate data retrieval and indexing efficiency. Conduct unit tests on the model to ensure ORM mappings are correct and perform rollback to test migration reversibility.",
+        "status": "done",
+        "dependencies": [
+          "54",
+          "23"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:46:44.262Z"
+      },
+      {
+        "id": "71",
+        "title": "Implement PDF Overlay Creation for Highlighting Coordinates",
+        "description": "Develop a service to create PDF overlays that highlight specific coordinates using reportlab for visual annotation in review workflows.",
+        "details": "Utilize the reportlab library to generate PDF overlays that highlight specified coordinates. Implement a function in `pdf_field_locator.py` to accept parameters for coordinates and dimensions of the highlight areas. Use reportlab's canvas to draw rectangles or other shapes at these coordinates. Ensure the overlay PDFs can be merged with original PDFs using PyPDF2 or a similar library to display highlighted areas. Consider performance optimizations for handling large PDFs and multiple annotations. Ensure the service is modular to allow future enhancements, such as different highlight styles or colors.",
+        "testStrategy": "Develop unit tests to verify the correct generation of PDF overlays with specified coordinates and dimensions. Create integration tests to ensure overlays merge correctly with original PDFs and display highlighted areas accurately. Validate performance with large PDFs and multiple annotations. Test edge cases such as overlapping highlights and coordinates outside the page boundaries.",
+        "status": "done",
+        "dependencies": [
+          "8",
+          "12"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:57:58.749Z"
+      },
+      {
+        "id": "72",
+        "title": "Implement LayoutLM Fine-Tuning with Custom Dataset",
+        "description": "Enable fine-tuning of the LayoutLM model for improved PDF coordinate prediction accuracy using a custom dataset and training loop.",
+        "details": "1. **Dataset Preparation**: Load and preprocess the custom dataset to match the input format required by LayoutLM. Ensure the dataset includes labeled PDF documents with coordinate annotations.\n\n2. **Training Loop Implementation**: Develop a training loop in `layoutlm_coordinator.py` using PyTorch. Initialize the LayoutLM model with pre-trained weights and set up the optimizer and learning rate scheduler. Implement data loaders for efficient batch processing.\n\n3. **Model Fine-Tuning**: Fine-tune the LayoutLM model on the custom dataset. Use techniques such as gradient clipping and mixed precision training to enhance performance and stability.\n\n4. **Checkpointing**: Implement model checkpointing to save the model state at regular intervals and upon achieving improved validation metrics. Use libraries like `torch.save` for saving model weights.\n\n5. **Logging and Monitoring**: Integrate logging using TensorBoard or similar tools to monitor training metrics such as loss and accuracy over epochs.",
+        "testStrategy": "1. **Unit Tests**: Verify data preprocessing functions to ensure correct input format for LayoutLM.\n\n2. **Integration Tests**: Run the training loop with a small subset of the dataset to ensure the model trains without errors and checkpoints are saved correctly.\n\n3. **Validation**: Evaluate the fine-tuned model on a validation set to assess improvements in coordinate prediction accuracy.\n\n4. **Performance Testing**: Measure training time and resource utilization to ensure efficiency. Adjust batch sizes and learning rates as needed.",
+        "status": "done",
+        "dependencies": [
+          "8",
+          "12"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-12-22T23:58:49.531Z"
+      },
+      {
+        "id": "73",
+        "title": "Implement Actual Timing Data Collection in Model Monitoring Service",
+        "description": "Replace placeholder runtime metrics in model_monitoring_service.py with actual timing data collection using decorators or context managers.",
+        "details": "1. **Identify Placeholder Metrics**: Locate the sections in `model_monitoring_service.py` where placeholder values (45.0 seconds, 5.0 seconds, 100 batches) are used for runtime and queue latency metrics.\n\n2. **Implement Timing Collection**: Use Python's `time` module or a third-party library like `timeit` to implement decorators or context managers that measure the actual runtime per batch and queue latency. Decorators can be applied to functions handling batch processing to automatically log execution time.\n\n3. **Integrate with Existing Logging**: Ensure that the collected timing data is integrated with the existing logging mechanism. Update log messages to include real-time metrics.\n\n4. **Data Storage**: Modify the existing database interactions to store these real-time metrics in the `model_performance_metrics` table. Ensure the schema supports these new fields if necessary.\n\n5. **Code Refactoring**: Refactor any redundant code related to placeholder metrics and ensure the service remains efficient and maintainable.",
+        "testStrategy": "1. **Unit Tests**: Develop unit tests to verify that the decorators or context managers correctly measure and log execution time. Mock batch processing functions to simulate different scenarios.\n\n2. **Integration Tests**: Create integration tests to ensure that the timing data is correctly stored in the database. Validate that the service logs accurate metrics during batch processing.\n\n3. **Performance Testing**: Conduct performance tests to ensure that the addition of timing collection does not significantly impact the service's efficiency.\n\n4. **Regression Testing**: Run existing tests to ensure no other functionalities are affected by the changes.",
+        "status": "done",
+        "dependencies": [
+          "51",
+          "69"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:02:48.947Z"
+      },
+      {
+        "id": "74",
+        "title": "Implement Covenant and DSCR Impact Logic in review_service.py",
+        "description": "Replace placeholder boolean values with real calculations for covenant and DSCR impact determination.",
+        "details": "1. **Covenant Impact Calculation**: Implement logic to determine if a covenant is impacting based on predefined financial thresholds and covenant rules. Use existing financial data and rules defined in the system to calculate the impact.\n\n2. **DSCR Impact Calculation**: Develop logic to assess if the DSCR (Debt Service Coverage Ratio) is affecting based on its proximity to critical thresholds. Utilize historical DSCR data and compare against thresholds to determine impact.\n\n3. **Integration**: Ensure the new logic integrates seamlessly with existing services and data structures in `review_service.py`. Replace the placeholder boolean values `is_covenant_impacting` and `is_dscr_affecting` with the calculated results.\n\n4. **Documentation**: Update the code documentation to reflect the new logic and provide clear explanations of the calculations and thresholds used.",
+        "testStrategy": "1. **Unit Tests**: Develop unit tests to verify the correctness of the covenant and DSCR impact calculations. Test with various financial scenarios to ensure accuracy.\n\n2. **Integration Tests**: Ensure the new logic integrates correctly with existing services. Test the end-to-end flow from data input to impact determination.\n\n3. **Threshold Validation**: Validate that the calculations correctly identify impact when financial metrics are near or exceed thresholds.\n\n4. **Performance Testing**: Assess the performance of the new logic under typical and peak load conditions to ensure it meets performance requirements.",
+        "status": "done",
+        "dependencies": [
+          "12",
+          "27"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:05:15.353Z"
+      },
+      {
+        "id": "75",
+        "title": "Implement Consistency Factor Calculation in Review Auto Suggestion Service",
+        "description": "Replace the placeholder value with a calculated consistency factor based on historical mapping accuracy, user correction patterns, and account similarity metrics.",
+        "details": "1. **Historical Mapping Accuracy**: Analyze past mapping data to determine accuracy rates. Implement a function to calculate accuracy as a percentage of correct mappings over total mappings.\n\n2. **User Correction Patterns**: Track user corrections to identify common errors and adjust the consistency factor accordingly. Develop a method to quantify correction frequency and impact.\n\n3. **Account Similarity Metrics**: Use existing account data to calculate similarity scores. Implement a similarity function that considers factors like account type, transaction volume, and historical behavior.\n\n4. **Integration**: Modify `review_auto_suggestion_service.py` to replace the placeholder value (1.0) with the calculated consistency factor. Ensure the calculation is efficient and integrates seamlessly with existing logic.\n\n5. **Documentation**: Update code comments and documentation to reflect the new calculation logic and its components.",
+        "testStrategy": "1. **Unit Tests**: Develop tests for each component of the consistency factor calculation, including historical accuracy, user correction patterns, and account similarity metrics.\n\n2. **Integration Tests**: Verify that the new consistency factor is correctly integrated into the `review_auto_suggestion_service.py` and that it influences suggestions as expected.\n\n3. **Performance Testing**: Ensure that the calculation does not significantly impact the performance of the service.\n\n4. **Validation**: Compare the new consistency factor against a set of known data to validate its accuracy and effectiveness.",
+        "status": "done",
+        "dependencies": [
+          "12",
+          "27"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:06:01.592Z"
+      },
+      {
+        "id": "76",
+        "title": "Implement Validation Logic in accounting_anomaly_detector.py",
+        "description": "Replace placeholder implementations with actual validation logic for transaction date checking, provision accounts validation, and currency mismatch detection.",
+        "details": "1. **Transaction Date Field Checking**: Implement logic to validate transaction dates against expected date ranges. Ensure that dates fall within the current fiscal period and flag any anomalies.\n\n2. **Provision Accounts Validation**: Develop rules to verify that provision accounts are correctly set up and used according to accounting standards. Implement checks to ensure that provision entries are balanced and correctly categorized.\n\n3. **Currency Mismatch Detection**: Create a mechanism to detect discrepancies between transaction currencies and expected currencies. Implement conversion checks and flag transactions where the currency does not match the expected currency for the account or transaction type.\n\n4. **Integration**: Ensure the new validation logic integrates seamlessly with existing anomaly detection workflows. Refactor the code to replace placeholders with the new logic and ensure modularity for future enhancements.",
+        "testStrategy": "1. **Unit Tests**: Develop unit tests for each validation function to ensure they correctly identify anomalies. Use mock data to simulate various scenarios, including edge cases.\n\n2. **Integration Tests**: Test the integration of the new validation logic with the existing anomaly detection system. Ensure that anomalies are correctly logged and reported.\n\n3. **Performance Testing**: Assess the performance of the validation logic with large datasets to ensure efficiency and scalability.\n\n4. **Regression Testing**: Conduct regression tests to ensure that existing functionalities are not affected by the new implementations.",
+        "status": "done",
+        "dependencies": [
+          "25",
+          "27"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:08:59.040Z"
+      },
+      {
+        "id": "77",
+        "title": "Implement Detailed Review/Correction UI Frontend",
+        "description": "Develop a comprehensive frontend UI for detailed review and correction of extracted data, including inline editing and workflow integration.",
+        "details": "Create a React-based UI component for detailed data review and correction. This component should allow users to view extracted data fields and make inline edits. Implement field-level correction capabilities, enabling users to adjust data directly within the UI. Integrate the component with the existing review workflow to ensure seamless transitions between review stages. Use libraries such as React Hook Form for form management and ensure the UI is responsive and accessible. Consider using state management solutions like Redux or Context API to handle complex state interactions. Ensure the UI can communicate with the backend API to fetch and update data efficiently.",
+        "testStrategy": "Develop unit tests to verify the rendering of data fields and the functionality of inline editing. Create integration tests to ensure the UI correctly interacts with the backend API for data fetching and updates. Validate the integration with the review workflow by simulating user actions and transitions between stages. Perform usability testing to ensure the UI is intuitive and accessible.",
+        "status": "done",
+        "dependencies": [
+          "59",
+          "60"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:24:56.545Z"
+      },
+      {
+        "id": "78",
+        "title": "Develop Comprehensive Test Suite for Review Workflow",
+        "description": "Create unit, integration, and end-to-end tests for the review workflow, covering approval chains, dual approval logic, and review queue operations.",
+        "details": "1. **Unit Tests**: Develop unit tests for individual components of the review workflow, such as approval chain logic and dual approval conditions. Use mocking to simulate different scenarios and edge cases.\n\n2. **Integration Tests**: Implement integration tests to verify the interaction between different components of the review workflow. Ensure that data flows correctly through the approval chains and that dual approval logic is enforced.\n\n3. **End-to-End Tests**: Create end-to-end tests to simulate real user interactions with the review workflow. Test the entire process from submission to final approval, including transitions between different stages in the review queue.\n\n4. **Test Automation**: Use a test automation framework like Selenium or Cypress to automate end-to-end tests. Ensure tests are maintainable and can be run as part of the CI/CD pipeline.\n\n5. **Performance Testing**: Conduct performance testing to ensure the review workflow can handle expected loads without degradation in performance.",
+        "testStrategy": "1. **Unit Test Verification**: Run unit tests to ensure all individual components function correctly under various conditions. Use code coverage tools to ensure comprehensive test coverage.\n\n2. **Integration Test Validation**: Execute integration tests to confirm that components interact correctly. Validate data integrity and workflow transitions.\n\n3. **End-to-End Test Execution**: Perform end-to-end tests to simulate user interactions. Verify that the workflow behaves as expected from start to finish.\n\n4. **Automated Test Runs**: Integrate automated tests into the CI/CD pipeline to ensure they run on every code change. Monitor test results for failures and regressions.\n\n5. **Performance Test Analysis**: Analyze performance test results to identify bottlenecks and ensure the system meets performance requirements.",
+        "status": "done",
+        "dependencies": [
+          "77",
+          "59",
+          "60"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:27:02.855Z"
+      },
+      {
+        "id": "79",
+        "title": "Implement Trend Analysis Charts for Financial Data Visualization",
+        "description": "Create interactive charts to visualize trends over time for key financial metrics using Chart.js or D3.js.",
+        "details": "1. **Data Preparation**: Gather and preprocess financial data for metrics such as Net Operating Income (NOI), Debt Service Coverage Ratio (DSCR), occupancy rates, and revenue. Ensure data is normalized and time-series formatted.\n\n2. **Chart Selection**: Choose between Chart.js and D3.js based on project requirements and team familiarity. Chart.js is simpler for basic charts, while D3.js offers more customization.\n\n3. **Chart Implementation**: Develop interactive line and bar charts to display trends over time. Implement features such as tooltips, zoom, and pan for enhanced user interaction.\n\n4. **Integration**: Embed the charts into the existing dashboard UI. Ensure seamless integration with the backend to fetch real-time data updates.\n\n5. **Styling and Responsiveness**: Use CSS and JavaScript to ensure charts are visually appealing and responsive across devices.",
+        "testStrategy": "1. **Unit Tests**: Verify data preprocessing functions to ensure correct time-series data formatting.\n\n2. **Integration Tests**: Test the integration of charts within the dashboard, ensuring data is correctly fetched and displayed.\n\n3. **User Interaction Tests**: Validate interactive features such as tooltips, zoom, and pan for usability and performance.\n\n4. **Cross-Browser Testing**: Ensure charts render correctly across different browsers and devices.",
+        "status": "done",
+        "dependencies": [
+          "3",
+          "18"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:17:21.511Z"
+      },
+      {
+        "id": "80",
+        "title": "Add Export Download Buttons in UI",
+        "description": "Implement download buttons for Excel and CSV exports in the frontend, enabling direct downloads from the UI.",
+        "details": "1. **UI Design**: Add buttons for 'Download Excel' and 'Download CSV' in the relevant sections of the UI. Use consistent styling with existing UI components.\n\n2. **Frontend Implementation**: Use React to create components for the download buttons. Ensure they are responsive and accessible.\n\n3. **API Integration**: Connect the buttons to existing export APIs. Ensure that clicking a button triggers the appropriate API call to fetch the export data.\n\n4. **File Handling**: Implement logic to handle file downloads in the browser. Use libraries like FileSaver.js to manage file saving and naming conventions.\n\n5. **User Feedback**: Provide visual feedback during the download process, such as loading indicators or success messages.",
+        "testStrategy": "1. **Unit Tests**: Verify that the download buttons render correctly and trigger the appropriate API calls.\n\n2. **Integration Tests**: Test the complete download process, ensuring files are correctly downloaded and saved.\n\n3. **UI Tests**: Check the responsiveness and accessibility of the buttons across different devices and browsers.\n\n4. **User Feedback Verification**: Ensure that user feedback mechanisms (loading indicators, success messages) function correctly during the download process.",
+        "status": "done",
+        "dependencies": [
+          "8",
+          "12"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:11:28.760Z"
+      },
+      {
+        "id": "81",
+        "title": "Enhance Test Coverage to 85% Across All Modules",
+        "description": "Increase test coverage from 50% to 85% by adding comprehensive unit, integration, and end-to-end tests.",
+        "details": "1. **Unit Tests**: Develop unit tests for all critical functions across modules, focusing on edge cases and error handling. Use mocking and stubbing to isolate components and simulate various scenarios.\n\n2. **Integration Tests**: Implement integration tests to verify interactions between modules. Ensure data flows correctly and modules communicate as expected.\n\n3. **End-to-End Tests**: Create end-to-end tests to simulate real user scenarios, covering critical paths and workflows. Use tools like Selenium or Cypress for browser-based testing.\n\n4. **Coverage Analysis**: Use tools like Istanbul or JaCoCo to measure test coverage. Identify untested areas and prioritize them for test development.\n\n5. **Continuous Integration**: Integrate tests into the CI/CD pipeline to ensure they run automatically with each build.",
+        "testStrategy": "1. **Coverage Verification**: Use coverage tools to ensure 85% coverage is achieved. Review reports to identify gaps.\n\n2. **Unit Test Validation**: Run unit tests to confirm individual components handle edge cases and errors correctly.\n\n3. **Integration Test Execution**: Execute integration tests to verify module interactions and data flow.\n\n4. **End-to-End Test Simulation**: Conduct end-to-end tests to ensure complete workflows function as expected.\n\n5. **Regression Testing**: Perform regression tests to ensure new tests do not break existing functionality.",
+        "status": "done",
+        "dependencies": [
+          "78",
+          "23",
+          "14"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-23T00:30:00.525Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-21T19:27:46.197Z",
-      "taskCount": 20,
-      "completedCount": 6,
+      "lastModified": "2025-12-23T00:30:00.528Z",
+      "taskCount": 81,
+      "completedCount": 81,
       "tags": [
         "frontend-redesign"
       ]

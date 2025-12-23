@@ -1366,6 +1366,107 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
         )
 
 
+class DSCRHistoricalResponse(BaseModel):
+    """Historical DSCR data for sparkline visualization"""
+    property_id: int
+    property_code: str
+    months: int
+    dscr_values: List[float]
+    periods: List[dict]
+    calculated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/metrics/{property_id}/dscr/historical", response_model=DSCRHistoricalResponse)
+async def get_historical_dscr(
+    property_id: int = Path(..., description="Property ID"),
+    months: int = Query(12, ge=1, le=60, description="Number of months of historical data"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get historical DSCR values for a property for sparkline visualization
+    
+    Calculates DSCR for each available period in the last N months.
+    Returns DSCR values and period information for charting.
+    """
+    try:
+        from decimal import Decimal
+        
+        # Get property
+        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        if not property_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Property {property_id} not found"
+            )
+        
+        # Get periods for the property, ordered by date (most recent first)
+        periods = db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id
+        ).order_by(
+            FinancialPeriod.period_end_date.desc()
+        ).limit(months).all()
+        
+        if not periods:
+            return DSCRHistoricalResponse(
+                property_id=property_id,
+                property_code=property_obj.property_code,
+                months=0,
+                dscr_values=[],
+                periods=[],
+                calculated_at=datetime.now()
+            )
+        
+        # Reverse to get chronological order (oldest first)
+        periods = list(reversed(periods))
+        
+        # Calculate DSCR for each period
+        dscr_service = DSCRMonitoringService(db)
+        dscr_values = []
+        period_data = []
+        
+        for period in periods:
+            try:
+                dscr_result = dscr_service.calculate_dscr(property_id, period.id)
+                if dscr_result.get("success"):
+                    dscr_values.append(float(dscr_result["dscr"]))
+                    period_data.append({
+                        "period_id": period.id,
+                        "year": period.period_year,
+                        "month": period.period_month,
+                        "end_date": period.period_end_date.isoformat() if period.period_end_date else None,
+                        "dscr": float(dscr_result["dscr"]),
+                        "noi": float(dscr_result["noi"]),
+                        "debt_service": float(dscr_result["total_debt_service"])
+                    })
+                else:
+                    # Skip periods where DSCR cannot be calculated
+                    logger.debug(f"Skipping period {period.id} for property {property_id}: {dscr_result.get('error')}")
+            except Exception as e:
+                logger.warning(f"Failed to calculate DSCR for property {property_id}, period {period.id}: {str(e)}")
+                continue
+        
+        return DSCRHistoricalResponse(
+            property_id=property_id,
+            property_code=property_obj.property_code,
+            months=len(dscr_values),
+            dscr_values=dscr_values,
+            periods=period_data,
+            calculated_at=datetime.now()
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching historical DSCR for property {property_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch historical DSCR: {str(e)}"
+        )
+
+
 @router.get("/metrics/historical", response_model=HistoricalMetricsResponse)
 async def get_historical_metrics(
     property_id: Optional[int] = Query(None, description="Property ID (optional - omit for portfolio)"),

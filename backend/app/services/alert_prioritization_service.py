@@ -15,6 +15,9 @@ from app.models.property import Property
 logger = logging.getLogger(__name__)
 
 
+# Import enhanced prioritization
+from app.services.enhanced_alert_prioritization import EnhancedAlertPrioritizationService
+
 class AlertPrioritizationService:
     """
     Alert Prioritization Service

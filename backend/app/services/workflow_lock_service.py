@@ -12,6 +12,9 @@ import logging
 from app.models.workflow_lock import WorkflowLock, LockReason, LockScope, LockStatus
 from app.models.committee_alert import CommitteeAlert, AlertStatus, AlertType, AlertSeverity, CommitteeType
 from app.models.property import Property
+from app.models.financial_period import FinancialPeriod
+from app.services.dscr_monitoring_service import DSCRMonitoringService
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +329,8 @@ class WorkflowLockService:
             "threshold": 1.25,
             "operator": ">="
         }
+        
+        For DSCR locks, automatically checks if current DSCR has improved above threshold.
         """
         try:
             lock = self.db.query(WorkflowLock).filter(WorkflowLock.id == lock_id).first()
@@ -335,24 +340,91 @@ class WorkflowLockService:
             if not lock.auto_release_conditions:
                 return {"success": False, "error": "No auto-release conditions defined"}
 
-            # TODO: Implement actual condition checking
-            # For now, return false
+            conditions = lock.auto_release_conditions
+            metric = conditions.get("metric")
+            threshold = conditions.get("threshold")
+            operator = conditions.get("operator", ">=")
+            
             conditions_met = False
+            current_value = None
+            message = "Auto-release conditions not yet met"
+
+            # Check DSCR-based conditions
+            if metric == "DSCR" and threshold is not None:
+                try:
+                    # Get latest period for the property
+                    period = self.db.query(FinancialPeriod).filter(
+                        FinancialPeriod.property_id == lock.property_id
+                    ).order_by(FinancialPeriod.period_end_date.desc()).first()
+                    
+                    if not period:
+                        return {
+                            "success": True,
+                            "conditions_met": False,
+                            "message": "No financial period found for DSCR calculation"
+                        }
+                    
+                    # Calculate current DSCR
+                    dscr_service = DSCRMonitoringService(self.db)
+                    dscr_result = dscr_service.calculate_dscr(lock.property_id, period.id)
+                    
+                    if dscr_result.get("success"):
+                        current_value = float(dscr_result["dscr"])
+                        
+                        # Check condition based on operator
+                        if operator == ">=":
+                            conditions_met = current_value >= float(threshold)
+                        elif operator == ">":
+                            conditions_met = current_value > float(threshold)
+                        elif operator == "<=":
+                            conditions_met = current_value <= float(threshold)
+                        elif operator == "<":
+                            conditions_met = current_value < float(threshold)
+                        elif operator == "==":
+                            conditions_met = abs(current_value - float(threshold)) < 0.01  # Small tolerance
+                        else:
+                            logger.warning(f"Unknown operator '{operator}' in auto-release conditions")
+                            conditions_met = False
+                        
+                        if conditions_met:
+                            message = f"Auto-release condition met: DSCR {current_value:.2f} {operator} {threshold}"
+                        else:
+                            message = f"DSCR {current_value:.2f} does not meet condition ({operator} {threshold})"
+                    else:
+                        message = f"Failed to calculate DSCR: {dscr_result.get('error', 'Unknown error')}"
+                        
+                except Exception as e:
+                    logger.error(f"Error checking DSCR condition for lock {lock_id}: {str(e)}")
+                    return {
+                        "success": False,
+                        "error": f"Failed to check DSCR condition: {str(e)}"
+                    }
+            else:
+                # Unknown metric type
+                logger.warning(f"Unknown metric type '{metric}' in auto-release conditions for lock {lock_id}")
+                return {
+                    "success": False,
+                    "error": f"Unsupported metric type: {metric}"
+                }
 
             if conditions_met:
                 # Auto-release the lock
                 result = self.release_lock(
                     lock_id=lock_id,
                     unlocked_by=1,  # System user
-                    resolution_notes="Auto-released: conditions met",
+                    resolution_notes=f"Auto-released: {message}",
                     auto_released=True
                 )
+                result["current_value"] = current_value
+                result["threshold"] = threshold
                 return result
 
             return {
                 "success": True,
                 "conditions_met": False,
-                "message": "Auto-release conditions not yet met"
+                "message": message,
+                "current_value": current_value,
+                "threshold": threshold
             }
 
         except Exception as e:

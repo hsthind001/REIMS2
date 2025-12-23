@@ -40,31 +40,72 @@ export default function NotificationCenter({ onNotificationClick }: Notification
   }, [notifications]);
 
   const loadNotifications = async () => {
-    // TODO: Replace with actual API call
-    // For now, using mock data
-    const mockNotifications: Notification[] = [
-      {
-        id: 1,
-        type: 'alert',
-        title: 'New Critical Alert',
-        message: 'DSCR breach detected for Property 123',
-        timestamp: new Date().toISOString(),
-        read: false,
-        severity: 'critical',
-        link: '#/risk-management?alert=1'
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load notifications: ${response.statusText}`);
       }
-    ];
-    setNotifications(mockNotifications);
+      
+      const data = await response.json();
+      setNotifications(data);
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
+      // Fallback to empty array on error
+      setNotifications([]);
+    }
   };
 
-  const markAsRead = (id: number) => {
-    setNotifications(notifications.map(n => 
-      n.id === id ? { ...n, read: true } : n
-    ));
+  const markAsRead = async (id: number) => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${id}/read`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to mark notification as read: ${response.statusText}`);
+      }
+      
+      // Update local state
+      setNotifications(notifications.map(n => 
+        n.id === id ? { ...n, read: true } : n
+      ));
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const markAllAsRead = async () => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE_URL}/api/v1/notifications/read-all`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to mark all notifications as read: ${response.statusText}`);
+      }
+      
+      // Update local state
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    }
   };
 
   const getSeverityColor = (severity?: string) => {

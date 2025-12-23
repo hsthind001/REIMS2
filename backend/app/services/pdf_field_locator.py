@@ -277,7 +277,12 @@ class PDFFieldLocator:
 
         Args:
             pdf_path: Path to original PDF
-            highlights: List of highlight information dictionaries
+            highlights: List of highlight information dictionaries with:
+                - page: Page number (0-indexed or 1-indexed)
+                - x0, y0: Bottom-left coordinates
+                - x1, y1: Top-right coordinates
+                - color: Optional highlight color (default: yellow with 0.3 opacity)
+                - label: Optional label text to display
 
         Returns:
             PDF bytes with overlays, or None if error
@@ -285,17 +290,138 @@ class PDFFieldLocator:
         try:
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
+            from reportlab.lib.colors import yellow, red, blue, green, HexColor
             from io import BytesIO
-            import PyPDF2
+            from pypdf import PdfReader, PdfWriter
+            import fitz  # PyMuPDF for page dimensions
 
-            # TODO: Implement PDF overlay creation
-            # This is a placeholder for future implementation
+            if not highlights:
+                logger.warning("No highlights provided for overlay creation")
+                return None
 
-            logger.warning("PDF overlay creation not yet implemented - placeholder")
+            # Read original PDF to get page dimensions
+            original_pdf = fitz.open(pdf_path)
+            num_pages = len(original_pdf)
+            
+            if num_pages == 0:
+                logger.error("Original PDF has no pages")
+                return None
+
+            # Create overlay PDFs for each page that has highlights
+            overlay_pdfs = {}
+            
+            for highlight in highlights:
+                # Get page number (handle both 0-indexed and 1-indexed)
+                page_num = highlight.get('page', 0)
+                if page_num < 0:
+                    page_num = 0
+                elif page_num >= num_pages:
+                    page_num = num_pages - 1
+                
+                # Get page dimensions from original PDF
+                page = original_pdf[page_num]
+                page_width = page.rect.width
+                page_height = page.rect.height
+                
+                # Get coordinates (default to full page if not specified)
+                x0 = highlight.get('x0', 0)
+                y0 = highlight.get('y0', 0)
+                x1 = highlight.get('x1', page_width)
+                y1 = highlight.get('y1', page_height)
+                
+                # Ensure coordinates are within page bounds
+                x0 = max(0, min(x0, page_width))
+                y0 = max(0, min(y0, page_height))
+                x1 = max(x0, min(x1, page_width))
+                y1 = max(y0, min(y1, page_height))
+                
+                # Get highlight color (default: yellow with transparency)
+                color_str = highlight.get('color', 'yellow')
+                opacity = highlight.get('opacity', 0.3)
+                
+                # Map color strings to ReportLab colors
+                color_map = {
+                    'yellow': yellow,
+                    'red': red,
+                    'blue': blue,
+                    'green': green
+                }
+                highlight_color = color_map.get(color_str.lower(), yellow)
+                
+                # Create overlay canvas for this page if not exists
+                if page_num not in overlay_pdfs:
+                    buffer = BytesIO()
+                    overlay_canvas = canvas.Canvas(buffer, pagesize=(page_width, page_height))
+                    overlay_pdfs[page_num] = {
+                        'canvas': overlay_canvas,
+                        'buffer': buffer,
+                        'width': page_width,
+                        'height': page_height
+                    }
+                
+                overlay_canvas = overlay_pdfs[page_num]['canvas']
+                
+                # Draw highlight rectangle
+                # Note: ReportLab uses bottom-left origin, PDF coordinates may use top-left
+                # Convert coordinates if needed (assuming input is top-left origin)
+                rect_x0 = x0
+                rect_y0 = page_height - y1  # Convert top to bottom
+                rect_x1 = x1
+                rect_y1 = page_height - y0  # Convert bottom to top
+                
+                # Draw semi-transparent rectangle
+                overlay_canvas.setFillColor(highlight_color, alpha=opacity)
+                overlay_canvas.rect(rect_x0, rect_y0, rect_x1 - rect_x0, rect_y1 - rect_y0, 
+                                   fill=1, stroke=0)
+                
+                # Add label if provided
+                label = highlight.get('label')
+                if label:
+                    overlay_canvas.setFillColor(HexColor('#000000'), alpha=1.0)
+                    overlay_canvas.setFont("Helvetica", 8)
+                    # Position label above the highlight
+                    label_y = min(rect_y1 + 5, page_height - 5)
+                    overlay_canvas.drawString(rect_x0, label_y, str(label))
+            
+            # Finalize all overlay canvases
+            for page_num, overlay_data in overlay_pdfs.items():
+                overlay_data['canvas'].save()
+                overlay_data['buffer'].seek(0)
+            
+            # Merge overlays with original PDF
+            original_reader = PdfReader(pdf_path)
+            writer = PdfWriter()
+            
+            for page_num in range(num_pages):
+                original_page = original_reader.pages[page_num]
+                
+                # Add overlay if exists for this page
+                if page_num in overlay_pdfs:
+                    overlay_buffer = overlay_pdfs[page_num]['buffer']
+                    overlay_reader = PdfReader(overlay_buffer)
+                    if len(overlay_reader.pages) > 0:
+                        overlay_page = overlay_reader.pages[0]
+                        # Merge overlay onto original page
+                        original_page.merge_page(overlay_page)
+                
+                writer.add_page(original_page)
+            
+            # Write merged PDF to bytes
+            output_buffer = BytesIO()
+            writer.write(output_buffer)
+            output_buffer.seek(0)
+            
+            original_pdf.close()
+            
+            logger.info(f"Successfully created PDF overlay with {len(highlights)} highlights")
+            return output_buffer.getvalue()
+
+        except ImportError as e:
+            logger.error(f"Required library not available for PDF overlay: {e}")
+            logger.info("Install reportlab and pypdf: pip install reportlab pypdf")
             return None
-
         except Exception as e:
-            logger.error(f"Error creating highlight overlay: {e}")
+            logger.error(f"Error creating highlight overlay: {e}", exc_info=True)
             return None
 
     def extract_field_value(

@@ -437,6 +437,9 @@ class ReconciliationService:
                 pdf_value = record.get('monthly_rent')
                 db_value = record.get('monthly_rent')  # Same since comparing to itself
                 
+                # Compare amounts for rent roll
+                match_status, difference, difference_percent = compare_amounts(pdf_value, db_value)
+                
                 # Create enhanced record with ALL rent roll fields
                 diff_record = {
                     'record_id': record.get('record_id'),
@@ -444,9 +447,9 @@ class ReconciliationService:
                     'account_name': record.get('tenant_name', 'Unknown'),
                     'pdf_value': float(pdf_value) if pdf_value is not None else None,
                     'db_value': float(db_value) if db_value is not None else None,
-                    'difference': 0.0,  # Same data
-                    'difference_percent': 0.0,
-                    'match_status': 'exact',
+                    'difference': float(difference) if difference is not None else None,
+                    'difference_percent': float(difference_percent) if difference_percent is not None else None,
+                    'match_status': match_status,
                     'confidence_score': record.get('extraction_confidence'),
                     'needs_review': record.get('needs_review', False),
                     'flags': [],
@@ -494,25 +497,28 @@ class ReconciliationService:
                     'flags': []
                 }
             
-            all_differences.append(diff_record)
+            # Store all differences in database for tracking and resolution
+            diff_db = ReconciliationDifference(
+                session_id=session.id,
+                account_code=identifier,
+                account_name=diff_record['account_name'],
+                field_name='amount',
+                pdf_value=Decimal(str(pdf_value)) if pdf_value is not None else None,
+                db_value=Decimal(str(db_value)) if db_value is not None else None,
+                difference=Decimal(str(difference)) if difference is not None else None,
+                difference_percent=Decimal(str(difference_percent)) if difference_percent is not None else None,
+                difference_type=match_status,
+                status='pending',
+                confidence_score=diff_record.get('confidence_score'),
+                needs_review=diff_record.get('needs_review', False)
+            )
+            self.db.add(diff_db)
+            self.db.flush()  # Flush to get the ID without committing
             
-            # Store in database if flagged for review (unmatched accounts)
-            if diff_record['needs_review']:
-                diff_db = ReconciliationDifference(
-                    session_id=session.id,
-                    account_code=identifier,
-                    account_name=diff_record['account_name'],
-                    field_name='amount',
-                    pdf_value=Decimal(str(pdf_value)) if pdf_value is not None else None,
-                    db_value=Decimal(str(db_value)) if db_value is not None else None,
-                    difference=Decimal(str(difference)) if difference is not None else None,
-                    difference_percent=Decimal(str(difference_percent)) if difference_percent is not None else None,
-                    difference_type='unmapped_account',
-                    status='pending',
-                    confidence_score=diff_record['confidence_score'],
-                    needs_review=True
-                )
-                self.db.add(diff_db)
+            # Add difference ID to the record
+            diff_record['id'] = diff_db.id
+            
+            all_differences.append(diff_record)
         
         self.db.commit()
         

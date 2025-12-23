@@ -37,6 +37,8 @@ from app.models.tenant_performance_history import TenantPerformanceHistory
 # Risk management models
 from app.models.committee_alert import CommitteeAlert
 from app.models.workflow_lock import WorkflowLock
+from app.models.account_mapping_rule import AccountMappingRule
+from app.models.review_approval_chain import ReviewApprovalChain, ApprovalStatus
 from app.models.alert_rule import AlertRule
 from app.models.alert_history import AlertHistory
 
@@ -62,6 +64,18 @@ from app.models.cross_property_benchmark import CrossPropertyBenchmark
 from app.models.batch_reprocessing_job import BatchReprocessingJob
 from app.models.pdf_field_coordinate import PDFFieldCoordinate
 from app.models.pyod_model_selection_log import PyODModelSelectionLog
+
+# Data quality models
+from app.models.data_quality import DataQualityScore
+
+# Scheduled task models
+from app.models.scheduled_task import ScheduledTask, ScheduleType, TaskStatus
+
+# Notification models
+from app.models.notification import Notification
+
+# Model performance metrics
+from app.models.model_performance_metrics import ModelPerformanceMetrics
 
 __all__ = [
     "User",
@@ -126,4 +140,18 @@ __all__ = [
     "BatchReprocessingJob",
     "PDFFieldCoordinate",
     "PyODModelSelectionLog",
+    # Data quality
+    "DataQualityScore",
+    # Review and approval
+    "AccountMappingRule",
+    "ReviewApprovalChain",
+    "ApprovalStatus",
+    # Scheduled tasks
+    "ScheduledTask",
+    "ScheduleType",
+    "TaskStatus",
+    # Notifications
+    "Notification",
+    # Model performance metrics
+    "ModelPerformanceMetrics",
 ]

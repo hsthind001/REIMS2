@@ -4,11 +4,52 @@ Anomaly Detection Model
 Represents detected anomalies in financial data extracted from documents.
 """
 
-from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, Text, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY, UUID
+import enum
 from app.db.database import Base
+
+
+class BaselineType(str, enum.Enum):
+    """Baseline type for anomaly detection"""
+    MEAN = "mean"
+    SEASONAL = "seasonal"
+    FORECAST = "forecast"
+    PEER_GROUP = "peer-group"
+
+
+class AnomalyDirection(str, enum.Enum):
+    """Direction of anomaly change"""
+    UP = "up"
+    DOWN = "down"
+
+
+class AnomalyCategory(str, enum.Enum):
+    """Anomaly category taxonomy"""
+    DATA_QUALITY = "data-quality"
+    ACCOUNTING = "accounting"
+    PERFORMANCE = "performance"
+    COVENANT = "covenant"
+    EXTRACTION = "extraction"
+
+
+class PatternType(str, enum.Enum):
+    """Pattern type classification"""
+    POINT = "point"
+    TREND = "trend"
+    SEASONALITY = "seasonality"
+    STRUCTURE = "structure"
+
+
+class ResolutionType(str, enum.Enum):
+    """Resolution type enum for anomaly resolution tracking"""
+    DATA_ENTRY = "data_entry"
+    EXTRACTION = "extraction"
+    MAPPING = "mapping"
+    BUSINESS_CHANGE = "business_change"
+    COVENANT_ISSUE = "covenant_issue"
 
 
 class AnomalyDetection(Base):
@@ -50,7 +91,25 @@ class AnomalyDetection(Base):
     is_consensus = Column(Boolean, default=False, nullable=True, index=True)  # Multiple methods agree
     change_point_detected = Column(Boolean, default=False, nullable=True)  # Structural break detected
     context_suppressed = Column(Boolean, default=False, nullable=True)  # Suppressed by context rules
-    suppression_reason = Column(String(255), nullable=True)  # Reason for suppression
+    suppression_reason = Column(Text, nullable=True)  # Reason for suppression (changed to Text for longer reasons)
+    
+    # World-class enhancement fields (from migration 20251222_0000)
+    anomaly_score = Column(Numeric(5, 2), nullable=True, index=True)  # Unified risk score 0-100
+    impact_amount = Column(Numeric(15, 2), nullable=True)  # Absolute $ variance/exposure
+    direction = Column(SQLEnum(AnomalyDirection), nullable=True)  # Change direction: up/down
+    root_cause_candidates = Column(JSONB, nullable=True)  # Top suspected drivers (JSONB)
+    baseline_type = Column(SQLEnum(BaselineType), nullable=True, index=True)  # Baseline method used
+    correlation_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # Group related anomalies into incidents
+    suppressed_until = Column(DateTime(timezone=True), nullable=True, index=True)  # Suppression expiration
+    anomaly_category = Column(SQLEnum(AnomalyCategory), nullable=True, index=True)  # Taxonomy classification
+    pattern_type = Column(SQLEnum(PatternType), nullable=True, index=True)  # Pattern classification
+    is_one_off = Column(Boolean, default=False, nullable=True)  # One-time anomaly flag
+    is_recurrent = Column(Boolean, default=False, nullable=True)  # Recurring pattern flag
+    cross_property_pattern = Column(Boolean, default=False, nullable=True)
+    
+    # Root cause tracking (Task 57)
+    resolution_type = Column(SQLEnum(ResolutionType), nullable=True)  # Resolution type enum
+    root_cause = Column(Text, nullable=True)  # Detailed root cause explanation
     
     # Timestamps
     detected_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

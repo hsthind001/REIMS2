@@ -27,6 +27,7 @@ export interface ReconciliationSession {
 }
 
 export interface ComparisonRecord {
+  id?: number; // Difference ID from backend
   account_code: string;
   account_name: string;
   pdf_value: number | null;

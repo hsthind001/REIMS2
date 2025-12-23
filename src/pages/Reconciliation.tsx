@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { propertyService } from '../lib/property';
 import { reconciliationService, type ComparisonData, type ComparisonRecord } from '../lib/reconciliation';
 import type { Property } from '../types/api';
+import { ResolutionDialog } from '../components/reconciliation/ResolutionDialog';
 
 export default function Reconciliation() {
   // Property and period selection
@@ -20,6 +21,7 @@ export default function Reconciliation() {
   const splitPosition = 50; // Fixed 50/50 split for now
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [selectedRecordForResolution, setSelectedRecordForResolution] = useState<ComparisonRecord | null>(null);
 
   useEffect(() => {
     loadProperties();
@@ -75,8 +77,15 @@ export default function Reconciliation() {
   };
 
   const handleResolveDifference = (record: ComparisonRecord) => {
-    // TODO: Implement resolution dialog in Phase 2
-    alert(`Resolve difference for ${record.account_code}: ${record.account_name}`);
+    setSelectedRecordForResolution(record);
+  };
+
+  const handleResolutionComplete = async () => {
+    // Refresh reconciliation data after resolution
+    if (selectedProperty) {
+      await handleStartReconciliation();
+    }
+    setSelectedRecordForResolution(null);
   };
 
   const handleBulkAcceptPDF = async () => {
@@ -554,6 +563,16 @@ export default function Reconciliation() {
               </p>
             </div>
           </div>
+        )}
+
+        {/* Resolution Dialog */}
+        {selectedRecordForResolution && (
+          <ResolutionDialog
+            record={selectedRecordForResolution}
+            isOpen={true}
+            onClose={() => setSelectedRecordForResolution(null)}
+            onResolved={handleResolutionComplete}
+          />
         )}
       </div>
     </div>

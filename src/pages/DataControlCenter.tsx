@@ -1496,10 +1496,36 @@ export default function DataControlCenter() {
                 {/* Phase 3: Task Scheduler */}
                 <TaskScheduler
                   onSchedule={async (task) => {
-                    // TODO: Implement API call to schedule task
-                    console.log('Scheduling task:', task);
-                    // For now, just log it
-                    return Promise.resolve();
+                    try {
+                      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                      const response = await fetch(`${API_BASE_URL}/api/v1/tasks/scheduled`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify({
+                          task_type: task.task_type,
+                          schedule_type: task.schedule_type,
+                          scheduled_time: task.schedule_type === 'once' ? task.scheduled_time : null,
+                          cron_expression: task.schedule_type === 'recurring' ? task.cron_expression : null,
+                          parameters: task.parameters || {},
+                          task_name: `${task.task_type} - ${task.schedule_type}`,
+                        }),
+                      });
+
+                      if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to schedule task');
+                      }
+
+                      const result = await response.json();
+                      console.log('Task scheduled successfully:', result);
+                      return Promise.resolve();
+                    } catch (error: any) {
+                      console.error('Failed to schedule task:', error);
+                      throw error;
+                    }
                   }}
                 />
               </>

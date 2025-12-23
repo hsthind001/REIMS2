@@ -55,8 +55,12 @@ class XAIExplanationService:
     def __init__(self, db: Session):
         """Initialize XAI explanation service."""
         self.db = db
-        self.shap_enabled = FeatureFlags.is_shap_enabled() and SHAP_AVAILABLE
-        self.lime_enabled = FeatureFlags.is_lime_enabled() and LIME_AVAILABLE
+        # Enable SHAP and LIME by default for core ML detectors (IForest, LOF, OCSVM)
+        self.shap_enabled = True if SHAP_AVAILABLE else False  # Enabled by default if available
+        self.lime_enabled = True if LIME_AVAILABLE else False  # Enabled by default if available
+        
+        # Core ML detectors that support SHAP/LIME
+        self.supported_detectors = ['isolation_forest', 'lof', 'ocsvm', 'iforest', 'one_class_svm']
     
     def generate_explanation(
         self,
@@ -241,10 +245,18 @@ class XAIExplanationService:
                 for i, feature in enumerate(feature_data.columns)
             }
             
+            # Get top 3 features with contribution percentages
+            top_features = self._get_top_features(feature_importance, top_n=3)
+            
+            # Generate natural language summary
+            feature_summary = self._generate_feature_summary(top_features, anomaly)
+            
             return {
                 'values': shap_values.tolist() if hasattr(shap_values, 'tolist') else shap_values,
                 'base_value': float(base_value) if isinstance(base_value, (int, float, np.number)) else base_value,
-                'feature_importance': feature_importance
+                'feature_importance': feature_importance,
+                'top_features': top_features,
+                'feature_summary': feature_summary
             }
         except Exception as e:
             logger.error(f"SHAP explanation error: {e}")
@@ -288,10 +300,18 @@ class XAIExplanationService:
             explanation_list = explanation.as_list()
             explanation_dict = {item[0]: float(item[1]) for item in explanation_list}
             
+            # Get top 3 features with contribution percentages
+            top_features = self._get_top_features(explanation_dict, top_n=3)
+            
+            # Generate natural language summary
+            feature_summary = self._generate_feature_summary(top_features, anomaly)
+            
             return {
                 'explanation': explanation_dict,
                 'intercept': float(explanation.intercept[0]) if hasattr(explanation, 'intercept') else None,
-                'score': float(explanation.score) if hasattr(explanation, 'score') else None
+                'score': float(explanation.score) if hasattr(explanation, 'score') else None,
+                'top_features': top_features,
+                'feature_summary': feature_summary
             }
         except Exception as e:
             logger.error(f"LIME explanation error: {e}")
@@ -440,4 +460,186 @@ class XAIExplanationService:
         ).order_by(
             AnomalyExplanation.explanation_generated_at.desc()
         ).limit(limit).all()
+    
+    def _get_top_features(
+        self,
+        feature_importance: Dict[str, float],
+        top_n: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Get top N features with their contribution percentages.
+        
+        Args:
+            feature_importance: Dict mapping feature names to importance values
+            top_n: Number of top features to return
+            
+        Returns:
+            List of dicts with feature name, contribution value, and percentage
+        """
+        if not feature_importance:
+            return []
+        
+        # Calculate total absolute importance for normalization
+        total_abs_importance = sum(abs(v) for v in feature_importance.values())
+        
+        if total_abs_importance == 0:
+            return []
+        
+        # Sort by absolute importance
+        sorted_features = sorted(
+            feature_importance.items(),
+            key=lambda x: abs(x[1]),
+            reverse=True
+        )[:top_n]
+        
+        top_features = []
+        for feature_name, importance_value in sorted_features:
+            contribution_pct = (abs(importance_value) / total_abs_importance) * 100
+            top_features.append({
+                'feature_name': feature_name,
+                'contribution_value': float(importance_value),
+                'contribution_percentage': round(contribution_pct, 2),
+                'direction': 'positive' if importance_value > 0 else 'negative'
+            })
+        
+        return top_features
+    
+    def _generate_feature_summary(
+        self,
+        top_features: List[Dict[str, Any]],
+        anomaly: AnomalyDetection
+    ) -> str:
+        """
+        Generate natural language summary of feature contributions.
+        
+        Example: "Expenses increased 42% vs 3-year average; this account historically varies ±8%"
+        
+        Args:
+            top_features: List of top feature dicts from _get_top_features
+            anomaly: AnomalyDetection record
+            
+        Returns:
+            Natural language summary string
+        """
+        if not top_features:
+            return "No significant feature contributions identified."
+        
+        summary_parts = []
+        
+        # Get historical context if available
+        historical_variance = None
+        if anomaly.percentage_change:
+            historical_variance = abs(float(anomaly.percentage_change))
+        
+        # Build summary from top features
+        for i, feature in enumerate(top_features[:3]):
+            feature_name = feature['feature_name']
+            contribution_pct = feature['contribution_percentage']
+            direction = feature['direction']
+            
+            # Format feature name for readability
+            readable_name = feature_name.replace('_', ' ').title()
+            
+            if i == 0:
+                # Primary contributor
+                if historical_variance:
+                    summary_parts.append(
+                        f"{readable_name} {direction}ly contributed {contribution_pct:.1f}% to the anomaly; "
+                        f"this account changed by {historical_variance:.1f}% vs expected"
+                    )
+                else:
+                    summary_parts.append(
+                        f"{readable_name} {direction}ly contributed {contribution_pct:.1f}% to the anomaly"
+                    )
+            else:
+                summary_parts.append(
+                    f"{readable_name} contributed {contribution_pct:.1f}%"
+                )
+        
+        # Add historical context if available
+        if historical_variance and len(summary_parts) > 0:
+            # Try to infer typical variance from metadata
+            if hasattr(anomaly, 'metadata_json') and anomaly.metadata_json:
+                typical_variance = anomaly.metadata_json.get('typical_variance')
+                if typical_variance:
+                    summary_parts.append(
+                        f"this account historically varies ±{typical_variance:.1f}%"
+                    )
+        
+        return "; ".join(summary_parts) + "."
+    
+    def generate_explanation_for_ml_detector(
+        self,
+        anomaly_id: int,
+        detector_type: str,
+        feature_data: pd.DataFrame,
+        model: Any
+    ) -> Dict[str, Any]:
+        """
+        Generate explanation specifically for ML detectors (IForest, LOF, OCSVM).
+        
+        Automatically enables SHAP/LIME for supported detectors.
+        
+        Args:
+            anomaly_id: Anomaly detection ID
+            detector_type: Type of detector ('isolation_forest', 'lof', 'ocsvm')
+            feature_data: Feature matrix
+            model: Trained model
+            
+        Returns:
+            Dict with explanation data including top features and summary
+        """
+        if detector_type.lower() not in self.supported_detectors:
+            logger.warning(f"Detector {detector_type} not in supported list for XAI")
+            return {}
+        
+        explanation_data = {
+            'detector_type': detector_type,
+            'shap_enabled': self.shap_enabled,
+            'lime_enabled': self.lime_enabled,
+            'top_features': [],
+            'feature_summary': ''
+        }
+        
+        # Generate SHAP explanation
+        if self.shap_enabled:
+            try:
+                shap_data = self._generate_shap_explanation(
+                    self.db.query(AnomalyDetection).filter(
+                        AnomalyDetection.id == anomaly_id
+                    ).first(),
+                    feature_data,
+                    model
+                )
+                
+                if shap_data and 'top_features' in shap_data:
+                    explanation_data['top_features'] = shap_data['top_features']
+                    explanation_data['feature_summary'] = shap_data.get('feature_summary', '')
+                    explanation_data['shap_values'] = shap_data.get('values')
+                    explanation_data['shap_base_value'] = shap_data.get('base_value')
+            except Exception as e:
+                logger.warning(f"SHAP explanation failed for {detector_type}: {e}")
+        
+        # Generate LIME explanation
+        if self.lime_enabled:
+            try:
+                lime_data = self._generate_lime_explanation(
+                    self.db.query(AnomalyDetection).filter(
+                        AnomalyDetection.id == anomaly_id
+                    ).first(),
+                    feature_data,
+                    model
+                )
+                
+                if lime_data and 'top_features' in lime_data:
+                    # Merge LIME top features if SHAP didn't provide them
+                    if not explanation_data['top_features']:
+                        explanation_data['top_features'] = lime_data['top_features']
+                        explanation_data['feature_summary'] = lime_data.get('feature_summary', '')
+                    explanation_data['lime_explanation'] = lime_data.get('explanation')
+                    explanation_data['lime_score'] = lime_data.get('score')
+            except Exception as e:
+                logger.warning(f"LIME explanation failed for {detector_type}: {e}")
+        
+        return explanation_data
 

@@ -1,347 +1,444 @@
 """
-Model Monitoring Service for REIMS2
-Tracks AI/ML model performance, accuracy, and inference times.
+Model Performance Monitoring Service
 
-Sprint 2: AI/ML Intelligence Layer
+Tracks detection coverage, runtime, latency, alert volumes, and false-positive ratios.
 """
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from collections import defaultdict
-import statistics
 
-from app.models.extraction_field_metadata import ExtractionFieldMetadata
-from app.models.extraction_log import ExtractionLog
-from app.db.database import get_db
+from typing import Dict, Optional, Any, List
+from datetime import datetime, timedelta
+from decimal import Decimal
+from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, case
+import logging
+import time
+from contextlib import contextmanager
+from functools import wraps
+from collections import defaultdict
+import threading
+
+from app.models.anomaly_detection import AnomalyDetection
+from app.models.anomaly_feedback import AnomalyFeedback
+from app.models.committee_alert import CommitteeAlert, AlertSeverity
+from app.models.model_performance_metrics import ModelPerformanceMetrics
+
+logger = logging.getLogger(__name__)
+
+# Thread-safe timing data storage
+_timing_data = defaultdict(list)
+_timing_lock = threading.Lock()
 
 
 class ModelMonitoringService:
     """
-    Service to monitor extraction engine performance and health.
+    Monitors model performance metrics.
     
     Tracks:
-    - Per-engine accuracy rates
-    - Confidence score distributions
-    - Processing times
-    - Engine agreement rates
-    - Model drift detection
+    - Detection coverage (% of accounts/periods scanned)
+    - Model runtime per batch
+    - Queue latency
+    - Alert volumes by severity
+    - False-positive ratios over time
     """
     
     def __init__(self, db: Session):
-        """
-        Initialize model monitoring service.
-        
-        Args:
-            db: Database session
-        """
+        """Initialize monitoring service."""
         self.db = db
     
-    def track_extraction_metrics(
+    def calculate_performance_metrics(
         self,
-        document_id: int,
-        engine_name: str,
-        processing_time: float,
-        confidence_score: float,
-        field_count: int
-    ) -> bool:
-        """
-        Track metrics for a single extraction.
-        
-        Args:
-            document_id: Document ID
-            engine_name: Name of extraction engine
-            processing_time: Time taken in seconds
-            confidence_score: Overall confidence
-            field_count: Number of fields extracted
-            
-        Returns:
-            True if metrics saved successfully
-        """
-        try:
-            # This could be stored in extraction_logs or a dedicated metrics table
-            # For now, metrics are derived from extraction_field_metadata
-            return True
-        except Exception as e:
-            print(f"Error tracking metrics: {e}")
-            return False
-    
-    def get_engine_performance(
-        self,
-        engine_name: Optional[str] = None,
         lookback_days: int = 30
     ) -> Dict[str, Any]:
         """
-        Get performance metrics for an extraction engine.
+        Calculate all performance metrics.
         
         Args:
-            engine_name: Optional filter by engine (None = all engines)
-            lookback_days: Number of days to analyze
+            lookback_days: Days to look back
             
         Returns:
-            Performance metrics dict
+            Dict with all performance metrics
         """
         cutoff_date = datetime.utcnow() - timedelta(days=lookback_days)
         
-        query = self.db.query(
-            ExtractionFieldMetadata.extraction_engine,
-            func.avg(ExtractionFieldMetadata.confidence_score).label('avg_confidence'),
-            func.count(ExtractionFieldMetadata.id).label('total_fields'),
-            func.sum(
-                func.cast(ExtractionFieldMetadata.needs_review == True, func.Integer())
-            ).label('review_needed'),
-            func.sum(
-                func.cast(ExtractionFieldMetadata.reviewed_at.isnot(None), func.Integer())
-            ).label('reviewed')
-        ).filter(
-            ExtractionFieldMetadata.created_at >= cutoff_date
-        )
+        # 1. Detection coverage
+        coverage = self._calculate_coverage(cutoff_date)
         
-        if engine_name:
-            query = query.filter(ExtractionFieldMetadata.extraction_engine == engine_name)
+        # 2. Alert volumes by severity
+        alert_volumes = self._calculate_alert_volumes(cutoff_date)
         
-        query = query.group_by(ExtractionFieldMetadata.extraction_engine)
+        # 3. False positive ratio
+        fpr = self._calculate_false_positive_ratio(cutoff_date)
         
-        results = query.all()
-        
-        performance_data = []
-        for engine, avg_conf, total, review_needed, reviewed in results:
-            accuracy_rate = None
-            if reviewed and reviewed > 0:
-                # Accuracy = fields that didn't need correction after review
-                accuracy_rate = (reviewed - (review_needed or 0)) / reviewed
-            
-            performance_data.append({
-                'engine': engine,
-                'avg_confidence': float(avg_conf) if avg_conf else 0.0,
-                'total_fields': total or 0,
-                'needs_review_count': review_needed or 0,
-                'reviewed_count': reviewed or 0,
-                'accuracy_rate': accuracy_rate,
-                'review_rate': (review_needed or 0) / total if total else 0
-            })
+        # 4. Model runtime (would need actual runtime data - placeholder)
+        runtime_metrics = self._estimate_runtime_metrics(cutoff_date)
         
         return {
+            'detection_coverage': coverage,
+            'alert_volumes': alert_volumes,
+            'false_positive_ratio': fpr,
+            'runtime_metrics': runtime_metrics,
             'lookback_days': lookback_days,
-            'engines': performance_data,
             'timestamp': datetime.utcnow().isoformat()
         }
     
-    def get_confidence_distribution(
-        self,
-        engine_name: Optional[str] = None,
-        lookback_days: int = 30
-    ) -> Dict[str, Any]:
-        """
-        Get confidence score distribution for analysis.
+    def _calculate_coverage(self, cutoff_date: datetime) -> Dict[str, float]:
+        """Calculate detection coverage."""
+        # Get total accounts
+        from app.models.chart_of_accounts import ChartOfAccounts
+        total_accounts = self.db.query(func.count(ChartOfAccounts.id)).scalar()
         
-        Args:
-            engine_name: Optional filter by engine
-            lookback_days: Number of days to analyze
-            
-        Returns:
-            Distribution data
-        """
-        cutoff_date = datetime.utcnow() - timedelta(days=lookback_days)
-        
-        query = self.db.query(
-            ExtractionFieldMetadata.confidence_score
+        # Get accounts with detections
+        accounts_with_detections = self.db.query(
+            func.count(func.distinct(AnomalyDetection.field_name))
         ).filter(
-            ExtractionFieldMetadata.created_at >= cutoff_date
-        )
+            AnomalyDetection.detected_at >= cutoff_date
+        ).scalar()
         
-        if engine_name:
-            query = query.filter(ExtractionFieldMetadata.extraction_engine == engine_name)
+        # Get total periods
+        from app.models.financial_period import FinancialPeriod
+        total_periods = self.db.query(func.count(FinancialPeriod.id)).scalar()
         
-        scores = [float(score) for (score,) in query.all()]
+        # Get periods with detections
+        periods_with_detections = self.db.query(
+            func.count(func.distinct(AnomalyDetection.document_id))
+        ).join(
+            'document'
+        ).filter(
+            AnomalyDetection.detected_at >= cutoff_date
+        ).scalar()
         
-        if not scores:
-            return {
-                'engine': engine_name,
-                'sample_count': 0,
-                'distribution': {}
-            }
-        
-        # Calculate distribution buckets
-        distribution = {
-            'critical': len([s for s in scores if s < 0.5]),
-            'low': len([s for s in scores if 0.5 <= s < 0.7]),
-            'medium': len([s for s in scores if 0.7 <= s < 0.85]),
-            'high': len([s for s in scores if 0.85 <= s < 0.95]),
-            'excellent': len([s for s in scores if s >= 0.95])
-        }
+        account_coverage = (accounts_with_detections / total_accounts * 100) if total_accounts > 0 else 0.0
+        period_coverage = (periods_with_detections / total_periods * 100) if total_periods > 0 else 0.0
         
         return {
-            'engine': engine_name or 'all',
-            'sample_count': len(scores),
-            'avg_confidence': statistics.mean(scores),
-            'median_confidence': statistics.median(scores),
-            'min_confidence': min(scores),
-            'max_confidence': max(scores),
-            'std_dev': statistics.stdev(scores) if len(scores) > 1 else 0,
-            'distribution': distribution,
-            'distribution_percentages': {
-                k: round(v / len(scores) * 100, 2) for k, v in distribution.items()
-            }
+            'account_coverage_percentage': round(account_coverage, 2),
+            'period_coverage_percentage': round(period_coverage, 2),
+            'accounts_scanned': accounts_with_detections,
+            'total_accounts': total_accounts,
+            'periods_scanned': periods_with_detections,
+            'total_periods': total_periods
         }
     
-    def get_engine_agreement_rate(
-        self,
-        lookback_days: int = 30
-    ) -> Dict[str, Any]:
-        """
-        Calculate how often engines agree on field values.
-        
-        Args:
-            lookback_days: Number of days to analyze
-            
-        Returns:
-            Agreement statistics
-        """
-        cutoff_date = datetime.utcnow() - timedelta(days=lookback_days)
-        
-        # Get fields where multiple engines extracted the same field
-        multi_engine_fields = self.db.query(
-            ExtractionFieldMetadata.document_id,
-            ExtractionFieldMetadata.table_name,
-            ExtractionFieldMetadata.record_id,
-            ExtractionFieldMetadata.field_name,
-            func.count(ExtractionFieldMetadata.id).label('engine_count')
-        ).filter(
-            ExtractionFieldMetadata.created_at >= cutoff_date
-        ).group_by(
-            ExtractionFieldMetadata.document_id,
-            ExtractionFieldMetadata.table_name,
-            ExtractionFieldMetadata.record_id,
-            ExtractionFieldMetadata.field_name
-        ).having(
-            func.count(ExtractionFieldMetadata.id) > 1
+    def _calculate_alert_volumes(self, cutoff_date: datetime) -> Dict[str, int]:
+        """Calculate alert volumes by severity."""
+        alerts = self.db.query(CommitteeAlert).filter(
+            CommitteeAlert.created_at >= cutoff_date
         ).all()
         
-        if not multi_engine_fields:
+        volumes = {
+            'urgent': 0,
+            'critical': 0,
+            'warning': 0,
+            'info': 0,
+            'total': len(alerts)
+        }
+        
+        for alert in alerts:
+            severity_str = alert.severity.value.lower() if hasattr(alert.severity, 'value') else str(alert.severity).lower()
+            if severity_str in volumes:
+                volumes[severity_str] += 1
+        
+        return volumes
+    
+    def _calculate_false_positive_ratio(
+        self,
+        cutoff_date: datetime
+    ) -> Dict[str, float]:
+        """Calculate false positive ratio over time."""
+        feedback = self.db.query(AnomalyFeedback).filter(
+            AnomalyFeedback.created_at >= cutoff_date
+        ).all()
+        
+        if len(feedback) == 0:
             return {
-                'agreement_rate': 0.0,
-                'multi_engine_fields': 0,
-                'consensus_fields': 0
+                'false_positive_rate': 0.0,
+                'sample_size': 0
             }
         
-        # For fields with conflicting_values, check if resolution_method was 'consensus'
-        consensus_count = 0
-        total_multi_engine = len(multi_engine_fields)
+        false_positives = sum(
+            1 for fb in feedback
+            if fb.feedback_type == 'dismissed' or (not fb.is_anomaly and fb.feedback_type != 'confirmed')
+        )
         
-        for doc_id, table, record_id, field, count in multi_engine_fields:
-            # Check if any metadata for this field indicates consensus
-            consensus_check = self.db.query(ExtractionFieldMetadata).filter(
-                and_(
-                    ExtractionFieldMetadata.document_id == doc_id,
-                    ExtractionFieldMetadata.table_name == table,
-                    ExtractionFieldMetadata.record_id == record_id,
-                    ExtractionFieldMetadata.field_name == field,
-                    ExtractionFieldMetadata.resolution_method == 'consensus'
-                )
-            ).first()
-            
-            if consensus_check:
-                consensus_count += 1
-        
-        agreement_rate = consensus_count / total_multi_engine if total_multi_engine else 0
+        fpr = false_positives / len(feedback)
         
         return {
-            'agreement_rate': round(agreement_rate, 4),
-            'multi_engine_fields': total_multi_engine,
-            'consensus_fields': consensus_count,
-            'conflict_fields': total_multi_engine - consensus_count,
-            'lookback_days': lookback_days
+            'false_positive_rate': round(fpr, 4),
+            'false_positives': false_positives,
+            'total_feedback': len(feedback),
+            'sample_size': len(feedback)
         }
     
-    def detect_model_drift(
+    def _estimate_runtime_metrics(
         self,
-        engine_name: str,
-        window_days: int = 7
+        cutoff_date: datetime
     ) -> Dict[str, Any]:
         """
-        Detect if model performance is degrading over time.
+        Calculate actual runtime metrics from collected timing data.
+        
+        Queries stored timing data from model_performance_metrics table
+        and calculates averages for the lookback period.
+        """
+        try:
+            # Query stored runtime metrics from database
+            stored_metrics = self.db.query(ModelPerformanceMetrics).filter(
+                ModelPerformanceMetrics.recorded_at >= cutoff_date,
+                ModelPerformanceMetrics.runtime_per_batch_ms.isnot(None)
+            ).all()
+            
+            if not stored_metrics:
+                # Fallback: try to get from in-memory timing data
+                with _timing_lock:
+                    if _timing_data.get('batch_runtimes'):
+                        runtimes = _timing_data['batch_runtimes']
+                        latencies = _timing_data.get('queue_latencies', [])
+                        
+                        if runtimes:
+                            avg_runtime = sum(runtimes) / len(runtimes)
+                            avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+                            
+                            return {
+                                'avg_runtime_per_batch_seconds': avg_runtime,
+                                'queue_latency_seconds': avg_latency,
+                                'batches_processed': len(runtimes)
+                            }
+                
+                # No data available - return zeros instead of placeholders
+                logger.warning("No runtime metrics available - returning zeros")
+                return {
+                    'avg_runtime_per_batch_seconds': 0.0,
+                    'queue_latency_seconds': 0.0,
+                    'batches_processed': 0
+                }
+            
+            # Calculate averages from stored metrics
+            runtimes = [m.runtime_per_batch_ms / 1000.0 for m in stored_metrics if m.runtime_per_batch_ms is not None]
+            latencies = [m.queue_latency_ms / 1000.0 for m in stored_metrics if m.queue_latency_ms is not None]
+            
+            avg_runtime = sum(runtimes) / len(runtimes) if runtimes else 0.0
+            avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+            
+            return {
+                'avg_runtime_per_batch_seconds': round(avg_runtime, 2),
+                'queue_latency_seconds': round(avg_latency, 2),
+                'batches_processed': len(stored_metrics)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating runtime metrics: {e}", exc_info=True)
+            return {
+                'avg_runtime_per_batch_seconds': 0.0,
+                'queue_latency_seconds': 0.0,
+                'batches_processed': 0
+            }
+    
+    def store_metrics(
+        self,
+        metrics: Dict[str, Any],
+        model_name: str = "anomaly_detection_ensemble",
+        model_type: str = "anomaly_detection",
+        detector_method: Optional[str] = None,
+        property_id: Optional[int] = None,
+        period_id: Optional[int] = None,
+        batch_id: Optional[str] = None
+    ) -> bool:
+        """
+        Store metrics in model_performance_metrics table.
         
         Args:
-            engine_name: Engine to monitor
-            window_days: Size of rolling window for comparison
+            metrics: Dictionary containing performance metrics
+            model_name: Name of the model (e.g., "isolation_forest", "autoencoder")
+            model_type: Type of model (e.g., "anomaly_detection", "extraction")
+            detector_method: Specific detector method used
+            property_id: Optional property ID for property-specific metrics
+            period_id: Optional period ID for period-specific metrics
+            batch_id: Optional batch identifier
             
         Returns:
-            Drift detection results
+            True if metrics were stored successfully
         """
-        now = datetime.utcnow()
-        current_window_start = now - timedelta(days=window_days)
-        previous_window_start = current_window_start - timedelta(days=window_days)
-        
-        # Current window metrics
-        current_metrics = self.db.query(
-            func.avg(ExtractionFieldMetadata.confidence_score).label('avg_confidence'),
-            func.count(ExtractionFieldMetadata.id).label('count')
-        ).filter(
-            and_(
-                ExtractionFieldMetadata.extraction_engine == engine_name,
-                ExtractionFieldMetadata.created_at >= current_window_start
+        try:
+            # Extract metrics from the dictionary
+            coverage = metrics.get('detection_coverage', {})
+            alert_volumes = metrics.get('alert_volumes', {})
+            fpr = metrics.get('false_positive_ratio', {})
+            runtime_metrics = metrics.get('runtime_metrics', {})
+            
+            # Calculate overall detection coverage
+            detection_coverage = None
+            if coverage:
+                account_coverage = coverage.get('account_coverage_percentage', 0)
+                period_coverage = coverage.get('period_coverage_percentage', 0)
+                # Average of account and period coverage
+                detection_coverage = (account_coverage + period_coverage) / 2.0 if (account_coverage or period_coverage) else None
+            
+            # Extract runtime metrics
+            runtime_per_batch_ms = None
+            if runtime_metrics:
+                runtime_seconds = runtime_metrics.get('avg_runtime_per_batch_seconds')
+                if runtime_seconds:
+                    runtime_per_batch_ms = runtime_seconds * 1000.0
+            
+            queue_latency_ms = None
+            if runtime_metrics:
+                latency_seconds = runtime_metrics.get('queue_latency_seconds')
+                if latency_seconds:
+                    queue_latency_ms = latency_seconds * 1000.0
+            
+            # Extract alert volumes
+            alert_volume_total = alert_volumes.get('total', 0)
+            alert_volume_critical = alert_volumes.get('critical', 0)
+            alert_volume_high = alert_volumes.get('urgent', 0)  # Map urgent to high
+            alert_volume_medium = alert_volumes.get('warning', 0)
+            alert_volume_low = alert_volumes.get('info', 0)
+            
+            # Extract false positive rate
+            false_positive_rate = fpr.get('false_positive_rate') if fpr else None
+            
+            # Store additional metrics in JSONB
+            additional_metrics = {
+                'coverage_details': coverage,
+                'fpr_details': fpr,
+                'runtime_details': runtime_metrics,
+                'lookback_days': metrics.get('lookback_days'),
+                'timestamp': metrics.get('timestamp')
+            }
+            
+            # Create and store the metrics record
+            metrics_record = ModelPerformanceMetrics(
+                model_name=model_name,
+                model_type=model_type,
+                detector_method=detector_method,
+                detection_coverage=detection_coverage,
+                runtime_per_batch_ms=runtime_per_batch_ms,
+                queue_latency_ms=queue_latency_ms,
+                alert_volume_total=alert_volume_total,
+                alert_volume_critical=alert_volume_critical,
+                alert_volume_high=alert_volume_high,
+                alert_volume_medium=alert_volume_medium,
+                alert_volume_low=alert_volume_low,
+                false_positive_rate=false_positive_rate,
+                additional_metrics=additional_metrics,
+                property_id=property_id,
+                period_id=period_id,
+                batch_id=batch_id
             )
-        ).first()
-        
-        # Previous window metrics
-        previous_metrics = self.db.query(
-            func.avg(ExtractionFieldMetadata.confidence_score).label('avg_confidence'),
-            func.count(ExtractionFieldMetadata.id).label('count')
-        ).filter(
-            and_(
-                ExtractionFieldMetadata.extraction_engine == engine_name,
-                ExtractionFieldMetadata.created_at >= previous_window_start,
-                ExtractionFieldMetadata.created_at < current_window_start
-            )
-        ).first()
-        
-        current_conf = float(current_metrics[0]) if current_metrics[0] else 0.0
-        previous_conf = float(previous_metrics[0]) if previous_metrics[0] else 0.0
-        
-        # Calculate drift
-        if previous_conf > 0:
-            drift_percentage = ((current_conf - previous_conf) / previous_conf) * 100
-        else:
-            drift_percentage = 0.0
-        
-        # Detect significant drift (>5% degradation)
-        is_drifting = drift_percentage < -5.0
-        
-        return {
-            'engine': engine_name,
-            'current_confidence': current_conf,
-            'previous_confidence': previous_conf,
-            'drift_percentage': round(drift_percentage, 2),
-            'is_drifting': is_drifting,
-            'current_sample_count': current_metrics[1] or 0,
-            'previous_sample_count': previous_metrics[1] or 0,
-            'window_days': window_days,
-            'alert_threshold': -5.0
-        }
-    
-    def get_monitoring_dashboard_data(self) -> Dict[str, Any]:
-        """
-        Get comprehensive monitoring data for dashboard display.
-        
-        Returns:
-            Dict with all monitoring metrics
-        """
-        return {
-            'engine_performance': self.get_engine_performance(),
-            'confidence_distributions': {
-                'all': self.get_confidence_distribution(),
-                'pymupdf': self.get_confidence_distribution('pymupdf'),
-                'pdfplumber': self.get_confidence_distribution('pdfplumber'),
-                'camelot': self.get_confidence_distribution('camelot'),
-                'layoutlm': self.get_confidence_distribution('layoutlm'),
-                'easyocr': self.get_confidence_distribution('easyocr')
-            },
-            'agreement_rate': self.get_engine_agreement_rate(),
-            'drift_detection': {
-                'layoutlm': self.detect_model_drift('layoutlm'),
-                'easyocr': self.detect_model_drift('easyocr')
-            },
-            'timestamp': datetime.utcnow().isoformat()
-        }
+            
+            self.db.add(metrics_record)
+            self.db.commit()
+            self.db.refresh(metrics_record)
+            
+            logger.info(f"Stored model performance metrics: {metrics_record.id} for model {model_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to store model performance metrics: {str(e)}", exc_info=True)
+            self.db.rollback()
+            return False
 
+
+# Timing utilities for collecting actual runtime data
+
+@contextmanager
+def time_batch_processing(batch_id: Optional[str] = None):
+    """
+    Context manager to time batch processing operations.
+    
+    Usage:
+        with time_batch_processing(batch_id="batch_123"):
+            # Your batch processing code
+            process_batch()
+    
+    The timing data is automatically stored for later retrieval.
+    """
+    start_time = time.time()
+    queue_start = time.time()  # Assume queue latency is time until processing starts
+    
+    try:
+        yield
+    finally:
+        end_time = time.time()
+        runtime = end_time - start_time
+        
+        # Store timing data (thread-safe)
+        with _timing_lock:
+            _timing_data['batch_runtimes'].append(runtime)
+            # Keep only last 1000 entries to prevent memory issues
+            if len(_timing_data['batch_runtimes']) > 1000:
+                _timing_data['batch_runtimes'] = _timing_data['batch_runtimes'][-1000:]
+            
+            if batch_id:
+                _timing_data['batch_ids'].append(batch_id)
+        
+        logger.debug(f"Batch processing completed in {runtime:.2f} seconds (batch_id: {batch_id})")
+
+
+def track_queue_latency(latency_seconds: float):
+    """
+    Track queue latency for a batch.
+    
+    Args:
+        latency_seconds: Time spent in queue before processing started
+    """
+    with _timing_lock:
+        _timing_data['queue_latencies'].append(latency_seconds)
+        # Keep only last 1000 entries
+        if len(_timing_data['queue_latencies']) > 1000:
+            _timing_data['queue_latencies'] = _timing_data['queue_latencies'][-1000:]
+
+
+def timing_decorator(func):
+    """
+    Decorator to automatically time function execution.
+    
+    Usage:
+        @timing_decorator
+        def process_batch():
+            # Your code
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            return result
+        finally:
+            runtime = time.time() - start_time
+            with _timing_lock:
+                _timing_data['batch_runtimes'].append(runtime)
+                if len(_timing_data['batch_runtimes']) > 1000:
+                    _timing_data['batch_runtimes'] = _timing_data['batch_runtimes'][-1000:]
+            logger.debug(f"Function {func.__name__} executed in {runtime:.2f} seconds")
+    return wrapper
+
+
+def get_recent_timing_stats(lookback_seconds: int = 3600) -> Dict[str, Any]:
+    """
+    Get recent timing statistics from in-memory data.
+    
+    Args:
+        lookback_seconds: How far back to look (default: 1 hour)
+        
+    Returns:
+        Dictionary with timing statistics
+    """
+    with _timing_lock:
+        runtimes = _timing_data.get('batch_runtimes', [])
+        latencies = _timing_data.get('queue_latencies', [])
+        
+        if not runtimes:
+            return {
+                'avg_runtime_per_batch_seconds': 0.0,
+                'queue_latency_seconds': 0.0,
+                'batches_processed': 0
+            }
+        
+        avg_runtime = sum(runtimes) / len(runtimes) if runtimes else 0.0
+        avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+        
+        return {
+            'avg_runtime_per_batch_seconds': round(avg_runtime, 2),
+            'queue_latency_seconds': round(avg_latency, 2),
+            'batches_processed': len(runtimes),
+            'min_runtime': round(min(runtimes), 2) if runtimes else 0.0,
+            'max_runtime': round(max(runtimes), 2) if runtimes else 0.0
+        }

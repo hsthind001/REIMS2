@@ -9,6 +9,7 @@ import { reviewService } from '../lib/review'
 import { propertyService } from '../lib/property'
 import { QualityBadge } from '../components/QualityBadge'
 import { EditRecordModal } from '../components/EditRecordModal'
+import { DetailedReviewModal } from '../components/review/DetailedReviewModal'
 import type { Property } from '../types/api'
 
 interface ReviewQueueItem {
@@ -48,6 +49,7 @@ export default function ReviewQueue() {
   })
   const [selectedItem, setSelectedItem] = useState<ReviewQueueItem | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showDetailedModal, setShowDetailedModal] = useState(false)
   const [exporting, setExporting] = useState(false)
   
   useEffect(() => {
@@ -135,6 +137,11 @@ export default function ReviewQueue() {
     setSelectedItem(item)
     setShowEditModal(true)
   }
+
+  const openDetailedModal = (item: ReviewQueueItem) => {
+    setSelectedItem(item)
+    setShowDetailedModal(true)
+  }
   
   const handleSaveEdit = async (updates: any) => {
     if (!selectedItem) return
@@ -152,6 +159,50 @@ export default function ReviewQueue() {
       loadReviewQueue()  // Reload
     } catch (error: any) {
       throw new Error(error.message || 'Failed to save changes')
+    }
+  }
+
+  const handleSaveDetailed = async (corrections: Record<string, any>, notes: string) => {
+    if (!selectedItem) return
+    
+    try {
+      // Use the correct_record endpoint with corrections dict
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/v1/review/${selectedItem.record_id}/correct`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            table_name: selectedItem.table_name,
+            corrections,
+            notes,
+            recalculate_metrics: true
+          })
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to save corrections')
+      }
+
+      alert('✅ Corrections saved successfully!')
+      loadReviewQueue()
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to save changes')
+    }
+  }
+
+  const handleApproveDetailed = async () => {
+    if (!selectedItem) return
+    
+    try {
+      await reviewService.approveRecord(selectedItem.record_id, selectedItem.table_name, 'Approved from detailed review')
+      alert('✅ Record approved successfully!')
+      loadReviewQueue()
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to approve record')
     }
   }
   
@@ -370,11 +421,18 @@ export default function ReviewQueue() {
                         <td>
                           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <button 
-                              onClick={() => openEditModal(item)}
+                              onClick={() => openDetailedModal(item)}
                               className="btn-sm btn-primary"
-                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', marginRight: '0.25rem' }}
                             >
-                              Edit
+                              Detailed Review
+                            </button>
+                            <button 
+                              onClick={() => openEditModal(item)}
+                              className="btn-sm btn-secondary"
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', marginRight: '0.25rem' }}
+                            >
+                              Quick Edit
                             </button>
                             <button 
                               onClick={() => approveItem(item)}
@@ -402,6 +460,19 @@ export default function ReviewQueue() {
           onSave={handleSaveEdit}
           onClose={() => {
             setShowEditModal(false)
+            setSelectedItem(null)
+          }}
+        />
+      )}
+
+      {/* Detailed Review Modal */}
+      {showDetailedModal && selectedItem && (
+        <DetailedReviewModal
+          item={selectedItem}
+          onSave={handleSaveDetailed}
+          onApprove={handleApproveDetailed}
+          onClose={() => {
+            setShowDetailedModal(false)
             setSelectedItem(null)
           }}
         />

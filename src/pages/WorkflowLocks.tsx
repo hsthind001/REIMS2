@@ -21,10 +21,12 @@ import {
 } from '../lib/workflowLocks';
 import { propertyService } from '../lib/property';
 import type { Property } from '../types/api';
+import { useAuth } from '../components/AuthContext';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export default function WorkflowLocks() {
+  const { user } = useAuth();
   const [locks, setLocks] = useState<WorkflowLock[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +48,7 @@ export default function WorkflowLocks() {
     lock_scope: LockScope.PROPERTY_ALL,
     title: '',
     description: '',
-    locked_by: 1, // TODO: Get from auth context
+    locked_by: user?.id || 0, // Get from auth context
   });
 
   useEffect(() => {
@@ -126,7 +128,7 @@ export default function WorkflowLocks() {
           lock_scope: LockScope.PROPERTY_ALL,
           title: '',
           description: '',
-          locked_by: 1,
+          locked_by: user?.id || 0,
         });
         loadLocks();
         loadStatistics();
@@ -140,10 +142,14 @@ export default function WorkflowLocks() {
 
   const handleAction = async () => {
     if (!selectedLock) return;
+    if (!user?.id) {
+      alert('You must be logged in to perform this action');
+      return;
+    }
 
     try {
       let result;
-      const userId = 1; // TODO: Get from auth context
+      const userId = user.id; // Get from auth context
 
       if (actionType === 'release') {
         result = await workflowLockService.releaseLock(selectedLock.id, {
