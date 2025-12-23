@@ -660,22 +660,32 @@ export default function ForensicReconciliation() {
               <>
                 {matches.length === 0 && !loading && session && (
                   <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <div className="flex items-center gap-2 text-yellow-800">
-                      <AlertTriangle className="w-5 h-5" />
-                      <div>
-                        <p className="font-semibold">No matches found</p>
-                        <p className="text-sm mt-1">
+                    <div className="flex items-start gap-3 text-yellow-800">
+                      <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-semibold mb-1">No matches found</p>
+                        <p className="text-sm mb-3">
                           {matchTypeFilter !== 'all' || statusFilter !== 'all' 
                             ? 'Try adjusting your filters or check if a reconciliation has been run for this session.'
-                            : 'No matches were found. This could mean:'}
+                            : 'No matches were found for this session. This could mean:'}
                         </p>
                         {matchTypeFilter === 'all' && statusFilter === 'all' && (
-                          <ul className="text-sm list-disc list-inside mt-2 space-y-1">
-                            <li>No financial data exists for this property/period</li>
-                            <li>Documents haven't been extracted yet</li>
-                            <li>Account codes don't match expected patterns</li>
-                            <li>Reconciliation hasn't been run yet - click "Start Reconciliation"</li>
-                          </ul>
+                          <div className="text-xs space-y-2">
+                            <ul className="list-disc list-inside space-y-1 ml-2">
+                              <li>Reconciliation hasn't been run yet - click "Run Reconciliation" button</li>
+                              <li>Only one document type uploaded - need multiple documents for cross-document matching</li>
+                              <li>Account codes don't match between documents</li>
+                              <li>Amounts are outside tolerance thresholds</li>
+                            </ul>
+                            {(!session.summary || session.summary.total_matches === 0) && (
+                              <div className="mt-3 p-2 bg-yellow-100 rounded border border-yellow-300">
+                                <p className="font-medium mb-1">💡 Next Steps:</p>
+                                <p className="text-xs">1. Ensure you have uploaded at least Balance Sheet and Income Statement</p>
+                                <p className="text-xs">2. Verify documents have been extracted (check Data Control Center → Tasks)</p>
+                                <p className="text-xs">3. Click "Run Reconciliation" button in the dashboard above</p>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
