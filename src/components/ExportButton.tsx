@@ -11,9 +11,9 @@ import { Button } from './design-system';
 
 interface ExportButtonProps {
   /** Data to export */
-  data: any[];
+  data?: any[];
   /** Base filename (without extension) */
-  filename: string;
+  filename?: string;
   /** Export format: 'excel', 'csv', or 'both' */
   format?: 'excel' | 'csv' | 'both';
   /** Optional sheet name for Excel exports */
@@ -30,11 +30,13 @@ interface ExportButtonProps {
   showIcon?: boolean;
   /** Custom className */
   className?: string;
+  /** Optional callback function for custom export logic */
+  onExport?: (format: 'excel' | 'csv') => void | Promise<void>;
 }
 
 export function ExportButton({
   data,
-  filename,
+  filename = 'export',
   format = 'both',
   sheetName = 'Sheet1',
   variant = 'secondary',
@@ -42,13 +44,34 @@ export function ExportButton({
   label,
   disabled = false,
   showIcon = true,
-  className = ''
+  className = '',
+  onExport
 }: ExportButtonProps) {
   const [exporting, setExporting] = useState(false);
   const [lastExport, setLastExport] = useState<'excel' | 'csv' | null>(null);
 
   const handleExport = async (exportFormat: 'excel' | 'csv') => {
-    if (data.length === 0) {
+    // If onExport callback is provided, use it
+    if (onExport) {
+      setExporting(true);
+      setLastExport(exportFormat);
+      try {
+        await onExport(exportFormat);
+        setTimeout(() => {
+          setExporting(false);
+          setLastExport(null);
+        }, 500);
+      } catch (error: any) {
+        console.error('Export failed:', error);
+        alert(`Export failed: ${error.message || 'Unknown error'}`);
+        setExporting(false);
+        setLastExport(null);
+      }
+      return;
+    }
+
+    // Otherwise, use data-based export
+    if (!data || !Array.isArray(data) || data.length === 0) {
       alert('No data to export');
       return;
     }
@@ -83,7 +106,7 @@ export function ExportButton({
           variant={variant}
           size={size}
           onClick={() => handleExport('excel')}
-          disabled={disabled || exporting || data.length === 0}
+          disabled={disabled || exporting || (data && (!Array.isArray(data) || data.length === 0))}
           className="flex items-center gap-2"
         >
           {exporting && lastExport === 'excel' ? (
@@ -97,7 +120,7 @@ export function ExportButton({
           variant={variant}
           size={size}
           onClick={() => handleExport('csv')}
-          disabled={disabled || exporting || data.length === 0}
+          disabled={disabled || exporting || (data && (!Array.isArray(data) || data.length === 0))}
           className="flex items-center gap-2"
         >
           {exporting && lastExport === 'csv' ? (
