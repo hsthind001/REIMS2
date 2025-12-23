@@ -32,6 +32,9 @@ export interface BatchJobCreateRequest {
   extraction_status?: string
 }
 
+// Re-export as type for better module compatibility
+export type { BatchJobCreateRequest }
+
 export const batchReprocessingService = {
   /**
    * Create a new batch reprocessing job

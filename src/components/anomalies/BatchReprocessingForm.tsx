@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react'
-import { batchReprocessingService, BatchReprocessingJob, BatchJobCreateRequest } from '../../lib/batchReprocessing'
+import { batchReprocessingService, type BatchReprocessingJob, type BatchJobCreateRequest } from '../../lib/batchReprocessing'
 
 interface BatchReprocessingFormProps {
   className?: string
