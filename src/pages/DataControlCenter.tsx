@@ -808,7 +808,7 @@ export default function DataControlCenter() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-border mb-6">
+        <div className="flex gap-1 border-b border-border mb-6 items-center">
           {(['quality', 'tasks', 'validation', 'import', 'review', 'documents'] as ControlTab[]).map((tab) => (
             <button
               key={tab}
@@ -822,6 +822,16 @@ export default function DataControlCenter() {
               {tab === 'validation' ? 'Validation Rules' : tab}
             </button>
           ))}
+          {/* Forensic Reconciliation Link */}
+          <button
+            onClick={() => {
+              window.location.hash = 'forensic-reconciliation';
+            }}
+            className="ml-auto px-4 py-2 font-medium text-sm border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center gap-2"
+            title="Open Forensic Reconciliation Elite System - Advanced matching, materiality-based thresholds, tiered exception management"
+          >
+            🔍 Forensic Reconciliation
+          </button>
         </div>
 
         {/* Tab Content */}

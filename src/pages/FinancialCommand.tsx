@@ -860,7 +860,7 @@ export default function FinancialCommand() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-border mb-6">
+        <div className="flex gap-1 border-b border-border mb-6 items-center">
           {(['ai', 'statements', 'variance', 'exit', 'chart', 'reconciliation'] as FinancialTab[]).map((tab) => (
             <button
               key={tab}
@@ -874,6 +874,16 @@ export default function FinancialCommand() {
               {tab === 'ai' ? 'AI Assistant' : tab === 'chart' ? 'Chart of Accounts' : tab}
             </button>
           ))}
+          {/* Forensic Reconciliation Link */}
+          <button
+            onClick={() => {
+              window.location.hash = 'forensic-reconciliation';
+            }}
+            className="ml-auto px-4 py-2 font-medium text-sm border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center gap-2"
+            title="Open Forensic Reconciliation Elite System - Advanced matching, materiality-based thresholds, tiered exception management"
+          >
+            🔍 Forensic Reconciliation
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -2037,12 +2047,32 @@ export default function FinancialCommand() {
                   <p className="text-gray-600 mb-4">
                     No reconciliation sessions found. Start a new reconciliation by selecting a property, period, and document type above.
                   </p>
-                  <Button
-                    variant="primary"
-                    onClick={() => window.location.hash = 'reconciliation'}
-                  >
-                    Open Full Reconciliation Page
-                  </Button>
+                  <div className="flex gap-4 justify-center mb-4">
+                    <Button
+                      variant="primary"
+                      onClick={() => window.location.hash = 'reconciliation'}
+                    >
+                      Open Full Reconciliation Page
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => window.location.hash = 'forensic-reconciliation'}
+                      className="bg-purple-600 text-white hover:bg-purple-700 border-purple-600"
+                    >
+                      🔍 Open Forensic Reconciliation (Elite)
+                    </Button>
+                  </div>
+                  <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <p className="text-sm font-semibold text-purple-900 mb-2">✨ Forensic Reconciliation Elite Features:</p>
+                    <ul className="text-xs text-purple-700 text-left max-w-2xl mx-auto space-y-1">
+                      <li>• Materiality-based reconciliation with dynamic thresholds</li>
+                      <li>• Tiered exception management (Auto-close, Auto-suggest, Route, Escalate)</li>
+                      <li>• Enhanced matching with Chart of Accounts semantic mapping</li>
+                      <li>• Configurable health scores per persona (Controller, Auditor, Analyst, Investor)</li>
+                      <li>• Real estate domain-specific anomaly detection</li>
+                      <li>• Comprehensive explainability (Why Flagged, What Would Resolve, What Changed)</li>
+                    </ul>
+                  </div>
                 </div>
               </Card>
             )}
