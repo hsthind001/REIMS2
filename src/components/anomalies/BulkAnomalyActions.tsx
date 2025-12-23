@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { CheckSquare, Square, Filter, X, CheckCircle, AlertCircle } from 'lucide-react';
-import { anomaliesService, Anomaly } from '../../lib/anomalies';
+import { anomaliesService, type Anomaly } from '../../lib/anomalies';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 

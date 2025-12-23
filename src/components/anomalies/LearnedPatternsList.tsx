@@ -9,7 +9,7 @@
 
 import { useState, useEffect } from 'react'
 import { Brain, Shield, ShieldOff, TrendingUp, AlertCircle } from 'lucide-react'
-import { anomaliesService, LearnedPattern } from '../../lib/anomalies'
+import { anomaliesService, type LearnedPattern } from '../../lib/anomalies'
 
 interface LearnedPatternsListProps {
   propertyId: number

@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import { WaterfallChart, WaterfallBar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Link, FileText, ExternalLink, AlertCircle, TrendingUp, TrendingDown, Users, Copy } from 'lucide-react';
-import { anomaliesService, Anomaly, DetailedAnomalyResponse } from '../../lib/anomalies';
+import { anomaliesService, type Anomaly, type DetailedAnomalyResponse } from '../../lib/anomalies';
 import { XAIExplanation } from './XAIExplanation';
 import { AnomalyPDFViewer } from '../AnomalyPDFViewer';
 

@@ -111,6 +111,18 @@ export interface AnomalyExplanation {
   lime_explanation?: any
 }
 
+// Re-export types for better ES module compatibility
+export type { 
+  Anomaly,
+  DetailedAnomalyResponse,
+  UncertainAnomaly,
+  AnomalyExplanation,
+  AnomalyFeedback,
+  LearnedPattern,
+  PortfolioBenchmark,
+  FieldCoordinatesResponse
+}
+
 export interface AnomalyFeedback {
   id: number
   anomaly_detection_id: number

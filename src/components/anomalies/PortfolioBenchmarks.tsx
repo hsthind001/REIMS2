@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { TrendingUp, TrendingDown, Award, AlertTriangle } from 'lucide-react'
-import { anomaliesService, PortfolioBenchmark } from '../../lib/anomalies'
+import { anomaliesService, type PortfolioBenchmark } from '../../lib/anomalies'
 
 interface PortfolioBenchmarksProps {
   propertyId: number

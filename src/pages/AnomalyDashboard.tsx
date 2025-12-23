@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Download, Search, Filter, Eye, AlertCircle, Brain, RefreshCw, FileText } from 'lucide-react'
-import { anomaliesService, Anomaly, DetailedAnomalyResponse, UncertainAnomaly } from '../lib/anomalies'
+import { anomaliesService, type Anomaly, type DetailedAnomalyResponse, type UncertainAnomaly } from '../lib/anomalies'
 import { FeedbackButtons } from '../components/anomalies/FeedbackButtons'
 import { XAIExplanation } from '../components/anomalies/XAIExplanation'
 import { LearnedPatternsList } from '../components/anomalies/LearnedPatternsList'

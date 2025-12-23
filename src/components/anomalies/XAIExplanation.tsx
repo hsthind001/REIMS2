@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { AlertCircle, Lightbulb, TrendingUp, TrendingDown, Activity, FileText, CheckCircle } from 'lucide-react'
-import { anomaliesService, AnomalyExplanation } from '../../lib/anomalies'
+import { anomaliesService, type AnomalyExplanation } from '../../lib/anomalies'
 
 interface XAIExplanationProps {
   anomalyId: number
