@@ -64,6 +64,9 @@ export default function ForensicReconciliation() {
   const [matchTypeFilter, setMatchTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
+  
+  // Data availability state
+  const [dataAvailability, setDataAvailability] = useState<any>(null);
 
   useEffect(() => {
     loadProperties();
@@ -133,6 +136,7 @@ export default function ForensicReconciliation() {
       
       // First check data availability
       const availability = await forensicReconciliationService.checkDataAvailability(selectedPropertyId, selectedPeriodId);
+      setDataAvailability(availability);
       
       if (!availability.can_reconcile) {
         const recommendations = availability.recommendations || [];
@@ -402,27 +406,105 @@ export default function ForensicReconciliation() {
           </div>
         </Card>
 
-        {/* Error Display */}
+        {/* Error Display with Enhanced Guidance */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 mt-0.5 flex-shrink-0 text-yellow-600" />
               <div className="flex-1">
-                <p className="font-semibold mb-1">Issue Detected</p>
-                <p className="text-sm">{error}</p>
-                <div className="mt-3 p-3 bg-red-100 rounded border border-red-200">
-                  <p className="text-sm font-semibold mb-1">💡 Troubleshooting Steps:</p>
-                  <ul className="text-sm list-disc list-inside space-y-1">
+                <p className="font-semibold mb-2 text-yellow-900 text-lg">⚠️ Issue Detected</p>
+                <p className="text-sm text-yellow-800 mb-4">{error}</p>
+                
+                {/* Data Availability Details */}
+                {dataAvailability && (
+                  <div className="mb-4 p-3 bg-white rounded border border-yellow-200">
+                    <p className="text-sm font-semibold mb-2 text-gray-700">📊 Data Availability Status:</p>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                      {Object.entries(dataAvailability.document_uploads || {}).map(([docType, hasUpload]: [string, any]) => (
+                        <div key={docType} className={`p-2 rounded ${hasUpload ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+                          <div className="font-medium capitalize">{docType.replace('_', ' ')}</div>
+                          <div className="text-xs mt-1">{hasUpload ? '✓ Uploaded' : '✗ Missing'}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {dataAvailability.extracted_data && (
+                      <div className="mt-3 pt-3 border-t border-yellow-200">
+                        <p className="text-xs font-semibold mb-2 text-gray-700">📥 Extracted Data Records:</p>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                          {Object.entries(dataAvailability.extracted_data).map(([docType, data]: [string, any]) => (
+                            <div key={docType} className={`p-2 rounded ${data.has_data ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-500'}`}>
+                              <div className="font-medium capitalize">{docType.replace('_', ' ')}</div>
+                              <div className="text-xs mt-1">{data.has_data ? `${data.count} records` : 'No data'}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Quick Start Guide */}
+                <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-200">
+                  <p className="text-sm font-semibold mb-3 text-blue-900">🚀 Quick Start Guide:</p>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">1</div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-blue-900 mb-1">Upload Financial Documents</p>
+                        <p className="text-xs text-blue-700 mb-2">Go to <strong>Data Control Center → Documents</strong> tab and upload at least:</p>
+                        <ul className="text-xs text-blue-700 list-disc list-inside ml-2 space-y-1">
+                          <li>Balance Sheet (required)</li>
+                          <li>Income Statement (required)</li>
+                        </ul>
+                        <button
+                          onClick={() => window.location.hash = ''}
+                          className="mt-2 px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                          📤 Go to Document Upload
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">2</div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-blue-900 mb-1">Wait for Document Extraction</p>
+                        <p className="text-xs text-blue-700 mb-2">Documents are automatically processed. Check extraction status:</p>
+                        <button
+                          onClick={() => window.location.hash = ''}
+                          className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                          🔍 Check Extraction Status
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">3</div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-blue-900 mb-1">Start Reconciliation</p>
+                        <p className="text-xs text-blue-700">Once extraction completes, return here and click <strong>"Start Reconciliation"</strong> button above.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Troubleshooting Steps */}
+                <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+                  <p className="text-sm font-semibold mb-2 text-gray-700">💡 Additional Troubleshooting:</p>
+                  <ul className="text-xs text-gray-600 list-disc list-inside space-y-1">
                     <li>Verify documents have been uploaded for this property and period</li>
-                    <li>Check that documents have been processed/extracted (go to Data Control Center)</li>
+                    <li>Check that documents have been processed/extracted (go to Data Control Center → Tasks)</li>
                     <li>Ensure Balance Sheet and Income Statement data exists for cross-document matching</li>
                     <li>Try selecting a different period that has financial data</li>
+                    <li>Check extraction task status in Data Control Center → Tasks tab</li>
                   </ul>
                 </div>
               </div>
               <button
                 onClick={() => setError(null)}
-                className="ml-2 text-red-600 hover:text-red-800 text-xl font-bold flex-shrink-0"
+                className="ml-2 text-yellow-600 hover:text-yellow-800 text-xl font-bold flex-shrink-0"
+                title="Dismiss"
               >
                 ×
               </button>
@@ -432,12 +514,40 @@ export default function ForensicReconciliation() {
 
         {/* Dashboard Overview */}
         {dashboardData && (
-          <ReconciliationDashboard
-            dashboardData={dashboardData}
-            healthScore={healthScore}
-            onRunReconciliation={session ? () => handleRunReconciliation(session.id) : undefined}
-            onCompleteSession={session ? handleCompleteSession : undefined}
-          />
+          <>
+            <ReconciliationDashboard
+              dashboardData={dashboardData}
+              healthScore={healthScore}
+              onRunReconciliation={session ? () => handleRunReconciliation(session.id) : undefined}
+              onCompleteSession={session ? handleCompleteSession : undefined}
+            />
+            {/* Show helpful message if no session exists but data is available */}
+            {!session && dataAvailability && dataAvailability.can_reconcile && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">!</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-blue-900 mb-1">✅ Data Available - Ready to Reconcile</p>
+                    <p className="text-xs text-blue-700 mb-2">
+                      Financial data has been extracted and is ready for reconciliation. Click <strong>"Start Reconciliation"</strong> above to begin.
+                    </p>
+                    <div className="text-xs text-blue-600">
+                      <p className="font-medium mb-1">Available document types:</p>
+                      <ul className="list-disc list-inside ml-2 space-y-0.5">
+                        {Object.entries(dataAvailability.extracted_data || {}).map(([docType, data]: [string, any]) => 
+                          data.has_data && (
+                            <li key={docType} className="capitalize">
+                              {docType.replace('_', ' ')} ({data.count} records)
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Health Score Gauge */}
