@@ -11,7 +11,8 @@ celery_app = Celery(
         "app.tasks.example_tasks",
         "app.tasks.extraction_tasks",
         "app.tasks.anomaly_detection_tasks",  # BR-008: Nightly anomaly detection
-        "app.tasks.batch_reprocessing_tasks"  # Phase 1: Batch reprocessing for anomaly detection
+        "app.tasks.batch_reprocessing_tasks",  # Phase 1: Batch reprocessing for anomaly detection
+        "app.tasks.learning_tasks"  # Self-learning system tasks
     ]
 )
 
@@ -49,6 +50,28 @@ celery_app.conf.beat_schedule = {
         'schedule': crontab(minute='*'),  # Every minute
         'options': {
             'expires': 60,  # Task expires after 1 minute if not picked up
+        }
+    },
+    # Self-Learning System Tasks
+    'analyze-captured-issues': {
+        'task': 'app.tasks.learning_tasks.analyze_captured_issues',
+        'schedule': crontab(hour='*/6', minute=0),  # Every 6 hours
+        'options': {
+            'expires': 3600,  # Task expires after 1 hour if not picked up
+        }
+    },
+    'sync-mcp-tasks': {
+        'task': 'app.tasks.learning_tasks.sync_mcp_tasks',
+        'schedule': crontab(hour='*/2', minute=0),  # Every 2 hours
+        'options': {
+            'expires': 1800,  # Task expires after 30 minutes if not picked up
+        }
+    },
+    'cleanup-old-issues': {
+        'task': 'app.tasks.learning_tasks.cleanup_old_issues',
+        'schedule': crontab(hour=3, minute=0),  # 3:00 AM UTC daily
+        'options': {
+            'expires': 3600,  # Task expires after 1 hour if not picked up
         }
     },
 }

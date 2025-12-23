@@ -467,6 +467,64 @@ services:
         max-file: "3"
     command: celery -A celery_worker.celery_app worker --loglevel=info
 
+  # Celery Beat - Scheduled task scheduler
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reims-celery-beat
+    restart: unless-stopped
+    entrypoint: ["/celery-entrypoint.sh"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: reims
+      POSTGRES_PASSWORD: reims
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: reims
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_SECURE: "false"
+      # Anomaly Detection Configuration (same as backend)
+      PYOD_ENABLED: ${PYOD_ENABLED:-true}
+      MODEL_CACHE_ENABLED: ${MODEL_CACHE_ENABLED:-true}
+      INCREMENTAL_LEARNING_ENABLED: ${INCREMENTAL_LEARNING_ENABLED:-true}
+      ANOMALY_USE_GPU: ${ANOMALY_USE_GPU:-false}
+      BATCH_PROCESSING_CHUNK_SIZE: ${BATCH_PROCESSING_CHUNK_SIZE:-10}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ai-models-cache:/app/.cache/huggingface
+      - model-cache:/app/.cache/reims/models
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - reims-network
+    healthcheck:
+      test: ["CMD", "ps", "aux", "|", "grep", "-q", "[c]elery.*beat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: celery -A celery_worker.celery_app beat --loglevel=info
+
   # Flower - Celery monitoring
   flower:
     build:
@@ -487,6 +545,7 @@ services:
     depends_on:
       - redis
       - celery-worker
+      - celery-beat
     networks:
       - reims-network
     deploy:

@@ -17,6 +17,23 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+# Initialize self-learning system on startup
+try:
+    from app.services.self_learning_engine import SelfLearningEngine
+    from app.db.database import SessionLocal
+    db = SessionLocal()
+    try:
+        # Verify self-learning tables exist and are accessible
+        from app.models.issue_knowledge_base import IssueKnowledgeBase
+        count = db.query(IssueKnowledgeBase).count()
+        print(f"✅ Self-learning system initialized (found {count} issues in knowledge base)")
+    except Exception as e:
+        print(f"⚠️  Self-learning system initialization warning: {e}")
+    finally:
+        db.close()
+except Exception as e:
+    print(f"⚠️  Self-learning system initialization skipped: {e}")
+
 # Create database views (non-blocking - app will start even if views fail)
 try:
     views_result = create_database_views(engine)

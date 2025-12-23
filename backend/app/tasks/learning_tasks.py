@@ -7,6 +7,8 @@ Background tasks for analyzing issues and syncing with MCP server.
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+from celery import Task
+from app.core.celery_config import celery_app
 from app.db.database import SessionLocal
 from app.services.self_learning_engine import SelfLearningEngine
 from app.services.mcp_learning_service import MCPLearningService
@@ -17,7 +19,8 @@ from app.models.issue_capture import IssueCapture
 logger = logging.getLogger(__name__)
 
 
-def analyze_captured_issues(days_back: int = 7, min_occurrences: int = 3):
+@celery_app.task(name="app.tasks.learning_tasks.analyze_captured_issues", bind=True)
+def analyze_captured_issues(self: Task, days_back: int = 7, min_occurrences: int = 3):
     """
     Periodic task to analyze captured issues and identify patterns.
     
@@ -98,7 +101,8 @@ def analyze_captured_issues(days_back: int = 7, min_occurrences: int = 3):
         db.close()
 
 
-def sync_mcp_tasks(tag: str = "self-learning"):
+@celery_app.task(name="app.tasks.learning_tasks.sync_mcp_tasks", bind=True)
+def sync_mcp_tasks(self: Task, tag: str = "self-learning"):
     """
     Periodic task to sync with MCP server.
     
@@ -123,7 +127,8 @@ def sync_mcp_tasks(tag: str = "self-learning"):
         db.close()
 
 
-def cleanup_old_issues(days_to_keep: int = 90):
+@celery_app.task(name="app.tasks.learning_tasks.cleanup_old_issues", bind=True)
+def cleanup_old_issues(self: Task, days_to_keep: int = 90):
     """
     Archive old resolved issues.
     
