@@ -3,7 +3,7 @@
  * Structured resolution workflow for alerts
  */
 import { useState } from 'react';
-import { Alert } from '../../lib/alerts';
+import { type Alert } from '../../lib/alerts';
 
 interface AlertResolutionProps {
   alert: Alert;

@@ -3,7 +3,7 @@
  * Comprehensive analytics and insights for alerts
  */
 import { useState, useEffect } from 'react';
-import { AlertService, AlertAnalytics } from '../../lib/alerts';
+import { AlertService, type AlertAnalytics } from '../../lib/alerts';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 interface AlertAnalyticsProps {

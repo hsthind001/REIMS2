@@ -3,7 +3,7 @@
  * Displays comprehensive alert overview with widgets and charts
  */
 import { useState, useEffect } from 'react';
-import { AlertService, AlertSummary, AlertTrendsResponse } from '../../lib/alerts';
+import { AlertService, type AlertSummary, type AlertTrendsResponse } from '../../lib/alerts';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 
 interface AlertDashboardProps {

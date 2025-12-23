@@ -3,7 +3,7 @@
  * Comprehensive view of a single alert with related information
  */
 import { useState, useEffect } from 'react';
-import { AlertService, Alert } from '../../lib/alerts';
+import { AlertService, type Alert } from '../../lib/alerts';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface AlertDetailViewProps {
