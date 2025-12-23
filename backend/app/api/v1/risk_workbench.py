@@ -109,28 +109,41 @@ async def get_unified_risk_items(
         # Union queries
         unified_query = anomalies_query.union_all(alerts_query)
         
+        # Create subquery for ordering and pagination
         # Apply sorting - default to created_at if sort_by is not in the result set
         valid_sort_fields = ['id', 'type', 'severity', 'property', 'age_seconds', 'impact', 'status', 'created_at']
         if sort_by not in valid_sort_fields:
             sort_by = 'created_at'
         
-        try:
-            if sort_order == "desc":
-                unified_query = unified_query.order_by(text(f"{sort_by} DESC"))
-            else:
-                unified_query = unified_query.order_by(text(f"{sort_by} ASC"))
-        except Exception as e:
-            logger.warning(f"Invalid sort field {sort_by}, defaulting to created_at: {e}")
-            unified_query = unified_query.order_by(text("created_at DESC"))
+        # Create subquery from union
+        subquery = unified_query.subquery()
         
         # Pagination
         try:
-            total = db.execute(func.count().select_from(unified_query.subquery())).scalar() or 0
+            # Count total
+            count_query = db.query(func.count()).select_from(subquery)
+            total = count_query.scalar() or 0
+            
+            # Get paginated results with ordering
+            # Use text() for dynamic column ordering on subquery
             offset = (page - 1) * page_size
-            items = db.execute(unified_query.offset(offset).limit(page_size)).fetchall()
+            if sort_order == "desc":
+                order_sql = f"{sort_by} DESC"
+            else:
+                order_sql = f"{sort_by} ASC"
+            
+            # Query subquery with ordering
+            items_query = db.query(subquery).order_by(text(order_sql)).offset(offset).limit(page_size)
+            items = items_query.all()
         except Exception as e:
-            logger.error(f"Error executing unified query: {e}")
-            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+            logger.warning(f"Error with sort field {sort_by}, trying default: {e}")
+            # Fallback to default sorting
+            try:
+                items_query = db.query(subquery).order_by(text("created_at DESC")).offset(offset).limit(page_size)
+                items = items_query.all()
+            except Exception as e2:
+                logger.error(f"Error executing unified query even with fallback: {e2}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"Database error: {str(e2)}")
         
         # Format results
         results = []

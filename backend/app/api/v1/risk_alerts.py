@@ -1135,12 +1135,17 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
     # Alerts by type
     alerts_by_type = {}
     for alert_type in AlertType:
-        count = db.query(CommitteeAlert).filter(
-            CommitteeAlert.alert_type == alert_type,
-            CommitteeAlert.status == AlertStatus.ACTIVE
-        ).count()
-        if count > 0:
-            alerts_by_type[alert_type.value] = count
+        try:
+            count = db.query(CommitteeAlert).filter(
+                CommitteeAlert.alert_type == alert_type,
+                CommitteeAlert.status == AlertStatus.ACTIVE
+            ).count()
+            if count > 0:
+                alerts_by_type[alert_type.value] = count
+        except Exception as e:
+            # Skip alert types that don't exist in database enum (e.g., DEBT_YIELD_BREACH)
+            logger.debug(f"Skipping alert type {alert_type.value} - not in database enum: {e}")
+            continue
 
     return {
         "success": True,
