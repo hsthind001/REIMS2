@@ -52,7 +52,8 @@ async def get_unified_risk_items(
         AnomalyDetection.impact_amount.label('impact'),
         func.cast(None, text).label('status'),
         func.cast(None, text).label('assignee'),
-        func.cast(None, text).label('due_date')
+        func.cast(None, text).label('due_date'),
+        AnomalyDetection.detected_at.label('created_at')
     ).join(
         DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id
     ).join(
@@ -69,7 +70,8 @@ async def get_unified_risk_items(
         CommitteeAlert.business_impact_score.label('impact'),
         func.cast(CommitteeAlert.status, text).label('status'),
         func.cast(None, text).label('assignee'),
-        CommitteeAlert.sla_due_at.label('due_date')
+        CommitteeAlert.sla_due_at.label('due_date'),
+        CommitteeAlert.created_at.label('created_at')
     ).join(
         Property, CommitteeAlert.property_id == Property.id
     )
@@ -106,36 +108,53 @@ async def get_unified_risk_items(
     # Union queries
     unified_query = anomalies_query.union_all(alerts_query)
     
-    # Apply sorting
-    if sort_order == "desc":
-        unified_query = unified_query.order_by(text(f"{sort_by} DESC"))
-    else:
-        unified_query = unified_query.order_by(text(f"{sort_by} ASC"))
+    # Apply sorting - default to created_at if sort_by is not in the result set
+    valid_sort_fields = ['id', 'type', 'severity', 'property', 'age_seconds', 'impact', 'status', 'created_at']
+    if sort_by not in valid_sort_fields:
+        sort_by = 'created_at'
+    
+    try:
+        if sort_order == "desc":
+            unified_query = unified_query.order_by(text(f"{sort_by} DESC"))
+        else:
+            unified_query = unified_query.order_by(text(f"{sort_by} ASC"))
+    except Exception as e:
+        logger.warning(f"Invalid sort field {sort_by}, defaulting to created_at: {e}")
+        unified_query = unified_query.order_by(text("created_at DESC"))
     
     # Pagination
-    total = db.execute(func.count().select_from(unified_query.subquery())).scalar()
-    offset = (page - 1) * page_size
-    items = db.execute(unified_query.offset(offset).limit(page_size)).fetchall()
+    try:
+        total = db.execute(func.count().select_from(unified_query.subquery())).scalar() or 0
+        offset = (page - 1) * page_size
+        items = db.execute(unified_query.offset(offset).limit(page_size)).fetchall()
+    except Exception as e:
+        logger.error(f"Error executing unified query: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     
     # Format results
     results = []
     for item in items:
-        results.append({
-            'id': item.id,
-            'type': item.type,
-            'severity': item.severity,
-            'property': item.property,
-            'age_days': round(item.age_seconds / 86400, 1) if item.age_seconds else 0,
-            'impact': float(item.impact) if item.impact else 0.0,
-            'status': item.status,
-            'assignee': item.assignee,
-            'due_date': item.due_date.isoformat() if item.due_date else None
-        })
+        try:
+            results.append({
+                'id': item.id,
+                'type': item.type,
+                'severity': item.severity,
+                'property': item.property,
+                'age_days': round(item.age_seconds / 86400, 1) if item.age_seconds else 0,
+                'impact': float(item.impact) if item.impact else 0.0,
+                'status': item.status,
+                'assignee': item.assignee,
+                'due_date': item.due_date.isoformat() if item.due_date else None,
+                'created_at': item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None
+            })
+        except Exception as e:
+            logger.warning(f"Error formatting item {item.id}: {e}")
+            continue
     
     return {
         'items': results,
         'total': total,
         'page': page,
         'page_size': page_size,
-        'total_pages': (total + page_size - 1) // page_size
+        'total_pages': (total + page_size - 1) // page_size if total > 0 else 0
     }

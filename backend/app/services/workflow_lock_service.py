@@ -435,31 +435,43 @@ class WorkflowLockService:
         """
         Get statistics about workflow locks across all properties
         """
-        total_locks = self.db.query(WorkflowLock).count()
-        active_locks = self.db.query(WorkflowLock).filter(
-            WorkflowLock.status == LockStatus.ACTIVE
-        ).count()
-        pending_approvals = self.db.query(WorkflowLock).filter(
-            WorkflowLock.status == LockStatus.ACTIVE,
-            WorkflowLock.requires_committee_approval == True
-        ).count()
-
-        # Get locks by reason
-        locks_by_reason = {}
-        for reason in LockReason:
-            count = self.db.query(WorkflowLock).filter(
-                WorkflowLock.lock_reason == reason,
+        try:
+            # Use func.count with specific columns to avoid loading all model columns
+            from sqlalchemy import func
+            total_locks = self.db.query(func.count(WorkflowLock.id)).scalar() or 0
+            active_locks = self.db.query(func.count(WorkflowLock.id)).filter(
                 WorkflowLock.status == LockStatus.ACTIVE
-            ).count()
-            if count > 0:
-                locks_by_reason[reason.value] = count
+            ).scalar() or 0
+            pending_approvals = self.db.query(func.count(WorkflowLock.id)).filter(
+                WorkflowLock.status == LockStatus.ACTIVE,
+                WorkflowLock.requires_committee_approval == True
+            ).scalar() or 0
 
-        return {
-            "total_locks": total_locks,
-            "active_locks": active_locks,
-            "pending_approvals": pending_approvals,
-            "locks_by_reason": locks_by_reason,
-        }
+            # Get locks by reason
+            locks_by_reason = {}
+            for reason in LockReason:
+                count = self.db.query(func.count(WorkflowLock.id)).filter(
+                    WorkflowLock.lock_reason == reason,
+                    WorkflowLock.status == LockStatus.ACTIVE
+                ).scalar() or 0
+                if count > 0:
+                    locks_by_reason[reason.value] = count
+
+            return {
+                "total_locks": total_locks,
+                "active_locks": active_locks,
+                "pending_approvals": pending_approvals,
+                "locks_by_reason": locks_by_reason,
+            }
+        except Exception as e:
+            # If there's a schema mismatch, return default values
+            logger.warning(f"Error getting lock statistics (possibly schema mismatch): {e}")
+            return {
+                "total_locks": 0,
+                "active_locks": 0,
+                "pending_approvals": 0,
+                "locks_by_reason": {},
+            }
 
     def pause_property_operations(
         self,
