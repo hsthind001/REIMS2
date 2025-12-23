@@ -30,6 +30,8 @@ from app.services.active_learning_service import ActiveLearningService
 from app.services.model_monitoring_service import ModelMonitoringService
 from app.services.anomaly_detector import StatisticalAnomalyDetector
 from app.services.concordance_service import ConcordanceService
+logger = logging.getLogger(__name__)
+
 try:
     from app.services.xai_explanation_service import XAIExplanationService
     XAI_AVAILABLE = True
@@ -1796,32 +1798,65 @@ class ExtractionOrchestrator:
         
         Compares current period values against historical data to identify
         statistical anomalies (Z-score, percentage change).
+        
+        Raises:
+            ValueError: If document is missing required data (period, extracted data, etc.)
+            Exception: For unexpected errors during anomaly detection
         """
+        from app.models.financial_period import FinancialPeriod
+        
+        # Validate document has period_id
+        if not upload.period_id:
+            error_msg = f"Document {upload.id} ({upload.file_name}): Missing period_id - cannot detect anomalies"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+        
+        # Get the period for this upload
+        period = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.id == upload.period_id
+        ).first()
+        
+        if not period:
+            error_msg = f"Document {upload.id} ({upload.file_name}): Period {upload.period_id} not found - cannot detect anomalies"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+        
+        # Validate extraction status
+        if upload.extraction_status != 'completed':
+            error_msg = f"Document {upload.id} ({upload.file_name}): Extraction status is '{upload.extraction_status}', not 'completed' - skipping anomaly detection"
+            logger.info(error_msg)
+            raise ValueError(error_msg)
+        
+        # Initialize anomaly detector
+        detector = StatisticalAnomalyDetector(self.db)
+        
+        # Detect anomalies based on document type
         try:
-            from app.models.financial_period import FinancialPeriod
-            
-            # Get the period for this upload
-            period = self.db.query(FinancialPeriod).filter(
-                FinancialPeriod.id == upload.period_id
-            ).first()
-            
-            if not period:
-                return
-            
-            # Initialize anomaly detector
-            detector = StatisticalAnomalyDetector(self.db)
-            
-            # Detect anomalies based on document type
             if upload.document_type == 'income_statement':
                 self._detect_income_statement_anomalies(upload, period, detector)
             elif upload.document_type == 'balance_sheet':
                 self._detect_balance_sheet_anomalies(upload, period, detector)
             elif upload.document_type == 'cash_flow':
                 self._detect_cash_flow_anomalies(upload, period, detector)
+            elif upload.document_type == 'rent_roll':
+                self._detect_rent_roll_anomalies(upload, period, detector)
+            elif upload.document_type == 'mortgage_statement':
+                self._detect_mortgage_statement_anomalies(upload, period, detector)
+            else:
+                error_msg = f"Document {upload.id} ({upload.file_name}): Unsupported document type '{upload.document_type}' for anomaly detection"
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
             
+            logger.info(f"Document {upload.id} ({upload.file_name}): Anomaly detection completed successfully for {upload.document_type}")
+            
+        except ValueError:
+            # Re-raise validation errors
+            raise
         except Exception as e:
-            # Log error but don't fail extraction
-            print(f"⚠️  Anomaly detection error: {str(e)}")
+            # Log unexpected errors with full context
+            error_msg = f"Document {upload.id} ({upload.file_name}): Anomaly detection error for {upload.document_type}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
     
     def _detect_income_statement_anomalies(
         self, 
@@ -1841,7 +1876,8 @@ class ExtractionOrchestrator:
         ).all()
         
         if not current_data:
-            return
+            logger.warning(f"Income statement {upload.id}: No extracted data found for property {upload.property_id}, period {upload.period_id} - skipping anomaly detection")
+            raise ValueError(f"No extracted income statement data found for document {upload.id}")
         
         # Get historical periods (last 12 months)
         # Use period_start_date for comparison to avoid excluding periods that end on the same date
@@ -1853,7 +1889,8 @@ class ExtractionOrchestrator:
         ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
         
         if len(historical_periods) < 1:  # Lowered from 3 to 1 - need at least 1 historical period for comparison
-            return
+            logger.info(f"Income statement {upload.id}: Insufficient historical data (found {len(historical_periods)} periods, need at least 1) - skipping anomaly detection")
+            raise ValueError(f"Insufficient historical data for document {upload.id}: need at least 1 historical period")
         
         # Get historical data for key accounts
         historical_period_ids = [p.id for p in historical_periods]
@@ -1994,7 +2031,8 @@ class ExtractionOrchestrator:
         ).all()
         
         if not current_data:
-            return
+            logger.warning(f"Balance sheet {upload.id}: No extracted data found for property {upload.property_id}, period {upload.period_id} - skipping anomaly detection")
+            raise ValueError(f"No extracted balance sheet data found for document {upload.id}")
         
         cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
         historical_periods = self.db.query(FinancialPeriod).filter(
@@ -2004,7 +2042,8 @@ class ExtractionOrchestrator:
         ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
         
         if len(historical_periods) < 1:  # Lowered from 3 to 1 for balance sheet
-            return
+            logger.info(f"Balance sheet {upload.id}: Insufficient historical data (found {len(historical_periods)} periods, need at least 1) - skipping anomaly detection")
+            raise ValueError(f"Insufficient historical data for document {upload.id}: need at least 1 historical period")
         
         historical_period_ids = [p.id for p in historical_periods]
         historical_data = self.db.query(BalanceSheetData).filter(
@@ -2133,7 +2172,8 @@ class ExtractionOrchestrator:
         ).all()
         
         if not current_data:
-            return
+            logger.warning(f"Cash flow {upload.id}: No extracted data found for property {upload.property_id}, period {upload.period_id} - skipping anomaly detection")
+            raise ValueError(f"No extracted cash flow data found for document {upload.id}")
         
         # Get historical periods (last 12 months)
         cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
@@ -2144,7 +2184,8 @@ class ExtractionOrchestrator:
         ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
         
         if len(historical_periods) < 1:
-            return
+            logger.info(f"Cash flow {upload.id}: Insufficient historical data (found {len(historical_periods)} periods, need at least 1) - skipping anomaly detection")
+            raise ValueError(f"Insufficient historical data for document {upload.id}: need at least 1 historical period")
         
         # Get historical data for key accounts
         historical_period_ids = [p.id for p in historical_periods]
@@ -2279,7 +2320,8 @@ class ExtractionOrchestrator:
         ).all()
         
         if not current_data:
-            return
+            logger.warning(f"Rent roll {upload.id}: No extracted data found for property {upload.property_id}, period {upload.period_id} - skipping anomaly detection")
+            raise ValueError(f"No extracted rent roll data found for document {upload.id}")
         
         # Get historical periods (last 12 months)
         cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
@@ -2290,7 +2332,8 @@ class ExtractionOrchestrator:
         ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
         
         if len(historical_periods) < 1:
-            return
+            logger.info(f"Rent roll {upload.id}: Insufficient historical data (found {len(historical_periods)} periods, need at least 1) - skipping anomaly detection")
+            raise ValueError(f"Insufficient historical data for document {upload.id}: need at least 1 historical period")
         
         # Aggregate current period metrics
         # Filter out special unit types for occupancy calculations
@@ -2460,7 +2503,8 @@ class ExtractionOrchestrator:
         ).first()
         
         if not current_data:
-            return
+            logger.warning(f"Mortgage statement {upload.id}: No extracted data found for property {upload.property_id}, period {upload.period_id} - skipping anomaly detection")
+            raise ValueError(f"No extracted mortgage statement data found for document {upload.id}")
         
         # Get historical periods (last 12 months)
         cutoff_date = period.period_start_date - timedelta(days=365) if period.period_start_date else period.period_end_date - timedelta(days=365)
@@ -2471,7 +2515,8 @@ class ExtractionOrchestrator:
         ).order_by(FinancialPeriod.period_end_date.desc()).limit(12).all()
         
         if len(historical_periods) < 1:
-            return
+            logger.info(f"Mortgage statement {upload.id}: Insufficient historical data (found {len(historical_periods)} periods, need at least 1) - skipping anomaly detection")
+            raise ValueError(f"Insufficient historical data for document {upload.id}: need at least 1 historical period")
         
         # Get historical mortgage statements
         historical_period_ids = [p.id for p in historical_periods]

@@ -104,9 +104,13 @@ def reprocess_documents_batch(self, job_id: int):
         successful = 0
         failed = 0
         skipped = 0
+        error_details = []  # Track specific error reasons
         
         # Initialize orchestrator for anomaly detection
         orchestrator = ExtractionOrchestrator(db)
+        
+        # Import for validation
+        from app.models.financial_period import FinancialPeriod
         
         for i in range(0, len(documents), chunk_size):
             chunk = documents[i:i + chunk_size]
@@ -122,16 +126,68 @@ def reprocess_documents_batch(self, job_id: int):
             # Process chunk
             for doc in chunk:
                 try:
+                    # Pre-validate document before processing
+                    validation_error = None
+                    
+                    # Check extraction status
+                    if doc.extraction_status != 'completed':
+                        validation_error = f"Extraction status is '{doc.extraction_status}', not 'completed'"
+                    
+                    # Check period_id exists
+                    elif not doc.period_id:
+                        validation_error = "Missing period_id"
+                    
+                    # Check period exists in database
+                    elif not db.query(FinancialPeriod).filter(FinancialPeriod.id == doc.period_id).first():
+                        validation_error = f"Period {doc.period_id} not found in database"
+                    
+                    # Skip if validation fails
+                    if validation_error:
+                        logger.warning(f"Document {doc.id} ({doc.file_name}): Skipping - {validation_error}")
+                        skipped += 1
+                        total_processed += 1
+                        error_details.append({
+                            "document_id": doc.id,
+                            "file_name": doc.file_name,
+                            "reason": validation_error,
+                            "type": "validation"
+                        })
+                        continue
+                    
                     # Trigger anomaly detection for this document
                     orchestrator._detect_anomalies_for_document(doc)
+                    db.commit()  # Commit after each successful detection
                     
                     successful += 1
                     total_processed += 1
                     
+                except ValueError as e:
+                    # Validation errors - skip document
+                    logger.warning(f"Document {doc.id} ({doc.file_name}): Validation error - {str(e)}")
+                    skipped += 1
+                    total_processed += 1
+                    error_details.append({
+                        "document_id": doc.id,
+                        "file_name": doc.file_name,
+                        "reason": str(e),
+                        "type": "validation"
+                    })
+                    db.rollback()  # Rollback any partial changes
+                    continue
+                    
                 except Exception as e:
-                    logger.error(f"Error processing document {doc.id}: {str(e)}")
+                    # Unexpected errors - mark as failed
+                    error_msg = f"Document {doc.id} ({doc.file_name}): Processing error - {str(e)}"
+                    logger.error(error_msg, exc_info=True)
                     failed += 1
                     total_processed += 1
+                    error_details.append({
+                        "document_id": doc.id,
+                        "file_name": doc.file_name,
+                        "reason": str(e),
+                        "type": "error"
+                    })
+                    db.rollback()  # Rollback any partial changes
                     # Continue with next document
             
             # Update job progress after each chunk
@@ -166,11 +222,18 @@ def reprocess_documents_batch(self, job_id: int):
             "successful": successful,
             "failed": failed,
             "skipped": skipped,
-            "completion_time": datetime.now().isoformat()
+            "completion_time": datetime.now().isoformat(),
+            "error_details": error_details[:100]  # Store first 100 errors to avoid bloat
         }
         db.commit()
         
-        logger.info(f"Completed batch job {job_id}: {successful} successful, {failed} failed")
+        logger.info(f"Completed batch job {job_id}: {successful} successful, {failed} failed, {skipped} skipped")
+        
+        # Log summary of error types
+        if error_details:
+            validation_errors = [e for e in error_details if e.get("type") == "validation"]
+            processing_errors = [e for e in error_details if e.get("type") == "error"]
+            logger.info(f"Error breakdown: {len(validation_errors)} validation errors, {len(processing_errors)} processing errors")
         
         return {
             "status": "completed",
@@ -178,7 +241,11 @@ def reprocess_documents_batch(self, job_id: int):
             "total_processed": total_processed,
             "successful": successful,
             "failed": failed,
-            "skipped": skipped
+            "skipped": skipped,
+            "error_summary": {
+                "validation_errors": len([e for e in error_details if e.get("type") == "validation"]),
+                "processing_errors": len([e for e in error_details if e.get("type") == "error"])
+            }
         }
         
     except SoftTimeLimitExceeded:
