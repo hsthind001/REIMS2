@@ -184,7 +184,7 @@ export function ExportDropdown({
   const [showMenu, setShowMenu] = useState(false);
 
   const handleExport = async (format: 'excel' | 'csv') => {
-    if (data.length === 0) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
       alert('No data to export');
       return;
     }
@@ -215,7 +215,7 @@ export function ExportDropdown({
         variant={variant}
         size={size}
         onClick={() => setShowMenu(!showMenu)}
-        disabled={disabled || exporting || data.length === 0}
+        disabled={disabled || exporting || (!data || !Array.isArray(data) || data.length === 0)}
         className="flex items-center gap-2"
       >
         {exporting ? (
