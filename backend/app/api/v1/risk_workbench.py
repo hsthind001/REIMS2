@@ -119,6 +119,7 @@ async def get_unified_risk_items(
         subquery = unified_query.subquery()
         
         # Pagination
+        offset = (page - 1) * page_size
         try:
             # Count total
             count_query = db.query(func.count()).select_from(subquery)
@@ -126,7 +127,6 @@ async def get_unified_risk_items(
             
             # Get paginated results with ordering
             # Use text() for dynamic column ordering on subquery
-            offset = (page - 1) * page_size
             if sort_order == "desc":
                 order_sql = f"{sort_by} DESC"
             else:
