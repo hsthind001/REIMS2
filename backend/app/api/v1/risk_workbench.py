@@ -71,7 +71,7 @@ async def get_unified_risk_items(
             CommitteeAlert.business_impact_score.label('impact'),
             func.cast(CommitteeAlert.status, String()).label('status'),
             func.cast(None, String()).label('assignee'),
-            CommitteeAlert.sla_due_at.label('due_date'),
+            func.cast(CommitteeAlert.sla_due_at, String()).label('due_date'),
             CommitteeAlert.created_at.label('created_at')
         ).join(
             Property, CommitteeAlert.property_id == Property.id
