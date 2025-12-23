@@ -8,7 +8,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_, case
+from sqlalchemy import func, and_, or_, case, String
 from sqlalchemy.sql import text
 import logging
 
@@ -46,14 +46,14 @@ async def get_unified_risk_items(
         # 1. Anomalies
         anomalies_query = db.query(
             AnomalyDetection.id.label('id'),
-            func.cast('anomaly', text).label('type'),
+            func.cast('anomaly', String()).label('type'),
             AnomalyDetection.severity.label('severity'),
             Property.property_code.label('property'),
             func.extract('epoch', func.now() - AnomalyDetection.detected_at).label('age_seconds'),
             AnomalyDetection.impact_amount.label('impact'),
-            func.cast(None, text).label('status'),
-            func.cast(None, text).label('assignee'),
-            func.cast(None, text).label('due_date'),
+            func.cast(None, String()).label('status'),
+            func.cast(None, String()).label('assignee'),
+            func.cast(None, String()).label('due_date'),
             AnomalyDetection.detected_at.label('created_at')
         ).join(
             DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id
@@ -64,13 +64,13 @@ async def get_unified_risk_items(
         # 2. Alerts
         alerts_query = db.query(
             CommitteeAlert.id.label('id'),
-            func.cast('alert', text).label('type'),
-            func.cast(CommitteeAlert.severity, text).label('severity'),
+            func.cast('alert', String()).label('type'),
+            func.cast(CommitteeAlert.severity, String()).label('severity'),
             Property.property_code.label('property'),
             func.extract('epoch', func.now() - CommitteeAlert.created_at).label('age_seconds'),
             CommitteeAlert.business_impact_score.label('impact'),
-            func.cast(CommitteeAlert.status, text).label('status'),
-            func.cast(None, text).label('assignee'),
+            func.cast(CommitteeAlert.status, String()).label('status'),
+            func.cast(None, String()).label('assignee'),
             CommitteeAlert.sla_due_at.label('due_date'),
             CommitteeAlert.created_at.label('created_at')
         ).join(
