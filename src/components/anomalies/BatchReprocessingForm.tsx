@@ -326,7 +326,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                       {job.status.toUpperCase()}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm text-gray-600">
                     <div>
                       <span className="font-medium">Total:</span> {job.total_documents}
                     </div>
@@ -336,6 +336,10 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                     <div>
                       <span className="font-medium">Success:</span>{' '}
                       <span className="text-green-600">{job.successful_count}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium">Skipped:</span>{' '}
+                      <span className="text-yellow-600">{job.skipped_count || 0}</span>
                     </div>
                     <div>
                       <span className="font-medium">Failed:</span>{' '}
@@ -367,6 +371,56 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                       style={{ width: `${job.progress_pct}%` }}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* Error Details */}
+              {job.status === 'completed' && job.results_summary?.error_details && job.results_summary.error_details.length > 0 && (
+                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <span className="text-sm font-medium text-yellow-800">
+                      Error Details ({job.results_summary.error_details.length} items)
+                    </span>
+                  </div>
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-yellow-700 hover:text-yellow-800 mb-2">
+                      View error details
+                    </summary>
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {job.results_summary.error_details.slice(0, 20).map((error: any, idx: number) => (
+                        <div key={idx} className="p-2 bg-white rounded border border-yellow-200">
+                          <div className="font-medium text-gray-900">
+                            Document {error.document_id}: {error.file_name || 'Unknown'}
+                          </div>
+                          <div className="text-gray-600 mt-1">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${
+                              error.type === 'validation' 
+                                ? 'bg-yellow-100 text-yellow-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {error.type === 'validation' ? 'Skipped' : 'Failed'}
+                            </span>
+                            <span className="ml-2">{error.reason}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {job.results_summary.error_details.length > 20 && (
+                        <div className="text-yellow-700 text-xs italic">
+                          ... and {job.results_summary.error_details.length - 20} more errors
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </div>
+              )}
+
+              {/* Error Summary */}
+              {job.status === 'completed' && job.results_summary?.error_summary && (
+                <div className="mt-2 text-xs text-gray-600">
+                  <span className="font-medium">Error Breakdown:</span>{' '}
+                  {job.results_summary.error_summary.validation_errors || 0} validation errors,{' '}
+                  {job.results_summary.error_summary.processing_errors || 0} processing errors
                 </div>
               )}
 

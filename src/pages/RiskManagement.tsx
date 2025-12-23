@@ -440,20 +440,27 @@ export default function RiskManagement() {
           totalDeletedAnomalies += result.deleted_old_anomalies || 0
           console.log(`✅ Successfully processed ${doc.file_name}: ${result.new_anomalies_detected} new anomalies, ${result.deleted_old_anomalies} deleted`)
         } catch (error: any) {
-          console.error(`❌ Failed to process document ${doc.id} (${doc.file_name}):`, error)
+          const errorMsg = error.message || error.response?.data?.detail || 'Unknown error'
+          console.error(`❌ Failed to process document ${doc.id} (${doc.file_name}):`, errorMsg)
+          console.error(`   Full error:`, error)
           errorCount++
         }
       }
       
       console.log(`Bulk anomaly detection completed: ${successCount} successful, ${errorCount} failed`)
 
-      // Show summary
+      // Show summary with better categorization
       let summaryMessage = `✅ Bulk anomaly detection completed!\n\n`
-      summaryMessage += `Processed: ${allDocuments.length} documents\n`
+      summaryMessage += `Total Documents: ${allDocuments.length}\n`
       summaryMessage += `✅ Successful: ${successCount}\n`
       summaryMessage += `❌ Failed: ${errorCount}\n\n`
       summaryMessage += `New anomalies detected: ${totalNewAnomalies}\n`
-      summaryMessage += `Old anomalies removed: ${totalDeletedAnomalies}`
+      summaryMessage += `Old anomalies removed: ${totalDeletedAnomalies}\n\n`
+      
+      if (errorCount > 0) {
+        summaryMessage += `⚠️ Note: ${errorCount} document(s) failed processing.\n`
+        summaryMessage += `Check the browser console for detailed error messages.`
+      }
       
       alert(summaryMessage)
 
