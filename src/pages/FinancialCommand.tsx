@@ -22,7 +22,7 @@ import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
 import { reconciliationService, type ReconciliationSession, type ComparisonData } from '../lib/reconciliation';
 import { chartOfAccountsService, type ChartOfAccount, type ChartOfAccountsSummary } from '../lib/chart_of_accounts';
-import { varianceAnalysisService, type BudgetVarianceResponse, type VarianceItem } from '../lib/variance_analysis';
+import { varianceAnalysisService, type PeriodOverPeriodVarianceResponse, type VarianceItem } from '../lib/variance_analysis';
 import { financialPeriodsService } from '../lib/financial_periods';
 import { MortgageDataTable } from '../components/mortgage/MortgageDataTable';
 import { MortgageDetail } from '../components/mortgage/MortgageDetail';
@@ -117,10 +117,12 @@ export default function FinancialCommand() {
 
   // Variance Analysis state
   const [showVarianceAnalysis, setShowVarianceAnalysis] = useState(false);
-  const [budgetVariance, setBudgetVariance] = useState<BudgetVarianceResponse | null>(null);
+  const [periodVariance, setPeriodVariance] = useState<PeriodOverPeriodVarianceResponse | null>(null);
   const [loadingVariance, setLoadingVariance] = useState(false);
   const [varianceFilterSeverity, setVarianceFilterSeverity] = useState<string>('');
   const [varianceSearchQuery, setVarianceSearchQuery] = useState('');
+  const [availablePeriods, setAvailablePeriods] = useState<FinancialPeriod[]>([]);
+  const [selectedVariancePeriod, setSelectedVariancePeriod] = useState<number | null>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -165,6 +167,7 @@ export default function FinancialCommand() {
       loadAvailableDocuments(selectedProperty.property_code);
       loadReconciliationSessions(selectedProperty.property_code);
       loadCurrentPeriod();
+      loadAvailablePeriods();
     }
   }, [selectedProperty, selectedYear, selectedMonth]);
 
@@ -701,6 +704,48 @@ export default function FinancialCommand() {
     }
   };
 
+  const loadAvailablePeriods = async () => {
+    if (!selectedProperty) {
+      console.log('loadAvailablePeriods: No property selected');
+      setAvailablePeriods([]);
+      return;
+    }
+
+    try {
+      console.log('loadAvailablePeriods: Fetching periods for property:', selectedProperty.id);
+      const response = await fetch(`${API_BASE_URL}/financial-periods?property_id=${selectedProperty.id}`, {
+        credentials: 'include'
+      });
+
+      console.log('loadAvailablePeriods: Response status:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('loadAvailablePeriods: Received data:', data);
+        // The API returns the array directly, not wrapped in an object
+        const periods = Array.isArray(data) ? data : (data.periods || []);
+        console.log('loadAvailablePeriods: Periods array:', periods);
+        setAvailablePeriods(periods);
+
+        // Auto-select the most recent period if none selected
+        if (periods.length > 0 && !selectedVariancePeriod) {
+          // Sort by year/month descending
+          const sortedPeriods = [...periods].sort((a, b) => {
+            if (a.period_year !== b.period_year) return b.period_year - a.period_year;
+            return b.period_month - a.period_month;
+          });
+          console.log('loadAvailablePeriods: Auto-selecting period:', sortedPeriods[0]);
+          setSelectedVariancePeriod(sortedPeriods[0].id);
+        }
+      } else {
+        console.error('loadAvailablePeriods: Response not OK:', response.status, response.statusText);
+      }
+    } catch (err) {
+      console.error('Failed to load available periods:', err);
+      setAvailablePeriods([]);
+    }
+  };
+
   const loadVarianceAnalysis = async (periodId?: number) => {
     const usePeriodId = periodId || currentPeriodId;
 
@@ -711,21 +756,21 @@ export default function FinancialCommand() {
 
     try {
       setLoadingVariance(true);
-      console.log('Loading variance analysis for:', {
+      console.log('Loading period-over-period variance analysis for:', {
         propertyId: selectedProperty.id,
         periodId: usePeriodId
       });
 
-      const result = await varianceAnalysisService.getBudgetVariance(
+      const result = await varianceAnalysisService.getPeriodOverPeriodVariance(
         selectedProperty.id,
         usePeriodId
       );
 
-      setBudgetVariance(result);
-      console.log('Variance loaded:', result);
+      setPeriodVariance(result);
+      console.log('Period-over-period variance loaded:', result);
     } catch (err) {
       console.error('Failed to load variance analysis:', err);
-      alert('Failed to load variance analysis. Please try again.');
+      alert('Failed to load period-over-period variance analysis. Please try again.');
     } finally {
       setLoadingVariance(false);
     }
@@ -738,21 +783,16 @@ export default function FinancialCommand() {
         return;
       }
 
-      console.log('Run Variance Analysis clicked');
-      setShowVarianceAnalysis(true);
-
-      // Ensure we have a period ID
-      let periodId = currentPeriodId;
-      if (!periodId) {
-        periodId = await loadCurrentPeriod();
-        if (!periodId) {
-          alert('Could not create or find financial period for the selected property and date');
-          return;
-        }
+      if (!selectedVariancePeriod) {
+        alert('Please select a period for variance analysis');
+        return;
       }
 
-      // Load variance with the period ID
-      await loadVarianceAnalysis(periodId);
+      console.log('Run Variance Analysis clicked for period:', selectedVariancePeriod);
+      setShowVarianceAnalysis(true);
+
+      // Load variance with the selected period ID
+      await loadVarianceAnalysis(selectedVariancePeriod);
     } catch (err) {
       console.error('Error in handleRunVarianceAnalysis:', err);
       alert('Failed to run variance analysis. Please try again.');
@@ -1320,10 +1360,39 @@ export default function FinancialCommand() {
               <div className="mb-4">
                 <h2 className="text-2xl font-bold mb-2">📈 Variance Analysis</h2>
                 <p className="text-text-secondary">
-                  Analyze budget vs actual performance and identify accounts exceeding variance thresholds.
+                  Compare actual performance between current and previous periods to identify significant variances.
                 </p>
               </div>
-              <Button variant="primary" onClick={handleRunVarianceAnalysis}>
+
+              {/* Period Selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
+                  Select Period for Analysis (Available: {availablePeriods.length})
+                </label>
+                <select
+                  value={selectedVariancePeriod || ''}
+                  onChange={(e) => setSelectedVariancePeriod(Number(e.target.value))}
+                  className="w-full md:w-auto px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                >
+                  <option value="">Choose a period...</option>
+                  {availablePeriods
+                    .sort((a, b) => {
+                      if (a.period_year !== b.period_year) return b.period_year - a.period_year;
+                      return b.period_month - a.period_month;
+                    })
+                    .map(period => (
+                      <option key={period.id} value={period.id}>
+                        {period.period_year}-{String(period.period_month).padStart(2, '0')}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <Button
+                variant="primary"
+                onClick={handleRunVarianceAnalysis}
+                disabled={!selectedVariancePeriod}
+              >
                 Run Variance Analysis
               </Button>
             </Card>
@@ -1332,29 +1401,31 @@ export default function FinancialCommand() {
             {showVarianceAnalysis && (
               <>
                 {/* Summary Card */}
-                {budgetVariance && budgetVariance.summary && (
+                {periodVariance && periodVariance.summary && (
                   <Card className="p-6">
                     <h3 className="text-lg font-semibold mb-4">Variance Summary</h3>
                     <div className="mb-4 text-sm text-text-secondary">
-                      {budgetVariance.property_name} • {budgetVariance.period_year}/{String(budgetVariance.period_month).padStart(2, '0')}
+                      {periodVariance.property_name} • {periodVariance.current_period_year}/{String(periodVariance.current_period_month).padStart(2, '0')}
+                      <span className="mx-2">vs</span>
+                      {periodVariance.previous_period_year}/{String(periodVariance.previous_period_month).padStart(2, '0')}
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                       <div className="p-4 bg-background rounded-lg border border-border">
                         <div className="text-sm text-text-secondary mb-1">Total Accounts</div>
-                        <div className="text-2xl font-bold">{budgetVariance.summary.total_accounts}</div>
+                        <div className="text-2xl font-bold">{periodVariance.summary.total_accounts}</div>
                       </div>
                       <div className="p-4 bg-warning-light/20 rounded-lg border border-warning">
                         <div className="text-sm text-text-secondary mb-1">Flagged</div>
-                        <div className="text-2xl font-bold text-warning">{budgetVariance.summary.flagged_accounts}</div>
+                        <div className="text-2xl font-bold text-warning">{periodVariance.summary.flagged_accounts}</div>
                       </div>
                       <div className="p-4 bg-background rounded-lg border border-border">
-                        <div className="text-sm text-text-secondary mb-1">Total Budget</div>
-                        <div className="text-xl font-bold">${(budgetVariance.summary.total_budget / 1000).toFixed(0)}K</div>
+                        <div className="text-sm text-text-secondary mb-1">Previous Period ({periodVariance.previous_period_year}/{periodVariance.previous_period_month})</div>
+                        <div className="text-xl font-bold">${((periodVariance.summary.total_previous_period || 0) / 1000).toFixed(0)}K</div>
                       </div>
                       <div className="p-4 bg-background rounded-lg border border-border">
-                        <div className="text-sm text-text-secondary mb-1">Total Actual</div>
-                        <div className="text-xl font-bold">${(budgetVariance.summary.total_actual / 1000).toFixed(0)}K</div>
+                        <div className="text-sm text-text-secondary mb-1">Current Period ({periodVariance.current_period_year}/{periodVariance.current_period_month})</div>
+                        <div className="text-xl font-bold">${((periodVariance.summary.total_current_period || 0) / 1000).toFixed(0)}K</div>
                       </div>
                     </div>
 
@@ -1363,29 +1434,29 @@ export default function FinancialCommand() {
                       <div className="grid grid-cols-4 gap-4">
                         <div className="flex items-center gap-2">
                           <span className="w-3 h-3 bg-success rounded-full"></span>
-                          <span className="text-sm">Normal: {budgetVariance.summary.severity_breakdown.NORMAL}</span>
+                          <span className="text-sm">Normal: {periodVariance.summary.severity_breakdown.NORMAL}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="w-3 h-3 bg-warning rounded-full"></span>
-                          <span className="text-sm">Warning: {budgetVariance.summary.severity_breakdown.WARNING}</span>
+                          <span className="text-sm">Warning: {periodVariance.summary.severity_breakdown.WARNING}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="w-3 h-3 bg-danger rounded-full"></span>
-                          <span className="text-sm">Critical: {budgetVariance.summary.severity_breakdown.CRITICAL}</span>
+                          <span className="text-sm">Critical: {periodVariance.summary.severity_breakdown.CRITICAL}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="w-3 h-3 bg-purple-600 rounded-full"></span>
-                          <span className="text-sm">Urgent: {budgetVariance.summary.severity_breakdown.URGENT}</span>
+                          <span className="text-sm">Urgent: {periodVariance.summary.severity_breakdown.URGENT}</span>
                         </div>
                       </div>
                     </div>
 
-                    {budgetVariance.alerts_created > 0 && (
+                    {periodVariance.alerts_created > 0 && (
                       <div className="mt-4 p-3 bg-info-light/20 rounded-lg border border-info">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-info" />
                           <span className="text-sm font-medium">
-                            {budgetVariance.alerts_created} alert{budgetVariance.alerts_created > 1 ? 's' : ''} created for critical variances
+                            {periodVariance.alerts_created} alert{periodVariance.alerts_created > 1 ? 's' : ''} created for critical variances
                           </span>
                         </div>
                       </div>
@@ -1425,7 +1496,7 @@ export default function FinancialCommand() {
                     <div className="text-center py-8">
                       <div className="text-text-secondary">Loading variance analysis...</div>
                     </div>
-                  ) : budgetVariance && budgetVariance.variance_items && budgetVariance.variance_items.length > 0 ? (
+                  ) : periodVariance && periodVariance.variance_items && periodVariance.variance_items.length > 0 ? (
                     <div>
                       <div className="overflow-x-auto border border-border rounded-lg">
                         <table className="w-full">
@@ -1433,15 +1504,15 @@ export default function FinancialCommand() {
                             <tr>
                               <th className="text-left py-3 px-4 text-sm font-semibold">Code</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold">Account Name</th>
-                              <th className="text-right py-3 px-4 text-sm font-semibold">Budget</th>
-                              <th className="text-right py-3 px-4 text-sm font-semibold">Actual</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Previous Period</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Current Period</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Variance $</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Variance %</th>
                               <th className="text-center py-3 px-4 text-sm font-semibold">Status</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {budgetVariance.variance_items
+                            {periodVariance.variance_items
                               .filter(item => {
                                 const matchesSearch = !varianceSearchQuery ||
                                   item.account_code.toLowerCase().includes(varianceSearchQuery.toLowerCase()) ||
@@ -1465,10 +1536,10 @@ export default function FinancialCommand() {
                                     <span className="font-medium">{item.account_name}</span>
                                   </td>
                                   <td className="text-right py-3 px-4 font-mono text-sm">
-                                    ${item.budget_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${(item.previous_period_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </td>
                                   <td className="text-right py-3 px-4 font-mono text-sm">
-                                    ${item.actual_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${(item.current_period_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </td>
                                   <td className={`text-right py-3 px-4 font-mono text-sm font-semibold ${
                                     item.is_favorable ? 'text-success' : 'text-danger'
@@ -1485,7 +1556,7 @@ export default function FinancialCommand() {
                                       {item.severity === 'URGENT' && <span className="text-purple-600">🚨</span>}
                                       {item.severity === 'CRITICAL' && <span className="text-danger">🔴</span>}
                                       {item.severity === 'WARNING' && <span className="text-warning">🟡</span>}
-                                      {item.severity === 'NORMAL' && <span className="text-success">🟢</span>}
+                                      {(item.severity === 'NORMAL' || item.severity === 'INFO') && <span className="text-success">🟢</span>}
                                       <span className={`px-2 py-1 rounded text-xs font-medium ${
                                         item.is_favorable ? 'bg-success-light text-success' : 'bg-danger-light text-danger'
                                       }`}>
@@ -1499,13 +1570,13 @@ export default function FinancialCommand() {
                         </table>
                       </div>
                       <div className="mt-4 text-sm text-text-secondary text-center">
-                        Showing {budgetVariance.variance_items.filter(item => {
+                        Showing {periodVariance.variance_items.filter(item => {
                           const matchesSearch = !varianceSearchQuery ||
                             item.account_code.toLowerCase().includes(varianceSearchQuery.toLowerCase()) ||
                             item.account_name.toLowerCase().includes(varianceSearchQuery.toLowerCase());
                           const matchesSeverity = !varianceFilterSeverity || item.severity === varianceFilterSeverity;
                           return matchesSearch && matchesSeverity;
-                        }).length} of {budgetVariance.variance_items.length} accounts
+                        }).length} of {periodVariance.variance_items.length} accounts
                       </div>
                     </div>
                   ) : (

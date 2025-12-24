@@ -363,6 +363,12 @@ export default function DataControlCenter() {
     }
   };
 
+  // Helper function to get property name from property ID
+  const getPropertyName = (propertyId: number): string => {
+    const property = properties.find(p => p.id === propertyId);
+    return property?.property_name || `Property ${propertyId}`;
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'excellent': return 'success';
@@ -582,18 +588,18 @@ export default function DataControlCenter() {
       alert('No failed files to reprocess.');
       return;
     }
-    
+
     if (!confirm(`Are you sure you want to reprocess ${failedCount} failed file(s)? This will queue them for extraction again.`)) {
       return;
     }
-    
+
     try {
       setReprocessing(true);
       const response = await fetch(`${API_BASE_URL}/documents/uploads/reprocess-failed`, {
         method: 'POST',
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         alert(`Successfully queued ${result.queued_count || failedCount} failed file(s) for reprocessing.`);
@@ -607,6 +613,31 @@ export default function DataControlCenter() {
       alert('Failed to reprocess files. Please try again.');
     } finally {
       setReprocessing(false);
+    }
+  };
+
+  const handleRerunAnomalies = async (documentId: number) => {
+    try {
+      setRerunningAnomalies(documentId);
+
+      const response = await fetch(`${API_BASE_URL}/anomalies/documents/${documentId}/detect`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Anomaly detection completed successfully. Found ${result.anomalies_detected || 0} anomalies.`);
+        loadData(); // Reload the data to reflect new anomaly counts
+      } else {
+        const error = await response.json();
+        alert(`Failed to run anomaly detection: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to run anomaly detection:', error);
+      alert('Failed to run anomaly detection. Please try again.');
+    } finally {
+      setRerunningAnomalies(null);
     }
   };
 
@@ -2335,7 +2366,7 @@ export default function DataControlCenter() {
                       documents.map((doc) => (
                         <tr key={doc.id} className="border-b border-border hover:bg-background">
                           <td className="py-3 px-4 font-medium">{doc.file_name}</td>
-                          <td className="py-3 px-4 text-text-secondary">{doc.property_id}</td>
+                          <td className="py-3 px-4 text-text-secondary">{getPropertyName(doc.property_id)}</td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-1 bg-info-light text-info rounded text-sm">
                               {doc.document_type?.replace('_', ' ') || 'N/A'}

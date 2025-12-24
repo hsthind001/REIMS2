@@ -334,6 +334,54 @@ def get_variance_trend(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/properties/{property_id}/periods/{period_id}/period-over-period")
+def get_period_over_period_variance(
+    property_id: int,
+    period_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get period-over-period variance analysis
+
+    Compares actual results from the selected period with actual results from the previous period.
+    No budget or forecast comparison - purely actual vs previous actual.
+
+    **Variance Calculation:**
+    - Variance Amount = Current Period Actual - Previous Period Actual
+    - Variance % = (Variance Amount / Previous Period Actual) × 100
+
+    **Use Cases:**
+    - Month-over-month performance tracking
+    - Identifying trends in revenue and expenses
+    - Period comparison without budget dependency
+
+    **Returns:**
+    - Account-level variance between periods
+    - Previous and current period details
+    - Summary totals and severity breakdown
+    """
+    property = db.query(Property).filter(Property.id == property_id).first()
+    if not property:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    service = VarianceAnalysisService(db)
+
+    try:
+        result = service.analyze_period_over_period_variance(
+            property_id=property_id,
+            current_period_id=period_id
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error"))
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Period-over-period variance analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/thresholds")
 def get_variance_thresholds():
     """

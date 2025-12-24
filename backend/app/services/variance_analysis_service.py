@@ -513,6 +513,228 @@ class VarianceAnalysisService:
 
         return result
 
+    def analyze_period_over_period_variance(
+        self,
+        property_id: int,
+        current_period_id: int
+    ) -> Dict:
+        """
+        Analyze variance between current period actual and previous period actual
+
+        Parameters:
+        - property_id: Property ID
+        - current_period_id: Current financial period ID
+
+        Returns:
+        - Period-over-period variance analysis by account
+        - Compares actual values only (no budget/forecast)
+        """
+        try:
+            property = self.db.query(Property).filter(Property.id == property_id).first()
+            if not property:
+                return {"success": False, "error": "Property not found"}
+
+            current_period = self.db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == current_period_id
+            ).first()
+            if not current_period:
+                return {"success": False, "error": "Current financial period not found"}
+
+            # Get previous period for the same property
+            previous_period = self.db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property_id,
+                FinancialPeriod.period_end_date < current_period.period_end_date
+            ).order_by(FinancialPeriod.period_end_date.desc()).first()
+
+            if not previous_period:
+                return {
+                    "success": False,
+                    "error": "No previous period found for comparison"
+                }
+
+            # Get current period actual data
+            current_income = self.db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == current_period_id
+            ).all()
+
+            current_balance = self.db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == current_period_id
+            ).all()
+
+            # Get previous period actual data
+            previous_income = self.db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == previous_period.id
+            ).all()
+
+            previous_balance = self.db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == previous_period.id
+            ).all()
+
+            # Build current period amounts by account
+            current_by_account = {}
+            for item in current_income:
+                if item.account_code:
+                    parent_code = self._extract_parent_account_code(item.account_code)
+                    if parent_code not in current_by_account:
+                        current_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name
+                        }
+                    current_by_account[parent_code]["amount"] += Decimal(str(item.period_amount or 0))
+
+            for item in current_balance:
+                if item.account_code:
+                    parent_code = self._extract_parent_account_code(item.account_code)
+                    if parent_code not in current_by_account:
+                        current_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name
+                        }
+                    current_by_account[parent_code]["amount"] += Decimal(str(item.amount or 0))
+
+            # Build previous period amounts by account
+            previous_by_account = {}
+            for item in previous_income:
+                if item.account_code:
+                    parent_code = self._extract_parent_account_code(item.account_code)
+                    if parent_code not in previous_by_account:
+                        previous_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name
+                        }
+                    previous_by_account[parent_code]["amount"] += Decimal(str(item.period_amount or 0))
+
+            for item in previous_balance:
+                if item.account_code:
+                    parent_code = self._extract_parent_account_code(item.account_code)
+                    if parent_code not in previous_by_account:
+                        previous_by_account[parent_code] = {
+                            "amount": Decimal("0"),
+                            "account_name": item.account_name
+                        }
+                    previous_by_account[parent_code]["amount"] += Decimal(str(item.amount or 0))
+
+            # Analyze variances
+            variances = []
+            all_accounts = set(current_by_account.keys()) | set(previous_by_account.keys())
+
+            total_current = Decimal("0")
+            total_previous = Decimal("0")
+            total_variance = Decimal("0")
+
+            for account_code in all_accounts:
+                current_info = current_by_account.get(account_code, {"amount": Decimal("0"), "account_name": ""})
+                previous_info = previous_by_account.get(account_code, {"amount": Decimal("0"), "account_name": ""})
+
+                current_amount = current_info["amount"]
+                previous_amount = previous_info["amount"]
+                account_name = current_info.get("account_name") or previous_info.get("account_name")
+
+                # Calculate variance
+                variance_amount = current_amount - previous_amount
+                variance_pct = (
+                    (variance_amount / previous_amount * 100)
+                    if previous_amount != 0
+                    else Decimal("0")
+                )
+
+                # Determine if within tolerance (using default budget tolerance)
+                within_tolerance = self._is_within_tolerance(
+                    actual_amount=float(current_amount),
+                    budgeted_amount=float(previous_amount),
+                    tolerance_pct=float(self.DEFAULT_BUDGET_TOLERANCE_PCT),
+                    tolerance_amount=None
+                )
+
+                # Determine severity
+                severity = self._determine_variance_severity(abs(variance_pct))
+
+                variance_data = {
+                    "account_code": account_code,
+                    "account_name": account_name,
+                    "previous_period_amount": float(previous_amount),
+                    "current_period_amount": float(current_amount),
+                    "variance_amount": float(variance_amount),
+                    "variance_percentage": float(variance_pct),
+                    "within_tolerance": within_tolerance,
+                    "severity": severity,
+                    "is_favorable": self._is_favorable_variance(
+                        account_code,
+                        float(variance_amount)
+                    ),
+                }
+
+                variances.append(variance_data)
+
+                # Create alert for critical variances
+                if not within_tolerance and severity in ["CRITICAL", "URGENT"]:
+                    self._create_variance_alert(
+                        property_id=property_id,
+                        financial_period_id=current_period_id,
+                        variance_data=variance_data,
+                        variance_type="period_over_period"
+                    )
+
+                # Accumulate totals
+                total_current += current_amount
+                total_previous += previous_amount
+                total_variance += variance_amount
+
+            # Calculate summary
+            total_variance_pct = (
+                (total_variance / total_previous * 100)
+                if total_previous != 0
+                else Decimal("0")
+            )
+
+            # Calculate severity breakdown
+            severity_breakdown = {
+                "NORMAL": 0,
+                "WARNING": 0,
+                "CRITICAL": 0,
+                "URGENT": 0
+            }
+            for variance in variances:
+                severity = variance["severity"]
+                if severity == "INFO":
+                    severity_breakdown["NORMAL"] += 1
+                elif severity in severity_breakdown:
+                    severity_breakdown[severity] += 1
+
+            return {
+                "success": True,
+                "property_id": property_id,
+                "property_code": property.property_code,
+                "property_name": property.property_name,
+                "current_period_id": current_period_id,
+                "current_period_year": current_period.period_year,
+                "current_period_month": current_period.period_month,
+                "previous_period_id": previous_period.id,
+                "previous_period_year": previous_period.period_year,
+                "previous_period_month": previous_period.period_month,
+                "variance_type": "period_over_period",
+                "analysis_date": datetime.utcnow().isoformat(),
+                "summary": {
+                    "total_accounts": len(variances),
+                    "flagged_accounts": len([v for v in variances if not v["within_tolerance"]]),
+                    "total_previous_period": float(total_previous),
+                    "total_current_period": float(total_current),
+                    "total_variance_amount": float(total_variance),
+                    "total_variance_percentage": float(total_variance_pct),
+                    "severity_breakdown": severity_breakdown,
+                },
+                "variance_items": variances,
+                "alerts_created": len([v for v in variances if v["severity"] in ["CRITICAL", "URGENT"]]),
+            }
+
+        except Exception as e:
+            logger.error(f"Period-over-period variance analysis failed: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     def get_variance_trend(
         self,
         property_id: int,
@@ -694,18 +916,27 @@ class VarianceAnalysisService:
             if variance_type == "budget":
                 comparison = "budget"
                 expected_amount = variance_data["budget_amount"]
-            else:
+                actual_amount = variance_data["actual_amount"]
+                tolerance_pct = variance_data["tolerance_percentage"]
+            elif variance_type == "forecast":
                 comparison = "forecast"
                 expected_amount = variance_data["forecast_amount"]
+                actual_amount = variance_data["actual_amount"]
+                tolerance_pct = variance_data["tolerance_percentage"]
+            else:  # period_over_period
+                comparison = "previous period"
+                expected_amount = variance_data["previous_period_amount"]
+                actual_amount = variance_data["current_period_amount"]
+                tolerance_pct = 10.0  # Default tolerance
 
             description = (
                 f"Significant {variance_direction} variance detected in {variance_data['account_name']} "
                 f"({variance_data['account_code']}).\n\n"
                 f"{comparison.title()}: ${expected_amount:,.2f}\n"
-                f"Actual: ${variance_data['actual_amount']:,.2f}\n"
+                f"{'Current' if variance_type == 'period_over_period' else 'Actual'}: ${actual_amount:,.2f}\n"
                 f"Variance: ${variance_data['variance_amount']:,.2f} "
                 f"({variance_data['variance_percentage']:+.1f}%)\n"
-                f"Tolerance: ±{variance_data['tolerance_percentage']:.1f}%\n\n"
+                f"Tolerance: ±{tolerance_pct:.1f}%\n\n"
                 f"This variance exceeds acceptable tolerance levels and requires review."
             )
 

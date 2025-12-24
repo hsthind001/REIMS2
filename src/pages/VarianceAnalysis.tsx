@@ -6,8 +6,8 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000') +
 interface VarianceItem {
   account_code: string
   account_name: string
-  budgeted_amount: number
-  actual_amount: number
+  previous_period_amount: number
+  current_period_amount: number
   variance_amount: number
   variance_percentage: number
   within_tolerance: boolean
@@ -20,12 +20,11 @@ export default function VarianceAnalysis() {
   const [periods, setPeriods] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<number | null>(null)
   const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null)
-  const [budgetVariances, setBudgetVariances] = useState<VarianceItem[]>([])
-  const [forecastVariances, setForecastVariances] = useState<VarianceItem[]>([])
+  const [variances, setVariances] = useState<VarianceItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'budget' | 'forecast'>('budget')
   const [summary, setSummary] = useState<any>(null)
+  const [previousPeriodInfo, setPreviousPeriodInfo] = useState<any>(null)
 
   useEffect(() => {
     fetchProperties()
@@ -41,7 +40,7 @@ export default function VarianceAnalysis() {
     if (selectedProperty && selectedPeriod) {
       fetchVariances()
     }
-  }, [selectedProperty, selectedPeriod, activeTab])
+  }, [selectedProperty, selectedPeriod])
 
   const fetchProperties = async () => {
     try {
@@ -84,9 +83,7 @@ export default function VarianceAnalysis() {
     setError(null)
 
     try {
-      const endpoint = activeTab === 'budget'
-        ? `${API_BASE_URL}/variance-analysis/properties/${selectedProperty}/periods/${selectedPeriod}/budget`
-        : `${API_BASE_URL}/variance-analysis/properties/${selectedProperty}/periods/${selectedPeriod}/forecast`
+      const endpoint = `${API_BASE_URL}/variance-analysis/properties/${selectedProperty}/periods/${selectedPeriod}/period-over-period`
 
       const response = await fetch(endpoint, {
         credentials: 'include'
@@ -94,13 +91,15 @@ export default function VarianceAnalysis() {
 
       if (response.ok) {
         const data = await response.json()
-        if (activeTab === 'budget') {
-          setBudgetVariances(data.variances || [])
-          setSummary(data.summary)
-        } else {
-          setForecastVariances(data.variances || [])
-          setSummary(data.summary)
-        }
+        setVariances(data.variance_items || [])
+        setSummary(data.summary)
+        setPreviousPeriodInfo({
+          year: data.previous_period_year,
+          month: data.previous_period_month
+        })
+      } else {
+        const errorData = await response.json()
+        setError(errorData.detail || 'Failed to load variance data')
       }
     } catch (err) {
       console.error('Failed to fetch variances:', err)
@@ -122,14 +121,14 @@ export default function VarianceAnalysis() {
     }
   }
 
-  const variances = activeTab === 'budget' ? budgetVariances : forecastVariances
+  const selectedPeriodData = periods.find(p => p.id === selectedPeriod)
 
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h1 className="page-title">📊 Variance Analysis</h1>
-          <p className="page-subtitle">Budget vs Actual & Forecast Analysis</p>
+          <p className="page-subtitle">Period-over-Period Actual Performance Comparison</p>
         </div>
       </div>
 
@@ -177,20 +176,20 @@ export default function VarianceAnalysis() {
       </div>
 
       {/* Summary Cards */}
-      {summary && (
+      {summary && previousPeriodInfo && (
         <div className="stats-grid">
           <div className="stat-card">
-            <div className="stat-icon">📈</div>
+            <div className="stat-icon">📅</div>
             <div className="stat-info">
-              <div className="stat-value">${summary.total_actual?.toLocaleString()}</div>
-              <div className="stat-label">Total Actual</div>
+              <div className="stat-value">${summary.total_previous_period?.toLocaleString()}</div>
+              <div className="stat-label">Previous Period ({previousPeriodInfo.year}/{previousPeriodInfo.month})</div>
             </div>
           </div>
           <div className="stat-card">
-            <div className="stat-icon">📋</div>
+            <div className="stat-icon">📈</div>
             <div className="stat-info">
-              <div className="stat-value">${summary.total_budget?.toLocaleString()}</div>
-              <div className="stat-label">Total {activeTab === 'budget' ? 'Budget' : 'Forecast'}</div>
+              <div className="stat-value">${summary.total_current_period?.toLocaleString()}</div>
+              <div className="stat-label">Current Period ({selectedPeriodData?.period_year}/{selectedPeriodData?.period_month})</div>
             </div>
           </div>
           <div className={`stat-card stat-${summary.total_variance_amount >= 0 ? 'success' : 'error'}`}>
@@ -210,26 +209,15 @@ export default function VarianceAnalysis() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="tabs">
-        <button
-          className={`tab ${activeTab === 'budget' ? 'active' : ''}`}
-          onClick={() => setActiveTab('budget')}
-        >
-          📋 Budget vs Actual
-        </button>
-        <button
-          className={`tab ${activeTab === 'forecast' ? 'active' : ''}`}
-          onClick={() => setActiveTab('forecast')}
-        >
-          📊 Forecast vs Actual
-        </button>
-      </div>
-
       {/* Variance Table */}
       <div className="card">
         <h3 className="card-title">
-          {activeTab === 'budget' ? 'Budget' : 'Forecast'} Variance Details
+          Period-over-Period Variance Details
+          {previousPeriodInfo && selectedPeriodData && (
+            <span style={{ fontSize: '0.9rem', fontWeight: 'normal', marginLeft: '10px' }}>
+              Comparing {previousPeriodInfo.year}/{previousPeriodInfo.month} vs {selectedPeriodData.period_year}/{selectedPeriodData.period_month}
+            </span>
+          )}
         </h3>
         {variances.length > 0 ? (
           <div className="table-container">
@@ -238,8 +226,8 @@ export default function VarianceAnalysis() {
                 <tr>
                   <th>Account Code</th>
                   <th>Account Name</th>
-                  <th>{activeTab === 'budget' ? 'Budget' : 'Forecast'}</th>
-                  <th>Actual</th>
+                  <th>Previous Period</th>
+                  <th>Current Period</th>
                   <th>Variance $</th>
                   <th>Variance %</th>
                   <th>Status</th>
@@ -251,8 +239,8 @@ export default function VarianceAnalysis() {
                   <tr key={idx} className={variance.within_tolerance ? '' : 'highlight-row'}>
                     <td>{variance.account_code}</td>
                     <td>{variance.account_name}</td>
-                    <td>${variance.budgeted_amount?.toLocaleString()}</td>
-                    <td>${variance.actual_amount?.toLocaleString()}</td>
+                    <td>${variance.previous_period_amount?.toLocaleString()}</td>
+                    <td>${variance.current_period_amount?.toLocaleString()}</td>
                     <td className={variance.variance_amount >= 0 ? 'positive' : 'negative'}>
                       ${variance.variance_amount?.toLocaleString()}
                     </td>

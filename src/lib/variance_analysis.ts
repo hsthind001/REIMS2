@@ -9,20 +9,25 @@ import { api } from './api';
 export interface VarianceItem {
   account_code: string;
   account_name: string;
-  budget_amount: number;
-  actual_amount: number;
+  budget_amount?: number;
+  actual_amount?: number;
+  previous_period_amount?: number;
+  current_period_amount?: number;
   variance_amount: number;
   variance_percentage: number;
   is_favorable: boolean;
-  severity: 'NORMAL' | 'WARNING' | 'CRITICAL' | 'URGENT';
-  tolerance_percentage: number;
+  severity: 'NORMAL' | 'WARNING' | 'CRITICAL' | 'URGENT' | 'INFO';
+  tolerance_percentage?: number;
+  within_tolerance?: boolean;
 }
 
 export interface VarianceSummary {
   total_accounts: number;
   flagged_accounts: number;
-  total_budget: number;
-  total_actual: number;
+  total_budget?: number;
+  total_actual?: number;
+  total_previous_period?: number;
+  total_current_period?: number;
   total_variance_amount: number;
   total_variance_percentage: number;
   severity_breakdown: {
@@ -86,6 +91,24 @@ export interface VarianceTrendResponse {
   variance_type: 'budget' | 'forecast';
   trend_data: VarianceTrendData[];
   trend_direction: 'improving' | 'stable' | 'deteriorating';
+}
+
+export interface PeriodOverPeriodVarianceResponse {
+  success: boolean;
+  property_id: number;
+  property_code: string;
+  property_name: string;
+  current_period_id: number;
+  current_period_year: number;
+  current_period_month: number;
+  previous_period_id: number;
+  previous_period_year: number;
+  previous_period_month: number;
+  variance_type: 'period_over_period';
+  analysis_date: string;
+  variance_items: VarianceItem[];
+  summary: VarianceSummary;
+  alerts_created: number;
 }
 
 export class VarianceAnalysisService {
@@ -157,6 +180,18 @@ export class VarianceAnalysisService {
         variance_type: varianceType,
         lookback_periods: lookbackPeriods
       }
+    );
+  }
+
+  /**
+   * Get period-over-period variance for a property and period
+   */
+  async getPeriodOverPeriodVariance(
+    propertyId: number,
+    periodId: number
+  ): Promise<PeriodOverPeriodVarianceResponse> {
+    return api.get<PeriodOverPeriodVarianceResponse>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/period-over-period`
     );
   }
 
