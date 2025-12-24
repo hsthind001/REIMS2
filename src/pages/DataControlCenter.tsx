@@ -40,6 +40,7 @@ import { TaskCharts } from '../components/tasks/TaskCharts';
 import { PerformanceDashboard } from '../components/tasks/PerformanceDashboard';
 import { TaskScheduler } from '../components/tasks/TaskScheduler';
 import { RuleCharts } from '../components/validations/RuleCharts';
+import { useDataControlData } from '../hooks/useDataControlData';
 import type { DocumentUpload as DocumentUploadType, RuleStatisticsItem, RuleStatisticsSummary, RuleStatisticsResponse, RuleResultItem, ValidationAnalyticsResponse } from '../types/api';
 import type { TaskDashboard, Task } from '../types/tasks';
 
@@ -98,7 +99,6 @@ export default function DataControlCenter() {
   const [activeTab, setActiveTab] = useState<ControlTab>('quality');
   const [qualityScore, setQualityScore] = useState<QualityScore | null>(null);
   const [systemTasks, setSystemTasks] = useState<SystemTask[]>([]);
-  const [validationRules, setValidationRules] = useState<ValidationRule[]>([]); // Keep for backward compatibility
   const [ruleStatistics, setRuleStatistics] = useState<RuleStatisticsItem[]>([]);
   const [ruleSummary, setRuleSummary] = useState<RuleStatisticsSummary | null>(null);
   const [ruleFilters, setRuleFilters] = useState({
@@ -109,9 +109,7 @@ export default function DataControlCenter() {
   });
   const [selectedRule, setSelectedRule] = useState<RuleStatisticsItem | null>(null);
   const [ruleResults, setRuleResults] = useState<RuleResultItem[]>([]);
-  const [loadingRules, setLoadingRules] = useState(false);
   const [ruleAnalytics, setRuleAnalytics] = useState<ValidationAnalyticsResponse | null>(null);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [showValidationCharts, setShowValidationCharts] = useState(false);
   const [documents, setDocuments] = useState<DocumentUploadType[]>([]);
   const [allDocuments, setAllDocuments] = useState<DocumentUploadType[]>([]);
@@ -173,33 +171,75 @@ export default function DataControlCenter() {
   const [showCharts, setShowCharts] = useState(true);
   const [historyDays, setHistoryDays] = useState(7);
 
+  const {
+    qualityScore: qualityScoreData,
+    systemTasks: systemTasksData,
+    documents: documentsData,
+    statusCounts: statusCountsData,
+    properties: propertiesData,
+    ruleStatistics: ruleStatisticsData,
+    ruleSummary: ruleSummaryData,
+    ruleAnalytics: ruleAnalyticsData,
+    taskDashboard: taskDashboardData,
+    extendedHistory: extendedHistoryData,
+    isLoading: dataLoading,
+    isFetching: dataFetching,
+    validationLoading,
+    refreshAll
+  } = useDataControlData(activeTab, historyDays);
+
+  useEffect(() => {
+    setQualityScore(qualityScoreData);
+  }, [qualityScoreData]);
+
+  useEffect(() => {
+    setSystemTasks(systemTasksData || []);
+  }, [systemTasksData]);
+
+  useEffect(() => {
+    const docs = documentsData || [];
+    setDocuments(docs);
+    setAllDocuments(docs);
+    setStatusCounts(
+      statusCountsData || {
+        total: 0,
+        completed: 0,
+        validating: 0,
+        failed: 0,
+        pending: 0,
+        extracting: 0
+      }
+    );
+  }, [documentsData, statusCountsData]);
+
+  useEffect(() => {
+    setProperties(propertiesData || []);
+  }, [propertiesData]);
+
+  useEffect(() => {
+    setRuleStatistics(ruleStatisticsData || []);
+    setRuleSummary(ruleSummaryData || null);
+    setRuleAnalytics(ruleAnalyticsData || null);
+  }, [ruleAnalyticsData, ruleStatisticsData, ruleSummaryData]);
+
+  useEffect(() => {
+    setTaskDashboard(taskDashboardData || null);
+    setExtendedHistory(extendedHistoryData || []);
+  }, [extendedHistoryData, taskDashboardData]);
+
+  useEffect(() => {
+    setLoading(dataLoading);
+    setRefreshing(dataFetching);
+    setLastUpdated(new Date());
+  }, [dataFetching, dataLoading]);
+
   // Define loadTaskDashboard before useEffect hooks
   const loadTaskDashboard = async () => {
     try {
       setTaskLoading(true);
-      const dashboard = await taskService.getTaskDashboard();
-      setTaskDashboard(dashboard);
+      await refreshAll();
     } catch (error) {
       console.error('Failed to load task dashboard:', error);
-      // Set empty dashboard on error
-      setTaskDashboard({
-        active_tasks: [],
-        queue_stats: {
-          pending: 0,
-          processing: 0,
-          completed_today: 0,
-          failed_today: 0,
-          success_rate: 0
-        },
-        workers: [],
-        recent_tasks: [],
-        task_statistics: {
-          avg_extraction_time: 0,
-          total_tasks_today: 0,
-          by_type: {}
-        },
-        error: error instanceof Error ? error.message : 'Failed to load task dashboard'
-      });
     } finally {
       setTaskLoading(false);
     }
@@ -239,130 +279,16 @@ export default function DataControlCenter() {
       } else {
         setLoading(true);
       }
-
-      // Load quality score and validation statistics in parallel
-      const [qualityRes, validationStatsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/quality/summary`, { credentials: 'include' }),
-        fetch(`${API_BASE_URL}/validations/rules/statistics`, { credentials: 'include' })
-      ]);
-
-      // Parse validation statistics
-      let validationStats = null;
-      if (validationStatsRes.ok) {
-        validationStats = await validationStatsRes.json();
-      }
-
-      // Parse quality data and set quality score
-      if (qualityRes.ok) {
-        const quality = await qualityRes.json();
-
-        // Calculate validation metrics from actual validation statistics
-        // Use validation statistics if available, otherwise use defaults
-        const validationPassRate = validationStats?.summary?.overall_pass_rate ?? 0;
-        const validationTotalChecks = validationStats?.summary?.total_checks ?? 0;
-        // Calculate failed count: total_checks - passed_count
-        // passed_count = total_checks * (pass_rate / 100)
-        const validationFailedCount = validationTotalChecks > 0
-          ? Math.round(validationTotalChecks * (1 - validationPassRate / 100))
-          : 0;
-        const validationCriticalFailures = validationStats?.summary?.critical_failures ?? 0;
-        const validationActiveRules = validationStats?.summary?.active_rules ?? 24;
-        const validationWarnings = validationStats?.summary?.warnings ?? 0;
-
-        setQualityScore({
-          overallScore: quality.overall_avg_confidence || 96,
-          status: (quality.overall_avg_confidence || 96) >= 95 ? 'excellent' : (quality.overall_avg_confidence || 96) >= 90 ? 'good' : (quality.overall_avg_confidence || 96) >= 80 ? 'fair' : 'poor',
-          extraction: {
-            accuracy: quality.overall_match_rate || 98.5,
-            confidence: quality.overall_avg_confidence || 97.2,
-            failureRate: 100 - (quality.overall_match_rate || 98.5),
-            documentsProcessed: quality.total_documents || 0
-          },
-          validation: {
-            passRate: validationPassRate,
-            failedValidations: validationFailedCount,
-            activeRules: validationActiveRules,
-            criticalFailures: validationCriticalFailures
-          },
-          completeness: {
-            score: quality.overall_match_rate || 97.8,
-            missingFields: quality.needs_review_count || 0,
-            requiredFieldsFilled: quality.overall_match_rate || 98.5
-          },
-          byDocumentType: quality.by_document_type || {},
-          totalRecords: quality.total_records || 0,
-          criticalCount: quality.critical_count || 0,
-          warningCount: quality.warning_count || 0,
-          needsReviewCount: quality.needs_review_count || 0
-        });
-      }
-
-      // Load system tasks
-      const tasksRes = await fetch(`${API_BASE_URL}/tasks`, {
-        credentials: 'include'
-      });
-      if (tasksRes.ok) {
-        const tasks = await tasksRes.json();
-        setSystemTasks(tasks.tasks || []);
-      }
-
-      // Load validation rules
-      const rulesRes = await fetch(`${API_BASE_URL}/validations/rules`, {
-        credentials: 'include'
-      });
-      if (rulesRes.ok) {
-        const rules = await rulesRes.json();
-        setValidationRules(rules.rules || []);
-      }
-
-      // Load ALL documents - fetch in batches if needed
-      let allDocs: DocumentUploadType[] = [];
-      let skip = 0;
-      const limit = 500;
-      let hasMore = true;
-      
-      while (hasMore) {
-        const docsRes = await fetch(`${API_BASE_URL}/documents/uploads?skip=${skip}&limit=${limit}`, {
-          credentials: 'include'
-        });
-        if (docsRes.ok) {
-          const docs = await docsRes.json();
-          const items = docs.items || docs || [];
-          allDocs = [...allDocs, ...items];
-          
-          // Check if there are more documents
-          if (items.length < limit || (docs.total && allDocs.length >= docs.total)) {
-            hasMore = false;
-          } else {
-            skip += limit;
-          }
-        } else {
-          hasMore = false;
-        }
-      }
-      
-      setAllDocuments(allDocs);
-      setDocuments(allDocs);
-      
-      // Calculate status counts
-      const counts = {
-        total: allDocs.length,
-        completed: allDocs.filter(d => d.extraction_status === 'completed').length,
-        validating: allDocs.filter(d => d.extraction_status === 'validating').length,
-        failed: allDocs.filter(d => d.extraction_status === 'failed' || d.extraction_status?.includes('failed')).length,
-        pending: allDocs.filter(d => d.extraction_status === 'pending').length,
-        extracting: allDocs.filter(d => d.extraction_status === 'extracting' || d.extraction_status === 'processing').length
-      };
-      setStatusCounts(counts);
-      setLastUpdated(new Date());
+      await refreshAll();
     } catch (err) {
-      console.error('Failed to load data:', err);
+      console.error('Failed to refresh data:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  // Helper function to get property name
   // Helper function to get property name from property ID
   const getPropertyName = (propertyId: number): string => {
     const property = properties.find(p => p.id === propertyId);
@@ -691,20 +617,6 @@ export default function DataControlCenter() {
     });
   };
 
-  // Phase 2: Load extended history
-  const loadExtendedHistory = async () => {
-    try {
-      const history = await taskService.getTaskHistory(historyDays);
-      setExtendedHistory(history);
-    } catch (error) {
-      console.error('Failed to load extended history:', error);
-      // Fallback to recent tasks from dashboard
-      if (taskDashboard?.recent_tasks) {
-        setExtendedHistory(taskDashboard.recent_tasks);
-      }
-    }
-  };
-
   // Phase 2: Bulk operations
   const handleBulkCancel = async () => {
     if (selectedTasks.size === 0) return;
@@ -759,66 +671,6 @@ export default function DataControlCenter() {
   const clearSelection = () => {
     setSelectedTasks(new Set());
     setShowBulkActions(false);
-  };
-
-  // Load extended history when tasks tab is active
-  useEffect(() => {
-    if (activeTab === 'tasks' && taskDashboard) {
-      loadExtendedHistory();
-    }
-  }, [activeTab, taskDashboard, historyDays]);
-
-  // Load validation rules when validation tab is active
-  useEffect(() => {
-    if (activeTab === 'validation') {
-      loadValidationRules();
-      loadValidationAnalytics();
-    }
-  }, [activeTab]);
-
-  const loadValidationRules = async () => {
-    try {
-      setLoadingRules(true);
-      const response = await fetch(`${API_BASE_URL}/validations/rules/statistics`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load validation rules: ${response.statusText}`);
-      }
-      
-      const data: RuleStatisticsResponse = await response.json();
-      setRuleStatistics(data.rules);
-      setRuleSummary(data.summary);
-    } catch (error) {
-      console.error('Failed to load validation rules:', error);
-      // Set empty state on error
-      setRuleStatistics([]);
-      setRuleSummary(null);
-    } finally {
-      setLoadingRules(false);
-    }
-  };
-
-  const loadValidationAnalytics = async () => {
-    try {
-      setLoadingAnalytics(true);
-      const response = await fetch(`${API_BASE_URL}/validations/analytics`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load validation analytics: ${response.statusText}`);
-      }
-      
-      const data: ValidationAnalyticsResponse = await response.json();
-      setRuleAnalytics(data);
-    } catch (error) {
-      console.error('Failed to load validation analytics:', error);
-      setRuleAnalytics(null);
-    } finally {
-      setLoadingAnalytics(false);
-    }
   };
 
   // Calculate health score for a rule
@@ -1838,7 +1690,7 @@ export default function DataControlCenter() {
 
             {/* Rules Table */}
             <Card className="p-6">
-              {loadingRules ? (
+              {validationLoading ? (
                 <div className="text-center py-8">Loading validation rules...</div>
               ) : filteredRules.length === 0 ? (
                 <div className="text-center py-8 text-text-secondary">
@@ -2445,4 +2297,3 @@ export default function DataControlCenter() {
     </div>
   );
 }
-
