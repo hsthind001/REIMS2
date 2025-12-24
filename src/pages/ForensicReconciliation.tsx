@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   RefreshCw, 
   Play, 
@@ -35,6 +36,7 @@ import ReconciliationDiagnostics from '../components/forensic/ReconciliationDiag
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export default function ForensicReconciliation() {
+  const navigate = useNavigate();
   // Property and period selection
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
@@ -456,7 +458,7 @@ export default function ForensicReconciliation() {
               </Button>
               {error && (
                 <Button
-                  onClick={() => window.location.hash = ''}
+                  onClick={() => navigate('/operations?tab=documents')}
                   variant="secondary"
                   className="bg-green-600 text-white hover:bg-green-700"
                   title="Go to Data Control Center to upload documents"
@@ -519,7 +521,7 @@ export default function ForensicReconciliation() {
                           <li>Income Statement (required)</li>
                         </ul>
                         <button
-                          onClick={() => window.location.hash = ''}
+                          onClick={() => navigate('/operations?tab=documents')}
                           className="mt-2 px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                         >
                           📤 Go to Document Upload
@@ -533,7 +535,7 @@ export default function ForensicReconciliation() {
                         <p className="text-sm font-medium text-blue-900 mb-1">Wait for Document Extraction</p>
                         <p className="text-xs text-blue-700 mb-2">Documents are automatically processed. Check extraction status:</p>
                         <button
-                          onClick={() => window.location.hash = ''}
+                          onClick={() => navigate('/operations?tab=documents')}
                           className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                         >
                           🔍 Check Extraction Status
@@ -870,4 +872,3 @@ export default function ForensicReconciliation() {
     </div>
   );
 }
-

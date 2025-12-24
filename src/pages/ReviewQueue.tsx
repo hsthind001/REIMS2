@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { reviewService } from '../lib/review'
 import { propertyService } from '../lib/property'
 import { QualityBadge } from '../components/QualityBadge'
@@ -32,25 +33,38 @@ interface ReviewQueueItem {
 }
 
 export default function ReviewQueue() {
-  // Parse severity from URL hash (e.g., review-queue?severity=warning)
-  const getSeverityFromHash = (): string => {
-    const hash = window.location.hash
-    const match = hash.match(/severity=(\w+)/)
-    return match ? match[1] : 'all'
-  }
-
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [reviewItems, setReviewItems] = useState<ReviewQueueItem[]>([])
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
     property_code: '',
     document_type: '',
-    severity: getSeverityFromHash()
+    severity: searchParams.get('severity') || 'all'
   })
   const [selectedItem, setSelectedItem] = useState<ReviewQueueItem | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDetailedModal, setShowDetailedModal] = useState(false)
   const [exporting, setExporting] = useState(false)
+
+  useEffect(() => {
+    const severityParam = searchParams.get('severity') || 'all'
+    setFilters((prev) => prev.severity === severityParam ? prev : { ...prev, severity: severityParam })
+  }, [searchParams])
+
+  useEffect(() => {
+    const currentSeverity = searchParams.get('severity') || 'all'
+    if (filters.severity !== currentSeverity) {
+      const params = new URLSearchParams(searchParams)
+      if (filters.severity === 'all') {
+        params.delete('severity')
+      } else {
+        params.set('severity', filters.severity)
+      }
+      setSearchParams(params)
+    }
+  }, [filters.severity, searchParams, setSearchParams])
   
   useEffect(() => {
     loadProperties()
@@ -257,8 +271,7 @@ export default function ReviewQueue() {
   }
   
   const handleBack = () => {
-    // Clear hash to go back to Data Control Center
-    window.location.hash = ''
+    navigate('/operations?tab=review')
   }
 
   return (
@@ -480,4 +493,3 @@ export default function ReviewQueue() {
     </div>
   )
 }
-

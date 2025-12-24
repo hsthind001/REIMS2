@@ -3,11 +3,14 @@
  */
 
 import { useState, FormEvent } from 'react';
+import { Link, useLocation, useNavigate, type Location } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import type { UserLogin } from '../types/api';
 
 export function LoginForm() {
   const { login, loading, error } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [formData, setFormData] = useState<UserLogin>({
     username: '',
     password: '',
@@ -30,6 +33,9 @@ export function LoginForm() {
       setSuccess(true);
       // Clear form
       setFormData({ username: '', password: '' });
+
+      const redirectTo = (location.state as { from?: Location })?.from?.pathname || '/';
+      navigate(redirectTo, { replace: true });
     } catch (err: any) {
       setFormError(err.message || 'Login failed');
     }
@@ -86,10 +92,9 @@ export function LoginForm() {
         </form>
 
         <div className="form-footer">
-          <p>Don't have an account? <a href="#register">Register here</a></p>
+          <p>Don't have an account? <Link to="/register">Register here</Link></p>
         </div>
       </div>
     </div>
   );
 }
-

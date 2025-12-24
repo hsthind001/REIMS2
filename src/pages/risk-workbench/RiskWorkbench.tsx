@@ -5,11 +5,13 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import RiskWorkbenchTable, { type RiskItem } from '../../components/risk-workbench/RiskWorkbenchTable';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 export default function RiskWorkbench() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<RiskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,11 +78,11 @@ export default function RiskWorkbench() {
   const handleItemClick = (item: RiskItem) => {
     // Navigate to detail view based on type
     if (item.type === 'anomaly') {
-      window.location.hash = `#anomaly-detail?id=${item.id}`;
+      navigate(`/risk?anomaly_id=${item.id}`);
     } else if (item.type === 'alert') {
-      window.location.hash = `#alert-detail?id=${item.id}`;
+      navigate(`/risk?alert_id=${item.id}`);
     } else if (item.type === 'review_item') {
-      window.location.hash = `#review-queue?item=${item.id}`;
+      navigate(`/operations/review-queue?item=${item.id}`);
     }
   };
 
@@ -119,7 +121,7 @@ export default function RiskWorkbench() {
   };
 
   const handleReview = (item: RiskItem) => {
-    window.location.hash = `#review-queue?item=${item.id}`;
+    navigate(`/operations/review-queue?item=${item.id}`);
   };
 
   if (error) {

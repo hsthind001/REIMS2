@@ -1,8 +1,18 @@
-import { useState, lazy, Suspense, useEffect } from 'react'
+import { useState, lazy, Suspense } from 'react'
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  NavLink,
+  Outlet,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom'
 import './App.css'
 import { AuthProvider, useAuth } from './components/AuthContext'
-import { LoginForm } from './components/LoginForm'
-import { RegisterForm } from './components/RegisterForm'
+import LoginPage from './pages/Login'
+import RegisterPage from './pages/Register'
 
 // Lazy load pages for better initial bundle size
 const CommandCenter = lazy(() => import('./pages/CommandCenter'))
@@ -17,6 +27,7 @@ const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
 const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
 const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
+const Reconciliation = lazy(() => import('./pages/Reconciliation'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -28,136 +39,57 @@ const PageLoader = () => (
   </div>
 )
 
-type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register'
-
-function AppContent() {
-  console.log('🎨 AppContent: Component rendering');
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [hashRoute, setHashRoute] = useState<string>('')
-  const { user, logout, isAuthenticated, loading } = useAuth()
-
-  console.log('🎨 AppContent: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated);
-
-  // Handle hash-based routing
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.slice(1) // Remove the #
-      // Extract route name (before query params)
-      const routeName = hash.split('?')[0]
-      setHashRoute(hash)
-      // If navigating to bulk-import, ensure we're on operations page
-      if (routeName === 'bulk-import' && currentPage !== 'operations') {
-        setCurrentPage('operations')
-      }
-      // If navigating to review-queue, ensure we're on operations page
-      if (routeName === 'review-queue' && currentPage !== 'operations') {
-        setCurrentPage('operations')
-      }
-      // If navigating to workflow-locks, ensure we're on risk page
-      if (routeName === 'workflow-locks' && currentPage !== 'risk') {
-        setCurrentPage('risk')
-      }
-      // If navigating to alert-rules, ensure we're on risk page
-      if (routeName === 'alert-rules' && currentPage !== 'risk') {
-        setCurrentPage('risk')
-      }
-      // If navigating to reports, ensure we're on reports page
-      if (routeName === 'reports' && currentPage !== 'reports') {
-        setCurrentPage('reports')
-      }
-      // If navigating to forensic-reconciliation, ensure we're on operations page
-      if (routeName === 'forensic-reconciliation' && currentPage !== 'operations') {
-        setCurrentPage('operations')
-      }
-    }
-
-    // Check initial hash
-    handleHashChange()
-
-    // Listen for hash changes
-    window.addEventListener('hashchange', handleHashChange)
-    return () => window.removeEventListener('hashchange', handleHashChange)
-  }, [currentPage])
-
-  // Show loading state while checking authentication
-  if (loading) {
-    console.log('🎨 AppContent: Showing loading state');
-    return (
-      <div className="app" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          height: '100vh', 
-          flexDirection: 'column',
-          backgroundColor: '#ffffff',
-          padding: '2rem'
-        }}>
-          <div style={{ fontSize: '2rem', marginBottom: '1rem', color: '#0f172a' }}>Loading...</div>
-          <div style={{ color: '#64748b' }}>Initializing application</div>
-        </div>
+function LoadingScreen() {
+  return (
+    <div className="app" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        backgroundColor: '#ffffff',
+        padding: '2rem'
+      }}>
+        <div style={{ fontSize: '2rem', marginBottom: '1rem', color: '#0f172a' }}>Loading...</div>
+        <div style={{ color: '#64748b' }}>Initializing application</div>
       </div>
-    )
-  }
+    </div>
+  )
+}
 
-  const renderPage = () => {
-    // Show login/register if not authenticated
-    if (!isAuthenticated) {
-      if (currentPage === 'register') {
-        return <RegisterForm />
-      }
-      return <LoginForm />
-    }
-
-    // Show app pages if authenticated (with lazy loading)
-    const PageComponent = () => {
-      switch (currentPage) {
-        case 'dashboard':
-          return <CommandCenter />
-        case 'properties':
-          return <PortfolioHub />
-        case 'reports':
-          return <FinancialCommand />
-        case 'operations':
-          return <DataControlCenter />
-        case 'users':
-          return <AdminHub />
-        case 'risk':
-          // Check if hash route is alert-rules
-          if (hashRoute === 'alert-rules') {
-            return <AlertRules />
-          }
-          return <RiskManagement />
-        default:
-          return <CommandCenter />
-      }
-    }
-
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <PageComponent />
-      </Suspense>
-    )
-  }
+function ProtectedLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
 
   const handleLogout = async () => {
     try {
       await logout()
-      setCurrentPage('login')
+      navigate('/login')
     } catch (err) {
       console.error('Logout failed:', err)
     }
   }
+
+  const navItems = [
+    { to: '/', label: 'Command Center', icon: '📊', end: true },
+    { to: '/properties', label: 'Portfolio Hub', icon: '🏢' },
+    { to: '/reports', label: 'Financial Command', icon: '💰' },
+    { to: '/operations', label: 'Data Control Center', icon: '🔧' },
+    { to: '/users', label: 'Admin Hub', icon: '⚙️' },
+    { to: '/risk', label: 'Risk Management', icon: '🛡️' },
+  ]
 
   return (
     <div className="app">
       {/* Header */}
       <header className="header">
         <div className="header-left">
-          <button 
+          <button
             className="menu-btn"
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label="Toggle navigation menu"
           >
             ☰
           </button>
@@ -165,114 +97,86 @@ function AppContent() {
           <span className="app-subtitle">Real Estate Investment Management System</span>
         </div>
         <div className="header-right">
-          {isAuthenticated ? (
-            <>
-              <NotificationCenter />
-              <span className="user-info">👤 {user?.username}</span>
-              <button className="btn-logout" onClick={handleLogout}>Logout</button>
-            </>
-          ) : (
-            <>
-              <button 
-                className={`btn-link ${currentPage === 'login' ? 'active' : ''}`}
-                onClick={() => setCurrentPage('login')}
-              >
-                Login
-              </button>
-              <button 
-                className={`btn-link ${currentPage === 'register' ? 'active' : ''}`}
-                onClick={() => setCurrentPage('register')}
-              >
-                Register
-              </button>
-            </>
-          )}
+          <Suspense fallback={<div style={{ width: '1.5rem', height: '1.5rem' }} />}>
+            <NotificationCenter />
+          </Suspense>
+          <span className="user-info">👤 {user?.username}</span>
+          <button className="btn-logout" onClick={handleLogout}>Logout</button>
           <span className="status-indicator">●</span>
           <span className="status-text">Online</span>
         </div>
       </header>
 
       <div className="main-container">
-        {/* Sidebar - 5 Strategic Pages Only */}
+        {/* Sidebar */}
         <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
           <nav className="nav-menu">
-            <button
-              className={`nav-item ${currentPage === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('dashboard')}
-            >
-              <span className="nav-icon">📊</span>
-              {sidebarOpen && <span className="nav-text">Command Center</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'properties' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('properties')}
-            >
-              <span className="nav-icon">🏢</span>
-              {sidebarOpen && <span className="nav-text">Portfolio Hub</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'reports' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('reports')}
-            >
-              <span className="nav-icon">💰</span>
-              {sidebarOpen && <span className="nav-text">Financial Command</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'operations' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('operations')}
-            >
-              <span className="nav-icon">🔧</span>
-              {sidebarOpen && <span className="nav-text">Data Control Center</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'users' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('users')}
-            >
-              <span className="nav-icon">⚙️</span>
-              {sidebarOpen && <span className="nav-text">Admin Hub</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'risk' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('risk')}
-            >
-              <span className="nav-icon">🛡️</span>
-              {sidebarOpen && <span className="nav-text">Risk Management</span>}
-            </button>
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {sidebarOpen && <span className="nav-text">{item.label}</span>}
+              </NavLink>
+            ))}
           </nav>
         </aside>
 
         {/* Main Content */}
         <main className="content">
-          {hashRoute === 'bulk-import' ? (
-            <Suspense fallback={<PageLoader />}>
-              <BulkImport />
-            </Suspense>
-          ) : hashRoute.startsWith('review-queue') ? (
-            <Suspense fallback={<PageLoader />}>
-              <ReviewQueue />
-            </Suspense>
-          ) : hashRoute === 'workflow-locks' ? (
-            <Suspense fallback={<PageLoader />}>
-              <WorkflowLocks />
-            </Suspense>
-          ) : hashRoute === 'forensic-reconciliation' ? (
-            <Suspense fallback={<PageLoader />}>
-              <ForensicReconciliation />
-            </Suspense>
-          ) : (
-            renderPage()
-          )}
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
   )
 }
 
+function ProtectedRoute() {
+  const { isAuthenticated, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) {
+    return <LoadingScreen />
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />
+  }
+
+  return <ProtectedLayout />
+}
+
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route index element={<CommandCenter />} />
+            <Route path="/dashboard" element={<CommandCenter />} />
+            <Route path="/properties" element={<PortfolioHub />} />
+            <Route path="/reports" element={<FinancialCommand />} />
+            <Route path="/operations" element={<DataControlCenter />} />
+            <Route path="/operations/bulk-import" element={<BulkImport />} />
+            <Route path="/operations/review-queue" element={<ReviewQueue />} />
+            <Route path="/operations/reconciliation" element={<Reconciliation />} />
+            <Route path="/operations/forensic-reconciliation" element={<ForensicReconciliation />} />
+            <Route path="/users" element={<AdminHub />} />
+            <Route path="/risk" element={<RiskManagement />} />
+            <Route path="/risk/alert-rules" element={<AlertRules />} />
+            <Route path="/risk/workflow-locks" element={<WorkflowLocks />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import '../App.css'
 import { propertyService } from '../lib/property'
 
@@ -90,6 +91,7 @@ const detectDocumentTypeFromFilename = (filename: string): string => {
 }
 
 export default function BulkImport() {
+  const navigate = useNavigate()
   const [properties, setProperties] = useState<any[]>([])
   const [selectedProperty, setSelectedProperty] = useState<string>('')
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
@@ -383,7 +385,7 @@ export default function BulkImport() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
               <button
                 className="btn-secondary"
-                onClick={() => window.location.hash = ''}
+                onClick={() => navigate('/operations?tab=import')}
                 style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
               >
                 ← Back to Data Control Center
