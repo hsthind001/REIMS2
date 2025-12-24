@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Target,
   CheckCircle,
@@ -95,6 +96,8 @@ interface SystemTask {
 // Validation rules state will use RuleStatisticsItem from types/api
 
 export default function DataControlCenter() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<ControlTab>('quality');
   const [qualityScore, setQualityScore] = useState<QualityScore | null>(null);
   const [systemTasks, setSystemTasks] = useState<SystemTask[]>([]);
@@ -121,6 +124,23 @@ export default function DataControlCenter() {
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [rerunningAnomalies, setRerunningAnomalies] = useState<number | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabParam = params.get('tab') as ControlTab | null;
+
+    if (tabParam && ['quality', 'tasks', 'validation', 'import', 'review', 'documents'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('tab') !== activeTab) {
+      params.set('tab', activeTab);
+      navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+    }
+  }, [activeTab, location.pathname, location.search, navigate]);
   
   // Filtered deletion state
   const [showDeleteFiltersModal, setShowDeleteFiltersModal] = useState(false);
@@ -982,7 +1002,7 @@ export default function DataControlCenter() {
           {/* Forensic Reconciliation Link */}
           <button
             onClick={() => {
-              window.location.hash = 'forensic-reconciliation';
+              navigate('/operations/forensic-reconciliation');
             }}
             className="ml-auto px-4 py-2 font-medium text-sm border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center gap-2"
             title="Open Forensic Reconciliation Elite System - Advanced matching, materiality-based thresholds, tiered exception management"
@@ -1133,7 +1153,7 @@ export default function DataControlCenter() {
                         </div>
                         <button
                           className="mt-2 text-warning hover:underline text-sm font-medium"
-                          onClick={() => window.location.hash = 'review-queue?severity=warning'}
+                          onClick={() => navigate('/operations/review-queue?severity=warning')}
                         >
                           View Warning Items →
                         </button>
@@ -1718,7 +1738,7 @@ export default function DataControlCenter() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">Validation Rules</h2>
-              <Button variant="primary" icon={<Settings className="w-4 h-4" />} onClick={() => window.location.hash = 'validation-rules'}>
+              <Button variant="primary" icon={<Settings className="w-4 h-4" />} onClick={() => navigate('/operations?tab=validation')}>
                 Manage Rules
               </Button>
             </div>
@@ -2074,7 +2094,7 @@ export default function DataControlCenter() {
         {activeTab === 'import' && (
           <Card className="p-6">
             <h2 className="text-2xl font-bold mb-4">Bulk Import</h2>
-            <Button variant="primary" icon={<Upload className="w-4 h-4" />} onClick={() => window.location.hash = 'bulk-import'}>
+            <Button variant="primary" icon={<Upload className="w-4 h-4" />} onClick={() => navigate('/operations/bulk-import')}>
               Go to Bulk Import
             </Button>
           </Card>
@@ -2083,7 +2103,7 @@ export default function DataControlCenter() {
         {activeTab === 'review' && (
           <Card className="p-6">
             <h2 className="text-2xl font-bold mb-4">Review Queue</h2>
-            <Button variant="primary" icon={<Eye className="w-4 h-4" />} onClick={() => window.location.hash = 'review-queue'}>
+            <Button variant="primary" icon={<Eye className="w-4 h-4" />} onClick={() => navigate('/operations/review-queue')}>
               Go to Review Queue
             </Button>
           </Card>
@@ -2445,4 +2465,3 @@ export default function DataControlCenter() {
     </div>
   );
 }
-

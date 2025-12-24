@@ -3,11 +3,14 @@
  */
 
 import { useState, FormEvent } from 'react';
+import { Link, useLocation, useNavigate, type Location } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import type { UserCreate } from '../types/api';
 
 export function RegisterForm() {
   const { register, loading, error } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [formData, setFormData] = useState<UserCreate>({
     email: '',
     username: '',
@@ -76,6 +79,9 @@ export function RegisterForm() {
       // Clear form
       setFormData({ email: '', username: '', password: '' });
       setConfirmPassword('');
+
+      const redirectTo = (location.state as { from?: Location })?.from?.pathname || '/';
+      navigate(redirectTo, { replace: true });
     } catch (err: any) {
       setFormError(err.message || 'Registration failed');
     }
@@ -164,10 +170,9 @@ export function RegisterForm() {
         </form>
 
         <div className="form-footer">
-          <p>Already have an account? <a href="#login">Login here</a></p>
+          <p>Already have an account? <Link to="/login">Login here</Link></p>
         </div>
       </div>
     </div>
   );
 }
-

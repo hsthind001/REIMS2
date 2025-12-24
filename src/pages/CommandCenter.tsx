@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle,
@@ -95,6 +96,7 @@ interface AIInsight {
 }
 
 export default function CommandCenter() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [portfolioHealth, setPortfolioHealth] = useState<PortfolioHealth | null>(null);
   const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlert[]>([]);
@@ -1074,8 +1076,7 @@ export default function CommandCenter() {
   // Button handlers for critical alerts
   const handleViewFinancials = (alert: CriticalAlert) => {
     // Navigate to Financial Command page (reports page) with property filter
-    // The FinancialCommand page will read the property code from URL hash
-    window.location.hash = `reports?property=${alert.property.code}`;
+    navigate(`/reports?property=${alert.property.code}`);
   };
 
   const handleAIRecommendations = async (alert: CriticalAlert) => {
@@ -1760,4 +1761,3 @@ export default function CommandCenter() {
     </div>
   );
 }
-

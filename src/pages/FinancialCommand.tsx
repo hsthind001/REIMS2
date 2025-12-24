@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   MessageSquare, 
   TrendingUp, 
@@ -72,6 +73,8 @@ interface ExitScenario {
 }
 
 export default function FinancialCommand() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<FinancialTab>('ai');
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -126,40 +129,19 @@ export default function FinancialCommand() {
 
   useEffect(() => {
     loadInitialData();
-    
-    // Check URL hash for property parameter
-    const hash = window.location.hash;
-    if (hash.includes('property=')) {
-      const params = new URLSearchParams(hash.split('?')[1] || '');
-      const propertyCode = params.get('property');
-      if (propertyCode) {
-        // Property will be set after properties load
-        setTimeout(() => {
-          const property = properties.find(p => p.property_code === propertyCode);
-          if (property) {
-            setSelectedProperty(property);
-          }
-        }, 100);
-      }
-    }
   }, []);
 
   useEffect(() => {
-    // Re-check hash when properties are loaded
-    if (properties.length > 0) {
-      const hash = window.location.hash;
-      if (hash.includes('property=')) {
-        const params = new URLSearchParams(hash.split('?')[1] || '');
-        const propertyCode = params.get('property');
-        if (propertyCode && (!selectedProperty || selectedProperty.property_code !== propertyCode)) {
-          const property = properties.find(p => p.property_code === propertyCode);
-          if (property) {
-            setSelectedProperty(property);
-          }
-        }
+    const params = new URLSearchParams(location.search);
+    const propertyCode = params.get('property');
+
+    if (propertyCode && properties.length > 0) {
+      const property = properties.find(p => p.property_code === propertyCode);
+      if (property && (!selectedProperty || selectedProperty.property_code !== propertyCode)) {
+        setSelectedProperty(property);
       }
     }
-  }, [properties]);
+  }, [location.search, properties, selectedProperty]);
 
   useEffect(() => {
     if (selectedProperty) {
@@ -170,6 +152,16 @@ export default function FinancialCommand() {
       loadAvailablePeriods();
     }
   }, [selectedProperty, selectedYear, selectedMonth]);
+
+  useEffect(() => {
+    if (selectedProperty) {
+      const params = new URLSearchParams(location.search);
+      if (params.get('property') !== selectedProperty.property_code) {
+        params.set('property', selectedProperty.property_code);
+        navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+      }
+    }
+  }, [selectedProperty, location.pathname, location.search, navigate]);
 
   const loadInitialData = async () => {
     try {
@@ -917,7 +909,7 @@ export default function FinancialCommand() {
           {/* Forensic Reconciliation Link */}
           <button
             onClick={() => {
-              window.location.hash = 'forensic-reconciliation';
+              navigate('/operations/forensic-reconciliation');
             }}
             className="ml-auto px-4 py-2 font-medium text-sm border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center gap-2"
             title="Open Forensic Reconciliation Elite System - Advanced matching, materiality-based thresholds, tiered exception management"
@@ -2122,13 +2114,13 @@ export default function FinancialCommand() {
                   <div className="flex gap-4 justify-center mb-4">
                     <Button
                       variant="primary"
-                      onClick={() => window.location.hash = 'reconciliation'}
+                      onClick={() => navigate('/operations/reconciliation')}
                     >
                       Open Full Reconciliation Page
                     </Button>
                     <Button
                       variant="secondary"
-                      onClick={() => window.location.hash = 'forensic-reconciliation'}
+                      onClick={() => navigate('/operations/forensic-reconciliation')}
                       className="bg-purple-600 text-white hover:bg-purple-700 border-purple-600"
                     >
                       🔍 Open Forensic Reconciliation (Elite)
@@ -2162,4 +2154,3 @@ export default function FinancialCommand() {
     </div>
   );
 }
-

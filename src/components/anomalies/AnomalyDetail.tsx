@@ -162,7 +162,7 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
 
   const generateReviewQueueLink = () => {
     if (!anomaly) return '';
-    return `#review-queue?anomaly_id=${anomaly.id}&table_name=${anomaly.details?.document_type || 'income_statement_data'}&record_id=${anomaly.record_id || ''}`;
+    return `/operations/review-queue?anomaly_id=${anomaly.id}&table_name=${anomaly.details?.document_type || 'income_statement_data'}&record_id=${anomaly.record_id || ''}`;
   };
 
   const copyReviewLink = () => {
@@ -482,7 +482,7 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <div style={{ fontWeight: 600 }}>{similar.property_name}</div>
                   <a
-                    href={`#anomaly-detail?id=${similar.id}`}
+                    href={`/risk?anomaly_id=${similar.id}`}
                     style={{
                       color: '#0dcaf0',
                       textDecoration: 'none',

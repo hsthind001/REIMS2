@@ -3,6 +3,7 @@
  * In-app notification system with real-time updates
  */
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface Notification {
   id: number;
@@ -20,6 +21,7 @@ interface NotificationCenterProps {
 }
 
 export default function NotificationCenter({ onNotificationClick }: NotificationCenterProps) {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -216,7 +218,10 @@ export default function NotificationCenter({ onNotificationClick }: Notification
                     markAsRead(notification.id);
                     onNotificationClick?.(notification);
                     if (notification.link) {
-                      window.location.hash = notification.link;
+                      const target = notification.link.startsWith('#')
+                        ? notification.link.slice(1)
+                        : notification.link;
+                      navigate(target || '/');
                     }
                     setIsOpen(false);
                   }}
@@ -270,7 +275,7 @@ export default function NotificationCenter({ onNotificationClick }: Notification
             <button
               onClick={() => {
                 // Navigate to full notifications page
-                window.location.hash = '#/notifications';
+                navigate('/dashboard');
                 setIsOpen(false);
               }}
               style={{
@@ -290,4 +295,3 @@ export default function NotificationCenter({ onNotificationClick }: Notification
     </div>
   );
 }
-

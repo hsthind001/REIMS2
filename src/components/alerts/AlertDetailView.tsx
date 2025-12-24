@@ -3,6 +3,7 @@
  * Comprehensive view of a single alert with related information
  */
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertService, type Alert } from '../../lib/alerts';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -21,6 +22,7 @@ export default function AlertDetailView({
   onResolve,
   onDismiss
 }: AlertDetailViewProps) {
+  const navigate = useNavigate();
   const [alert, setAlert] = useState<Alert | null>(null);
   const [relatedAlerts, setRelatedAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -389,7 +391,7 @@ export default function AlertDetailView({
                   borderRadius: '4px',
                   cursor: 'pointer'
                 }}
-                onClick={() => window.location.hash = `#/risk-management?alert=${related.id}`}
+                onClick={() => navigate(`/risk?alert_id=${related.id}`)}
               >
                 <div style={{ fontWeight: '500' }}>{related.title}</div>
                 <div style={{ fontSize: '0.875rem', color: '#666' }}>
@@ -518,4 +520,3 @@ export default function AlertDetailView({
     </div>
   );
 }
-
