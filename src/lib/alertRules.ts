@@ -4,8 +4,7 @@
  */
 import { ApiClient } from './api';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const apiClient = new ApiClient(API_BASE_URL);
+const apiClient = new ApiClient();
 
 export interface AlertRule {
   id: number;
@@ -176,4 +175,3 @@ export class AlertRuleService {
     return response;
   }
 }
-

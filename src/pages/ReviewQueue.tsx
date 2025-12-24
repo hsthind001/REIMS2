@@ -166,27 +166,12 @@ export default function ReviewQueue() {
     if (!selectedItem) return
     
     try {
-      // Use the correct_record endpoint with corrections dict
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ''}/api/v1/review/${selectedItem.record_id}/correct`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            table_name: selectedItem.table_name,
-            corrections,
-            notes,
-            recalculate_metrics: true
-          })
-        }
-      )
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Failed to save corrections')
-      }
-
+      await reviewService.correctRecordDetailed(
+        selectedItem.record_id,
+        selectedItem.table_name,
+        corrections,
+        notes
+      );
       alert('✅ Corrections saved successfully!')
       loadReviewQueue()
     } catch (error: any) {
@@ -480,4 +465,3 @@ export default function ReviewQueue() {
     </div>
   )
 }
-

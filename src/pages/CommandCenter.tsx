@@ -21,9 +21,8 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
 import { getMetricSource, getPDFViewerData } from '../lib/metrics_source';
 import { useAuth } from '../components/AuthContext';
+import { apiClient, ApiError } from '../lib/apiClient';
 import type { Property } from '../types/api';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 interface PortfolioHealth {
   score: number;
@@ -147,9 +146,7 @@ export default function CommandCenter() {
   const loadPortfolioHealth = async (_properties: Property[]) => {
     try {
       // Calculate portfolio health from properties and metrics
-      let metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
-        credentials: 'include'
-      }).then(r => r.ok ? r.json() : []);
+      let metricsSummary = await apiClient.get<any[]>('/metrics/summary');
 
       // Filter by selected property if not "all"
       if (selectedPropertyFilter !== 'all') {
@@ -203,14 +200,9 @@ export default function CommandCenter() {
       if (selectedPropertyFilter === 'all') {
         // Fetch Portfolio DSCR from API
         try {
-          const dscrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-dscr`, {
-            credentials: 'include'
-          });
-          if (dscrResponse.ok) {
-            const dscrData = await dscrResponse.json();
-            portfolioDSCR = dscrData.dscr || 0;
-            dscrChange = dscrData.yoy_change || 0;
-          }
+          const dscrData = await apiClient.get<any>('/exit-strategy/portfolio-dscr');
+          portfolioDSCR = dscrData.dscr || 0;
+          dscrChange = dscrData.yoy_change || 0;
         } catch (dscrErr) {
           console.error('Failed to fetch portfolio DSCR:', dscrErr);
         }
@@ -235,48 +227,36 @@ export default function CommandCenter() {
             const periodIdToUse = dec2024PeriodIdMap[selectedPropertyFilter] || metric?.period_id;
             const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
             
-            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate${periodIdParam}`, {
-              method: 'POST',
-              credentials: 'include'
-            });
-            if (dscrResponse.ok) {
-              const dscrData = await dscrResponse.json();
-              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                portfolioDSCR = dscrData.dscr;
-                // Calculate YoY change for property-specific DSCR
-                // Get previous period DSCR for comparison
-                if (metric) {
-                  const prevYear = metric.period_year;
-                  const prevMonth = metric.period_month - 1;
-                  const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
-                  const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
-                  
-                  // Try to get previous period DSCR (Dec 2023)
-                  // Use hardcoded Dec 2023 period IDs: ESP001=7, HMND001=3, TCSH001=8, WEND001=5
-                  const dec2023PeriodIdMap: Record<string, number> = {
-                    'ESP001': 7,
-                    'HMND001': 3,
-                    'TCSH001': 8,
-                    'WEND001': 5
-                  };
-                  
-                  const prevPeriodId = dec2023PeriodIdMap[selectedPropertyFilter];
-                  
-                  if (prevPeriodId) {
-                    try {
-                      const prevDscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate?financial_period_id=${prevPeriodId}`, {
-                        method: 'POST',
-                        credentials: 'include'
-                      });
-                      if (prevDscrResponse.ok) {
-                        const prevDscrData = await prevDscrResponse.json();
-                        if (prevDscrData.success && prevDscrData.dscr) {
-                          dscrChange = portfolioDSCR - prevDscrData.dscr;
-                        }
-                      }
-                    } catch (prevErr) {
-                      console.warn('Failed to fetch previous period DSCR for comparison:', prevErr);
+            const dscrData = await apiClient.post<any>(`/risk-alerts/properties/${selectedProp.id}/dscr/calculate${periodIdParam}`, {});
+            if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+              portfolioDSCR = dscrData.dscr;
+              // Calculate YoY change for property-specific DSCR
+              // Get previous period DSCR for comparison
+              if (metric) {
+                const prevYear = metric.period_year;
+                const prevMonth = metric.period_month - 1;
+                const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
+                const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
+                
+                // Try to get previous period DSCR (Dec 2023)
+                // Use hardcoded Dec 2023 period IDs: ESP001=7, HMND001=3, TCSH001=8, WEND001=5
+                const dec2023PeriodIdMap: Record<string, number> = {
+                  'ESP001': 7,
+                  'HMND001': 3,
+                  'TCSH001': 8,
+                  'WEND001': 5
+                };
+                
+                const prevPeriodId = dec2023PeriodIdMap[selectedPropertyFilter];
+                
+                if (prevPeriodId) {
+                  try {
+                    const prevDscrData = await apiClient.post<any>(`/risk-alerts/properties/${selectedProp.id}/dscr/calculate?financial_period_id=${prevPeriodId}`, {});
+                    if (prevDscrData.success && prevDscrData.dscr) {
+                      dscrChange = portfolioDSCR - prevDscrData.dscr;
                     }
+                  } catch (prevErr) {
+                    console.warn('Failed to fetch previous period DSCR for comparison:', prevErr);
                   }
                 }
               }
@@ -297,18 +277,13 @@ export default function CommandCenter() {
       
       if (selectedPropertyFilter === 'all') {
         try {
-          const changesResponse = await fetch(`${API_BASE_URL}/metrics/portfolio-changes`, {
-            credentials: 'include'
-          });
-          if (changesResponse.ok) {
-            const changesData = await changesResponse.json();
-            percentageChanges = {
-              total_value_change: changesData.total_value_change || 0,
-              noi_change: changesData.noi_change || 0,
-              occupancy_change: changesData.occupancy_change || 0,
-              dscr_change: changesData.dscr_change || dscrChange
-            };
-          }
+          const changesData = await apiClient.get<any>('/metrics/portfolio-changes');
+          percentageChanges = {
+            total_value_change: changesData.total_value_change || 0,
+            noi_change: changesData.noi_change || 0,
+            occupancy_change: changesData.occupancy_change || 0,
+            dscr_change: changesData.dscr_change || dscrChange
+          };
         } catch (changesErr) {
           console.error('Failed to fetch percentage changes:', changesErr);
         }
@@ -324,30 +299,25 @@ export default function CommandCenter() {
           
           // Fetch previous period metrics
           try {
-            const prevMetricsResponse = await fetch(`${API_BASE_URL}/metrics/summary`, {
-              credentials: 'include'
-            });
-            if (prevMetricsResponse.ok) {
-              const prevMetrics = await prevMetricsResponse.json();
-              const prevMetric = prevMetrics.find((m: any) => 
-                m.property_code === selectedPropertyFilter && 
-                m.period_year === prevYearFinal && 
-                m.period_month === prevMonthFinal
-              );
+            const prevMetrics = await apiClient.get<any[]>('/metrics/summary');
+            const prevMetric = prevMetrics.find((m: any) => 
+              m.property_code === selectedPropertyFilter && 
+              m.period_year === prevYearFinal && 
+              m.period_month === prevMonthFinal
+            );
+            
+            if (prevMetric) {
+              const calcChange = (current: number, previous: number) => {
+                if (!previous || previous === 0) return 0;
+                return ((current - previous) / previous) * 100;
+              };
               
-              if (prevMetric) {
-                const calcChange = (current: number, previous: number) => {
-                  if (!previous || previous === 0) return 0;
-                  return ((current - previous) / previous) * 100;
-                };
-                
-                percentageChanges = {
-                  total_value_change: calcChange(metric.total_assets || 0, prevMetric.total_assets || 0),
-                  noi_change: calcChange(metric.net_operating_income || 0, prevMetric.net_operating_income || 0),
-                  occupancy_change: calcChange(metric.occupancy_rate || 0, prevMetric.occupancy_rate || 0),
-                  dscr_change: dscrChange
-                };
-              }
+              percentageChanges = {
+                total_value_change: calcChange(metric.total_assets || 0, prevMetric.total_assets || 0),
+                noi_change: calcChange(metric.net_operating_income || 0, prevMetric.net_operating_income || 0),
+                occupancy_change: calcChange(metric.occupancy_rate || 0, prevMetric.occupancy_rate || 0),
+                dscr_change: dscrChange
+              };
             }
           } catch (prevErr) {
             console.warn('Failed to fetch previous period metrics for comparison:', prevErr);
@@ -387,78 +357,74 @@ export default function CommandCenter() {
 
   const loadCriticalAlerts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts?priority=critical&status=ACTIVE`, {
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        let alerts = data.alerts || data;
+      const data = await apiClient.get<any>('/risk-alerts', { priority: 'critical', status: 'ACTIVE' });
+      let alerts = data.alerts || data;
+      
+      // Filter to show only latest period's alert per property
+      // Group by property_id and keep only the most recent alert per property
+      const alertsByProperty = new Map<number, any>();
+      alerts.forEach((a: any) => {
+        const propertyId = a.property_id;
+        const existing = alertsByProperty.get(propertyId);
         
-        // Filter to show only latest period's alert per property
-        // Group by property_id and keep only the most recent alert per property
-        const alertsByProperty = new Map<number, any>();
-        alerts.forEach((a: any) => {
-          const propertyId = a.property_id;
-          const existing = alertsByProperty.get(propertyId);
+        if (!existing) {
+          alertsByProperty.set(propertyId, a);
+        } else {
+          // Compare by period (year/month) or triggered_at
+          const existingDate = new Date(existing.triggered_at || existing.created_at || 0);
+          const currentDate = new Date(a.triggered_at || a.created_at || 0);
           
-          if (!existing) {
-            alertsByProperty.set(propertyId, a);
-          } else {
-            // Compare by period (year/month) or triggered_at
-            const existingDate = new Date(existing.triggered_at || existing.created_at || 0);
-            const currentDate = new Date(a.triggered_at || a.created_at || 0);
-            
-            // Prefer alert with more recent period or triggered_at
-            if (a.financial_period_id && existing.financial_period_id) {
-              // If both have period_id, prefer the one with later period
-              // For now, use triggered_at as proxy (will be improved with period info)
-              if (currentDate > existingDate) {
-                alertsByProperty.set(propertyId, a);
-              }
-            } else if (currentDate > existingDate) {
+          // Prefer alert with more recent period or triggered_at
+          if (a.financial_period_id && existing.financial_period_id) {
+            // If both have period_id, prefer the one with later period
+            // For now, use triggered_at as proxy (will be improved with period info)
+            if (currentDate > existingDate) {
               alertsByProperty.set(propertyId, a);
             }
+          } else if (currentDate > existingDate) {
+            alertsByProperty.set(propertyId, a);
           }
-        });
-        
-        // Convert map back to array and take top 5
-        alerts = Array.from(alertsByProperty.values())
-          .sort((a: any, b: any) => {
-            const dateA = new Date(a.triggered_at || a.created_at || 0).getTime();
-            const dateB = new Date(b.triggered_at || b.created_at || 0).getTime();
-            return dateB - dateA; // Most recent first
-          })
-          .slice(0, 5);
-        
-        setCriticalAlerts(alerts.map((a: any) => ({
-          id: a.id,
-          property: {
-            id: a.property_id,
-            name: a.property_name || 'Unknown',
-            code: a.property_code || ''
-          },
-          type: a.alert_type || 'risk',
-          severity: a.severity || 'critical',
-          metric: {
-            name: a.metric_name || a.related_metric || 'DSCR',
-            current: a.actual_value || 0,
-            threshold: a.threshold_value || 1.25,
-            impact: a.impact || 'Risk identified'
-          },
-          recommendation: a.recommendation || a.description || 'Review immediately',
-          createdAt: new Date(a.triggered_at || a.created_at || Date.now()),
-          financial_period_id: a.financial_period_id,
-          period: a.period ? {
-            id: a.period.id,
-            year: a.period.year,
-            month: a.period.month
-          } : undefined
-        })));
-      } else if (response.status === 404) {
-        // Endpoint doesn't exist yet - set empty alerts
+        }
+      });
+      
+      // Convert map back to array and take top 5
+      alerts = Array.from(alertsByProperty.values())
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.triggered_at || a.created_at || 0).getTime();
+          const dateB = new Date(b.triggered_at || b.created_at || 0).getTime();
+          return dateB - dateA; // Most recent first
+        })
+        .slice(0, 5);
+      
+      setCriticalAlerts(alerts.map((a: any) => ({
+        id: a.id,
+        property: {
+          id: a.property_id,
+          name: a.property_name || 'Unknown',
+          code: a.property_code || ''
+        },
+        type: a.alert_type || 'risk',
+        severity: a.severity || 'critical',
+        metric: {
+          name: a.metric_name || a.related_metric || 'DSCR',
+          current: a.actual_value || 0,
+          threshold: a.threshold_value || 1.25,
+          impact: a.impact || 'Risk identified'
+        },
+        recommendation: a.recommendation || a.description || 'Review immediately',
+        createdAt: new Date(a.triggered_at || a.created_at || Date.now()),
+        financial_period_id: a.financial_period_id,
+        period: a.period ? {
+          id: a.period.id,
+          year: a.period.year,
+          month: a.period.month
+        } : undefined
+      })));
+    } catch (err: any) {
+      if (err instanceof ApiError && err.status === 404) {
         setCriticalAlerts([]);
+        return;
       }
-    } catch (err) {
       console.error('Failed to load critical alerts:', err);
       // Set empty alerts on error to prevent blocking
       setCriticalAlerts([]);
@@ -470,10 +436,7 @@ export default function CommandCenter() {
       const performance: PropertyPerformance[] = [];
       
       // Fetch all metrics once with a high limit to get all properties
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
-        credentials: 'include'
-      });
-      const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
+      const allMetrics = await apiClient.get<any[]>('/metrics/summary', { limit: 100 });
       
       // Create a map of property_code -> latest metric with actual data for quick lookup
       const metricsMap = new Map<string, any>();
@@ -539,70 +502,53 @@ export default function CommandCenter() {
             const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
 
             // Parallelize all property-specific API calls
-            const [histRes, dscrRes, ltvRes] = await Promise.all([
-              fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
-                credentials: 'include'
-              }).catch(() => ({ ok: false })),
-              fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {
-                method: 'POST',
-                credentials: 'include'
-              }).catch(() => ({ ok: false })),
-              fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
-                credentials: 'include'
-              }).catch(() => ({ ok: false }))
+            const [histRes, dscrRes, ltvRes] = await Promise.allSettled([
+              apiClient.get<any>('/metrics/historical', { property_id: property.id, months: 12 }),
+              apiClient.post<any>(`/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {}),
+              apiClient.get<any>(`/metrics/${property.id}/ltv`)
             ]);
 
             // Process historical data
             let noiTrend: number[] = [];
-            if (histRes.ok) {
-              try {
-                const histData = await histRes.json();
-                noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
-              } catch (histErr) {
-                console.error('Failed to parse historical data:', histErr);
-              }
+            if (histRes.status === 'fulfilled') {
+              const histData = histRes.value;
+              noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
+            } else if (histRes.status === 'rejected') {
+              console.error('Failed to parse historical data:', histRes.reason);
             }
 
             // Process DSCR
             let dscr: number | null = null;
             let status: 'critical' | 'warning' | 'good' = 'good';
-            if (dscrRes.ok) {
-              try {
-                const dscrData = await dscrRes.json();
-                if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                  dscr = dscrData.dscr;
-                  status = dscrData.status === 'healthy' ? 'good' : 
-                           dscrData.status === 'warning' ? 'warning' : 'critical';
-                }
-              } catch (dscrErr) {
-                console.error(`Failed to parse DSCR for ${property.property_code}:`, dscrErr);
+            if (dscrRes.status === 'fulfilled') {
+              const dscrData = dscrRes.value;
+              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+                dscr = dscrData.dscr;
+                status = dscrData.status === 'healthy' ? 'good' : 
+                         dscrData.status === 'warning' ? 'warning' : 'critical';
               }
+            } else if (dscrRes.status === 'rejected') {
+              console.error(`Failed to parse DSCR for ${property.property_code}:`, dscrRes.reason);
             }
 
             // Fallback DSCR calculation if API failed
-            if (dscr === null && ltvRes.ok) {
-              try {
-                const ltvData = await ltvRes.json();
-                const loanAmount = ltvData.loan_amount || 0;
-                const annualDebtService = loanAmount * 0.08;
-                if (annualDebtService > 0 && noi > 0) {
-                  dscr = noi / annualDebtService;
-                  status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
-                }
-              } catch (fallbackErr) {
-                console.error('Failed to calculate DSCR fallback:', fallbackErr);
+            if (dscr === null && ltvRes.status === 'fulfilled') {
+              const ltvData = ltvRes.value;
+              const loanAmount = ltvData.loan_amount || 0;
+              const annualDebtService = loanAmount * 0.08;
+              if (annualDebtService > 0 && noi > 0) {
+                dscr = noi / annualDebtService;
+                status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
               }
             }
 
             // Process LTV
             let ltv: number | null = null;
-            if (ltvRes.ok) {
-              try {
-                const ltvData = await ltvRes.json();
-                ltv = ltvData.ltv || null;
-              } catch (ltvErr) {
-                console.error(`Failed to parse LTV for ${property.property_code}:`, ltvErr);
-              }
+            if (ltvRes.status === 'fulfilled') {
+              const ltvData = ltvRes.value;
+              ltv = ltvData.ltv || null;
+            } else if (ltvRes.status === 'rejected') {
+              console.error(`Failed to parse LTV for ${property.property_code}:`, ltvRes.reason);
             }
 
             return {
@@ -663,17 +609,8 @@ export default function CommandCenter() {
   const loadAIInsights = async () => {
     try {
       // Fetch real AI insights from NLQ API
-      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAIInsights(data.insights || []);
-      } else {
-        // No fallback - show empty state if API fails
-        setAIInsights([]);
-      }
+      const data = await apiClient.get<any>('/nlq/insights/portfolio');
+      setAIInsights(data.insights || []);
     } catch (err) {
       console.error('Failed to load AI insights:', err);
       // No fallback - show empty state on error
@@ -695,10 +632,7 @@ export default function CommandCenter() {
     setLoadingPDFSource(true);
     try {
       // Get the latest period for this property
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary`, {
-        credentials: 'include'
-      });
-      const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
+      const allMetrics = await apiClient.get<any[]>('/metrics/summary');
       const propertyMetric = allMetrics.find((m: any) => m.property_code === selectedPropertyFilter);
       
       if (!propertyMetric || !propertyMetric.period_id) {
@@ -711,20 +645,16 @@ export default function CommandCenter() {
       
       if (!sourceData) {
         // Try to get any document for this property/period as fallback
-        const fallbackUrl = `${API_BASE_URL}/metrics/${selectedProperty.id}/source?period_id=${propertyMetric.period_id}`;
         try {
-          const fallbackRes = await fetch(fallbackUrl, { credentials: 'include' });
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            if (fallbackData.pdf_url) {
-              setPdfViewerData({
-                pdfUrl: fallbackData.pdf_url,
-                highlightPage: undefined,
-                highlightCoords: undefined
-              });
-              setShowPDFViewer(true);
-              return;
-            }
+          const fallbackData = await apiClient.get<any>(`/metrics/${selectedProperty.id}/source`, { period_id: propertyMetric.period_id });
+          if (fallbackData.pdf_url) {
+            setPdfViewerData({
+              pdfUrl: fallbackData.pdf_url,
+              highlightPage: undefined,
+              highlightCoords: undefined
+            });
+            setShowPDFViewer(true);
+            return;
           }
         } catch (e) {
           console.error('Fallback failed:', e);
@@ -798,22 +728,17 @@ export default function CommandCenter() {
   const loadSparklineData = async () => {
     try {
       // Determine if we need property-specific or portfolio-wide data
-      let url = `${API_BASE_URL}/metrics/historical?months=12`;
-      if (selectedPropertyFilter !== 'all') {
-        // Find property ID for the selected property
-        const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
-        if (selectedProp) {
-          url += `&property_id=${selectedProp.id}`;
-        }
+      const selectedProp = selectedPropertyFilter !== 'all'
+        ? properties.find(p => p.property_code === selectedPropertyFilter)
+        : null;
+
+      const historicalParams: Record<string, any> = { months: 12 };
+      if (selectedProp) {
+        historicalParams.property_id = selectedProp.id;
       }
       
       // Fetch 12 months of historical data for sparklines
-      const response = await fetch(url, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
+      const data = await apiClient.get<any>('/metrics/historical', historicalParams);
 
         // Transform API data to sparkline format
         // Convert millions to display values for sparklines
@@ -823,22 +748,13 @@ export default function CommandCenter() {
 
         // Fetch DSCR historical data if a specific property is selected
         let dscrSparkline: number[] = [];
-        if (selectedPropertyFilter !== 'all') {
-          const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
-          if (selectedProp) {
-            try {
-              const dscrResponse = await fetch(
-                `${API_BASE_URL}/metrics/${selectedProp.id}/dscr/historical?months=12`,
-                { credentials: 'include' }
-              );
-              if (dscrResponse.ok) {
-                const dscrData = await dscrResponse.json();
-                dscrSparkline = dscrData.dscr_values || [];
-              }
-            } catch (dscrErr) {
-              console.warn('Failed to load DSCR historical data:', dscrErr);
-              // Continue with empty DSCR array - sparkline will handle gracefully
-            }
+        if (selectedProp) {
+          try {
+            const dscrData = await apiClient.get<any>(`/metrics/${selectedProp.id}/dscr/historical`, { months: 12 });
+            dscrSparkline = dscrData.dscr_values || [];
+          } catch (dscrErr) {
+            console.warn('Failed to load DSCR historical data:', dscrErr);
+            // Continue with empty DSCR array - sparkline will handle gracefully
           }
         }
 
@@ -848,7 +764,6 @@ export default function CommandCenter() {
           occupancy: occupancySparkline,
           dscr: dscrSparkline
         });
-      }
     } catch (err) {
       console.error('Failed to load sparkline data:', err);
       // Keep empty arrays as fallback - component will handle gracefully
@@ -906,46 +821,32 @@ export default function CommandCenter() {
     try {
       setLoadingAnalysis(true);
       // Try to fetch detailed portfolio analysis from NLQ API
-      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio?detailed=true`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisDetails(data);
-      } else {
-        // Generate analysis from portfolio health data
-        setAnalysisDetails({
-          title: 'Portfolio Health Analysis',
-          summary: portfolioHealth ? 
-            `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
-            'Portfolio analysis unavailable',
-          details: portfolioHealth ? [
-            `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
-            `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(1)}K`,
-            `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
-            `Portfolio DSCR: ${(portfolioHealth.portfolioDSCR || 0).toFixed(2)}`,
-            `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
-            `Warning Alerts: ${portfolioHealth.alertCount.warning}`
-          ] : [],
-          recommendations: portfolioHealth && portfolioHealth.score < 90 ? [
-            'Monitor properties with DSCR below 1.35',
-            'Review occupancy rates for properties below 85%',
-            'Consider refinancing opportunities for properties with high LTV'
-          ] : [
-            'Portfolio is performing well',
-            'Continue monitoring key metrics',
-            'Maintain current operational strategies'
-          ]
-        });
-      }
+      const data = await apiClient.get<any>('/nlq/insights/portfolio', { detailed: true });
+      setAnalysisDetails(data);
     } catch (err) {
       console.error('Failed to load portfolio analysis:', err);
       setAnalysisDetails({
         title: 'Portfolio Health Analysis',
-        summary: 'Unable to load detailed analysis',
-        details: [],
-        recommendations: ['Please try again later']
+        summary: portfolioHealth ? 
+          `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
+          'Portfolio analysis unavailable',
+        details: portfolioHealth ? [
+          `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
+          `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(1)}K`,
+          `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
+          `Portfolio DSCR: ${(portfolioHealth.portfolioDSCR || 0).toFixed(2)}`,
+          `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
+          `Warning Alerts: ${portfolioHealth.alertCount.warning}`
+        ] : [],
+        recommendations: portfolioHealth && portfolioHealth.score < 90 ? [
+          'Monitor properties with DSCR below 1.35',
+          'Review occupancy rates for properties below 85%',
+          'Consider refinancing opportunities for properties with high LTV'
+        ] : [
+          'Portfolio is performing well',
+          'Continue monitoring key metrics',
+          'Maintain current operational strategies'
+        ]
       });
     } finally {
       setLoadingAnalysis(false);
@@ -956,52 +857,35 @@ export default function CommandCenter() {
     try {
       setLoadingAnalysis(true);
       // Try to fetch detailed analysis for specific insight
-      const response = await fetch(`${API_BASE_URL}/nlq/insights/${insight.id}`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisDetails(data);
-      } else {
-        // Generate analysis from insight data
-        let recommendations: string[] = [];
-        
-        // Enhanced recommendations based on insight type
-        if (insight.id === 'market_cap_rates') {
-          recommendations = [
-            'Consider selling properties when market cap rates are favorable',
-            'Monitor market trends to identify optimal exit timing',
-            'Compare portfolio cap rates to market averages',
-            'Review property valuations in light of current market conditions',
-            'Evaluate refinancing vs. sale options based on cap rate trends'
-          ];
-        } else {
-          recommendations = [
-            'Review related financial metrics',
-            'Monitor trends over next quarter',
-            'Consider implementing suggested actions'
-          ];
-        }
-        
-        setAnalysisDetails({
-          title: insight.title,
-          summary: insight.description,
-          details: [
-            `Type: ${insight.type}`,
-            `Confidence: ${(insight.confidence * 100).toFixed(0)}%`,
-            insight.id === 'market_cap_rates' ? 'Market Analysis: Cap rates indicate market conditions favorable for property sales' : ''
-          ].filter(Boolean),
-          recommendations: recommendations
-        });
-      }
+      const data = await apiClient.get<any>(`/nlq/insights/${insight.id}`);
+      setAnalysisDetails(data);
     } catch (err) {
       console.error('Failed to load insight analysis:', err);
+      // Generate analysis from insight data as fallback
+      let recommendations: string[] = [];
+      
+      if (insight.id === 'market_cap_rates') {
+        recommendations = [
+          'Assess current market conditions for asset sales',
+          'Review property-level cap rates vs market averages',
+          'Model refinancing vs sale scenarios based on cap rates'
+        ];
+      } else {
+        recommendations = [
+          'Review related financial metrics',
+          'Monitor trends over next quarter',
+          'Consider implementing suggested actions'
+        ];
+      }
+
       setAnalysisDetails({
         title: insight.title,
         summary: insight.description,
-        details: [],
-        recommendations: ['Please try again later']
+        details: [
+          `Type: ${insight.type}`,
+          `Confidence: ${(insight.confidence * 100).toFixed(0)}%`
+        ],
+        recommendations
       });
     } finally {
       setLoadingAnalysis(false);
@@ -1081,51 +965,23 @@ export default function CommandCenter() {
   const handleAIRecommendations = async (alert: CriticalAlert) => {
     setLoadingAnalysis(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/nlq/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          question: `What are the recommendations for ${alert.property.name} with ${alert.metric.name} of ${alert.metric.current} (threshold: ${alert.metric.threshold})?`,
-          context: {
-            property_id: alert.property.id,
-            alert_id: alert.id,
-            metric: alert.metric.name,
-            current_value: alert.metric.current,
-            threshold: alert.metric.threshold
-          }
-        })
+      const data = await apiClient.post<any>('/nlq/query', {
+        question: `What are the recommendations for ${alert.property.name} with ${alert.metric.name} of ${alert.metric.current} (threshold: ${alert.metric.threshold})?`,
+        context: {
+          property_id: alert.property.id,
+          alert_id: alert.id,
+          metric: alert.metric.name,
+          current_value: alert.metric.current,
+          threshold: alert.metric.threshold
+        }
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Check if query was successful
-        if (!data.success) {
-          // Display error in modal for better UX
-          setAnalysisDetails({
-            title: `AI Recommendations for ${alert.property.name}`,
-            summary: data.answer || data.error || 'Unable to generate recommendations at this time.',
-            details: [
-              `Property: ${alert.property.name} (${alert.property.code})`,
-              `Metric: ${alert.metric.name}`,
-              `Current Value: ${alert.metric.current}`,
-              `Threshold: ${alert.metric.threshold}`,
-              `Impact: ${alert.metric.impact}`
-            ],
-            recommendations: [
-              'The AI recommendation service is currently unavailable.',
-              'Please try again later or contact support if the issue persists.'
-            ]
-          });
-          setShowAnalysisModal(true);
-          return;
-        }
-        
-        // Successful query - display results
+      // Check if query was successful
+      if (!data.success) {
+        // Display error in modal for better UX
         setAnalysisDetails({
           title: `AI Recommendations for ${alert.property.name}`,
-          summary: data.answer || data.response || data.message || 'AI analysis unavailable',
+          summary: data.answer || data.error || 'Unable to generate recommendations at this time.',
           details: [
             `Property: ${alert.property.name} (${alert.property.code})`,
             `Metric: ${alert.metric.name}`,
@@ -1133,13 +989,29 @@ export default function CommandCenter() {
             `Threshold: ${alert.metric.threshold}`,
             `Impact: ${alert.metric.impact}`
           ],
-          recommendations: data.recommendations || (data.answer ? [data.answer] : ['No specific recommendations available at this time.'])
+          recommendations: [
+            'The AI recommendation service is currently unavailable.',
+            'Please try again later or contact support if the issue persists.'
+          ]
         });
         setShowAnalysisModal(true);
-      } else {
-        const error = await response.json();
-        alert(`Failed to load AI recommendations: ${error.detail || error.error || 'Unknown error'}`);
+        return;
       }
+      
+      // Successful query - display results
+      setAnalysisDetails({
+        title: `AI Recommendations for ${alert.property.name}`,
+        summary: data.answer || data.response || data.message || 'AI analysis unavailable',
+        details: [
+          `Property: ${alert.property.name} (${alert.property.code})`,
+          `Metric: ${alert.metric.name}`,
+          `Current Value: ${alert.metric.current}`,
+          `Threshold: ${alert.metric.threshold}`,
+          `Impact: ${alert.metric.impact}`
+        ],
+        recommendations: data.recommendations || (data.answer ? [data.answer] : ['No specific recommendations available at this time.'])
+      });
+      setShowAnalysisModal(true);
     } catch (err) {
       console.error('Failed to get AI recommendations:', err);
       alert('Failed to load AI recommendations. Please try again.');
@@ -1158,31 +1030,20 @@ export default function CommandCenter() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${alert.id}/acknowledge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          acknowledged_by: currentUserId,
-          notes: `Acknowledged from Command Center dashboard`
-        })
+      const data = await apiClient.post<any>(`/risk-alerts/alerts/${alert.id}/acknowledge`, {
+        acknowledged_by: currentUserId,
+        notes: `Acknowledged from Command Center dashboard`
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Remove alert from list
-          setCriticalAlerts(prev => prev.filter(a => a.id !== alert.id));
-          // Show success message
-          alert('Alert acknowledged successfully');
-          // Refresh alerts to get updated list
-          await loadCriticalAlerts();
-        } else {
-          alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
-        }
+      if (data.success) {
+        // Remove alert from list
+        setCriticalAlerts(prev => prev.filter(a => a.id !== alert.id));
+        // Show success message
+        alert('Alert acknowledged successfully');
+        // Refresh alerts to get updated list
+        await loadCriticalAlerts();
       } else {
-        const error = await response.json();
-        alert(`Failed to acknowledge alert: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Failed to acknowledge alert:', err);
@@ -1760,4 +1621,3 @@ export default function CommandCenter() {
     </div>
   );
 }
-
