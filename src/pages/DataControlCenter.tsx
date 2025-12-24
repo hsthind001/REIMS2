@@ -40,10 +40,9 @@ import { TaskCharts } from '../components/tasks/TaskCharts';
 import { PerformanceDashboard } from '../components/tasks/PerformanceDashboard';
 import { TaskScheduler } from '../components/tasks/TaskScheduler';
 import { RuleCharts } from '../components/validations/RuleCharts';
+import { apiClient } from '../lib/apiClient';
 import type { DocumentUpload as DocumentUploadType, RuleStatisticsItem, RuleStatisticsSummary, RuleStatisticsResponse, RuleResultItem, ValidationAnalyticsResponse } from '../types/api';
 import type { TaskDashboard, Task } from '../types/tasks';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 type ControlTab = 'quality' | 'tasks' | 'validation' | 'import' | 'review' | 'documents';
 
@@ -241,20 +240,16 @@ export default function DataControlCenter() {
       }
 
       // Load quality score and validation statistics in parallel
-      const [qualityRes, validationStatsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/quality/summary`, { credentials: 'include' }),
-        fetch(`${API_BASE_URL}/validations/rules/statistics`, { credentials: 'include' })
+      const [qualityRes, validationStatsRes] = await Promise.allSettled([
+        apiClient.get<any>('/quality/summary'),
+        apiClient.get<any>('/validations/rules/statistics')
       ]);
 
-      // Parse validation statistics
-      let validationStats = null;
-      if (validationStatsRes.ok) {
-        validationStats = await validationStatsRes.json();
-      }
+      const validationStats = validationStatsRes.status === 'fulfilled' ? validationStatsRes.value : null;
 
       // Parse quality data and set quality score
-      if (qualityRes.ok) {
-        const quality = await qualityRes.json();
+      if (qualityRes.status === 'fulfilled') {
+        const quality = qualityRes.value;
 
         // Calculate validation metrics from actual validation statistics
         // Use validation statistics if available, otherwise use defaults
@@ -298,22 +293,12 @@ export default function DataControlCenter() {
       }
 
       // Load system tasks
-      const tasksRes = await fetch(`${API_BASE_URL}/tasks`, {
-        credentials: 'include'
-      });
-      if (tasksRes.ok) {
-        const tasks = await tasksRes.json();
-        setSystemTasks(tasks.tasks || []);
-      }
+      const tasks = await apiClient.get<any>('/tasks');
+      setSystemTasks(tasks.tasks || []);
 
       // Load validation rules
-      const rulesRes = await fetch(`${API_BASE_URL}/validations/rules`, {
-        credentials: 'include'
-      });
-      if (rulesRes.ok) {
-        const rules = await rulesRes.json();
-        setValidationRules(rules.rules || []);
-      }
+      const rules = await apiClient.get<any>('/validations/rules');
+      setValidationRules(rules.rules || []);
 
       // Load ALL documents - fetch in batches if needed
       let allDocs: DocumentUploadType[] = [];
@@ -322,22 +307,15 @@ export default function DataControlCenter() {
       let hasMore = true;
       
       while (hasMore) {
-        const docsRes = await fetch(`${API_BASE_URL}/documents/uploads?skip=${skip}&limit=${limit}`, {
-          credentials: 'include'
-        });
-        if (docsRes.ok) {
-          const docs = await docsRes.json();
-          const items = docs.items || docs || [];
-          allDocs = [...allDocs, ...items];
-          
-          // Check if there are more documents
-          if (items.length < limit || (docs.total && allDocs.length >= docs.total)) {
-            hasMore = false;
-          } else {
-            skip += limit;
-          }
-        } else {
+        const docs = await apiClient.get<any>('/documents/uploads', { skip, limit });
+        const items = docs.items || docs || [];
+        allDocs = [...allDocs, ...items];
+        
+        // Check if there are more documents
+        if (items.length < limit || (docs.total && allDocs.length >= docs.total)) {
           hasMore = false;
+        } else {
+          skip += limit;
         }
       }
       
@@ -395,18 +373,9 @@ export default function DataControlCenter() {
     
     try {
       setDeleting(true);
-      const response = await fetch(`${API_BASE_URL}/documents/uploads/delete-all-history`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        alert('All document upload history has been deleted successfully.');
-        loadData(); // Reload the data
-      } else {
-        const error = await response.json();
-        alert(`Failed to delete history: ${error.detail || 'Unknown error'}`);
-      }
+      await apiClient.delete('/documents/uploads/delete-all-history');
+      alert('All document upload history has been deleted successfully.');
+      loadData(); // Reload the data
     } catch (error) {
       console.error('Failed to delete history:', error);
       alert('Failed to delete history. Please try again.');
@@ -419,13 +388,8 @@ export default function DataControlCenter() {
   useEffect(() => {
     const loadProperties = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/properties`, {
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setProperties(data.properties || []);
-        }
+        const data = await apiClient.get<any>('/properties');
+        setProperties(data.properties || []);
       } catch (error) {
         console.error('Failed to load properties:', error);
       }
@@ -448,17 +412,8 @@ export default function DataControlCenter() {
       if (deleteFilters.documentType) params.append('document_type', deleteFilters.documentType);
       if (deleteFilters.periodId) params.append('period_id', deleteFilters.periodId.toString());
 
-      const response = await fetch(`${API_BASE_URL}/documents/anomalies-warnings-alerts/preview?${params}`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setPreviewData(data);
-      } else {
-        const error = await response.json();
-        alert(`Failed to preview: ${error.detail || 'Unknown error'}`);
-      }
+      const data = await apiClient.get<any>(`/documents/anomalies-warnings-alerts/preview?${params}`);
+      setPreviewData(data);
     } catch (error) {
       console.error('Failed to preview deletion:', error);
       alert('Failed to preview deletion. Please try again.');
@@ -497,30 +452,20 @@ export default function DataControlCenter() {
       if (deleteFilters.documentType) params.append('document_type', deleteFilters.documentType);
       if (deleteFilters.periodId) params.append('period_id', deleteFilters.periodId.toString());
 
-      const response = await fetch(`${API_BASE_URL}/documents/anomalies-warnings-alerts/delete-filtered?${params}`, {
-        method: 'POST',
-        credentials: 'include'
+      const data = await apiClient.post<any>(`/documents/anomalies-warnings-alerts/delete-filtered?${params}`, {});
+      alert(`Successfully deleted ${data.total_deleted} records!\n\n` +
+        `- Anomalies: ${data.deletion_counts.anomaly_detections}\n` +
+        `- Alerts: ${data.deletion_counts.alerts}\n` +
+        `- Committee Alerts: ${data.deletion_counts.committee_alerts}`);
+      setShowDeleteFiltersModal(false);
+      setPreviewData(null);
+      setDeleteFilters({
+        propertyIds: [],
+        year: '',
+        documentType: '',
+        periodId: ''
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(`Successfully deleted ${data.total_deleted} records!\n\n` +
-          `- Anomalies: ${data.deletion_counts.anomaly_detections}\n` +
-          `- Alerts: ${data.deletion_counts.alerts}\n` +
-          `- Committee Alerts: ${data.deletion_counts.committee_alerts}`);
-        setShowDeleteFiltersModal(false);
-        setPreviewData(null);
-        setDeleteFilters({
-          propertyIds: [],
-          year: '',
-          documentType: '',
-          periodId: ''
-        });
-        loadData(); // Reload the data
-      } else {
-        const error = await response.json();
-        alert(`Failed to delete: ${error.detail || 'Unknown error'}`);
-      }
+      loadData(); // Reload the data
     } catch (error) {
       console.error('Failed to delete:', error);
       alert('Failed to delete. Please try again.');
@@ -595,19 +540,9 @@ export default function DataControlCenter() {
 
     try {
       setReprocessing(true);
-      const response = await fetch(`${API_BASE_URL}/documents/uploads/reprocess-failed`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        alert(`Successfully queued ${result.queued_count || failedCount} failed file(s) for reprocessing.`);
-        loadData(); // Reload the data
-      } else {
-        const error = await response.json();
-        alert(`Failed to reprocess files: ${error.detail || 'Unknown error'}`);
-      }
+      const result = await apiClient.post<any>('/documents/uploads/reprocess-failed', {});
+      alert(`Successfully queued ${result.queued_count || failedCount} failed file(s) for reprocessing.`);
+      loadData(); // Reload the data
     } catch (error) {
       console.error('Failed to reprocess files:', error);
       alert('Failed to reprocess files. Please try again.');
@@ -620,19 +555,9 @@ export default function DataControlCenter() {
     try {
       setRerunningAnomalies(documentId);
 
-      const response = await fetch(`${API_BASE_URL}/anomalies/documents/${documentId}/detect`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        alert(`Anomaly detection completed successfully. Found ${result.anomalies_detected || 0} anomalies.`);
-        loadData(); // Reload the data to reflect new anomaly counts
-      } else {
-        const error = await response.json();
-        alert(`Failed to run anomaly detection: ${error.detail || 'Unknown error'}`);
-      }
+      const result = await apiClient.post<any>(`/anomalies/documents/${documentId}/detect`, {});
+      alert(`Anomaly detection completed successfully. Found ${result.anomalies_detected || 0} anomalies.`);
+      loadData(); // Reload the data to reflect new anomaly counts
     } catch (error) {
       console.error('Failed to run anomaly detection:', error);
       alert('Failed to run anomaly detection. Please try again.');
@@ -779,15 +704,7 @@ export default function DataControlCenter() {
   const loadValidationRules = async () => {
     try {
       setLoadingRules(true);
-      const response = await fetch(`${API_BASE_URL}/validations/rules/statistics`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load validation rules: ${response.statusText}`);
-      }
-      
-      const data: RuleStatisticsResponse = await response.json();
+      const data = await apiClient.get<RuleStatisticsResponse>('/validations/rules/statistics');
       setRuleStatistics(data.rules);
       setRuleSummary(data.summary);
     } catch (error) {
@@ -803,15 +720,7 @@ export default function DataControlCenter() {
   const loadValidationAnalytics = async () => {
     try {
       setLoadingAnalytics(true);
-      const response = await fetch(`${API_BASE_URL}/validations/analytics`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load validation analytics: ${response.statusText}`);
-      }
-      
-      const data: ValidationAnalyticsResponse = await response.json();
+      const data = await apiClient.get<ValidationAnalyticsResponse>('/validations/analytics');
       setRuleAnalytics(data);
     } catch (error) {
       console.error('Failed to load validation analytics:', error);
@@ -846,18 +755,7 @@ export default function DataControlCenter() {
   const loadRuleResults = async (ruleId: number) => {
     try {
       setRuleResults([]); // Clear previous results
-      const response = await fetch(`${API_BASE_URL}/validations/rules/${ruleId}/results?limit=20`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Failed to load rule results: ${response.status} ${response.statusText}`, errorText);
-        setRuleResults([]);
-        return;
-      }
-      
-      const data: RuleResultItem[] = await response.json();
+      const data = await apiClient.get<RuleResultItem[]>(`/validations/rules/${ruleId}/results`, { limit: 20 });
       // Ensure data is an array
       if (Array.isArray(data)) {
         setRuleResults(data);
@@ -1664,29 +1562,14 @@ export default function DataControlCenter() {
                 <TaskScheduler
                   onSchedule={async (task) => {
                     try {
-                      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-                      const response = await fetch(`${API_BASE_URL}/api/v1/tasks/scheduled`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                          task_type: task.task_type,
-                          schedule_type: task.schedule_type,
-                          scheduled_time: task.schedule_type === 'once' ? task.scheduled_time : null,
-                          cron_expression: task.schedule_type === 'recurring' ? task.cron_expression : null,
-                          parameters: task.parameters || {},
-                          task_name: `${task.task_type} - ${task.schedule_type}`,
-                        }),
+                      const result = await apiClient.post('/tasks/scheduled', {
+                        task_type: task.task_type,
+                        schedule_type: task.schedule_type,
+                        scheduled_time: task.schedule_type === 'once' ? task.scheduled_time : null,
+                        cron_expression: task.schedule_type === 'recurring' ? task.cron_expression : null,
+                        parameters: task.parameters || {},
+                        task_name: `${task.task_type} - ${task.schedule_type}`,
                       });
-
-                      if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.detail || 'Failed to schedule task');
-                      }
-
-                      const result = await response.json();
                       console.log('Task scheduled successfully:', result);
                       return Promise.resolve();
                     } catch (error: any) {
@@ -2445,4 +2328,3 @@ export default function DataControlCenter() {
     </div>
   );
 }
-

@@ -1,8 +1,4 @@
-/**
- * Issue Capture Service
- * 
- * Captures frontend errors and issues for the self-learning system.
- */
+import { apiClient } from '../lib/apiClient';
 
 interface CaptureIssueRequest {
   error_message: string;
@@ -16,12 +12,6 @@ interface CaptureIssueRequest {
 }
 
 class IssueCaptureService {
-  private apiBaseUrl: string;
-
-  constructor() {
-    this.apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
-  }
-
   /**
    * Capture a frontend error
    */
@@ -43,16 +33,8 @@ class IssueCaptureService {
         }
       };
 
-      const response = await fetch(`${this.apiBaseUrl}/self-learning/capture-issue`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify(request)
-      });
-
-      return response.ok;
+      await apiClient.post('/self-learning/capture-issue', request);
+      return true;
     } catch (e) {
       console.error('Failed to capture error:', e);
       return false;
@@ -84,16 +66,8 @@ class IssueCaptureService {
         }
       };
 
-      const response = await fetch(`${this.apiBaseUrl}/self-learning/capture-issue`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify(request)
-      });
-
-      return response.ok;
+      await apiClient.post('/self-learning/capture-issue', request);
+      return true;
     } catch (e) {
       console.error('Failed to capture API error:', e);
       return false;
@@ -121,16 +95,8 @@ class IssueCaptureService {
         }
       };
 
-      const response = await fetch(`${this.apiBaseUrl}/self-learning/capture-issue`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify(request)
-      });
-
-      return response.ok;
+      await apiClient.post('/self-learning/capture-issue', request);
+      return true;
     } catch (e) {
       console.error('Failed to capture UI issue:', e);
       return false;
@@ -151,31 +117,14 @@ class IssueCaptureService {
     }
   ): Promise<{
     warnings: string[];
-    auto_fixes: any[];
-    should_proceed: boolean;
-  }> {
+      auto_fixes: any[];
+      should_proceed: boolean;
+    }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/self-learning/preflight-check`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          operation,
-          ...params
-        })
+      return await apiClient.post('/self-learning/preflight-check', {
+        operation,
+        ...params
       });
-
-      if (response.ok) {
-        return await response.json();
-      }
-
-      return {
-        warnings: [],
-        auto_fixes: [],
-        should_proceed: true
-      };
     } catch (e) {
       console.error('Failed to get preflight warnings:', e);
       return {
@@ -214,4 +163,3 @@ if (typeof window !== 'undefined') {
 }
 
 export default issueCaptureService;
-

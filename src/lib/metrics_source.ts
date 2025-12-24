@@ -5,7 +5,7 @@
  * Used for PDF source navigation feature
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
+import { apiClient, ApiError } from './apiClient';
 
 export interface MetricSourceResponse {
   upload_id: number;
@@ -75,24 +75,12 @@ export async function getMetricSource(
       params.append('period_id', periodId.toString());
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/metrics/${propertyId}/source?${params.toString()}`,
-      {
-        credentials: 'include',
-      }
-    );
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        // Source not found - this is OK for calculated metrics
-        return null;
-      }
-      throw new Error(`Failed to get metric source: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    const data = await apiClient.get<MetricSourceResponse>(`/metrics/${propertyId}/source`, Object.fromEntries(params));
     return data;
   } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
     console.error('Error getting metric source:', error);
     return null;
   }
@@ -120,21 +108,10 @@ export async function getPDFViewerData(
       params.append('highlight_y1', highlightCoords.y1.toString());
     }
 
-    const url = `${API_BASE_URL}/pdf-viewer/${uploadId}${params.toString() ? `?${params.toString()}` : ''}`;
-    
-    const response = await fetch(url, {
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to get PDF viewer data: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    const data = await apiClient.get<PDFViewerResponse>(`/pdf-viewer/${uploadId}`, Object.fromEntries(params));
     return data;
   } catch (error) {
     console.error('Error getting PDF viewer data:', error);
     return null;
   }
 }
-

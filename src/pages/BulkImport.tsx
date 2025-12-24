@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import '../App.css'
 import { propertyService } from '../lib/property'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1'
+import { apiClient, ApiError } from '../lib/apiClient'
+import { API_CONFIG } from '../config/constants'
 
 interface FileWithMetadata {
   file: File
@@ -210,59 +210,12 @@ export default function BulkImport() {
         formData.append('files', fileWithMeta.file, fileWithMeta.file.name)
       })
 
-      console.log('Uploading to:', `${API_BASE_URL}/documents/bulk-upload`)
+      console.log('Uploading to:', `${API_CONFIG.BASE_URL}/api/v1/documents/bulk-upload`)
       console.log('Property code:', propertyCode)
       console.log('Year:', selectedYear)
       console.log('Files count:', files.length)
       
-      const response = await fetch(`${API_BASE_URL}/documents/bulk-upload`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-      })
-      
-      console.log('Response status:', response.status, response.statusText)
-      console.log('Response URL:', response.url)
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
-        
-        // Try to get detailed error from response
-        try {
-          const contentType = response.headers.get('content-type')
-          if (contentType && contentType.includes('application/json')) {
-            const errorData = await response.json()
-            errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage
-            if (typeof errorMessage === 'object') {
-              errorMessage = JSON.stringify(errorMessage, null, 2)
-            }
-          } else {
-            // Try to read as text for non-JSON errors
-            const textError = await response.text()
-            if (textError) {
-              errorMessage = textError.length > 200 ? textError.substring(0, 200) + '...' : textError
-            }
-          }
-        } catch (e) {
-          console.error('Failed to parse error response:', e)
-          // Keep the default error message
-        }
-        
-        // Provide helpful error messages for common status codes
-        if (response.status === 404) {
-          errorMessage = `Endpoint not found. Please ensure the backend is running and the endpoint /documents/bulk-upload is available. ${errorMessage}`
-        } else if (response.status === 400) {
-          errorMessage = `Bad request: ${errorMessage}. Please check your file selection and property/year settings.`
-        } else if (response.status === 500) {
-          errorMessage = `Server error: ${errorMessage}. Please check the backend logs for details.`
-        }
-        
-        setError(errorMessage)
-        setFiles(prev => prev.map(f => ({ ...f, status: 'error' as const, error: errorMessage })))
-        return
-      }
-
-      const data = await response.json()
+      const data = await apiClient.upload<any>('/documents/bulk-upload', formData)
       setResult(data)
       
       // Update file statuses based on results
@@ -294,7 +247,9 @@ export default function BulkImport() {
       }
     } catch (err: any) {
       console.error('Bulk upload failed:', err)
-      const errorMessage = err.message || 'Failed to upload files. Please check your connection and try again.'
+      const errorMessage = err instanceof ApiError
+        ? `${err.message}${err.status ? ` (status ${err.status})` : ''}`
+        : err?.message || 'Failed to upload files. Please check your connection and try again.'
       setError(errorMessage)
       setFiles(prev => prev.map(f => ({ ...f, status: 'error' as const, error: errorMessage })))
     } finally {
@@ -304,13 +259,8 @@ export default function BulkImport() {
 
   const fetchMonitoringData = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/monitoring-status`, {
-        credentials: 'include'
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setMonitoringData(data)
-      }
+      const data = await apiClient.get('/documents/monitoring-status')
+      setMonitoringData(data)
     } catch (err) {
       console.error('Failed to fetch monitoring data:', err)
     }

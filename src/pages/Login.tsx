@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import '../App.css'
-
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1'
+import { useAuth } from '../components/AuthContext'
+import { ApiError } from '../lib/apiClient'
 
 interface LoginProps {
   onLoginSuccess?: () => void
@@ -14,6 +14,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { login } = useAuth()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -21,32 +22,22 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     setError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(formData)
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem('auth_token', data.access_token)
-        if (onLoginSuccess) {
-          onLoginSuccess()
-        }
-      } else {
-        throw new Error('Login failed')
+      await login(formData)
+      if (onLoginSuccess) {
+        onLoginSuccess()
       }
     } catch (err: any) {
       console.error('Login error:', err)
-      // Check if it's a network error
-      if (err instanceof TypeError && err.message.includes('fetch')) {
-        setError('Network error or server unavailable. Please check if the backend server is running.')
-      } else if (err.message && err.message.includes('Network')) {
-        setError(err.message)
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setError('Invalid email or password')
+        } else if (err.category === 'network' || err.category === 'timeout') {
+          setError('Network error or server unavailable. Please check if the backend server is running.')
+        } else {
+          setError(err.message || 'Login failed')
+        }
       } else {
-        // Try to get error message from response
-        setError('Invalid email or password')
+        setError(err?.message || 'Invalid email or password')
       }
     } finally {
       setLoading(false)

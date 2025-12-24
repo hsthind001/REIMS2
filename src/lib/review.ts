@@ -49,6 +49,23 @@ export class ReviewService {
   }
 
   /**
+   * Correct a record with a full corrections payload
+   */
+  async correctRecordDetailed(
+    recordId: number,
+    tableName: string,
+    corrections: Record<string, any>,
+    notes?: string
+  ): Promise<void> {
+    return api.put<void>(`/review/${recordId}/correct`, {
+      table_name: tableName,
+      corrections,
+      notes,
+      recalculate_metrics: true,
+    });
+  }
+
+  /**
    * Bulk approve records
    */
   async bulkApprove(records: Array<{ id: number; table_name: string }>): Promise<void> {
@@ -63,22 +80,9 @@ export class ReviewService {
     document_type?: string;
     severity?: string;
   }): Promise<Blob> {
-    const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/review/export`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to export review items');
-    }
-
-    return response.blob();
+    return api.download('/review/export', params);
   }
 }
 
 // Export singleton
 export const reviewService = new ReviewService();
-
