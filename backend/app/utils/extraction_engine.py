@@ -248,6 +248,35 @@ class MultiEngineExtractor:
                     except (ValueError, IndexError):
                         continue
 
+            # PRIORITY 0: For mortgage statements, "LOAN INFORMATION As of Date" is the authoritative statement period
+            # This pattern is specific to mortgage statements and takes highest priority
+            # Example: "LOAN INFORMATION As of Date 1/25/2023" means the statement is for January 2023
+            # Note: Payment Due Date (e.g., "2/06/2023") is NOT the statement period
+            mortgage_as_of_date_patterns = [
+                r'LOAN\s+INFORMATION\s+As\s+of\s+Date\s+(\d{1,2})/(\d{1,2})/(\d{4})',  # Highest priority for mortgages
+                r'PAYMENT\s+INFORMATION\s+As\s+of\s+Date\s+(\d{1,2})/(\d{1,2})/(\d{4})',  # Alternative location
+            ]
+            
+            for pattern in mortgage_as_of_date_patterns:
+                match = re.search(pattern, sample_text, re.IGNORECASE)
+                if match:
+                    try:
+                        month = int(match.group(1))
+                        day = int(match.group(2))
+                        year = int(match.group(3))
+                        if 1 <= month <= 12 and 1 <= day <= 31 and 2020 <= year <= 2030:
+                            detected_month = month
+                            detected_year = year
+                            # High confidence for "LOAN INFORMATION As of Date" - this is the statement period
+                            return {
+                                "year": detected_year,
+                                "month": detected_month,
+                                "period_text": f"{detected_year}-{detected_month:02d}",
+                                "confidence": 100.0  # Very high confidence for this pattern
+                            }
+                    except (ValueError, IndexError):
+                        continue
+            
             # PRIORITY 1: Look for statement date patterns (mortgage statements, financial docs)
             # Patterns like "As of Date 2/21/2025" or "Statement Date: 12/31/2024"
             # Check for statement date even if we found a year (statement date is more reliable)

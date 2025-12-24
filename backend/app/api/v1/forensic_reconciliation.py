@@ -157,9 +157,12 @@ async def run_reconciliation(
     Execute reconciliation for a session
     
     Runs all matching engines and finds matches across all document types.
+    Returns partial results even if some matches fail to store.
     """
+    import logging
     from app.models.forensic_reconciliation_session import ForensicReconciliationSession
     
+    logger = logging.getLogger(__name__)
     service = ForensicReconciliationService(db)
     
     # Get session to check property and period
@@ -176,35 +179,101 @@ async def run_reconciliation(
     if request is None:
         request = RunReconciliationRequest()
     
-    result = service.find_all_matches(
-        session_id=session_id,
-        use_exact=request.use_exact,
-        use_fuzzy=request.use_fuzzy,
-        use_calculated=request.use_calculated,
-        use_inferred=request.use_inferred,
-        use_rules=request.use_rules
-    )
-    
-    if 'error' in result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=result['error']
+    try:
+        result = service.find_all_matches(
+            session_id=session_id,
+            use_exact=request.use_exact,
+            use_fuzzy=request.use_fuzzy,
+            use_calculated=request.use_calculated,
+            use_inferred=request.use_inferred,
+            use_rules=request.use_rules
         )
-    
-    # Add diagnostic information if no matches found
-    if result.get('summary', {}).get('total_matches', 0) == 0:
-        result['diagnostic'] = {
-            'message': 'No matches found. This may indicate:',
-            'possible_reasons': [
-                'No financial data extracted for this property/period',
-                'Documents uploaded but not yet processed/extracted',
-                'Account codes do not match expected patterns',
-                'Data exists but no cross-document relationships found'
-            ],
-            'suggestion': 'Check that documents have been uploaded and extracted for this property and period'
-        }
-    
-    return result
+        
+        # Check for errors but don't fail if we have partial results
+        if 'error' in result:
+            # If we have matches stored, return them with error info
+            if result.get('summary', {}).get('total_matches', 0) > 0:
+                result['warning'] = result.pop('error')
+                logger.warning(f"Reconciliation completed with warnings: {result['warning']}")
+            else:
+                # No matches found, return error
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=result['error']
+                )
+        
+        # Add diagnostic information if no matches found
+        if result.get('summary', {}).get('total_matches', 0) == 0:
+            # Get diagnostics from diagnostics service
+            try:
+                diagnostics = service.get_diagnostics(session.property_id, session.period_id)
+                result['diagnostic'] = {
+                    'message': 'No matches found. This may indicate:',
+                    'possible_reasons': [
+                        'No financial data extracted for this property/period',
+                        'Documents uploaded but not yet processed/extracted',
+                        'Account codes do not match expected patterns',
+                        'Data exists but no cross-document relationships found'
+                    ],
+                    'suggestion': 'Check that documents have been uploaded and extracted for this property and period',
+                    'data_availability': diagnostics.get('data_availability', {}),
+                    'missing_accounts': diagnostics.get('missing_accounts', {}),
+                    'recommendations': diagnostics.get('recommendations', [])
+                }
+            except Exception as diag_error:
+                logger.warning(f"Failed to get diagnostics: {diag_error}")
+                result['diagnostic'] = {
+                    'message': 'No matches found',
+                    'suggestion': 'Check that documents have been uploaded and extracted'
+                }
+        else:
+            # Matches found - add success diagnostic
+            result['diagnostic'] = {
+                'message': f"Successfully found {result.get('summary', {}).get('total_matches', 0)} matches",
+                'matches_stored': result.get('summary', {}).get('total_matches', 0)
+            }
+            # Include failure info if available
+            if 'diagnostic' in result and 'matches_failed' in result['diagnostic']:
+                result['diagnostic']['matches_failed'] = result['diagnostic'].get('matches_failed', 0)
+        
+        return result
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error during reconciliation: {e}", exc_info=True)
+        # Try to return partial results if session exists
+        try:
+            # Check if any matches were stored before the error
+            from app.models.forensic_match import ForensicMatch
+            stored_count = db.query(ForensicMatch).filter(
+                ForensicMatch.session_id == session_id
+            ).count()
+            
+            if stored_count > 0:
+                # Return partial success
+                return {
+                    'session_id': session_id,
+                    'error': f'Reconciliation encountered an error: {str(e)}',
+                    'warning': f'Some matches ({stored_count}) were stored before the error occurred',
+                    'summary': {
+                        'total_matches': stored_count,
+                        'partial_success': True
+                    },
+                    'diagnostic': {
+                        'message': 'Reconciliation encountered an error but some matches were stored',
+                        'error': str(e)
+                    }
+                }
+        except Exception:
+            pass
+        
+        # No partial results, return error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to run reconciliation: {str(e)}"
+        )
 
 
 @router.get("/sessions/{session_id}/matches")
@@ -524,6 +593,134 @@ async def get_health_score_trend(
         "property_id": property_id,
         "trend": trend,
         "periods_included": len(trend)
+    }
+
+
+# ==================== SELF-LEARNING ENDPOINTS ====================
+
+@router.get("/discover-accounts/{property_id}/{period_id}")
+async def discover_accounts(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: int = Path(..., description="Period ID"),
+    document_type: Optional[str] = Query(None, description="Filter by document type"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Discover account codes from financial data"""
+    from app.services.account_code_discovery_service import AccountCodeDiscoveryService
+    
+    service = AccountCodeDiscoveryService(db)
+    result = service.discover_all_account_codes(
+        property_id=property_id,
+        period_id=period_id,
+        document_type=document_type
+    )
+    
+    return result
+
+
+@router.get("/diagnostics/{property_id}/{period_id}")
+async def get_diagnostics(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: int = Path(..., description="Period ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get comprehensive diagnostics for reconciliation"""
+    service = ForensicReconciliationService(db)
+    return service.get_diagnostics(property_id, period_id)
+
+
+@router.post("/learn-from-match")
+async def learn_from_match(
+    match_id: int = Body(..., description="Match ID to learn from"),
+    feedback: str = Body(..., description="Feedback on the match"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Learn from a match with manual feedback"""
+    from app.services.match_learning_service import MatchLearningService
+    from app.models.forensic_match import ForensicMatch
+    
+    match = db.query(ForensicMatch).filter(ForensicMatch.id == match_id).first()
+    if not match:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Match {match_id} not found"
+        )
+    
+    learning_service = MatchLearningService(db)
+    
+    # Analyze this specific match
+    result = learning_service.analyze_successful_matches()
+    
+    return {
+        "message": "Learning from match completed",
+        "match_id": match_id,
+        "patterns_created": result.get('patterns_created', 0),
+        "synonyms_created": result.get('synonyms_created', 0)
+    }
+
+
+@router.get("/learned-rules")
+async def get_learned_rules(
+    source_document_type: Optional[str] = Query(None, description="Filter by source document type"),
+    target_document_type: Optional[str] = Query(None, description="Filter by target document type"),
+    min_success_rate: float = Query(70.0, description="Minimum success rate"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all learned matching rules"""
+    from app.services.match_learning_service import MatchLearningService
+    
+    learning_service = MatchLearningService(db)
+    patterns = learning_service.get_learned_patterns(
+        source_document_type=source_document_type,
+        target_document_type=target_document_type,
+        min_success_rate=min_success_rate
+    )
+    
+    return {
+        "total": len(patterns),
+        "patterns": [
+            {
+                "id": p.id,
+                "pattern_name": p.pattern_name,
+                "source_document_type": p.source_document_type,
+                "target_document_type": p.target_document_type,
+                "source_account_code": p.source_account_code,
+                "target_account_code": p.target_account_code,
+                "relationship_type": p.relationship_type,
+                "success_rate": float(p.success_rate),
+                "average_confidence": float(p.average_confidence) if p.average_confidence else 0.0,
+                "match_count": p.match_count
+            }
+            for p in patterns
+        ]
+    }
+
+
+@router.post("/suggest-rules")
+async def suggest_rules(
+    property_id: Optional[int] = Body(None, description="Property ID"),
+    period_id: Optional[int] = Body(None, description="Period ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ML suggests new matching rules based on data"""
+    from app.services.relationship_discovery_service import RelationshipDiscoveryService
+    
+    discovery_service = RelationshipDiscoveryService(db)
+    result = discovery_service.discover_relationships(
+        property_id=property_id,
+        period_id=period_id
+    )
+    
+    return {
+        "patterns_discovered": result.get('patterns_discovered', 0),
+        "correlations_discovered": result.get('correlations_discovered', 0),
+        "rules_suggested": result.get('rules_suggested', 0),
+        "suggested_rules": result.get('suggested_rules', [])
     }
 
 

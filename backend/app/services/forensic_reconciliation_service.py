@@ -34,6 +34,10 @@ from app.services.matching_engines import (
     MatchResult
 )
 from app.services.forensic_matching_rules import ForensicMatchingRules
+from app.services.adaptive_matching_service import AdaptiveMatchingService
+from app.services.match_learning_service import MatchLearningService
+from app.services.reconciliation_diagnostics_service import ReconciliationDiagnosticsService
+from app.services.relationship_discovery_service import RelationshipDiscoveryService
 from app.services.exception_tiering_service import ExceptionTieringService
 
 logger = logging.getLogger(__name__)
@@ -54,7 +58,10 @@ class ForensicReconciliationService:
         self.fuzzy_engine = FuzzyMatchEngine()
         self.calculated_engine = CalculatedMatchEngine()
         self.inferred_engine = InferredMatchEngine()
-        self.matching_rules = ForensicMatchingRules(db)
+        self.matching_rules = AdaptiveMatchingService(db)  # Use adaptive matching
+        self.learning_service = MatchLearningService(db)
+        self.diagnostics_service = ReconciliationDiagnosticsService(db)
+        self.relationship_service = RelationshipDiscoveryService(db)
         self.tiering_service = ExceptionTieringService(db)
     
     def start_reconciliation_session(
@@ -182,84 +189,213 @@ class ForensicReconciliationService:
             if prior_period:
                 prior_period_id = prior_period.id
         
-        # 1. Execute cross-document matching rules
+        # 1. Execute cross-document matching rules (now uses adaptive matching)
         if use_rules:
             # Log available data for debugging
             logger.info(f"Checking available data for property {property_id}, period {period_id}")
             self._log_available_data(property_id, period_id)
             
+            # Use adaptive matching which discovers codes and uses learned patterns
             rule_matches = self.matching_rules.find_all_matches(
                 property_id=property_id,
                 period_id=period_id,
                 prior_period_id=prior_period_id
             )
-            logger.info(f"Found {len(rule_matches)} rule-based matches")
+            logger.info(f"Found {len(rule_matches)} rule-based matches (adaptive + hard-coded)")
             all_matches.extend(rule_matches)
+            
+            # Learn from matches after reconciliation completes
+            # This will be done in a background task
         
         # 2. Execute matching engines for document-to-document comparisons
         # Note: Most cross-document matching is handled by rules above
         # Engines are primarily for same-document-type matching or specific use cases
         # For now, we'll focus on rules-based matching which covers most scenarios
         
-        # Store matches in database
+        # Store matches in database with robust error handling
         stored_matches = []
+        failed_matches = []
+        
         for match in all_matches:
-            # Determine source and target document types from records
-            source_doc_type = self._get_document_type_from_record_id(match.source_record_id, property_id, period_id)
-            target_doc_type = self._get_document_type_from_record_id(match.target_record_id, property_id, period_id)
-            
-            # Get source and target record details for storage
-            source_record_details = self._get_record_details(match.source_record_id, source_doc_type)
-            target_record_details = self._get_record_details(match.target_record_id, target_doc_type)
-            
-            # Convert MatchResult to database record
-            match_record = ForensicMatch(
-                session_id=session_id,
-                source_document_type=source_doc_type,
-                source_table_name=self._get_table_name(source_doc_type),
-                source_record_id=match.source_record_id,
-                source_account_code=source_record_details.get('account_code'),
-                source_account_name=source_record_details.get('account_name'),
-                source_amount=source_record_details.get('amount'),
-                source_field_name=source_record_details.get('field_name'),
-                target_document_type=target_doc_type,
-                target_table_name=self._get_table_name(target_doc_type),
-                target_record_id=match.target_record_id,
-                target_account_code=target_record_details.get('account_code'),
-                target_account_name=target_record_details.get('account_name'),
-                target_amount=target_record_details.get('amount'),
-                target_field_name=target_record_details.get('field_name'),
-                match_type=match.match_type,
-                confidence_score=Decimal(str(match.confidence_score)),
-                amount_difference=match.amount_difference,
-                amount_difference_percent=Decimal(str(match.amount_difference_percent)) if match.amount_difference_percent else None,
-                match_algorithm=match.match_algorithm,
-                relationship_type=match.relationship_type,
-                relationship_formula=match.relationship_formula,
-                status='pending'
-            )
-            
-            self.db.add(match_record)
-            stored_matches.append(match_record)
-        
-        self.db.commit()
-        
-        # Apply exception tiering to all matches
-        tiering_results = []
-        for match in stored_matches:
             try:
-                tiering_result = self.tiering_service.classify_and_apply_tiering(
-                    match,
-                    auto_resolve=True  # Auto-resolve tier 0 matches
+                # Determine source and target document types from records
+                source_doc_type = self._get_document_type_from_record_id(match.source_record_id, property_id, period_id)
+                target_doc_type = self._get_document_type_from_record_id(match.target_record_id, property_id, period_id)
+                
+                # Skip if document types are unknown (can't store without knowing document types)
+                if source_doc_type == 'unknown' or target_doc_type == 'unknown':
+                    logger.warning(
+                        f"Skipping match: unknown document type (source_id={match.source_record_id}, "
+                        f"target_id={match.target_record_id}, source_type={source_doc_type}, target_type={target_doc_type})"
+                    )
+                    failed_matches.append({
+                        'match': match,
+                        'reason': f'Unknown document type (source: {source_doc_type}, target: {target_doc_type})'
+                    })
+                    continue
+                
+                # Get source and target record details for storage (with fallback)
+                source_record_details = self._get_record_details(match.source_record_id, source_doc_type) or {}
+                target_record_details = self._get_record_details(match.target_record_id, target_doc_type) or {}
+                
+                # Convert MatchResult to database record (use minimal data if details unavailable)
+                match_record = ForensicMatch(
+                    session_id=session_id,
+                    source_document_type=source_doc_type,
+                    source_table_name=self._get_table_name(source_doc_type),
+                    source_record_id=match.source_record_id,
+                    source_account_code=source_record_details.get('account_code'),
+                    source_account_name=source_record_details.get('account_name') or 'Unknown',
+                    source_amount=source_record_details.get('amount'),
+                    source_field_name=source_record_details.get('field_name'),
+                    target_document_type=target_doc_type,
+                    target_table_name=self._get_table_name(target_doc_type),
+                    target_record_id=match.target_record_id,
+                    target_account_code=target_record_details.get('account_code'),
+                    target_account_name=target_record_details.get('account_name') or 'Unknown',
+                    target_amount=target_record_details.get('amount'),
+                    target_field_name=target_record_details.get('field_name'),
+                    match_type=match.match_type,
+                    confidence_score=Decimal(str(match.confidence_score)),
+                    amount_difference=match.amount_difference,
+                    amount_difference_percent=Decimal(str(match.amount_difference_percent)) if match.amount_difference_percent else None,
+                    match_algorithm=match.match_algorithm or 'adaptive',
+                    relationship_type=match.relationship_type,
+                    relationship_formula=match.relationship_formula,
+                    status='pending'
                 )
-                tiering_results.append(tiering_result)
-                # Refresh match to get updated status
-                self.db.refresh(match)
+                
+                self.db.add(match_record)
+                stored_matches.append(match_record)
+                
             except Exception as e:
-                logger.error(f"Error applying tiering to match {match.id}: {e}")
-                # Continue with other matches even if one fails
+                logger.warning(
+                    f"Failed to store match (source_id={match.source_record_id}, target_id={match.target_record_id}): {e}",
+                    exc_info=True
+                )
+                failed_matches.append({
+                    'match': match,
+                    'reason': str(e)
+                })
+                # Continue processing other matches even if one fails
+                continue
         
-        # Group matches by type
+        # Commit all successfully stored matches
+        if stored_matches:
+            try:
+                self.db.commit()
+                logger.info(f"Successfully stored {len(stored_matches)} matches for session {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to commit matches: {e}", exc_info=True)
+                self.db.rollback()
+                # Try to store matches individually if batch commit fails
+                individual_stored = []
+                for match_record in stored_matches:
+                    try:
+                        self.db.add(match_record)
+                        self.db.commit()
+                        individual_stored.append(match_record)
+                    except Exception as commit_error:
+                        logger.error(f"Failed to commit individual match: {commit_error}")
+                        self.db.rollback()
+                stored_matches = individual_stored
+        
+        if failed_matches:
+            logger.warning(f"Failed to store {len(failed_matches)} matches out of {len(all_matches)} total matches")
+        
+        # Apply exception tiering to all matches (with proper transaction isolation)
+        # Tiering is optional - if it fails, we continue without it
+        tiering_results = []
+        tiering_failures = []
+        
+        try:
+            # Clear any stale object state before tiering
+            self.db.expire_all()
+            
+            for match in stored_matches:
+                try:
+                    # Ensure we're in a clean transaction state - rollback any failed transaction first
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Ignore rollback errors if already clean
+                    
+                    # Get fresh match object from database to avoid stale state
+                    fresh_match = self.db.query(ForensicMatch).filter(
+                        ForensicMatch.id == match.id
+                    ).first()
+                    
+                    if not fresh_match:
+                        logger.warning(f"Match {match.id} not found in database, skipping tiering")
+                        continue
+                    
+                    # Now apply tiering in a fresh transaction
+                    try:
+                        tiering_result = self.tiering_service.classify_and_apply_tiering(
+                            fresh_match,
+                            auto_resolve=True  # Auto-resolve tier 0 matches
+                        )
+                        tiering_results.append(tiering_result)
+                        # Commit tiering changes for this match
+                        self.db.commit()
+                    except Exception as tiering_error:
+                        logger.error(f"Error applying tiering to match {match.id}: {tiering_error}", exc_info=True)
+                        # Rollback this match's tiering attempt
+                        try:
+                            self.db.rollback()
+                        except Exception:
+                            pass
+                        tiering_failures.append({'match_id': match.id, 'error': str(tiering_error)})
+                        # Continue with other matches even if one fails
+                        continue
+                except Exception as e:
+                    logger.error(f"Error in tiering loop for match {match.id}: {e}", exc_info=True)
+                    # Rollback and continue
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass
+                    tiering_failures.append({'match_id': match.id, 'error': str(e)})
+                    # Continue with other matches even if one fails
+                    continue
+        except Exception as e:
+            logger.error(f"Critical error in tiering process: {e}", exc_info=True)
+            # Rollback everything and continue - tiering is optional
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            # Don't fail the entire reconciliation if tiering fails
+        
+        # Re-query all matches from database to get fresh state (after tiering)
+        # This ensures we have the latest data and avoids stale transaction state
+        try:
+            # Clear any stale object state
+            self.db.expire_all()
+            
+            # Ensure clean transaction
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            
+            # Re-query all matches for this session
+            fresh_matches = self.db.query(ForensicMatch).filter(
+                ForensicMatch.session_id == session_id
+            ).all()
+            
+            # Update stored_matches with fresh data
+            stored_matches = fresh_matches
+            logger.info(f"Re-queried {len(stored_matches)} matches after tiering")
+        except Exception as e:
+            logger.warning(f"Failed to re-query matches after tiering: {e}", exc_info=True)
+            # Use stored_matches as-is if re-query fails
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+        
+        # Group matches by type (using fresh data)
         matches_by_type = {
             'exact': [m for m in stored_matches if m.match_type == 'exact'],
             'fuzzy': [m for m in stored_matches if m.match_type == 'fuzzy'],
@@ -267,7 +403,7 @@ class ForensicReconciliationService:
             'inferred': [m for m in stored_matches if m.match_type == 'inferred']
         }
         
-        # Calculate summary with tiering breakdown
+        # Calculate summary with tiering breakdown (using fresh data)
         tier_breakdown = {
             'tier_0_auto_close': len([m for m in stored_matches if m.exception_tier == 'tier_0_auto_close']),
             'tier_1_auto_suggest': len([m for m in stored_matches if m.exception_tier == 'tier_1_auto_suggest']),
@@ -287,20 +423,97 @@ class ForensicReconciliationService:
             'tier_breakdown': tier_breakdown
         }
         
-        # Update session summary
-        session.summary = summary
-        self.db.commit()
+        # Update session summary (with transaction safety)
+        try:
+            # Ensure clean transaction state before updating session
+            try:
+                self.db.rollback()  # Rollback any failed transaction
+            except Exception:
+                pass
+            
+            # Re-query session to get fresh state (don't use refresh on potentially stale object)
+            session = self.db.query(ForensicReconciliationSession).filter(
+                ForensicReconciliationSession.id == session_id
+            ).first()
+            
+            if session:
+                session.summary = summary
+                self.db.commit()
+            else:
+                logger.error(f"Session {session_id} not found when updating summary")
+        except Exception as e:
+            logger.error(f"Failed to update session summary: {e}", exc_info=True)
+            # Rollback and try again
+            try:
+                self.db.rollback()
+                # Re-query session to get fresh state
+                session = self.db.query(ForensicReconciliationSession).filter(
+                    ForensicReconciliationSession.id == session_id
+                ).first()
+                if session:
+                    session.summary = summary
+                    self.db.commit()
+            except Exception as retry_error:
+                logger.error(f"Failed to update session summary on retry: {retry_error}")
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+                # Continue anyway - matches are stored
         
-        logger.info(f"Found {len(stored_matches)} matches for session {session_id}")
+        logger.info(f"Found {len(stored_matches)} matches for session {session_id} (failed: {len(failed_matches)}, tiering failures: {len(tiering_failures)})")
         
-        return {
-            'session_id': session_id,
-            'matches': [self._match_to_dict(m) for m in stored_matches],
-            'matches_by_type': {
-                k: [self._match_to_dict(m) for m in v] for k, v in matches_by_type.items()
-            },
-            'summary': summary
-        }
+        # Build response with diagnostic information
+        # Use fresh matches from database (already re-queried above)
+        try:
+            # Final safety check - ensure we have clean transaction state
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            
+            # Build response from fresh match objects
+            response = {
+                'session_id': session_id,
+                'matches': [self._match_to_dict(m) for m in stored_matches],
+                'matches_by_type': {
+                    k: [self._match_to_dict(m) for m in v] for k, v in matches_by_type.items()
+                },
+                'summary': summary
+            }
+            
+            # Add diagnostic information if there were failures
+            diagnostic_info = {}
+            if failed_matches:
+                diagnostic_info['matches_failed'] = len(failed_matches)
+                diagnostic_info['failure_reasons'] = [f['reason'] for f in failed_matches[:5]]  # First 5 reasons
+            
+            if tiering_failures:
+                diagnostic_info['tiering_failures'] = len(tiering_failures)
+                diagnostic_info['tiering_warning'] = f"Tiering failed for {len(tiering_failures)} matches but matches were still stored"
+            
+            if diagnostic_info:
+                diagnostic_info['total_matches_found'] = len(all_matches)
+                diagnostic_info['matches_stored'] = len(stored_matches)
+                response['diagnostic'] = diagnostic_info
+            
+            return response
+        except Exception as e:
+            logger.error(f"Error building response: {e}", exc_info=True)
+            # Even if response building fails, return what we have
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            
+            # Return minimal response with matches
+            return {
+                'session_id': session_id,
+                'matches': [self._match_to_dict(m) for m in stored_matches] if stored_matches else [],
+                'matches_by_type': {},
+                'summary': summary,
+                'warning': f'Error building full response: {str(e)}'
+            }
     
     def validate_matches(
         self,
@@ -772,20 +985,71 @@ class ForensicReconciliationService:
         period_id: int
     ) -> str:
         """Determine document type from record ID by checking all tables"""
-        if record_id == 0:
+        if record_id is None or record_id == 0:
             return 'unknown'
         
-        # Check each document type
-        if self.db.query(BalanceSheetData).filter(BalanceSheetData.id == record_id).first():
-            return 'balance_sheet'
-        if self.db.query(IncomeStatementData).filter(IncomeStatementData.id == record_id).first():
-            return 'income_statement'
-        if self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first():
-            return 'cash_flow'
-        if self.db.query(RentRollData).filter(RentRollData.id == record_id).first():
-            return 'rent_roll'
-        if self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first():
-            return 'mortgage_statement'
+        try:
+            # Check each document type (with property/period filters for efficiency)
+            if self.db.query(BalanceSheetData).filter(
+                and_(
+                    BalanceSheetData.id == record_id,
+                    BalanceSheetData.property_id == property_id,
+                    BalanceSheetData.period_id == period_id
+                )
+            ).first():
+                return 'balance_sheet'
+            
+            if self.db.query(IncomeStatementData).filter(
+                and_(
+                    IncomeStatementData.id == record_id,
+                    IncomeStatementData.property_id == property_id,
+                    IncomeStatementData.period_id == period_id
+                )
+            ).first():
+                return 'income_statement'
+            
+            if self.db.query(CashFlowData).filter(
+                and_(
+                    CashFlowData.id == record_id,
+                    CashFlowData.property_id == property_id,
+                    CashFlowData.period_id == period_id
+                )
+            ).first():
+                return 'cash_flow'
+            
+            if self.db.query(RentRollData).filter(
+                and_(
+                    RentRollData.id == record_id,
+                    RentRollData.property_id == property_id,
+                    RentRollData.period_id == period_id
+                )
+            ).first():
+                return 'rent_roll'
+            
+            if self.db.query(MortgageStatementData).filter(
+                and_(
+                    MortgageStatementData.id == record_id,
+                    MortgageStatementData.property_id == property_id,
+                    MortgageStatementData.period_id == period_id
+                )
+            ).first():
+                return 'mortgage_statement'
+            
+            # Fallback: check without property/period filters (slower but more reliable)
+            if self.db.query(BalanceSheetData).filter(BalanceSheetData.id == record_id).first():
+                return 'balance_sheet'
+            if self.db.query(IncomeStatementData).filter(IncomeStatementData.id == record_id).first():
+                return 'income_statement'
+            if self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first():
+                return 'cash_flow'
+            if self.db.query(RentRollData).filter(RentRollData.id == record_id).first():
+                return 'rent_roll'
+            if self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first():
+                return 'mortgage_statement'
+            
+        except Exception as e:
+            logger.warning(f"Error determining document type for record {record_id}: {e}")
+            return 'unknown'
         
         return 'unknown'
     
@@ -822,54 +1086,58 @@ class ForensicReconciliationService:
         document_type: str
     ) -> Dict[str, Any]:
         """Get full record details including account code, name, and amount"""
-        if record_id == 0:
+        if record_id is None or record_id == 0:
             return {}
         
-        if document_type == 'balance_sheet':
-            record = self.db.query(BalanceSheetData).filter(BalanceSheetData.id == record_id).first()
-            if record:
-                return {
-                    'account_code': record.account_code,
-                    'account_name': record.account_name,
-                    'amount': record.amount,
-                    'field_name': 'amount'
-                }
-        elif document_type == 'income_statement':
-            record = self.db.query(IncomeStatementData).filter(IncomeStatementData.id == record_id).first()
-            if record:
-                return {
-                    'account_code': record.account_code,
-                    'account_name': record.account_name,
-                    'amount': record.period_amount,
-                    'field_name': 'period_amount'
-                }
-        elif document_type == 'cash_flow':
-            record = self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first()
-            if record:
-                return {
-                    'account_code': record.account_code,
-                    'account_name': record.account_name,
-                    'amount': record.period_amount,
-                    'field_name': 'period_amount'
-                }
-        elif document_type == 'rent_roll':
-            record = self.db.query(RentRollData).filter(RentRollData.id == record_id).first()
-            if record:
-                return {
-                    'account_code': None,
-                    'account_name': record.tenant_name,
-                    'amount': record.annual_rent,
-                    'field_name': 'annual_rent'
-                }
-        elif document_type == 'mortgage_statement':
-            record = self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first()
-            if record:
-                return {
-                    'account_code': record.loan_number,
-                    'account_name': f"Loan {record.loan_number}",
-                    'amount': record.principal_balance,
-                    'field_name': 'principal_balance'
-                }
+        try:
+            if document_type == 'balance_sheet':
+                record = self.db.query(BalanceSheetData).filter(BalanceSheetData.id == record_id).first()
+                if record:
+                    return {
+                        'account_code': record.account_code,
+                        'account_name': record.account_name,
+                        'amount': record.amount,
+                        'field_name': 'amount'
+                    }
+            elif document_type == 'income_statement':
+                record = self.db.query(IncomeStatementData).filter(IncomeStatementData.id == record_id).first()
+                if record:
+                    return {
+                        'account_code': record.account_code,
+                        'account_name': record.account_name,
+                        'amount': record.period_amount,
+                        'field_name': 'period_amount'
+                    }
+            elif document_type == 'cash_flow':
+                record = self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first()
+                if record:
+                    return {
+                        'account_code': record.account_code,
+                        'account_name': record.account_name,
+                        'amount': record.period_amount,
+                        'field_name': 'period_amount'
+                    }
+            elif document_type == 'rent_roll':
+                record = self.db.query(RentRollData).filter(RentRollData.id == record_id).first()
+                if record:
+                    return {
+                        'account_code': None,
+                        'account_name': record.tenant_name or 'Unknown Tenant',
+                        'amount': record.annual_rent or 0,
+                        'field_name': 'annual_rent'
+                    }
+            elif document_type == 'mortgage_statement':
+                record = self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first()
+                if record:
+                    return {
+                        'account_code': record.loan_number,
+                        'account_name': f"Loan {record.loan_number}",
+                        'amount': record.principal_balance or 0,
+                        'field_name': 'principal_balance'
+                    }
+        except Exception as e:
+            logger.warning(f"Error getting record details for {document_type} record {record_id}: {e}")
+            return {}
         
         return {}
     
@@ -905,9 +1173,67 @@ class ForensicReconciliationService:
         """
         Check what financial data is available for reconciliation
         
+        Enhanced with diagnostics service for better insights.
+        
         Returns:
             Dict with data availability information
         """
+        # Use diagnostics service for enhanced checking
+        try:
+            diagnostics = self.diagnostics_service.get_diagnostics(property_id, period_id)
+            availability = diagnostics.get('data_availability', {})
+            
+            # Return in expected format
+            return {
+                'document_uploads': {
+                    'balance_sheet': availability.get('balance_sheet', {}).get('has_data', False),
+                    'income_statement': availability.get('income_statement', {}).get('has_data', False),
+                    'cash_flow': availability.get('cash_flow', {}).get('has_data', False),
+                    'rent_roll': availability.get('rent_roll', {}).get('has_data', False),
+                    'mortgage_statement': availability.get('mortgage_statement', {}).get('has_data', False)
+                },
+                'extracted_data': {
+                    'balance_sheet': {
+                        'count': availability.get('balance_sheet', {}).get('record_count', 0),
+                        'has_data': availability.get('balance_sheet', {}).get('has_data', False)
+                    },
+                    'income_statement': {
+                        'count': availability.get('income_statement', {}).get('record_count', 0),
+                        'has_data': availability.get('income_statement', {}).get('has_data', False)
+                    },
+                    'cash_flow': {
+                        'count': availability.get('cash_flow', {}).get('record_count', 0),
+                        'has_data': availability.get('cash_flow', {}).get('has_data', False)
+                    },
+                    'rent_roll': {
+                        'count': availability.get('rent_roll', {}).get('record_count', 0),
+                        'has_data': availability.get('rent_roll', {}).get('has_data', False)
+                    },
+                    'mortgage_statement': {
+                        'count': availability.get('mortgage_statement', {}).get('record_count', 0),
+                        'has_data': availability.get('mortgage_statement', {}).get('has_data', False)
+                    }
+                },
+                'key_accounts': {},  # Will be populated by diagnostics
+                'total_records': sum([
+                    availability.get('balance_sheet', {}).get('record_count', 0),
+                    availability.get('income_statement', {}).get('record_count', 0),
+                    availability.get('cash_flow', {}).get('record_count', 0),
+                    availability.get('rent_roll', {}).get('record_count', 0),
+                    availability.get('mortgage_statement', {}).get('record_count', 0)
+                ]),
+                'can_reconcile': any([
+                    availability.get('balance_sheet', {}).get('has_data', False),
+                    availability.get('income_statement', {}).get('has_data', False),
+                    availability.get('cash_flow', {}).get('has_data', False)
+                ]),
+                'recommendations': diagnostics.get('recommendations', [])
+            }
+        except Exception as e:
+            logger.error(f"Error using diagnostics service, falling back to legacy method: {e}")
+            # Fall back to legacy method
+        
+        # Legacy method (fallback)
         # Check document uploads
         document_types = ['balance_sheet', 'income_statement', 'cash_flow', 'rent_roll', 'mortgage_statement']
         document_uploads = {}
@@ -994,6 +1320,15 @@ class ForensicReconciliationService:
             'can_reconcile': (bs_count > 0 or is_count > 0 or cf_count > 0 or rr_count > 0 or ms_count > 0),
             'recommendations': self._get_recommendations(bs_count, is_count, cf_count, rr_count, ms_count, key_accounts)
         }
+    
+    def get_diagnostics(self, property_id: int, period_id: int) -> Dict[str, Any]:
+        """
+        Get comprehensive diagnostics for reconciliation
+        
+        Returns:
+            Dict with diagnostic information
+        """
+        return self.diagnostics_service.get_diagnostics(property_id, period_id)
     
     def _get_recommendations(
         self,

@@ -94,6 +94,15 @@ from app.models.issue_knowledge_base import IssueKnowledgeBase
 from app.models.issue_capture import IssueCapture
 from app.models.prevention_rule import PreventionRule
 
+# Self-learning forensic reconciliation models
+from app.models.discovered_account_code import DiscoveredAccountCode
+from app.models.account_code_pattern import AccountCodePattern
+from app.models.account_semantic_mapping import AccountSemanticMapping
+from app.models.learned_match_pattern import LearnedMatchPattern
+from app.models.account_code_synonym import AccountCodeSynonym
+from app.models.match_confidence_model import MatchConfidenceModel
+from app.models.reconciliation_learning_log import ReconciliationLearningLog
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -189,4 +198,12 @@ __all__ = [
     "IssueKnowledgeBase",
     "IssueCapture",
     "PreventionRule",
+    # Self-learning forensic reconciliation
+    "DiscoveredAccountCode",
+    "AccountCodePattern",
+    "AccountSemanticMapping",
+    "LearnedMatchPattern",
+    "AccountCodeSynonym",
+    "MatchConfidenceModel",
+    "ReconciliationLearningLog",
 ]

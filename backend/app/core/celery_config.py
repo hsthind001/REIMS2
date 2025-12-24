@@ -74,6 +74,28 @@ celery_app.conf.beat_schedule = {
             'expires': 3600,  # Task expires after 1 hour if not picked up
         }
     },
+    # Self-Learning Forensic Reconciliation Tasks
+    'analyze-reconciliation-patterns': {
+        'task': 'app.tasks.learning_tasks.analyze_reconciliation_patterns',
+        'schedule': crontab(hour='*/6', minute=0),  # Every 6 hours
+        'options': {
+            'expires': 3600,  # Task expires after 1 hour if not picked up
+        }
+    },
+    'update-matching-rules': {
+        'task': 'app.tasks.learning_tasks.update_matching_rules',
+        'schedule': crontab(hour='*/12', minute=0),  # Every 12 hours
+        'options': {
+            'expires': 1800,  # Task expires after 30 minutes if not picked up
+        }
+    },
+    'train-ml-models': {
+        'task': 'app.tasks.learning_tasks.train_ml_models',
+        'schedule': crontab(hour=4, minute=0),  # 4:00 AM UTC daily
+        'options': {
+            'expires': 7200,  # Task expires after 2 hours if not picked up
+        }
+    },
 }
 
 # Task routing (optional - for multiple queues)

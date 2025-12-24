@@ -6,7 +6,8 @@ DELETE FROM extraction_templates WHERE template_name IN (
     'standard_balance_sheet',
     'standard_income_statement',
     'standard_cash_flow',
-    'standard_rent_roll'
+    'standard_rent_roll',
+    'standard_mortgage_statement'
 );
 
 -- 1. BALANCE SHEET TEMPLATE

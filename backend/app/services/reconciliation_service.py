@@ -22,6 +22,7 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
+from app.models.mortgage_statement_data import MortgageStatementData
 from app.utils.pdf_comparator import (
     compare_amounts,
     detect_missing_accounts,
@@ -214,6 +215,8 @@ class ReconciliationService:
             return self._get_cash_flow_pdf_data(property_id, period_id)
         elif document_type == 'rent_roll':
             return self._get_rent_roll_pdf_data(property_id, period_id)
+        elif document_type == 'mortgage_statement':
+            return self._get_mortgage_statement_pdf_data(property_id, period_id)
         else:
             return {}
     
@@ -346,6 +349,69 @@ class ReconciliationService:
                 # Metadata
                 'extraction_confidence': float(r.extraction_confidence) if r.extraction_confidence else None,
                 'needs_review': r.needs_review
+            }
+            for r in records
+        }
+    
+    def _get_mortgage_statement_pdf_data(
+        self,
+        property_id: int,
+        period_id: int
+    ) -> Dict[str, Dict]:
+        """Get mortgage statement data from most recent extraction"""
+        records = self.db.query(MortgageStatementData).filter(
+            and_(
+                MortgageStatementData.property_id == property_id,
+                MortgageStatementData.period_id == period_id
+            )
+        ).all()
+        
+        # Use record ID as key to preserve ALL records
+        return {
+            str(r.id): {
+                'record_id': r.id,
+                'loan_number': r.loan_number,
+                'loan_type': r.loan_type,
+                'property_address': r.property_address,
+                'borrower_name': r.borrower_name,
+                'statement_date': r.statement_date.isoformat() if r.statement_date else None,
+                'payment_due_date': r.payment_due_date.isoformat() if r.payment_due_date else None,
+                'statement_period_start': r.statement_period_start.isoformat() if r.statement_period_start else None,
+                'statement_period_end': r.statement_period_end.isoformat() if r.statement_period_end else None,
+                'principal_balance': float(r.principal_balance) if r.principal_balance else None,
+                'tax_escrow_balance': float(r.tax_escrow_balance) if r.tax_escrow_balance else None,
+                'insurance_escrow_balance': float(r.insurance_escrow_balance) if r.insurance_escrow_balance else None,
+                'reserve_balance': float(r.reserve_balance) if r.reserve_balance else None,
+                'other_escrow_balance': float(r.other_escrow_balance) if r.other_escrow_balance else None,
+                'suspense_balance': float(r.suspense_balance) if r.suspense_balance else None,
+                'total_loan_balance': float(r.total_loan_balance) if r.total_loan_balance else None,
+                'principal_due': float(r.principal_due) if r.principal_due else None,
+                'interest_due': float(r.interest_due) if r.interest_due else None,
+                'tax_escrow_due': float(r.tax_escrow_due) if r.tax_escrow_due else None,
+                'insurance_escrow_due': float(r.insurance_escrow_due) if r.insurance_escrow_due else None,
+                'reserve_due': float(r.reserve_due) if r.reserve_due else None,
+                'late_fees': float(r.late_fees) if r.late_fees else None,
+                'other_fees': float(r.other_fees) if r.other_fees else None,
+                'total_payment_due': float(r.total_payment_due) if r.total_payment_due else None,
+                'ytd_principal_paid': float(r.ytd_principal_paid) if r.ytd_principal_paid else None,
+                'ytd_interest_paid': float(r.ytd_interest_paid) if r.ytd_interest_paid else None,
+                'ytd_total_paid': float(r.ytd_total_paid) if r.ytd_total_paid else None,
+                'original_loan_amount': float(r.original_loan_amount) if r.original_loan_amount else None,
+                'interest_rate': float(r.interest_rate) if r.interest_rate else None,
+                'loan_term_months': r.loan_term_months,
+                'maturity_date': r.maturity_date.isoformat() if r.maturity_date else None,
+                'origination_date': r.origination_date.isoformat() if r.origination_date else None,
+                'payment_frequency': r.payment_frequency,
+                'amortization_type': r.amortization_type,
+                'remaining_term_months': r.remaining_term_months,
+                'monthly_debt_service': float(r.monthly_debt_service) if r.monthly_debt_service else None,
+                'annual_debt_service': float(r.annual_debt_service) if r.annual_debt_service else None,
+                'extraction_confidence': float(r.extraction_confidence) if r.extraction_confidence else None,
+                'extraction_method': r.extraction_method,
+                'needs_review': r.needs_review,
+                'reviewed': r.reviewed,
+                'validation_score': float(r.validation_score) if r.validation_score else None,
+                'has_errors': r.has_errors
             }
             for r in records
         }

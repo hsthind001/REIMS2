@@ -88,7 +88,10 @@ export interface FinancialPeriod {
 export interface DocumentUpload {
   id: number;
   property_id: number;
+  property_code?: string; // Property code from joined Property table
   period_id: number;
+  period_year?: number; // Period year from joined FinancialPeriod table
+  period_month?: number; // Period month from joined FinancialPeriod table
   document_type: 'balance_sheet' | 'income_statement' | 'cash_flow' | 'rent_roll' | 'mortgage_statement';
   file_name: string;
   file_path: string;

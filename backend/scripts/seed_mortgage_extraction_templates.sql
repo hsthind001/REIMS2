@@ -26,17 +26,35 @@ INSERT INTO extraction_templates (
         "required_fields": ["loan_number", "statement_date", "principal_balance", "total_payment_due"],
         "field_patterns": {
             "loan_number": {
-                "patterns": ["Loan Number[:\\s]+(\\d+)", "Account[:\\s#]+([0-9-]+)", "Loan #[:\\s]+(\\d+)", "Servicer Loan Number[:\\s]+([0-9-]+)"],
+                "patterns": [
+                    "Loan\\s+Number[:\\s]+([0-9]{6,})",
+                    "Loan\\s+#[:\\s]+([0-9]{6,})",
+                    "LOAN\\s+INFORMATION.*?Loan\\s+Number[:\\s]+([0-9]{6,})",
+                    "Account[:\\s#]+([A-Z0-9\\-]{4,})",
+                    "Loan\\s+ID[:\\s]+([A-Z0-9\\-]+)"
+                ],
                 "field_type": "text",
                 "required": true
             },
             "statement_date": {
-                "patterns": ["As of Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})", "Statement Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})", "Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})"],
+                "patterns": [
+                    "LOAN\\s+INFORMATION\\s+As\\s+of\\s+Date\\s+(\\d{1,2}/\\d{1,2}/\\d{4})",
+                    "PAYMENT\\s+INFORMATION\\s+As\\s+of\\s+Date\\s+(\\d{1,2}/\\d{1,2}/\\d{4})",
+                    "As\\s+of\\s+Date\\s+(\\d{1,2}/\\d{1,2}/\\d{4})",
+                    "Statement\\s+Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})",
+                    "Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})"
+                ],
                 "field_type": "date",
                 "required": true
             },
             "principal_balance": {
-                "patterns": ["Principal Balance[:\\s]+\\$?([0-9,]+\.\\d{2})", "Outstanding Principal[:\\s]+\\$?([0-9,]+\.\\d{2})", "Current Principal[:\\s]+\\$?([0-9,]+\.\\d{2})", "Unpaid Principal Balance[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "Principal\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "BALANCES.*?Principal\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Outstanding\\s+Principal[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Current\\s+Principal[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Unpaid\\s+Principal[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": true
             },
@@ -46,32 +64,54 @@ INSERT INTO extraction_templates (
                 "required": false
             },
             "total_payment_due": {
-                "patterns": ["Total Payment Due[:\\s]+\\$?([0-9,]+\.\\d{2})", "Amount Due[:\\s]+\\$?([0-9,]+\.\\d{2})", "Payment Amount[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": ["Total Payment Due[:\\s]+\\$?([0-9,]+\\\\.\\\\d{2})", "Amount Due[:\\s]+\\$?([0-9,]+\\\\.\\\\d{2})", "Payment Amount[:\\s]+\\$?([0-9,]+\\\\.\\\\d{2})"],
                 "field_type": "currency",
                 "required": true
             },
             "principal_due": {
-                "patterns": ["Principal[:\\s]+\\$?([0-9,]+\.\\d{2})", "Principal Payment[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "Current\\s+Principal\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "PAYMENT\\s+INFORMATION.*?Current\\s+Principal\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Principal\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Principal\\s+Payment[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             },
             "interest_due": {
-                "patterns": ["Interest[:\\s]+\\$?([0-9,]+\.\\d{2})", "Interest Payment[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "Current\\s+Interest\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "PAYMENT\\s+INFORMATION.*?Current\\s+Interest\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Interest\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Interest\\s+Payment[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             },
             "tax_escrow_balance": {
-                "patterns": ["Tax Escrow[:\\s]+\\$?([0-9,]+\.\\d{2})", "Tax Escrow Balance[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "Tax\\s+Escrow\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "BALANCES.*?Tax\\s+Escrow\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Escrow\\s+for\\s+Taxes[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             },
             "insurance_escrow_balance": {
-                "patterns": ["Insurance Escrow[:\\s]+\\$?([0-9,]+\.\\d{2})", "Insurance Escrow Balance[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "Insurance\\s+Escrow\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "BALANCES.*?Insurance\\s+Escrow\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Escrow\\s+for\\s+Insurance[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             },
             "reserve_balance": {
-                "patterns": ["Reserve Balance[:\\s]+\\$?([0-9,]+\.\\d{2})", "Reserve[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "Reserve\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "BALANCES.*?Reserve\\s+Balance[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Reserve[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             },
@@ -81,12 +121,55 @@ INSERT INTO extraction_templates (
                 "required": false
             },
             "ytd_principal_paid": {
-                "patterns": ["YTD Principal Paid[:\\s]+\\$?([0-9,]+\.\\d{2})", "Year to Date Principal[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "YEAR\\s+TO\\s+DATE.*?Principal\\s+Paid[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "YTD.*?Principal\\s+Paid[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Year\\s+to\\s+Date\\s+Principal[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             },
             "ytd_interest_paid": {
-                "patterns": ["YTD Interest Paid[:\\s]+\\$?([0-9,]+\.\\d{2})", "Year to Date Interest[:\\s]+\\$?([0-9,]+\.\\d{2})"],
+                "patterns": [
+                    "YEAR\\s+TO\\s+DATE.*?Interest\\s+Paid[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "YTD.*?Interest\\s+Paid[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Year\\s+to\\s+Date\\s+Interest[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
+                "field_type": "currency",
+                "required": false
+            },
+            "payment_due_date": {
+                "patterns": [
+                    "Payment\\s+Due\\s+Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})",
+                    "Due\\s+Date[:\\s]+(\\d{1,2}/\\d{1,2}/\\d{4})"
+                ],
+                "field_type": "date",
+                "required": false
+            },
+            "tax_escrow_due": {
+                "patterns": [
+                    "Current\\s+Tax\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "PAYMENT\\s+INFORMATION.*?Current\\s+Tax\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Tax\\s+Escrow\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
+                "field_type": "currency",
+                "required": false
+            },
+            "insurance_escrow_due": {
+                "patterns": [
+                    "Current\\s+Insurance\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "PAYMENT\\s+INFORMATION.*?Current\\s+Insurance\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Insurance\\s+Escrow\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
+                "field_type": "currency",
+                "required": false
+            },
+            "reserve_due": {
+                "patterns": [
+                    "Current\\s+Reserves\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "PAYMENT\\s+INFORMATION.*?Current\\s+Reserves\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)",
+                    "Reserve\\s+Due[:\\s]+\\$?([\\d,]+\\.?\\d*)"
+                ],
                 "field_type": "currency",
                 "required": false
             }

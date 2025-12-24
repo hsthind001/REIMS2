@@ -171,3 +171,124 @@ def cleanup_old_issues(self: Task, days_to_keep: int = 90):
     finally:
         db.close()
 
+
+@celery_app.task(name="app.tasks.learning_tasks.analyze_reconciliation_patterns", bind=True)
+def analyze_reconciliation_patterns(self: Task, days_back: int = 30):
+    """
+    Periodic task to analyze reconciliation patterns and discover new relationships.
+    
+    Args:
+        days_back: Number of days to look back for analysis
+    """
+    db = SessionLocal()
+    try:
+        from app.services.match_learning_service import MatchLearningService
+        from app.services.relationship_discovery_service import RelationshipDiscoveryService
+        from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+        from datetime import datetime, timedelta
+        
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+        
+        # Get recent sessions
+        recent_sessions = db.query(ForensicReconciliationSession).filter(
+            ForensicReconciliationSession.started_at >= cutoff_date
+        ).all()
+        
+        learning_service = MatchLearningService(db)
+        discovery_service = RelationshipDiscoveryService(db)
+        
+        total_patterns = 0
+        total_synonyms = 0
+        
+        # Analyze successful matches from recent sessions
+        for session in recent_sessions:
+            result = learning_service.analyze_successful_matches(
+                session_id=session.id,
+                property_id=session.property_id,
+                period_id=session.period_id
+            )
+            total_patterns += result.get('patterns_created', 0)
+            total_synonyms += result.get('synonyms_created', 0)
+        
+        # Discover new relationships
+        discovery_result = discovery_service.discover_relationships()
+        
+        logger.info(f"Analyzed {len(recent_sessions)} sessions: {total_patterns} patterns, {total_synonyms} synonyms, {discovery_result.get('rules_suggested', 0)} rules suggested")
+        
+    except Exception as e:
+        logger.error(f"Error analyzing reconciliation patterns: {e}")
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.learning_tasks.update_matching_rules", bind=True)
+def update_matching_rules(self: Task):
+    """
+    Periodic task to update matching rules based on learned patterns.
+    """
+    db = SessionLocal()
+    try:
+        from app.services.account_code_discovery_service import AccountCodeDiscoveryService
+        from app.models.learned_match_pattern import LearnedMatchPattern
+        
+        discovery_service = AccountCodeDiscoveryService(db)
+        
+        # Discover account codes globally
+        discovery_result = discovery_service.discover_all_account_codes()
+        
+        # Get high-confidence learned patterns
+        high_confidence_patterns = db.query(LearnedMatchPattern).filter(
+            and_(
+                LearnedMatchPattern.is_active == True,
+                LearnedMatchPattern.success_rate >= 80.0,
+                LearnedMatchPattern.match_count >= 3
+            )
+        ).all()
+        
+        logger.info(f"Updated matching rules: {discovery_result.get('total_codes_discovered', 0)} codes, {len(high_confidence_patterns)} high-confidence patterns")
+        
+    except Exception as e:
+        logger.error(f"Error updating matching rules: {e}")
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.learning_tasks.train_ml_models", bind=True)
+def train_ml_models(self: Task):
+    """
+    Periodic task to retrain ML models with new data.
+    
+    Note: This is a placeholder for future ML model training.
+    Currently, the system uses rule-based and pattern-based matching.
+    """
+    db = SessionLocal()
+    try:
+        from app.models.match_confidence_model import MatchConfidenceModel
+        from app.models.forensic_match import ForensicMatch
+        
+        # Get approved matches for training data
+        approved_matches = db.query(ForensicMatch).filter(
+            ForensicMatch.status == 'approved'
+        ).limit(1000).all()
+        
+        if len(approved_matches) < 10:
+            logger.info("Insufficient training data. Need at least 10 approved matches.")
+            return
+        
+        # For now, just log statistics
+        # In the future, this will train actual ML models
+        confidences = [float(m.confidence_score) for m in approved_matches if m.confidence_score]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        
+        logger.info(f"ML model training placeholder: {len(approved_matches)} training samples, avg confidence: {avg_confidence:.2f}")
+        
+        # TODO: Implement actual ML model training
+        # - Train XGBoost classifier for relationship prediction
+        # - Train BERT embeddings for account name similarity
+        # - Train neural network for confidence prediction
+        
+    except Exception as e:
+        logger.error(f"Error training ML models: {e}")
+    finally:
+        db.close()
+

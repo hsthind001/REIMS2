@@ -515,10 +515,72 @@ class ExtractionOrchestrator:
                     }
                     confidence_score = extraction_result.get("confidence", confidence_score)
                 else:
-                    parsed_data = {
-                        "success": False,
-                        "error": extraction_result.get("error", "Mortgage extraction failed")
-                    }
+                    # Even if extraction reports failure, check if we have partial data
+                    mortgage_data = extraction_result.get("mortgage_data", {})
+                    # Filter invalid loan numbers
+                    if mortgage_data.get("loan_number"):
+                        loan_num = str(mortgage_data["loan_number"]).strip()
+                        invalid_loan_numbers = ["Total", "TOTAL", "total", "Balance", "BALANCE", "balance", 
+                                               "Amount", "AMOUNT", "amount", "Payment", "PAYMENT", "payment"]
+                        if loan_num in invalid_loan_numbers or len(loan_num) < 3:
+                            mortgage_data["loan_number"] = None
+                            print(f"⚠️  Rejected invalid loan_number: '{loan_num}'")
+                    
+                    # Check if we have minimum required fields after filtering
+                    if mortgage_data and mortgage_data.get("loan_number") and mortgage_data.get("statement_date") and mortgage_data.get("principal_balance"):
+                        # We have all required fields, proceed
+                        print(f"⚠️  Mortgage extraction had warnings but has all required fields")
+                        parsed_data = {
+                            "success": True,
+                            "mortgage_data": mortgage_data,
+                            "extraction_coordinates": extraction_result.get("extraction_coordinates", {}),
+                            "extraction_method": extraction_result.get("extraction_method", "partial_extraction"),
+                            "confidence": extraction_result.get("confidence", 50.0),
+                            "warning": extraction_result.get("error", "Some fields could not be extracted")
+                        }
+                        confidence_score = extraction_result.get("confidence", 50.0)
+                    elif mortgage_data and (mortgage_data.get("loan_number") or mortgage_data.get("statement_date") or mortgage_data.get("principal_balance")):
+                        # We have some data but not all required fields - try to use fallbacks
+                        print(f"⚠️  Mortgage extraction partial - attempting to use fallbacks")
+                        # Use period end date if statement_date missing
+                        if not mortgage_data.get("statement_date"):
+                            from app.models.financial_period import FinancialPeriod
+                            period = self.db.query(FinancialPeriod).filter(FinancialPeriod.id == upload.period_id).first()
+                            if period and period.period_end_date:
+                                mortgage_data["statement_date"] = period.period_end_date.strftime("%m/%d/%Y")
+                                print(f"✅ Using period end date as statement_date fallback")
+                        
+                        # Use 0 if principal_balance missing
+                        if not mortgage_data.get("principal_balance"):
+                            mortgage_data["principal_balance"] = Decimal('0')
+                            print(f"⚠️  Using 0 as principal_balance fallback")
+                        
+                        # Use UNKNOWN if loan_number missing
+                        if not mortgage_data.get("loan_number"):
+                            mortgage_data["loan_number"] = "UNKNOWN"
+                            print(f"⚠️  Using UNKNOWN as loan_number fallback")
+                        
+                        # Now check if we have all required fields
+                        if mortgage_data.get("loan_number") and mortgage_data.get("statement_date") and mortgage_data.get("principal_balance") is not None:
+                            parsed_data = {
+                                "success": True,
+                                "mortgage_data": mortgage_data,
+                                "extraction_coordinates": extraction_result.get("extraction_coordinates", {}),
+                                "extraction_method": extraction_result.get("extraction_method", "fallback_extraction"),
+                                "confidence": 40.0,  # Lower confidence for fallback
+                                "warning": "Used fallback values for missing fields"
+                            }
+                            confidence_score = 40.0
+                        else:
+                            parsed_data = {
+                                "success": False,
+                                "error": extraction_result.get("error", "Mortgage extraction failed - missing required fields even after fallbacks")
+                            }
+                    else:
+                        parsed_data = {
+                            "success": False,
+                            "error": extraction_result.get("error", "Mortgage extraction failed - no data extracted")
+                        }
             else:
                 # Step 1: Try table extraction first (highest accuracy)
                 parsed_data = self._extract_with_tables(pdf_data, upload.document_type)
@@ -1639,7 +1701,39 @@ class ExtractionOrchestrator:
         
         mortgage_data = parsed_data.get("mortgage_data", {})
         if not mortgage_data:
+            print("⚠️  Warning: No mortgage data in parsed_data, cannot insert mortgage statement")
+            print(f"   parsed_data keys: {list(parsed_data.keys())}")
+            print(f"   parsed_data success: {parsed_data.get('success')}")
             return 0
+        
+        print(f"📋 Extracted mortgage fields: {list(mortgage_data.keys())}")
+        print(f"   loan_number: {mortgage_data.get('loan_number')}")
+        print(f"   statement_date: {mortgage_data.get('statement_date')}")
+        print(f"   principal_balance: {mortgage_data.get('principal_balance')}")
+        
+        # Validate minimum required fields
+        loan_number = mortgage_data.get("loan_number")
+        statement_date = mortgage_data.get("statement_date")
+        principal_balance = mortgage_data.get("principal_balance")
+        
+        if not loan_number:
+            print("⚠️  Warning: No loan number extracted, using 'UNKNOWN'")
+            loan_number = "UNKNOWN"
+        
+        if not statement_date:
+            print("⚠️  Warning: No statement date extracted, using period end date")
+            # Try to get period end date as fallback
+            from app.models.financial_period import FinancialPeriod
+            period = self.db.query(FinancialPeriod).filter(FinancialPeriod.id == upload.period_id).first()
+            if period and period.period_end_date:
+                statement_date = period.period_end_date
+            else:
+                print("❌ Error: Cannot insert mortgage statement without statement_date")
+                return 0
+        
+        if principal_balance is None:
+            print("⚠️  Warning: No principal balance extracted, using 0")
+            principal_balance = Decimal('0')
         
         records_inserted = 0
         
@@ -1672,21 +1766,25 @@ class ExtractionOrchestrator:
             if isinstance(date_val, datetime):
                 return date_val.date()
             if isinstance(date_val, str):
-                try:
-                    return datetime.strptime(date_val, '%Y-%m-%d').date()
-                except:
-                    pass
+                # Try multiple date formats
+                formats = [
+                    '%m/%d/%Y',  # MM/DD/YYYY (most common in mortgage statements)
+                    '%Y-%m-%d',  # ISO format
+                    '%d/%m/%Y',  # DD/MM/YYYY
+                    '%m-%d-%Y',  # MM-DD-YYYY
+                ]
+                for fmt in formats:
+                    try:
+                        return datetime.strptime(date_val.strip(), fmt).date()
+                    except:
+                        continue
             return None
         
         # Extract coordinates if available
         extraction_coords = parsed_data.get("extraction_coordinates", {})
         extraction_coordinates_json = json.dumps(extraction_coords) if extraction_coords else None
         
-        # Get loan number (required)
-        loan_number = mortgage_data.get("loan_number")
-        if not loan_number:
-            print("⚠️  Warning: No loan number extracted from mortgage statement")
-            loan_number = "UNKNOWN"
+        # Loan number, statement_date, and principal_balance already validated above
         
         # Create mortgage statement record
         mortgage_record = MortgageStatementData(

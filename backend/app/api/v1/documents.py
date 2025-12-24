@@ -558,16 +558,16 @@ async def list_uploads(
     - Paginated list of document uploads with metadata (only active versions by default)
     """
     try:
-        # Build query with joins
+        # Build query with outer joins to ensure documents are returned even if Property/Period don't exist
         query = db.query(
             DocumentUpload,
             Property.property_code,
             FinancialPeriod.period_year,
             FinancialPeriod.period_month,
             ExtractionLog.confidence_score
-        ).join(
+        ).outerjoin(
             Property, DocumentUpload.property_id == Property.id
-        ).join(
+        ).outerjoin(
             FinancialPeriod, DocumentUpload.period_id == FinancialPeriod.id
         ).outerjoin(
             ExtractionLog, DocumentUpload.extraction_id == ExtractionLog.id
@@ -1569,6 +1569,135 @@ async def preview_filtered_anomalies_warnings_alerts(
             "document_type": document_type.value if document_type else None,
             "period_id": period_id
         }
+    }
+
+
+@router.post("/documents/uploads/{upload_id}/re-extract")
+async def re_run_extraction(
+    upload_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Re-run extraction for an existing document upload.
+    
+    Useful when:
+    - Extraction completed but inserted 0 records
+    - Extraction logic was improved after initial processing
+    - Data needs to be re-extracted with updated patterns
+    
+    Returns:
+    - Task ID for the extraction
+    - Updated extraction status
+    """
+    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    
+    # Reset extraction status
+    upload.extraction_status = 'pending'
+    upload.extraction_started_at = None
+    upload.extraction_completed_at = None
+    upload.extraction_task_id = None
+    db.commit()
+    
+    # Trigger extraction
+    try:
+        task = extract_document.delay(upload_id)
+        upload.extraction_task_id = task.id
+        db.commit()
+        
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "task_id": task.id,
+            "message": "Extraction re-queued successfully"
+        }
+    except Exception as e:
+        upload.extraction_status = 'failed'
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Failed to queue extraction: {str(e)}")
+
+
+@router.post("/documents/re-extract-failed")
+async def re_extract_failed_uploads(
+    document_type: Optional[str] = Query(None, description="Filter by document type"),
+    property_id: Optional[int] = Query(None, description="Filter by property"),
+    period_id: Optional[int] = Query(None, description="Filter by period"),
+    db: Session = Depends(get_db)
+):
+    """
+    Re-run extraction for uploads that completed but have no data records.
+    
+    This identifies uploads where extraction_status='completed' but no data
+    was inserted into the corresponding data table.
+    """
+    from app.models.mortgage_statement_data import MortgageStatementData
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Build query for completed uploads
+    query = db.query(DocumentUpload).filter(
+        DocumentUpload.extraction_status == 'completed'
+    )
+    
+    if document_type:
+        query = query.filter(DocumentUpload.document_type == document_type)
+    if property_id:
+        query = query.filter(DocumentUpload.property_id == property_id)
+    if period_id:
+        query = query.filter(DocumentUpload.period_id == period_id)
+    
+    uploads = query.all()
+    
+    # Check which uploads have no data records
+    failed_uploads = []
+    data_model_map = {
+        'mortgage_statement': MortgageStatementData,
+        'balance_sheet': BalanceSheetData,
+        'income_statement': IncomeStatementData,
+        'cash_flow': CashFlowData,
+        'rent_roll': RentRollData
+    }
+    
+    for upload in uploads:
+        DataModel = data_model_map.get(upload.document_type)
+        if not DataModel:
+            continue
+        
+        # Check if data exists
+        data_count = db.query(sql_func.count(DataModel.id)).filter(
+            DataModel.upload_id == upload.id
+        ).scalar()
+        
+        if data_count == 0:
+            failed_uploads.append(upload)
+    
+    # Re-queue extractions
+    re_queued = []
+    for upload in failed_uploads:
+        upload.extraction_status = 'pending'
+        upload.extraction_task_id = None
+        try:
+            task = extract_document.delay(upload.id)
+            upload.extraction_task_id = task.id
+            re_queued.append({
+                "upload_id": upload.id,
+                "file_name": upload.file_name,
+                "task_id": task.id
+            })
+        except Exception as e:
+            upload.extraction_status = 'failed'
+            logger.error(f"Failed to re-queue extraction for upload {upload.id}: {e}")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "total_checked": len(uploads),
+        "failed_extractions": len(failed_uploads),
+        "re_queued": len(re_queued),
+        "uploads": re_queued
     }
 
 

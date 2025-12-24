@@ -438,11 +438,16 @@ const Documents = () => {
                   {recentUploads.map(doc => (
                     <tr key={doc.id}>
                       <td>{doc.file_name}</td>
-                      <td><strong>{doc.property_code}</strong></td>
+                      <td><strong>{doc.property_code || `Property ${doc.property_id}`}</strong></td>
                       <td style={{ textTransform: 'capitalize' }}>
                         {doc.document_type.replace('_', ' ')}
                       </td>
-                      <td>{doc.period_year}/{doc.period_month.toString().padStart(2, '0')}</td>
+                      <td>
+                        {doc.period_year && doc.period_month 
+                          ? `${doc.period_year}/${doc.period_month.toString().padStart(2, '0')}`
+                          : 'N/A'
+                        }
+                      </td>
                       <td>
                         <span className={`status-badge ${doc.extraction_status}`}>
                           {formatExtractionStatus(doc.extraction_status)}

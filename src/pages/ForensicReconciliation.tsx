@@ -30,6 +30,7 @@ import ReconciliationHealthGauge from '../components/forensic/ReconciliationHeal
 import ReconciliationWorkQueue from '../components/forensic/ReconciliationWorkQueue';
 import ReconciliationFilters from '../components/forensic/ReconciliationFilters';
 import EvidencePanel from '../components/forensic/EvidencePanel';
+import ReconciliationDiagnostics from '../components/forensic/ReconciliationDiagnostics';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -242,6 +243,7 @@ export default function ForensicReconciliation() {
   const handleRunReconciliation = async (sessionId: number) => {
     try {
       setLoading(true);
+      setError(null); // Clear previous errors
       
       const result = await forensicReconciliationService.runReconciliation(sessionId, {
         use_exact: true,
@@ -251,24 +253,74 @@ export default function ForensicReconciliation() {
         use_rules: true
       });
       
-      // Reload session, matches, and discrepancies
-      const sessionData = await forensicReconciliationService.getSession(sessionId);
-      setSession(sessionData);
+      // Check if we have matches even if there were warnings
+      const matchCount = result?.summary?.total_matches || 0;
+      const hasMatches = matchCount > 0;
       
-      await loadMatches(sessionId);
-      
-      // Validate matches to get discrepancies
-      await forensicReconciliationService.validateSession(sessionId);
-      await loadDiscrepancies(sessionId);
-      
-      // Reload health score
-      if (selectedPropertyId && selectedPeriodId) {
-        const healthData = await forensicReconciliationService.getHealthScore(selectedPropertyId, selectedPeriodId);
-        setHealthScore(healthData.health_score);
+      // If we have matches, clear error and show success
+      if (hasMatches) {
+        setError(null);
+        // Show warning if there were issues but matches were stored
+        if (result.warning || result.diagnostic?.matches_failed) {
+          console.warn('Reconciliation completed with warnings:', result.warning || result.diagnostic);
+        }
+      } else {
+        // No matches found - show diagnostic information
+        const diagnostic = result?.diagnostic;
+        if (diagnostic) {
+          const reasons = diagnostic.possible_reasons || [];
+          const recommendations = diagnostic.recommendations || [];
+          const message = diagnostic.message || 'No matches found';
+          
+          setError(`${message}. ${reasons.join(' ')} ${recommendations.join(' ')}`);
+        } else {
+          setError('No matches found. Please check that documents have been uploaded and extracted.');
+        }
       }
+      
+      // Reload session, matches, and discrepancies (even if there were errors)
+      try {
+        const sessionData = await forensicReconciliationService.getSession(sessionId);
+        setSession(sessionData);
+        
+        await loadMatches(sessionId);
+        
+        // Validate matches to get discrepancies
+        await forensicReconciliationService.validateSession(sessionId);
+        await loadDiscrepancies(sessionId);
+        
+        // Reload health score
+        if (selectedPropertyId && selectedPeriodId) {
+          const healthData = await forensicReconciliationService.getHealthScore(selectedPropertyId, selectedPeriodId);
+          setHealthScore(healthData.health_score);
+        }
+      } catch (reloadErr: any) {
+        console.error('Failed to reload session data:', reloadErr);
+        // Don't set error here - we want to show matches if they exist
+      }
+      
     } catch (err: any) {
       console.error('Failed to run reconciliation:', err);
-      setError(err.response?.data?.detail || 'Failed to run reconciliation');
+      
+      // Check if we have partial results (matches stored before error)
+      const errorDetail = err.response?.data?.detail || err.message || 'Failed to run reconciliation';
+      
+      // Try to load matches anyway - they might have been stored before the error
+      try {
+        await loadMatches(sessionId);
+        const sessionData = await forensicReconciliationService.getSession(sessionId);
+        if (sessionData && sessionData.summary && sessionData.summary.total_matches > 0) {
+          // We have matches! Show them with a warning
+          setSession(sessionData);
+          setError(`Reconciliation encountered an error, but ${sessionData.summary.total_matches} matches were found. ${errorDetail}`);
+        } else {
+          // No matches, show full error
+          setError(errorDetail);
+        }
+      } catch (loadErr) {
+        // Can't load matches, show error
+        setError(errorDetail);
+      }
     } finally {
       setLoading(false);
     }
@@ -416,8 +468,8 @@ export default function ForensicReconciliation() {
           </div>
         </Card>
 
-        {/* Error Display with Enhanced Guidance */}
-        {error && (
+        {/* Error Display with Enhanced Guidance - Only show if no matches */}
+        {error && (!session || !matches || matches.length === 0) && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-6 h-6 mt-0.5 flex-shrink-0 text-yellow-600" />
@@ -522,6 +574,33 @@ export default function ForensicReconciliation() {
           </div>
         )}
 
+        {/* Success/Warning Message - Show if matches found but there was a warning */}
+        {session && matches && matches.length > 0 && error && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-300 rounded-lg">
+            <div className="flex items-start gap-3">
+              <CheckCircle className="w-6 h-6 mt-0.5 flex-shrink-0 text-green-600" />
+              <div className="flex-1">
+                <p className="font-semibold mb-2 text-green-900 text-lg">✅ Matches Found</p>
+                <p className="text-sm text-green-800 mb-2">
+                  Found {matches.length} match{matches.length !== 1 ? 'es' : ''} for this reconciliation.
+                </p>
+                {error && (
+                  <p className="text-xs text-green-700 italic">
+                    Note: {error}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="ml-2 text-green-600 hover:text-green-800 text-xl font-bold flex-shrink-0"
+                title="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Dashboard Overview */}
         {dashboardData && (
           <>
@@ -564,6 +643,17 @@ export default function ForensicReconciliation() {
         {healthScore !== null && (
           <div className="mb-6">
             <ReconciliationHealthGauge healthScore={healthScore} />
+          </div>
+        )}
+
+        {/* Diagnostics Panel - Show when there's an error or when session exists */}
+        {selectedPropertyId && selectedPeriodId && (error || session) && (
+          <div className="mb-6">
+            <ReconciliationDiagnostics
+              propertyId={selectedPropertyId}
+              periodId={selectedPeriodId}
+              onRefresh={loadDashboard}
+            />
           </div>
         )}
 
@@ -658,6 +748,40 @@ export default function ForensicReconciliation() {
             
             {activeTab === 'matches' && (
               <>
+                {/* Match Statistics Banner */}
+                {matches.length > 0 && session && (
+                  <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                        <div>
+                          <p className="font-semibold text-green-900">
+                            {matches.length} Match{matches.length !== 1 ? 'es' : ''} Found
+                          </p>
+                          {session.summary && (
+                            <div className="text-xs text-green-700 mt-1 flex items-center gap-4">
+                              <span>Exact: {session.summary.exact_matches || 0}</span>
+                              <span>Fuzzy: {session.summary.fuzzy_matches || 0}</span>
+                              <span>Calculated: {session.summary.calculated_matches || 0}</span>
+                              <span>Inferred: {session.summary.inferred_matches || 0}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {session.summary && (
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-green-900">
+                            {session.summary.approved || 0} Approved
+                          </div>
+                          <div className="text-xs text-green-700">
+                            {session.summary.pending_review || 0} Pending
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
                 {matches.length === 0 && !loading && session && (
                   <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
                     <div className="flex items-start gap-3 text-yellow-800">

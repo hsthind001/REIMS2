@@ -758,8 +758,21 @@ class DocumentService:
                             # For other documents, use if confidence is very high (>= 70%)
                             if detected_type == "mortgage_statement" or pdf_period_confidence >= 70:
                                 detected_month = pdf_detected_month
-                                if detected_type == "mortgage_statement":
-                                    print(f"✅ Using PDF statement date for mortgage statement: month {detected_month} (confidence: {pdf_period_confidence}%)")
+                            if detected_type == "mortgage_statement":
+                                print(f"✅ Using PDF statement date for mortgage statement: month {detected_month} (confidence: {pdf_period_confidence}%)")
+                                # Learn period detection pattern for mortgage statements
+                                try:
+                                    from app.services.mortgage_learning_service import MortgageLearningService
+                                    learning_service = MortgageLearningService(self.db)
+                                    period_pattern = pdf_period_detection.get("period_text", "")
+                                    learning_service.learn_period_detection_pattern(
+                                        detected_month=detected_month,
+                                        detected_year=pdf_detected_year or period_year,
+                                        pattern_used=period_pattern,
+                                        confidence=pdf_period_confidence
+                                    )
+                                except Exception as e:
+                                    print(f"⚠️  Failed to learn period detection pattern: {e}")
                                 else:
                                     print(f"✅ Using PDF statement date: month {detected_month} (confidence: {pdf_period_confidence}%)")
                             elif filename_month is None:

@@ -587,6 +587,177 @@ def seed_extraction_templates(db: Session):
                 "extract_summary_section": True
             },
             "is_default": True
+        },
+        {
+            "name": "standard_mortgage_statement",
+            "doc_type": "mortgage_statement",
+            "structure": {
+                "field_patterns": {
+                    "loan_number": {
+                        "patterns": [
+                            r"Loan\s+Number\s*:?\s*([0-9]{6,})",
+                            r"Loan\s+#\s*:?\s*([0-9]{6,})",
+                            r"LOAN\s+INFORMATION.*?Loan\s+Number\s*:?\s*([0-9]{6,})",
+                            r"Account\s+(?:Number|#|No\.?)\s*:?\s*([A-Z0-9\-]{4,})",
+                            r"Loan\s+ID\s*:?\s*([A-Z0-9\-]+)"
+                        ],
+                        "field_type": "text",
+                        "required": True
+                    },
+                    "statement_date": {
+                        "patterns": [
+                            r"LOAN\s+INFORMATION\s+As\s+of\s+Date\s+(\d{1,2}/\d{1,2}/\d{4})",
+                            r"PAYMENT\s+INFORMATION\s+As\s+of\s+Date\s+(\d{1,2}/\d{1,2}/\d{4})",
+                            r"As\s+of\s+Date\s+(\d{1,2}/\d{1,2}/\d{4})",
+                            r"Statement\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})",
+                            r"Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})"
+                        ],
+                        "field_type": "date",
+                        "required": True
+                    },
+                    "principal_balance": {
+                        "patterns": [
+                            r"Principal\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Outstanding\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Current\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Unpaid\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": True
+                    },
+                    "interest_rate": {
+                        "patterns": [
+                            r"Interest\s+Rate\s*:?\s*(\d+\.?\d*)\s*%",
+                            r"Rate\s*:?\s*(\d+\.?\d*)\s*%",
+                            r"(\d+\.?\d*)\s*%\s+Interest"
+                        ],
+                        "field_type": "percentage",
+                        "required": False
+                    },
+                    "monthly_payment": {
+                        "patterns": [
+                            r"Monthly\s+Payment\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Payment\s+Amount\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Total\s+Payment\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "principal_due": {
+                        "patterns": [
+                            r"Current\s+Principal\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"PAYMENT\s+INFORMATION.*?Current\s+Principal\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Principal\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Principal\s+Payment\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "interest_due": {
+                        "patterns": [
+                            r"Current\s+Interest\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"PAYMENT\s+INFORMATION.*?Current\s+Interest\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Interest\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Interest\s+Payment\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "payment_due_date": {
+                        "patterns": [
+                            r"Payment\s+Due\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})",
+                            r"Due\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})"
+                        ],
+                        "field_type": "date",
+                        "required": False
+                    },
+                    "maturity_date": {
+                        "patterns": [
+                            r"Maturity\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})",
+                            r"Final\s+Payment\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})"
+                        ],
+                        "field_type": "date",
+                        "required": False
+                    },
+                    "ytd_principal_paid": {
+                        "patterns": [
+                            r"YEAR\s+TO\s+DATE.*?Principal\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"YTD.*?Principal\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Year\s+to\s+Date\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "ytd_interest_paid": {
+                        "patterns": [
+                            r"YEAR\s+TO\s+DATE.*?Interest\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"YTD.*?Interest\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Year\s+to\s+Date\s+Interest\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "tax_escrow_balance": {
+                        "patterns": [
+                            r"Tax\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Escrow\s+for\s+Taxes\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "insurance_escrow_balance": {
+                        "patterns": [
+                            r"Insurance\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                            r"Escrow\s+for\s+Insurance\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                        ],
+                        "field_type": "currency",
+                        "required": False
+                    },
+                    "borrower_name": {
+                        "patterns": [
+                            r"Borrower\s*:?\s*(.+?)(?:\n|$)",
+                            r"Account\s+Holder\s*:?\s*(.+?)(?:\n|$)"
+                        ],
+                        "field_type": "text",
+                        "required": False
+                    },
+                    "property_address": {
+                        "patterns": [
+                            r"Property\s+Address\s*:?\s*(.+?)(?:\n|$)",
+                            r"Collateral\s+Address\s*:?\s*(.+?)(?:\n|$)"
+                        ],
+                        "field_type": "text",
+                        "required": False
+                    }
+                },
+                "required_fields": ["loan_number", "statement_date", "principal_balance"],
+                "lender_patterns": {
+                    "wells_fargo": ["Wells Fargo", "Wells Fargo Bank", "WF"],
+                    "bank_of_america": ["Bank of America", "BofA", "BOA"],
+                    "chase": ["Chase", "JPMorgan Chase", "JP Morgan"],
+                    "citibank": ["Citibank", "Citi"],
+                    "us_bank": ["U.S. Bank", "US Bank"]
+                }
+            },
+            "keywords": [
+                "mortgage statement",
+                "loan statement",
+                "mortgage account",
+                "principal balance",
+                "interest rate",
+                "monthly payment",
+                "escrow",
+                "statement date",
+                "payment due date",
+                "ytd principal",
+                "ytd interest"
+            ],
+            "rules": {
+                "extraction_method": "field_patterns",
+                "confidence_threshold": 60,
+                "required_fields_count": 3
+            },
+            "is_default": True
         }
     ]
     
