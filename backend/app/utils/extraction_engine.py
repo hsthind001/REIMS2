@@ -360,25 +360,65 @@ class MultiEngineExtractor:
                     detected_year = int(year_counts.most_common(1)[0][0])
             
             # PRIORITY 4: Fall back to month name search (least reliable)
+            # Look for month names in header/title context only, not in table data
             if detected_month is None:
                 found_months = []
                 sample_lower = sample_text.lower()
+
+                # Try to find month in header/title context (first 500 chars)
+                header_text = sample_lower[:500]
+
+                # Look for patterns like "For the period ending January 2025" or "January 2025"
                 for month_name, month_num in month_names.items():
-                    if month_name in sample_lower:
-                        found_months.append(month_num)
+                    # Look for month in context phrases
+                    context_patterns = [
+                        f'for the period ending {month_name}',
+                        f'period ending {month_name}',
+                        f'month ending {month_name}',
+                        f'as of {month_name}',
+                        f'ending {month_name}',
+                        f'{month_name} \\d{{4}}',  # Month followed by year
+                    ]
+
+                    for pattern in context_patterns:
+                        if re.search(pattern, header_text, re.IGNORECASE):
+                            found_months.append(month_num)
+                            break
+
+                # If no context match, fall back to simple search but with lower confidence
+                if not found_months:
+                    for month_name, month_num in month_names.items():
+                        if month_name in header_text:  # Only search header, not full doc
+                            found_months.append(month_num)
 
                 detected_month = found_months[0] if found_months else None
             
             # Calculate confidence
             confidence = 0
+            period_detection_method = None
+
             if detected_year:
                 # Higher confidence if we found it from "From Date" or statement date patterns
                 if any(pattern in sample_text.lower() for pattern in ['from date', 'as of date', 'statement date']):
                     confidence += 70
+                    period_detection_method = 'statement_date'
                 else:
                     confidence += 50
+                    period_detection_method = 'year_scan'
+
             if detected_month:
-                confidence += 30
+                # Higher confidence for months found in date patterns (MM/DD/YYYY)
+                if any(pattern in sample_text.lower() for pattern in ['from date', 'as of date', 'statement date']):
+                    confidence += 30
+                elif '/' in sample_text[:500]:  # Found in date format
+                    confidence += 25
+                else:
+                    # Lower confidence for month name fallback search
+                    confidence += 10
+                    if period_detection_method:
+                        period_detection_method += '_fallback_month'
+                    else:
+                        period_detection_method = 'fallback_month'
             
             # Find period text for display
             period_text = ""

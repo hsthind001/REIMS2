@@ -1860,3 +1860,177 @@ async def regenerate_income_statement_pdf(
             detail=f"Failed to regenerate PDF: {str(e)}"
         )
 
+
+@router.post("/documents/uploads/{upload_id}/correct-period")
+async def correct_upload_period(
+    upload_id: int,
+    correct_month: int = Body(..., ge=1, le=12, description="Correct month (1-12)"),
+    correct_year: int = Body(..., ge=2000, le=2100, description="Correct year"),
+    db: Session = Depends(get_db)
+):
+    """
+    User confirms or corrects the detected period for an upload.
+    This feeds into the self-learning pattern recognition system.
+
+    Args:
+        upload_id: Document upload ID
+        correct_month: Correct month (1-12)
+        correct_year: Correct year (2000-2100)
+
+    Returns:
+        {
+            "success": bool,
+            "was_correct": bool,
+            "old_period": {"month": int, "year": int},
+            "new_period": {"month": int, "year": int},
+            "period_moved": bool,
+            "message": str
+        }
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Get upload
+        upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+        if not upload:
+            raise HTTPException(status_code=404, detail="Upload not found")
+
+        # Get current period
+        current_period = db.query(FinancialPeriod).filter(
+            FinancialPeriod.id == upload.period_id
+        ).first()
+
+        if not current_period:
+            raise HTTPException(status_code=404, detail="Period not found")
+
+        # Check if correction is needed
+        was_correct = (
+            current_period.period_month == correct_month and
+            current_period.period_year == correct_year
+        )
+
+        old_period = {
+            "month": current_period.period_month,
+            "year": current_period.period_year
+        }
+
+        new_period = {
+            "month": correct_month,
+            "year": correct_year
+        }
+
+        # Update learning system FIRST (before moving data)
+        try:
+            from app.services.filename_pattern_learning_service import FilenamePatternLearningService
+            learning_service = FilenamePatternLearningService(db)
+
+            learning_service.learn_from_upload(
+                filename=upload.file_name,
+                detected_month=correct_month,
+                detected_year=correct_year,
+                property_id=upload.property_id,
+                document_type=upload.document_type,
+                detection_method='user_correction',
+                was_correct=was_correct
+            )
+
+            logger.info(f"Pattern learning updated for upload {upload_id}: was_correct={was_correct}")
+
+        except Exception as e:
+            logger.error(f"Failed to update pattern learning: {e}")
+            # Continue even if learning fails
+
+        # Move upload to correct period if needed
+        period_moved = False
+        if not was_correct:
+            # Get or create correct period
+            from app.services.document_service import DocumentService
+            doc_service = DocumentService(db)
+
+            correct_period = doc_service.get_or_create_period(
+                upload.property_id,
+                correct_year,
+                correct_month
+            )
+
+            # Move upload to correct period
+            old_period_id = upload.period_id
+            upload.period_id = correct_period.id
+            upload.notes = (upload.notes or "") + f"\nPeriod corrected by user from {old_period['month']}/{old_period['year']} to {correct_month}/{correct_year} on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+            db.commit()
+            period_moved = True
+
+            logger.info(f"Upload {upload_id} moved from period {old_period_id} to {correct_period.id}")
+
+            message = f"Period corrected from {old_period['month']}/{old_period['year']} to {correct_month}/{correct_year}"
+        else:
+            message = "Period was already correct - no changes made"
+
+        return {
+            "success": True,
+            "was_correct": was_correct,
+            "old_period": old_period,
+            "new_period": new_period,
+            "period_moved": period_moved,
+            "message": message
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to correct period for upload {upload_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to correct period: {str(e)}"
+        )
+
+
+@router.get("/documents/pattern-learning/statistics")
+async def get_pattern_learning_statistics(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    document_type: Optional[str] = Query(None, description="Filter by document type"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get statistics about the self-learning pattern recognition system.
+
+    Returns:
+        {
+            "total_patterns": int,
+            "average_success_rate": float,
+            "total_uploads_learned": int,
+            "patterns": [
+                {
+                    "pattern": str,
+                    "pattern_type": str,
+                    "example": str,
+                    "success_rate": float,
+                    "times_seen": int,
+                    "document_type": str
+                },
+                ...
+            ]
+        }
+    """
+    try:
+        from app.services.filename_pattern_learning_service import FilenamePatternLearningService
+
+        learning_service = FilenamePatternLearningService(db)
+        stats = learning_service.get_pattern_statistics(
+            property_id=property_id,
+            document_type=document_type
+        )
+
+        return stats
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to get pattern statistics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get pattern statistics: {str(e)}"
+        )
+

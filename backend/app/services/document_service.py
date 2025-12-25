@@ -719,16 +719,60 @@ class DocumentService:
                 except Exception as e:
                     print(f"⚠️  Pre-flight check failed: {e}")
                 
-                # Step 3: Detect month from filename (initial guess)
-                filename_month = detector.detect_month_from_filename(file.filename or "", year)
+                # Step 3a: Try to apply learned pattern FIRST (highest priority)
+                from app.services.filename_pattern_learning_service import FilenamePatternLearningService
+                learning_service = FilenamePatternLearningService(self.db)
+
+                learned_pattern = learning_service.apply_learned_pattern(
+                    filename=file.filename,
+                    property_id=property_obj.id,
+                    document_type=detected_type
+                )
+
+                filename_month = None
                 detected_year = year
-                
+                is_period_range = False
+                used_learned_pattern = False
+
+                if learned_pattern and learned_pattern["confidence"] >= 80:
+                    # Use learned pattern (high confidence from previous uploads)
+                    filename_month = learned_pattern["month"]
+                    detected_year = learned_pattern["year"]
+                    used_learned_pattern = True
+
+                    print(f"✅ Applied learned pattern: {learned_pattern['pattern']}")
+                    print(f"   Month: {filename_month}, Year: {detected_year}")
+                    print(f"   Confidence: {learned_pattern['confidence']:.1f}% (seen {learned_pattern['times_seen']} times, {learned_pattern['success_rate']:.1f}% success)")
+
+                # Step 3b: Detect period range (if no learned pattern)
+                from app.utils.period_range_detector import PeriodRangeDetector
+                range_detector = PeriodRangeDetector()
+
+                period_range = None
+                if not used_learned_pattern:
+                    period_range = range_detector.detect_period_range(file.filename or "")
+
+                if period_range and not used_learned_pattern:
+                    # Period range detected (e.g., "5.25-6.25")
+                    # Use ending period for financial statements
+                    is_period_range = True
+                    filename_month, detected_year = range_detector.get_statement_period(period_range)
+
+                    print(f"✅ Period range detected: {period_range['matched_text']}")
+                    print(f"   Range: {range_detector.format_period_range(period_range)}")
+                    print(f"   Filing under ending period: {filename_month}/{detected_year}")
+                else:
+                    # No period range - use regular month detection
+                    filename_month = detector.detect_month_from_filename(file.filename or "", year)
+                    detected_year = year
+
                 # Step 4: Read file content early to detect month from PDF for mortgage statements
                 file_content = await file.read()
                 file.file.seek(0)  # Reset for potential reuse
 
                 # Step 5: INTELLIGENT PDF CONTENT ANALYSIS (if PDF)
                 # For mortgage statements, prioritize statement date over filename date
+                # For period ranges, trust the filename over PDF content
                 anomalies = []
                 pdf_detected_type = None
                 pdf_detected_year = None
@@ -803,12 +847,15 @@ class DocumentService:
                             anomalies.append(f"Year mismatch: Expected {year} but PDF content shows {pdf_detected_year}")
 
                         # Month mismatch - only flag if confidence is high and not already corrected
-                        # For mortgage statements, we already use statement date, so skip this warning
+                        # SKIP warnings for:
+                        # - Mortgage statements (we already use statement date)
+                        # - Period range filenames (filename is authoritative)
                         # For other documents, only warn if confidence is high (>= 50%) to avoid false positives
-                        if (detected_type != "mortgage_statement" and 
+                        if (detected_type != "mortgage_statement" and
+                            not is_period_range and  # NEW: Skip for period ranges
                             filename_month is not None and
-                            pdf_detected_month and 
-                            pdf_detected_month != filename_month and 
+                            pdf_detected_month and
+                            pdf_detected_month != filename_month and
                             pdf_period_confidence >= 50):
                             anomaly_msg = f"Month mismatch: Filename suggests month {filename_month} but PDF content indicates month {pdf_detected_month} (confidence: {pdf_period_confidence}%)"
                             anomalies.append(anomaly_msg)
@@ -842,13 +889,21 @@ class DocumentService:
                             print(f"✅ Using PDF content detection for type: {detected_type} (confidence: {pdf_type_confidence}%)")
 
                         # For non-mortgage documents, use PDF content if confidence is high
+                        # BUT NOT if we have a period range - period ranges are authoritative
                         # (Mortgage statements already handled above)
-                        if (detected_type != "mortgage_statement" and 
-                            pdf_detected_month and 
+                        if (detected_type != "mortgage_statement" and
+                            not is_period_range and  # NEW: Don't override period range
+                            pdf_detected_month and
                             pdf_period_confidence > 50):
                             detected_month = pdf_detected_month
                             result["month"] = detected_month
                             print(f"✅ Using PDF content detection for month: {detected_month} (confidence: {pdf_period_confidence}%)")
+                        elif is_period_range:
+                            # Confirm we're using the period range
+                            detected_month = filename_month
+                            result["month"] = detected_month
+                            result["period_range"] = period_range  # Store for reference
+                            print(f"✅ Using period range from filename: {detected_month}/{detected_year} (range: {period_range['matched_text']})")
 
                         # Add anomalies to result
                         if anomalies:
@@ -1029,7 +1084,22 @@ class DocumentService:
                     result["status"] = "success"
                     uploaded_count += 1
 
-                # Step 12: Queue extraction/import task
+                # Step 12: Learn from this upload (self-learning pattern recognition)
+                try:
+                    detection_method = 'learned_pattern' if used_learned_pattern else ('period_range' if is_period_range else 'filename')
+                    learning_service.learn_from_upload(
+                        filename=file.filename,
+                        detected_month=detected_month,
+                        detected_year=detected_year,
+                        property_id=property_obj.id,
+                        document_type=detected_type,
+                        detection_method=detection_method,
+                        was_correct=None  # Will be updated by user feedback if needed
+                    )
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to learn pattern: {e}")
+
+                # Step 13: Queue extraction/import task
                 try:
                     if format_validation["file_type"] in ["pdf", "doc"]:
                         # Queue extraction task for PDF/DOC
