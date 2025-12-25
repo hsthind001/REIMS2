@@ -509,7 +509,7 @@ class MortgageExtractionService:
             },
             "principal_balance": {
                 "patterns": [
-                    r"Principal\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In BALANCES section
+                    r"Principal\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Principal Balance                    $   22,199,562.43"
                     r"BALANCES.*?Principal\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # Section-specific
                     r"Outstanding\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Current\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)",
@@ -528,7 +528,7 @@ class MortgageExtractionService:
             },
             "principal_due": {
                 "patterns": [
-                    r"Current\s+Principal\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In PAYMENT INFORMATION section
+                    r"Current\s+Principal\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Principal Due                $   34,253.84"
                     r"PAYMENT\s+INFORMATION.*?Current\s+Principal\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Principal\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Principal\s+Payment\s*:?\s*\$?\s*([\d,]+\.?\d*)"
@@ -538,7 +538,7 @@ class MortgageExtractionService:
             },
             "interest_due": {
                 "patterns": [
-                    r"Current\s+Interest\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In PAYMENT INFORMATION section
+                    r"Current\s+Interest\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Interest Due                 $   91,375.87"
                     r"PAYMENT\s+INFORMATION.*?Current\s+Interest\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Interest\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Interest\s+Payment\s*:?\s*\$?\s*([\d,]+\.?\d*)"
@@ -548,7 +548,7 @@ class MortgageExtractionService:
             },
             "total_payment_due": {
                 "patterns": [
-                    r"Total\s+Payment\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
+                    r"Total\s+Payment\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Total Payment Due                    $   176,836.34"
                     r"TOTAL.*?Current.*?Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # "TOTAL" row in payment section
                     r"Amount\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Payment\s+Amount\s*:?\s*\$?\s*([\d,]+\.?\d*)"
@@ -558,7 +558,7 @@ class MortgageExtractionService:
             },
             "tax_escrow_balance": {
                 "patterns": [
-                    r"Tax\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In BALANCES section
+                    r"Tax\s+Escrow\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Tax Escrow Balance                   $   204,650.95"
                     r"BALANCES.*?Tax\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Escrow\s+for\s+Taxes\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -567,7 +567,7 @@ class MortgageExtractionService:
             },
             "insurance_escrow_balance": {
                 "patterns": [
-                    r"Insurance\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In BALANCES section
+                    r"Insurance\s+Escrow\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Insurance Escrow Balance             $   205,315.30"
                     r"BALANCES.*?Insurance\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Escrow\s+for\s+Insurance\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -576,7 +576,7 @@ class MortgageExtractionService:
             },
             "reserve_balance": {
                 "patterns": [
-                    r"Reserve\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In BALANCES section
+                    r"Reserve\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Reserve Balance                      $   433,239.75"
                     r"BALANCES.*?Reserve\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Reserve\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -585,7 +585,7 @@ class MortgageExtractionService:
             },
             "tax_escrow_due": {
                 "patterns": [
-                    r"Current\s+Tax\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In PAYMENT INFORMATION section
+                    r"Current\s+Tax\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Tax Due                      $   16,048.79"
                     r"PAYMENT\s+INFORMATION.*?Current\s+Tax\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Tax\s+Escrow\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -594,7 +594,7 @@ class MortgageExtractionService:
             },
             "insurance_escrow_due": {
                 "patterns": [
-                    r"Current\s+Insurance\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In PAYMENT INFORMATION section
+                    r"Current\s+Insurance\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Insurance Due                $   20,531.53"
                     r"PAYMENT\s+INFORMATION.*?Current\s+Insurance\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Insurance\s+Escrow\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -603,7 +603,7 @@ class MortgageExtractionService:
             },
             "reserve_due": {
                 "patterns": [
-                    r"Current\s+Reserves\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In PAYMENT INFORMATION section
+                    r"Current\s+Reserves\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Reserves Due                 $   14,626.31"
                     r"PAYMENT\s+INFORMATION.*?Current\s+Reserves\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Reserve\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -612,7 +612,8 @@ class MortgageExtractionService:
             },
             "ytd_principal_paid": {
                 "patterns": [
-                    r"YEAR\s+TO\s+DATE.*?Principal\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In YEAR TO DATE section
+                    r"Principal\s+Paid\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing format: "Principal Paid                    $   250,454.78"
+                    r"YEAR\s+TO\s+DATE.*?Principal\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # Traditional format with section
                     r"YTD.*?Principal\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Year\s+to\s+Date\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
@@ -621,9 +622,34 @@ class MortgageExtractionService:
             },
             "ytd_interest_paid": {
                 "patterns": [
-                    r"YEAR\s+TO\s+DATE.*?Interest\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # In YEAR TO DATE section
+                    r"Interest\s+Paid\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing format: "Interest Paid                     $   628,953.19"
+                    r"YEAR\s+TO\s+DATE.*?Interest\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # Traditional format with section
                     r"YTD.*?Interest\s+Paid\s*:?\s*\$?\s*([\d,]+\.?\d*)",
                     r"Year\s+to\s+Date\s+Interest\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "ytd_taxes_disbursed": {
+                "patterns": [
+                    r"Taxes\s+Disbursed\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Taxes Disbursed                      $   0.00"
+                    r"YTD.*?Taxes\s+Disbursed\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "ytd_insurance_disbursed": {
+                "patterns": [
+                    r"Insurance\s+Disbursed\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Insurance Disbursed                  $   0.00"
+                    r"YTD.*?Insurance\s+Disbursed\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "ytd_reserve_disbursed": {
+                "patterns": [
+                    r"Reserve\s+(?:Escrow\s+)?Disbursed\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Reserve Escrow Disbursed             $   100,391.77"
+                    r"YTD.*?Reserve\s+(?:Escrow\s+)?Disbursed\s*:?\s*\$?\s*([\d,]+\.?\d*)"
                 ],
                 "field_type": "currency",
                 "required": False

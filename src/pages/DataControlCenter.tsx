@@ -121,6 +121,7 @@ export default function DataControlCenter() {
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [rerunningAnomalies, setRerunningAnomalies] = useState<number | null>(null);
+  const [rerunningExtraction, setRerunningExtraction] = useState<number | null>(null);
   
   // Filtered deletion state
   const [showDeleteFiltersModal, setShowDeleteFiltersModal] = useState(false);
@@ -620,14 +621,14 @@ export default function DataControlCenter() {
     try {
       setRerunningAnomalies(documentId);
 
-      const response = await fetch(`${API_BASE_URL}/anomalies/documents/${documentId}/detect`, {
+      const response = await fetch(`${API_BASE_URL}/anomalies/detect/${documentId}`, {
         method: 'POST',
         credentials: 'include'
       });
 
       if (response.ok) {
         const result = await response.json();
-        alert(`Anomaly detection completed successfully. Found ${result.anomalies_detected || 0} anomalies.`);
+        alert(`Anomaly detection completed successfully. Found ${result.new_anomalies_detected || 0} anomalies.`);
         loadData(); // Reload the data to reflect new anomaly counts
       } else {
         const error = await response.json();
@@ -638,6 +639,31 @@ export default function DataControlCenter() {
       alert('Failed to run anomaly detection. Please try again.');
     } finally {
       setRerunningAnomalies(null);
+    }
+  };
+
+  const handleRerunExtraction = async (documentId: number) => {
+    try {
+      setRerunningExtraction(documentId);
+
+      const response = await fetch(`${API_BASE_URL}/documents/uploads/${documentId}/reprocess`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Extraction queued successfully for document '${result.document_type}'. Task ID: ${result.task_id}`);
+        loadData(); // Reload the data to reflect new status
+      } else {
+        const error = await response.json();
+        alert(`Failed to reprocess document: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to reprocess document:', error);
+      alert('Failed to reprocess document. Please try again.');
+    } finally {
+      setRerunningExtraction(null);
     }
   };
 
@@ -2366,14 +2392,14 @@ export default function DataControlCenter() {
                       documents.map((doc) => (
                         <tr key={doc.id} className="border-b border-border hover:bg-background">
                           <td className="py-3 px-4 font-medium">{doc.file_name}</td>
-                          <td className="py-3 px-4 text-text-secondary">{getPropertyName(doc.property_id)}</td>
+                          <td className="py-3 px-4 text-text-secondary">{doc.property_code || 'Unknown Property'}</td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-1 bg-info-light text-info rounded text-sm">
                               {doc.document_type?.replace('_', ' ') || 'N/A'}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-text-secondary">
-                            {doc.period_year && doc.period_month 
+                            {doc.period_year && doc.period_month
                               ? `${doc.period_year}-${String(doc.period_month).padStart(2, '0')}`
                               : 'N/A'}
                           </td>
@@ -2400,24 +2426,42 @@ export default function DataControlCenter() {
                             }) : 'N/A'}
                           </td>
                           <td className="py-3 px-4">
-                            {doc.extraction_status === 'completed' && (
+                            <div className="flex gap-2">
                               <button
-                                onClick={() => handleRerunAnomalies(doc.id)}
-                                disabled={rerunningAnomalies === doc.id}
+                                onClick={() => handleRerunExtraction(doc.id)}
+                                disabled={rerunningExtraction === doc.id}
                                 className={`flex items-center gap-1 px-3 py-1 text-sm rounded transition-all ${
-                                  rerunningAnomalies === doc.id
+                                  rerunningExtraction === doc.id
                                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                    : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
                                 }`}
-                                title="Re-run anomaly detection for this document"
+                                title="Re-run extraction for this document"
                               >
-                                <RefreshCw 
-                                  size={14} 
-                                  className={rerunningAnomalies === doc.id ? 'animate-spin' : ''} 
+                                <RefreshCw
+                                  size={14}
+                                  className={rerunningExtraction === doc.id ? 'animate-spin' : ''}
                                 />
-                                {rerunningAnomalies === doc.id ? 'Running...' : 'Re-run Anomalies'}
+                                {rerunningExtraction === doc.id ? 'Extracting...' : 'Re-Run Extraction'}
                               </button>
-                            )}
+                              {doc.extraction_status === 'completed' && (
+                                <button
+                                  onClick={() => handleRerunAnomalies(doc.id)}
+                                  disabled={rerunningAnomalies === doc.id}
+                                  className={`flex items-center gap-1 px-3 py-1 text-sm rounded transition-all ${
+                                    rerunningAnomalies === doc.id
+                                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                  }`}
+                                  title="Re-run anomaly detection for this document"
+                                >
+                                  <RefreshCw
+                                    size={14}
+                                    className={rerunningAnomalies === doc.id ? 'animate-spin' : ''}
+                                  />
+                                  {rerunningAnomalies === doc.id ? 'Running...' : 'Re-run Anomalies'}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))

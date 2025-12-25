@@ -9,6 +9,8 @@ from decimal import Decimal
 
 from app.db.database import get_db
 from app.db.minio_client import get_file_url, delete_file
+from app.api.dependencies import get_current_user
+from app.models.user import User
 from app.services.document_service import DocumentService
 from app.services.pdf_generator_service import PDFGeneratorService
 from app.tasks.extraction_tasks import extract_document
@@ -1029,6 +1031,90 @@ async def reprocess_failed_uploads(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reprocess failed uploads: {str(e)}"
+        )
+
+
+@router.post("/documents/uploads/{upload_id}/reprocess", status_code=status.HTTP_200_OK)
+async def reprocess_single_upload(
+    upload_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reprocess a single document upload
+
+    **Operation:**
+    - Deletes existing extracted data for the upload
+    - Resets extraction status to 'pending'
+    - Queues document for extraction again
+
+    **Parameters:**
+    - upload_id: The ID of the document upload to reprocess
+
+    **Returns:**
+    - Success message with task ID
+    """
+    try:
+        # Get the upload
+        upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+
+        if not upload:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Upload with ID {upload_id} not found"
+            )
+
+        # Delete existing extracted data based on document type
+        from app.models.balance_sheet_data import BalanceSheetData
+        from app.models.income_statement_data import IncomeStatementData
+        from app.models.cash_flow_data import CashFlowData
+        from app.models.rent_roll_data import RentRollData
+        from app.models.mortgage_statement_data import MortgageStatementData
+
+        if upload.document_type == 'balance_sheet':
+            db.query(BalanceSheetData).filter(BalanceSheetData.upload_id == upload_id).delete()
+        elif upload.document_type == 'income_statement':
+            db.query(IncomeStatementData).filter(IncomeStatementData.upload_id == upload_id).delete()
+        elif upload.document_type == 'cash_flow':
+            db.query(CashFlowData).filter(CashFlowData.upload_id == upload_id).delete()
+        elif upload.document_type == 'rent_roll':
+            db.query(RentRollData).filter(RentRollData.upload_id == upload_id).delete()
+        elif upload.document_type == 'mortgage_statement':
+            db.query(MortgageStatementData).filter(MortgageStatementData.upload_id == upload_id).delete()
+
+        # Reset extraction status
+        upload.extraction_status = 'pending'
+        upload.extraction_task_id = None
+        upload.extraction_started_at = None
+        upload.extraction_completed_at = None
+        db.flush()
+
+        # Queue extraction task
+        task = extract_document.delay(upload.id)
+        upload.extraction_task_id = task.id
+        db.commit()
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Reprocessing upload_id={upload_id}, task_id={task.id}")
+
+        return {
+            "message": f"Successfully queued document '{upload.file_name}' for reprocessing",
+            "upload_id": upload.id,
+            "task_id": task.id,
+            "document_type": upload.document_type
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to reprocess upload_id={upload_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reprocess upload: {str(e)}"
         )
 
 
