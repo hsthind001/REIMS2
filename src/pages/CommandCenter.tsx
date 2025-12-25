@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle,
@@ -13,95 +13,40 @@ import {
   Play,
   Download
 } from 'lucide-react';
-import { MetricCard, Card, Button, ProgressBar } from '../components/design-system';
+import { MetricCard, Card, Button, ProgressBar, Skeleton } from '../components/design-system';
 import { PDFViewer } from '../components/PDFViewer';
-import { propertyService } from '../lib/property';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
 import { getMetricSource, getPDFViewerData } from '../lib/metrics_source';
 import { useAuth } from '../components/AuthContext';
-import type { Property } from '../types/api';
+import {
+  useCommandCenterData,
+  type AIInsight,
+  type PortfolioHealth,
+  type PropertyPerformance,
+  type CriticalAlert
+} from '../hooks/useCommandCenterData';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
-interface PortfolioHealth {
-  score: number;
-  status: 'excellent' | 'good' | 'fair' | 'poor';
-  totalValue: number;
-  totalNOI: number;
-  avgOccupancy: number;
-  portfolioDSCR: number;
-  percentageChanges?: {
-    total_value_change: number;
-    noi_change: number;
-    occupancy_change: number;
-    dscr_change: number;
-  };
-  alertCount: {
-    critical: number;
-    warning: number;
-    info: number;
-  };
-  lastUpdated: Date;
-}
-
-interface CriticalAlert {
-  id: number;
-  property: {
-    id: number;
-    name: string;
-    code: string;
-  };
-  type: string;
-  severity: 'critical' | 'high' | 'medium';
-  metric: {
-    name: string;
-    current: number;
-    threshold: number;
-    impact: string;
-  };
-  recommendation: string;
-  createdAt: Date;
-  period?: {
-    id: number;
-    year: number;
-    month: number;
-  };
-  financial_period_id?: number;
-}
-
-interface PropertyPerformance {
-  id: number;
-  name: string;
-  code: string;
-  value: number;
-  noi: number;
-  dscr: number;
-  ltv: number;
-  occupancy: number;
-  status: 'critical' | 'warning' | 'good';
-  trends: {
-    noi: number[];
-  };
-}
-
-interface AIInsight {
-  id: string;
-  type: 'risk' | 'opportunity' | 'market' | 'operational';
-  title: string;
-  description: string;
-  confidence: number;
-}
-
 export default function CommandCenter() {
   const { user } = useAuth();
-  const [portfolioHealth, setPortfolioHealth] = useState<PortfolioHealth | null>(null);
-  const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlert[]>([]);
-  const [propertyPerformance, setPropertyPerformance] = useState<PropertyPerformance[]>([]);
-  const [aiInsights, setAIInsights] = useState<AIInsight[]>([]);
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
+  const {
+    properties,
+    portfolioHealth,
+    criticalAlerts,
+    propertyPerformance,
+    aiInsights,
+    sparklineData,
+    isLoading,
+    isFetching,
+    refreshDashboard,
+    acknowledgeAlert,
+    fetchPortfolioAnalysis,
+    fetchInsightAnalysis
+  } = useCommandCenterData(selectedPropertyFilter);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
@@ -109,18 +54,6 @@ export default function CommandCenter() {
   const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
   const [analysisDetails, setAnalysisDetails] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
-  const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
-  const [sparklineData, setSparklineData] = useState<{
-    value: number[];
-    noi: number[];
-    occupancy: number[];
-    dscr: number[];
-  }>({
-    value: [],
-    noi: [],
-    occupancy: [],
-    dscr: []
-  });
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [pdfViewerData, setPdfViewerData] = useState<{
@@ -129,557 +62,15 @@ export default function CommandCenter() {
     highlightCoords?: { x0: number; y0: number; x1: number; y1: number };
   } | null>(null);
   const [loadingPDFSource, setLoadingPDFSource] = useState(false);
+  const heroLoading = isLoading && !portfolioHealth;
+  const metricsLoading = isLoading && propertyPerformance.length === 0;
 
-  // Auto-refresh hook - we'll define loadDashboardData after helper functions
-  // For now, use a placeholder that will be updated
-  const loadDashboardDataRef = useRef<(() => Promise<void>) | undefined>(undefined);
-  
   const { isRefreshing, isPaused, lastRefresh, pause, resume, toggle, refresh } = useAutoRefresh({
     interval: 300000, // 5 minutes
     enabled: true,
-    onRefresh: () => loadDashboardDataRef.current?.() || Promise.resolve(),
-    dependencies: []
+    onRefresh: refreshDashboard,
+    dependencies: [refreshDashboard]
   });
-
-  // Initial load effect - will be updated after loadDashboardData is defined
-  const initialLoadRef = useRef(false);
-
-  const loadPortfolioHealth = async (_properties: Property[]) => {
-    try {
-      // Calculate portfolio health from properties and metrics
-      let metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
-        credentials: 'include'
-      }).then(r => r.ok ? r.json() : []);
-
-      // Filter by selected property if not "all"
-      if (selectedPropertyFilter !== 'all') {
-        metricsSummary = metricsSummary.filter((m: any) => m.property_code === selectedPropertyFilter);
-      }
-
-      let totalValue = 0;
-      let totalNOI = 0;
-      let totalOccupancy = 0;
-      let occupancyCount = 0;
-      let criticalAlerts = 0;
-      let warningAlerts = 0;
-
-      // Use only latest period per property (API now filters, but double-check)
-      const propertyMap = new Map<string, any>();
-      metricsSummary.forEach((m: any) => {
-        const existing = propertyMap.get(m.property_code);
-        if (!existing) {
-          propertyMap.set(m.property_code, m);
-        } else {
-          // Prefer later period if duplicate
-          if (m.period_year > existing.period_year || 
-              (m.period_year === existing.period_year && m.period_month > existing.period_month)) {
-            propertyMap.set(m.property_code, m);
-          }
-        }
-      });
-
-      // Sum values from unique properties only
-      propertyMap.forEach((m: any) => {
-        if (m.total_assets) totalValue += m.total_assets;
-        // Use NOI (Net Operating Income) instead of net_income for portfolio NOI
-        if (m.net_operating_income !== null && m.net_operating_income !== undefined) {
-          totalNOI += m.net_operating_income;
-        } else if (m.net_income !== null && m.net_income !== undefined) {
-          // Fallback to net_income if NOI not available
-          totalNOI += m.net_income;
-        }
-        if (m.occupancy_rate !== null && m.occupancy_rate !== undefined) {
-          totalOccupancy += m.occupancy_rate;
-          occupancyCount++;
-        }
-      });
-
-      const avgOccupancy = occupancyCount > 0 ? totalOccupancy / occupancyCount : 0;
-
-      // Fetch DSCR - property-specific if single property selected, portfolio if "all"
-      let portfolioDSCR = 0;
-      let dscrChange = 0;
-      
-      if (selectedPropertyFilter === 'all') {
-        // Fetch Portfolio DSCR from API
-        try {
-          const dscrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-dscr`, {
-            credentials: 'include'
-          });
-          if (dscrResponse.ok) {
-            const dscrData = await dscrResponse.json();
-            portfolioDSCR = dscrData.dscr || 0;
-            dscrChange = dscrData.yoy_change || 0;
-          }
-        } catch (dscrErr) {
-          console.error('Failed to fetch portfolio DSCR:', dscrErr);
-        }
-      } else {
-        // Fetch property-specific DSCR
-        const selectedProp = _properties.find(p => p.property_code === selectedPropertyFilter);
-        if (selectedProp) {
-          try {
-            // Get the latest period for this property
-            const metric = propertyMap.get(selectedPropertyFilter);
-            
-            // Find the period with debt service data (Dec 2024) for DSCR calculation
-            // The latest period from metrics summary might be April 2025 which doesn't have debt service
-            // Use hardcoded Dec 2024 period IDs: ESP001=2, HMND001=4, TCSH001=9, WEND001=6
-            const dec2024PeriodIdMap: Record<string, number> = {
-              'ESP001': 2,
-              'HMND001': 4,
-              'TCSH001': 9,
-              'WEND001': 6
-            };
-            
-            const periodIdToUse = dec2024PeriodIdMap[selectedPropertyFilter] || metric?.period_id;
-            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-            
-            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate${periodIdParam}`, {
-              method: 'POST',
-              credentials: 'include'
-            });
-            if (dscrResponse.ok) {
-              const dscrData = await dscrResponse.json();
-              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                portfolioDSCR = dscrData.dscr;
-                // Calculate YoY change for property-specific DSCR
-                // Get previous period DSCR for comparison
-                if (metric) {
-                  const prevYear = metric.period_year;
-                  const prevMonth = metric.period_month - 1;
-                  const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
-                  const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
-                  
-                  // Try to get previous period DSCR (Dec 2023)
-                  // Use hardcoded Dec 2023 period IDs: ESP001=7, HMND001=3, TCSH001=8, WEND001=5
-                  const dec2023PeriodIdMap: Record<string, number> = {
-                    'ESP001': 7,
-                    'HMND001': 3,
-                    'TCSH001': 8,
-                    'WEND001': 5
-                  };
-                  
-                  const prevPeriodId = dec2023PeriodIdMap[selectedPropertyFilter];
-                  
-                  if (prevPeriodId) {
-                    try {
-                      const prevDscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate?financial_period_id=${prevPeriodId}`, {
-                        method: 'POST',
-                        credentials: 'include'
-                      });
-                      if (prevDscrResponse.ok) {
-                        const prevDscrData = await prevDscrResponse.json();
-                        if (prevDscrData.success && prevDscrData.dscr) {
-                          dscrChange = portfolioDSCR - prevDscrData.dscr;
-                        }
-                      }
-                    } catch (prevErr) {
-                      console.warn('Failed to fetch previous period DSCR for comparison:', prevErr);
-                    }
-                  }
-                }
-              }
-            }
-          } catch (dscrErr) {
-            console.error('Failed to fetch property-specific DSCR:', dscrErr);
-          }
-        }
-      }
-
-      // Fetch percentage changes from API
-      let percentageChanges = {
-        total_value_change: 0,
-        noi_change: 0,
-        occupancy_change: 0,
-        dscr_change: 0
-      };
-      
-      if (selectedPropertyFilter === 'all') {
-        try {
-          const changesResponse = await fetch(`${API_BASE_URL}/metrics/portfolio-changes`, {
-            credentials: 'include'
-          });
-          if (changesResponse.ok) {
-            const changesData = await changesResponse.json();
-            percentageChanges = {
-              total_value_change: changesData.total_value_change || 0,
-              noi_change: changesData.noi_change || 0,
-              occupancy_change: changesData.occupancy_change || 0,
-              dscr_change: changesData.dscr_change || dscrChange
-            };
-          }
-        } catch (changesErr) {
-          console.error('Failed to fetch percentage changes:', changesErr);
-        }
-      } else {
-        // Calculate property-specific percentage changes
-        const metric = propertyMap.get(selectedPropertyFilter);
-        if (metric) {
-          // Get previous period data for comparison
-          const prevYear = metric.period_year;
-          const prevMonth = metric.period_month - 1;
-          const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
-          const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
-          
-          // Fetch previous period metrics
-          try {
-            const prevMetricsResponse = await fetch(`${API_BASE_URL}/metrics/summary`, {
-              credentials: 'include'
-            });
-            if (prevMetricsResponse.ok) {
-              const prevMetrics = await prevMetricsResponse.json();
-              const prevMetric = prevMetrics.find((m: any) => 
-                m.property_code === selectedPropertyFilter && 
-                m.period_year === prevYearFinal && 
-                m.period_month === prevMonthFinal
-              );
-              
-              if (prevMetric) {
-                const calcChange = (current: number, previous: number) => {
-                  if (!previous || previous === 0) return 0;
-                  return ((current - previous) / previous) * 100;
-                };
-                
-                percentageChanges = {
-                  total_value_change: calcChange(metric.total_assets || 0, prevMetric.total_assets || 0),
-                  noi_change: calcChange(metric.net_operating_income || 0, prevMetric.net_operating_income || 0),
-                  occupancy_change: calcChange(metric.occupancy_rate || 0, prevMetric.occupancy_rate || 0),
-                  dscr_change: dscrChange
-                };
-              }
-            }
-          } catch (prevErr) {
-            console.warn('Failed to fetch previous period metrics for comparison:', prevErr);
-          }
-        }
-      }
-
-      // Calculate health score (0-100)
-      let score = 85; // Base score
-      if (avgOccupancy < 85) score -= 15;
-      if (avgOccupancy < 80) score -= 10;
-      if (criticalAlerts > 0) score -= criticalAlerts * 5;
-      if (warningAlerts > 0) score -= warningAlerts * 2;
-      score = Math.max(0, Math.min(100, score));
-
-      const status = score >= 90 ? 'excellent' : score >= 75 ? 'good' : score >= 60 ? 'fair' : 'poor';
-
-      setPortfolioHealth({
-        score,
-        status,
-        totalValue,
-        totalNOI,
-        avgOccupancy,
-        portfolioDSCR,
-        percentageChanges, // Store percentage changes
-        alertCount: {
-          critical: criticalAlerts,
-          warning: warningAlerts,
-          info: 0
-        },
-        lastUpdated: new Date()
-      });
-    } catch (err) {
-      console.error('Failed to load portfolio health:', err);
-    }
-  };
-
-  const loadCriticalAlerts = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts?priority=critical&status=ACTIVE`, {
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        let alerts = data.alerts || data;
-        
-        // Filter to show only latest period's alert per property
-        // Group by property_id and keep only the most recent alert per property
-        const alertsByProperty = new Map<number, any>();
-        alerts.forEach((a: any) => {
-          const propertyId = a.property_id;
-          const existing = alertsByProperty.get(propertyId);
-          
-          if (!existing) {
-            alertsByProperty.set(propertyId, a);
-          } else {
-            // Compare by period (year/month) or triggered_at
-            const existingDate = new Date(existing.triggered_at || existing.created_at || 0);
-            const currentDate = new Date(a.triggered_at || a.created_at || 0);
-            
-            // Prefer alert with more recent period or triggered_at
-            if (a.financial_period_id && existing.financial_period_id) {
-              // If both have period_id, prefer the one with later period
-              // For now, use triggered_at as proxy (will be improved with period info)
-              if (currentDate > existingDate) {
-                alertsByProperty.set(propertyId, a);
-              }
-            } else if (currentDate > existingDate) {
-              alertsByProperty.set(propertyId, a);
-            }
-          }
-        });
-        
-        // Convert map back to array and take top 5
-        alerts = Array.from(alertsByProperty.values())
-          .sort((a: any, b: any) => {
-            const dateA = new Date(a.triggered_at || a.created_at || 0).getTime();
-            const dateB = new Date(b.triggered_at || b.created_at || 0).getTime();
-            return dateB - dateA; // Most recent first
-          })
-          .slice(0, 5);
-        
-        setCriticalAlerts(alerts.map((a: any) => ({
-          id: a.id,
-          property: {
-            id: a.property_id,
-            name: a.property_name || 'Unknown',
-            code: a.property_code || ''
-          },
-          type: a.alert_type || 'risk',
-          severity: a.severity || 'critical',
-          metric: {
-            name: a.metric_name || a.related_metric || 'DSCR',
-            current: a.actual_value || 0,
-            threshold: a.threshold_value || 1.25,
-            impact: a.impact || 'Risk identified'
-          },
-          recommendation: a.recommendation || a.description || 'Review immediately',
-          createdAt: new Date(a.triggered_at || a.created_at || Date.now()),
-          financial_period_id: a.financial_period_id,
-          period: a.period ? {
-            id: a.period.id,
-            year: a.period.year,
-            month: a.period.month
-          } : undefined
-        })));
-      } else if (response.status === 404) {
-        // Endpoint doesn't exist yet - set empty alerts
-        setCriticalAlerts([]);
-      }
-    } catch (err) {
-      console.error('Failed to load critical alerts:', err);
-      // Set empty alerts on error to prevent blocking
-      setCriticalAlerts([]);
-    }
-  };
-
-  const loadPropertyPerformance = async (properties: Property[]) => {
-    try {
-      const performance: PropertyPerformance[] = [];
-      
-      // Fetch all metrics once with a high limit to get all properties
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
-        credentials: 'include'
-      });
-      const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
-      
-      // Create a map of property_code -> latest metric with actual data for quick lookup
-      const metricsMap = new Map<string, any>();
-      allMetrics.forEach((m: any) => {
-        const existing = metricsMap.get(m.property_code);
-        const hasData = (m.total_assets !== null && m.total_assets !== undefined) || 
-                        (m.net_income !== null && m.net_income !== undefined);
-        const existingHasData = existing && 
-                                ((existing.total_assets !== null && existing.total_assets !== undefined) || 
-                                 (existing.net_income !== null && existing.net_income !== undefined));
-        
-        // Prefer metrics with actual data over null values
-        // If both have data, prefer the latest period
-        // If neither has data, prefer the latest period anyway
-        if (!existing) {
-          metricsMap.set(m.property_code, m);
-        } else if (hasData && !existingHasData) {
-          // Current has data, existing doesn't - use current
-          metricsMap.set(m.property_code, m);
-        } else if (!hasData && existingHasData) {
-          // Existing has data, current doesn't - keep existing
-          // Don't update
-        } else {
-          // Both have same data status - prefer latest period
-          if (m.period_year && existing.period_year && m.period_year > existing.period_year) {
-            metricsMap.set(m.property_code, m);
-          } else if (m.period_year === existing.period_year && 
-                     m.period_month && existing.period_month && 
-                     m.period_month > existing.period_month) {
-            metricsMap.set(m.property_code, m);
-          }
-        }
-      });
-      
-      // Process properties in parallel for better performance
-      const propertyPromises = properties.slice(0, 10).map(async (property) => {
-        try {
-          const metric = metricsMap.get(property.property_code);
-
-          if (metric) {
-            console.log(`Loaded metrics for ${property.property_code}:`, {
-              total_assets: metric.total_assets,
-              net_income: metric.net_income,
-              period: `${metric.period_year}-${metric.period_month}`
-            });
-            
-            // Calculate NOI (Net Operating Income) once - use for both DSCR and display
-            // Prefer net_operating_income over net_income for consistency with KPI cards
-            const noi = (metric.net_operating_income !== null && metric.net_operating_income !== undefined)
-              ? metric.net_operating_income
-              : (metric.net_income !== null && metric.net_income !== undefined)
-                ? metric.net_income
-                : 0;
-
-            // Find the period with debt service data (Dec 2024) for DSCR calculation
-            const dec2024PeriodIdMap: Record<string, number> = {
-              'ESP001': 2,
-              'HMND001': 4,
-              'TCSH001': 9,
-              'WEND001': 6
-            };
-            const periodIdToUse = dec2024PeriodIdMap[property.property_code] || metric.period_id;
-            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-
-            // Parallelize all property-specific API calls
-            const [histRes, dscrRes, ltvRes] = await Promise.all([
-              fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
-                credentials: 'include'
-              }).catch(() => ({ ok: false })),
-              fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {
-                method: 'POST',
-                credentials: 'include'
-              }).catch(() => ({ ok: false })),
-              fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
-                credentials: 'include'
-              }).catch(() => ({ ok: false }))
-            ]);
-
-            // Process historical data
-            let noiTrend: number[] = [];
-            if (histRes.ok) {
-              try {
-                const histData = await histRes.json();
-                noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
-              } catch (histErr) {
-                console.error('Failed to parse historical data:', histErr);
-              }
-            }
-
-            // Process DSCR
-            let dscr: number | null = null;
-            let status: 'critical' | 'warning' | 'good' = 'good';
-            if (dscrRes.ok) {
-              try {
-                const dscrData = await dscrRes.json();
-                if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                  dscr = dscrData.dscr;
-                  status = dscrData.status === 'healthy' ? 'good' : 
-                           dscrData.status === 'warning' ? 'warning' : 'critical';
-                }
-              } catch (dscrErr) {
-                console.error(`Failed to parse DSCR for ${property.property_code}:`, dscrErr);
-              }
-            }
-
-            // Fallback DSCR calculation if API failed
-            if (dscr === null && ltvRes.ok) {
-              try {
-                const ltvData = await ltvRes.json();
-                const loanAmount = ltvData.loan_amount || 0;
-                const annualDebtService = loanAmount * 0.08;
-                if (annualDebtService > 0 && noi > 0) {
-                  dscr = noi / annualDebtService;
-                  status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
-                }
-              } catch (fallbackErr) {
-                console.error('Failed to calculate DSCR fallback:', fallbackErr);
-              }
-            }
-
-            // Process LTV
-            let ltv: number | null = null;
-            if (ltvRes.ok) {
-              try {
-                const ltvData = await ltvRes.json();
-                ltv = ltvData.ltv || null;
-              } catch (ltvErr) {
-                console.error(`Failed to parse LTV for ${property.property_code}:`, ltvErr);
-              }
-            }
-
-            return {
-              id: property.id,
-              name: property.property_name,
-              code: property.property_code,
-              value: metric.total_assets || 0,
-              noi: noi,
-              dscr,
-              ltv,
-              occupancy: metric.occupancy_rate || 0,
-              status,
-              trends: { noi: noiTrend }
-            };
-          } else {
-            // Property exists but no metrics yet - show with zeros
-            return {
-              id: property.id,
-              name: property.property_name,
-              code: property.property_code,
-              value: 0,
-              noi: 0,
-              dscr: 0,
-              ltv: 0,
-              occupancy: 0,
-              status: 'warning' as const,
-              trends: { noi: [] }
-            };
-          }
-        } catch (err) {
-          console.error(`Failed to load metrics for ${property.property_code}:`, err);
-          // Return property with zeros if there's an error
-          return {
-            id: property.id,
-            name: property.property_name,
-            code: property.property_code,
-            value: 0,
-            noi: 0,
-            dscr: 0,
-            ltv: 0,
-            occupancy: 0,
-            status: 'warning' as const,
-            trends: { noi: [] }
-          };
-        }
-      });
-
-      // Wait for all properties to load in parallel
-      const results = await Promise.all(propertyPromises);
-      performance.push(...results);
-      
-      setPropertyPerformance(performance);
-    } catch (err) {
-      console.error('Failed to load property performance:', err);
-    }
-  };
-
-  const loadAIInsights = async () => {
-    try {
-      // Fetch real AI insights from NLQ API
-      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAIInsights(data.insights || []);
-      } else {
-        // No fallback - show empty state if API fails
-        setAIInsights([]);
-      }
-    } catch (err) {
-      console.error('Failed to load AI insights:', err);
-      // No fallback - show empty state on error
-      setAIInsights([]);
-    }
-  };
 
   const handleMetricClick = async (metricType: string) => {
     // Only work for single property, not portfolio view
@@ -795,156 +186,28 @@ export default function CommandCenter() {
     }
   };
 
-  const loadSparklineData = async () => {
-    try {
-      // Determine if we need property-specific or portfolio-wide data
-      let url = `${API_BASE_URL}/metrics/historical?months=12`;
-      if (selectedPropertyFilter !== 'all') {
-        // Find property ID for the selected property
-        const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
-        if (selectedProp) {
-          url += `&property_id=${selectedProp.id}`;
-        }
-      }
-      
-      // Fetch 12 months of historical data for sparklines
-      const response = await fetch(url, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-
-        // Transform API data to sparkline format
-        // Convert millions to display values for sparklines
-        const valueSparkline = data.data.value.map((v: number) => v / 1000000); // Convert to millions
-        const noiSparkline = data.data.noi.map((n: number) => n / 1000000); // Convert to millions
-        const occupancySparkline = data.data.occupancy;
-
-        // Fetch DSCR historical data if a specific property is selected
-        let dscrSparkline: number[] = [];
-        if (selectedPropertyFilter !== 'all') {
-          const selectedProp = properties.find(p => p.property_code === selectedPropertyFilter);
-          if (selectedProp) {
-            try {
-              const dscrResponse = await fetch(
-                `${API_BASE_URL}/metrics/${selectedProp.id}/dscr/historical?months=12`,
-                { credentials: 'include' }
-              );
-              if (dscrResponse.ok) {
-                const dscrData = await dscrResponse.json();
-                dscrSparkline = dscrData.dscr_values || [];
-              }
-            } catch (dscrErr) {
-              console.warn('Failed to load DSCR historical data:', dscrErr);
-              // Continue with empty DSCR array - sparkline will handle gracefully
-            }
-          }
-        }
-
-        setSparklineData({
-          value: valueSparkline,
-          noi: noiSparkline,
-          occupancy: occupancySparkline,
-          dscr: dscrSparkline
-        });
-      }
-    } catch (err) {
-      console.error('Failed to load sparkline data:', err);
-      // Keep empty arrays as fallback - component will handle gracefully
-    }
-  };
-
-  // Define loadDashboardData after all helper functions are defined
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-
-      // Load properties first (needed for other calls)
-      const propertiesData = await propertyService.getAllProperties();
-      setProperties(propertiesData);
-
-      // Parallelize independent API calls for better performance
-      await Promise.all([
-        loadPortfolioHealth(propertiesData),
-        loadCriticalAlerts(),
-        loadAIInsights(),
-        loadSparklineData() // Only call once
-      ]);
-
-      // Load property performance (depends on properties being loaded)
-      await loadPropertyPerformance(propertiesData);
-
-    } catch (err) {
-      console.error('Failed to load dashboard data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Assign to ref for useAutoRefresh
-  loadDashboardDataRef.current = loadDashboardData;
-
-  // Initial load
-  useEffect(() => {
-    if (!initialLoadRef.current) {
-      initialLoadRef.current = true;
-      loadDashboardData();
-    }
-  }, []);
-
-  useEffect(() => {
-    // Reload portfolio health and sparklines when property filter changes
-    if (properties.length > 0) {
-      loadPortfolioHealth(properties);
-      loadSparklineData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPropertyFilter]);
-
   const loadPortfolioAnalysis = async () => {
     try {
       setLoadingAnalysis(true);
-      // Try to fetch detailed portfolio analysis from NLQ API
-      const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio?detailed=true`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisDetails(data);
-      } else {
-        // Generate analysis from portfolio health data
-        setAnalysisDetails({
-          title: 'Portfolio Health Analysis',
-          summary: portfolioHealth ? 
-            `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
-            'Portfolio analysis unavailable',
-          details: portfolioHealth ? [
-            `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
-            `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(1)}K`,
-            `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
-            `Portfolio DSCR: ${(portfolioHealth.portfolioDSCR || 0).toFixed(2)}`,
-            `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
-            `Warning Alerts: ${portfolioHealth.alertCount.warning}`
-          ] : [],
-          recommendations: portfolioHealth && portfolioHealth.score < 90 ? [
-            'Monitor properties with DSCR below 1.35',
-            'Review occupancy rates for properties below 85%',
-            'Consider refinancing opportunities for properties with high LTV'
-          ] : [
-            'Portfolio is performing well',
-            'Continue monitoring key metrics',
-            'Maintain current operational strategies'
-          ]
-        });
-      }
+      const data = await fetchPortfolioAnalysis();
+      setAnalysisDetails(data);
     } catch (err) {
       console.error('Failed to load portfolio analysis:', err);
       setAnalysisDetails({
         title: 'Portfolio Health Analysis',
-        summary: 'Unable to load detailed analysis',
-        details: [],
+        summary: portfolioHealth
+          ? `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})`
+          : 'Unable to load detailed analysis',
+        details: portfolioHealth
+          ? [
+              `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
+              `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(1)}K`,
+              `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
+              `Portfolio DSCR: ${(portfolioHealth.portfolioDSCR || 0).toFixed(2)}`,
+              `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
+              `Warning Alerts: ${portfolioHealth.alertCount.warning}`
+            ]
+          : [],
         recommendations: ['Please try again later']
       });
     } finally {
@@ -955,46 +218,8 @@ export default function CommandCenter() {
   const loadInsightAnalysis = async (insight: AIInsight) => {
     try {
       setLoadingAnalysis(true);
-      // Try to fetch detailed analysis for specific insight
-      const response = await fetch(`${API_BASE_URL}/nlq/insights/${insight.id}`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisDetails(data);
-      } else {
-        // Generate analysis from insight data
-        let recommendations: string[] = [];
-        
-        // Enhanced recommendations based on insight type
-        if (insight.id === 'market_cap_rates') {
-          recommendations = [
-            'Consider selling properties when market cap rates are favorable',
-            'Monitor market trends to identify optimal exit timing',
-            'Compare portfolio cap rates to market averages',
-            'Review property valuations in light of current market conditions',
-            'Evaluate refinancing vs. sale options based on cap rate trends'
-          ];
-        } else {
-          recommendations = [
-            'Review related financial metrics',
-            'Monitor trends over next quarter',
-            'Consider implementing suggested actions'
-          ];
-        }
-        
-        setAnalysisDetails({
-          title: insight.title,
-          summary: insight.description,
-          details: [
-            `Type: ${insight.type}`,
-            `Confidence: ${(insight.confidence * 100).toFixed(0)}%`,
-            insight.id === 'market_cap_rates' ? 'Market Analysis: Cap rates indicate market conditions favorable for property sales' : ''
-          ].filter(Boolean),
-          recommendations: recommendations
-        });
-      }
+      const data = await fetchInsightAnalysis(insight.id);
+      setAnalysisDetails(data);
     } catch (err) {
       console.error('Failed to load insight analysis:', err);
       setAnalysisDetails({
@@ -1158,48 +383,18 @@ export default function CommandCenter() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${alert.id}/acknowledge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          acknowledged_by: currentUserId,
-          notes: `Acknowledged from Command Center dashboard`
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Remove alert from list
-          setCriticalAlerts(prev => prev.filter(a => a.id !== alert.id));
-          // Show success message
-          alert('Alert acknowledged successfully');
-          // Refresh alerts to get updated list
-          await loadCriticalAlerts();
-        } else {
-          alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
-        }
-      } else {
-        const error = await response.json();
-        alert(`Failed to acknowledge alert: ${error.detail || 'Unknown error'}`);
-      }
+      await acknowledgeAlert.mutateAsync({ alert, acknowledgedBy: currentUserId });
+      alert('Alert acknowledged successfully');
+      await refreshDashboard();
     } catch (err) {
       console.error('Failed to acknowledge alert:', err);
-      alert('Failed to acknowledge alert. Please try again.');
+      alert(
+        `Failed to acknowledge alert: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`
+      );
     }
   };
-
-  if (loading && !portfolioHealth) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-info" />
-          <p className="text-text-secondary">Loading Command Center...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -1215,9 +410,13 @@ export default function CommandCenter() {
                 }
               </h1>
               <div className="flex items-center gap-4">
-                <p className="text-white/80">
-                  Last Updated: {lastRefresh.toLocaleTimeString()}
-                </p>
+                {heroLoading ? (
+                  <Skeleton className="h-4 w-48 bg-white/20 border-white/20" />
+                ) : (
+                  <p className="text-white/80">
+                    Last Updated: {lastRefresh.toLocaleTimeString()}
+                  </p>
+                )}
                 <div className="flex items-center gap-2">
                   <button
                     onClick={toggle}
@@ -1287,13 +486,22 @@ export default function CommandCenter() {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-6xl font-bold mb-2">
-                {portfolioHealth?.score || 0}/100
-              </div>
-              <div className="flex items-center gap-2 text-xl">
-                {getStatusIcon(portfolioHealth?.status || 'fair')}
-                <span className="uppercase font-semibold">{portfolioHealth?.status || 'FAIR'}</span>
-              </div>
+              {heroLoading ? (
+                <div className="flex flex-col items-end gap-2">
+                  <Skeleton className="h-12 w-40 bg-white/20 border-white/20" />
+                  <Skeleton className="h-5 w-32 bg-white/20 border-white/20" />
+                </div>
+              ) : (
+                <>
+                  <div className="text-6xl font-bold mb-2">
+                    {portfolioHealth?.score || 0}/100
+                  </div>
+                  <div className="flex items-center gap-2 text-xl">
+                    {getStatusIcon(portfolioHealth?.status || 'fair')}
+                    <span className="uppercase font-semibold">{portfolioHealth?.status || 'FAIR'}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1328,50 +536,58 @@ export default function CommandCenter() {
         </Card>
 
         {/* Key Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          <MetricCard
-            title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
-            value={portfolioHealth?.totalValue || 0}
-            change={portfolioHealth?.percentageChanges?.total_value_change || 0}
-            trend={portfolioHealth?.percentageChanges?.total_value_change >= 0 ? "up" : "down"}
-            icon="💰"
-            variant="success"
-            sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
-            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('property_value') : undefined}
-          />
-          <MetricCard
-            title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
-            value={portfolioHealth?.totalNOI || 0}
-            change={portfolioHealth?.percentageChanges?.noi_change || 0}
-            trend={portfolioHealth?.percentageChanges?.noi_change >= 0 ? "up" : "down"}
-            icon="📊"
-            variant="info"
-            sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
-            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('net_operating_income') : undefined}
-          />
-          <MetricCard
-            title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
-            value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
-            change={portfolioHealth?.percentageChanges?.occupancy_change || 0}
-            trend={portfolioHealth?.percentageChanges?.occupancy_change >= 0 ? "up" : "down"}
-            icon="🏘️"
-            variant="warning"
-            sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
-            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('occupancy_rate') : undefined}
-          />
-          <MetricCard
-            title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
-            value={portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "0.00"}
-            change={portfolioHealth?.percentageChanges?.dscr_change || 0}
-            trend={portfolioHealth?.percentageChanges?.dscr_change >= 0 ? "up" : "down"}
-            icon="📈"
-            variant="success"
-            sparkline={sparklineData.dscr.length > 0 ? sparklineData.dscr : undefined}
-            onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('dscr') : undefined}
-          />
-        </div>
+        {metricsLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            {[1, 2, 3, 4].map((key) => (
+              <Skeleton key={key} className="h-32 w-full" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            <MetricCard
+              title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
+              value={portfolioHealth?.totalValue || 0}
+              change={portfolioHealth?.percentageChanges?.total_value_change || 0}
+              trend={portfolioHealth?.percentageChanges?.total_value_change >= 0 ? "up" : "down"}
+              icon="💰"
+              variant="success"
+              sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
+              onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('property_value') : undefined}
+            />
+            <MetricCard
+              title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
+              value={portfolioHealth?.totalNOI || 0}
+              change={portfolioHealth?.percentageChanges?.noi_change || 0}
+              trend={portfolioHealth?.percentageChanges?.noi_change >= 0 ? "up" : "down"}
+              icon="📊"
+              variant="info"
+              sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
+              onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('net_operating_income') : undefined}
+            />
+            <MetricCard
+              title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
+              value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
+              change={portfolioHealth?.percentageChanges?.occupancy_change || 0}
+              trend={portfolioHealth?.percentageChanges?.occupancy_change >= 0 ? "up" : "down"}
+              icon="🏘️"
+              variant="warning"
+              sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
+              onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('occupancy_rate') : undefined}
+            />
+            <MetricCard
+              title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
+              value={portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "0.00"}
+              change={portfolioHealth?.percentageChanges?.dscr_change || 0}
+              trend={portfolioHealth?.percentageChanges?.dscr_change >= 0 ? "up" : "down"}
+              icon="📈"
+              variant="success"
+              sparkline={sparklineData.dscr.length > 0 ? sparklineData.dscr : undefined}
+              onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('dscr') : undefined}
+            />
+          </div>
+        )}
 
-        {/* Critical Alerts Section */}
+{/* Critical Alerts Section */}
         {criticalAlerts.length > 0 && (
           <Card variant="danger" className="mb-8 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -1643,7 +859,7 @@ export default function CommandCenter() {
             <h2 className="text-2xl font-bold mb-4">Upload Document</h2>
             <DocumentUpload onUploadSuccess={() => {
               setShowUploadModal(false);
-              loadDashboardData();
+              refreshDashboard();
             }} />
           </div>
         </div>
@@ -1760,4 +976,3 @@ export default function CommandCenter() {
     </div>
   );
 }
-

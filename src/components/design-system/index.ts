@@ -3,4 +3,4 @@ export { Card, type CardProps } from './Card';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { MetricCard, type MetricCardProps } from './MetricCard';
 export { Sparkline, CompactSparkline, type SparklineProps } from './Sparkline';
-
+export { Skeleton } from './Skeleton';
