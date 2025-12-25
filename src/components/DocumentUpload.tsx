@@ -4,12 +4,11 @@
  * File upload interface with drag-and-drop support
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import type { DragEvent } from 'react';
 import { documentService } from '../lib/document';
 import { propertyService } from '../lib/property';
 import type { Property, DocumentUploadRequest } from '../types/api';
-import { useEffect } from 'react';
 import { extractErrorMessage } from '../utils/errorHandling';
 import { SafeErrorDisplay } from './SafeErrorDisplay';
 import { useExtractionStatus } from '../hooks/useExtractionStatus';
@@ -17,6 +16,18 @@ import { useExtractionStatus } from '../hooks/useExtractionStatus';
 interface DocumentUploadProps {
   onUploadSuccess?: () => void;
 }
+
+const visuallyHiddenStyle: CSSProperties = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  padding: 0,
+  margin: '-1px',
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
 
 export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
   const [properties, setProperties] = useState<Property[]>([]);
@@ -296,12 +307,17 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
         >
+          <label htmlFor="document-upload-input" style={visuallyHiddenStyle}>
+            File upload
+          </label>
           <input
             ref={fileInputRef}
             type="file"
+            id="document-upload-input"
             accept=".pdf"
             onChange={handleFileInputChange}
-            style={{ display: 'none' }}
+            style={visuallyHiddenStyle}
+            aria-label="File upload"
             disabled={uploading}
           />
 
@@ -356,4 +372,3 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     </div>
   );
 }
-

@@ -1,25 +1,40 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import DocumentUpload from '../DocumentUpload';
+import { render, screen, waitFor } from '@testing-library/react';
+import { DocumentUpload } from '../DocumentUpload';
 
-// Mock the API module
-vi.mock('../../lib/api', () => ({
-  default: {
-    get: vi.fn(),
-    post: vi.fn(),
-  }
+vi.mock('../../lib/property', () => ({
+  propertyService: {
+    getAllProperties: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+vi.mock('../../lib/document', () => ({
+  documentService: {
+    uploadDocument: vi.fn(),
+  },
+}));
+
+vi.mock('../../hooks/useExtractionStatus', () => ({
+  useExtractionStatus: () => ({
+    status: null,
+    progress: 0,
+    recordsLoaded: 0,
+    error: null,
+  }),
 }));
 
 describe('DocumentUpload Component', () => {
-  it('should render without crashing', () => {
+  it('should render without crashing', async () => {
     render(<DocumentUpload />);
-    expect(screen.getByText(/upload/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /upload financial document/i })
+      ).toBeInTheDocument()
+    );
   });
 
-  it('should have a file input element', () => {
+  it('should have a file input element', async () => {
     render(<DocumentUpload />);
-    const fileInput = screen.getByLabelText(/file/i) || screen.getByRole('button', { name: /upload/i });
-    expect(fileInput).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/file upload/i)).toBeInTheDocument());
   });
 });
-
