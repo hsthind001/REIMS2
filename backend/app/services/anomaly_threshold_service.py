@@ -61,7 +61,9 @@ class AnomalyThresholdService:
         """
         # Get base threshold (custom or default)
         threshold = self.get_threshold(account_code)
-        base_threshold = threshold.threshold_value if threshold else self.get_default_threshold()
+        base_threshold = self._validate_threshold_value(
+            threshold.threshold_value if threshold else self.get_default_threshold()
+        )
         
         # Apply adaptive adjustment if enabled
         if use_adaptive and property_id:
@@ -296,6 +298,7 @@ class AnomalyThresholdService:
         # Use default threshold if not provided
         if threshold_value is None:
             threshold_value = self.get_default_threshold()
+        threshold_value = self._validate_threshold_value(threshold_value)
         
         # Create new threshold
         threshold = AnomalyThreshold(
@@ -328,7 +331,7 @@ class AnomalyThresholdService:
         if account_name is not None:
             threshold.account_name = account_name
         if threshold_value is not None:
-            threshold.threshold_value = threshold_value
+            threshold.threshold_value = self._validate_threshold_value(threshold_value)
         if is_active is not None:
             threshold.is_active = is_active
         
@@ -369,6 +372,7 @@ class AnomalyThresholdService:
     
     def set_default_threshold(self, threshold_value: Decimal) -> SystemConfig:
         """Set the global default threshold value"""
+        threshold_value = self._validate_threshold_value(threshold_value)
         config = self.db.query(SystemConfig).filter(
             SystemConfig.config_key == self.DEFAULT_THRESHOLD_KEY
         ).first()
@@ -387,6 +391,22 @@ class AnomalyThresholdService:
         self.db.refresh(config)
         
         return config
+
+    def _validate_threshold_value(self, value: Decimal) -> Decimal:
+        """
+        Ensure threshold values are within sensible bounds.
+        Thresholds are stored as decimals (e.g., 0.01 = 1%). Clamp to [0, 1].
+        """
+        try:
+            val = Decimal(str(value))
+        except Exception:
+            return self.SYSTEM_FALLBACK_THRESHOLD
+
+        if val < Decimal('0'):
+            val = Decimal('0')
+        if val > Decimal('1'):
+            val = Decimal('1')
+        return val
     
     def get_all_accounts_with_thresholds(
         self,

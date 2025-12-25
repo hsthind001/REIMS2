@@ -8,6 +8,7 @@ import {
   type AccountWithThreshold
 } from '../../lib/anomalyThresholds'
 import { RefreshCw, Save, Search, Settings, Undo2 } from 'lucide-react'
+import ReactPaginate from 'react-paginate'
 
 type DocOption = {
   value: string
@@ -26,6 +27,8 @@ function toDecimalPercent(value: number): number {
 export default function ValueSetupPanel() {
   const [accounts, setAccounts] = useState<AccountWithThreshold[]>([])
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(25)
   const [defaultThreshold, setDefaultThresholdState] = useState<number>(1) // percent view
   const [loading, setLoading] = useState(false)
   const [savingDefault, setSavingDefault] = useState(false)
@@ -56,14 +59,24 @@ export default function ValueSetupPanel() {
   }, [])
 
   const filteredAccounts = useMemo(() => {
-    if (!search) return accounts
     const query = search.toLowerCase()
-    return accounts.filter(
-      (acc) =>
-        acc.account_code?.toLowerCase().includes(query) ||
-        acc.account_name?.toLowerCase().includes(query)
-    )
+    const list = !query
+      ? accounts
+      : accounts.filter(
+          (acc) =>
+            acc.account_code?.toLowerCase().includes(query) ||
+            acc.account_name?.toLowerCase().includes(query)
+        )
+    // Reset to first page if search changes
+    setPage(0)
+    return list
   }, [accounts, search])
+
+  const pageCount = Math.max(1, Math.ceil(filteredAccounts.length / pageSize))
+  const pagedAccounts = useMemo(() => {
+    const start = page * pageSize
+    return filteredAccounts.slice(start, start + pageSize)
+  }, [filteredAccounts, page])
 
   const handleSaveDefault = async () => {
     setSavingDefault(true)
@@ -218,6 +231,22 @@ export default function ValueSetupPanel() {
                 style={{ paddingLeft: '28px', width: '100%' }}
               />
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <label style={{ color: '#6b7280', fontSize: '0.9rem' }}>Page size</label>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value))
+                  setPage(0)
+                }}
+                className="form-select"
+                style={{ minWidth: '90px' }}
+              >
+                {[10, 25, 50, 100].map(size => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <p style={{ color: '#6b7280', marginTop: '0.5rem', marginBottom: 0 }}>
             Showing thresholds across all documents. Use search to narrow results.
@@ -242,6 +271,18 @@ export default function ValueSetupPanel() {
                 <td colSpan={5} style={{ textAlign: 'center', padding: '1rem' }}>Loading thresholds...</td>
               </tr>
             )}
+            {loading && (
+              <>
+                {Array.from({ length: 5 }).map((_, idx) => (
+                  <tr key={`skeleton-${idx}`}>
+                    <td colSpan={5} style={{ padding: '0.75rem' }}>
+                      <div className="skeleton" style={{ height: '14px', width: '60%', marginBottom: '6px' }}></div>
+                      <div className="skeleton" style={{ height: '12px', width: '40%' }}></div>
+                    </td>
+                  </tr>
+                ))}
+              </>
+            )}
             {!loading && filteredAccounts.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ textAlign: 'center', padding: '1rem', color: '#6b7280' }}>
@@ -249,7 +290,7 @@ export default function ValueSetupPanel() {
                 </td>
               </tr>
             )}
-            {!loading && filteredAccounts.map(account => {
+            {!loading && pagedAccounts.map(account => {
               const currentPercent = editValues[account.account_code] ?? toPercent(account.threshold_value ?? account.default_threshold)
               return (
                 <tr key={account.account_code}>
@@ -310,6 +351,23 @@ export default function ValueSetupPanel() {
           </tbody>
         </table>
       </div>
+
+      {pageCount > 1 && (
+        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center' }}>
+          <ReactPaginate
+            previousLabel={'←'}
+            nextLabel={'→'}
+            breakLabel={'...'}
+            onPageChange={(selected) => setPage(selected.selected)}
+            forcePage={page}
+            pageCount={pageCount}
+            containerClassName={'pagination'}
+            activeClassName={'active'}
+            pageRangeDisplayed={3}
+            marginPagesDisplayed={1}
+          />
+        </div>
+      )}
     </div>
   )
 }

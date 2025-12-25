@@ -58,3 +58,6 @@ final_quality_statistics.json
 # Generated files
 regenerated_*.pdf
 *_data_quality_report_*.html
+
+# Docker context
+.dockerignore
