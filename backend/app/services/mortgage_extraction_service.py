@@ -57,12 +57,32 @@ class MortgageExtractionService:
             ).first()
             
             # Get field patterns from template or use defaults
+            default_patterns = self._get_default_field_patterns()
             if template:
                 template_structure = template.template_structure or {}
-                field_patterns = template_structure.get("field_patterns", {})
+                field_patterns = template_structure.get("field_patterns", {}) or {}
             else:
                 logger.warning("Mortgage statement template not found, using default patterns")
-                field_patterns = self._get_default_field_patterns()
+                field_patterns = {}
+
+            # Merge in robust default patterns to ensure full coverage (especially for balances, YTD, and payment breakdowns)
+            merged_patterns = {}
+            for field_name, default_cfg in default_patterns.items():
+                existing_cfg = field_patterns.get(field_name, {})
+                existing_patterns = existing_cfg.get("patterns", [])
+                merged_cfg = {
+                    "patterns": default_cfg.get("patterns", []) + [p for p in existing_patterns if p not in default_cfg.get("patterns", [])],
+                    "field_type": existing_cfg.get("field_type", default_cfg.get("field_type", "text")),
+                    "required": existing_cfg.get("required", default_cfg.get("required", False))
+                }
+                merged_patterns[field_name] = merged_cfg
+
+            # Include any extra fields from template not in defaults
+            for field_name, cfg in field_patterns.items():
+                if field_name not in merged_patterns:
+                    merged_patterns[field_name] = cfg
+
+            field_patterns = merged_patterns
             
             # Step 2: Apply learned patterns (prioritize learned patterns over defaults)
             field_patterns = learning_service.apply_learned_patterns(
@@ -134,6 +154,9 @@ class MortgageExtractionService:
                     # Track which pattern successfully extracted this field
                     if successful_pattern:
                         field_patterns_used[field_name] = successful_pattern
+
+            # Structured parsing fallback for table-style statements (fills gaps left by regex-only extraction)
+            self._apply_structured_table_parsing(extracted_text, extracted_fields)
             
             # Filter out invalid loan numbers (common false positives) - Self-healing validation
             if extracted_fields.get("loan_number"):
@@ -220,6 +243,127 @@ class MortgageExtractionService:
                 "success": False,
                 "error": f"Mortgage extraction failed: {str(e)}"
             }
+
+    def _apply_structured_table_parsing(self, extracted_text: str, fields: Dict) -> None:
+        """
+        Fallback parser for tabular mortgage statements (e.g., Wells Fargo layout)
+        where text extraction separates labels from values into column blocks.
+        """
+        currency_re = r"([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})"
+
+        # BALANCES block
+        balances_block = re.search(
+            r"BALANCES\s*(.*?)(?:YEAR\s+TO\s+DATE|PAYMENT\s+INFORMATION)",
+            extracted_text,
+            re.IGNORECASE | re.DOTALL
+        )
+        if balances_block:
+            balance_nums = re.findall(currency_re, balances_block.group(1))
+            if len(balance_nums) >= 6:
+                balance_mapping = [
+                    ("principal_balance", 0),
+                    ("tax_escrow_balance", 1),
+                    ("insurance_escrow_balance", 2),
+                    ("reserve_balance", 3),
+                    ("other_escrow_balance", 4),
+                    ("suspense_balance", 5),
+                ]
+                for field_name, idx in balance_mapping:
+                    if fields.get(field_name) is None:
+                        fields[field_name] = self._parse_currency(balance_nums[idx])
+
+        # YEAR TO DATE block
+        ytd_block = re.search(
+            r"YEAR\s+TO\s+DATE\s*(.*?)(?:PAYMENT\s+INFORMATION|Loan\s+Number)",
+            extracted_text,
+            re.IGNORECASE | re.DOTALL
+        )
+        if ytd_block:
+            ytd_nums = re.findall(currency_re, ytd_block.group(1))
+            if len(ytd_nums) >= 2:
+                if fields.get("ytd_principal_paid") is None:
+                    fields["ytd_principal_paid"] = self._parse_currency(ytd_nums[0])
+                if fields.get("ytd_interest_paid") is None:
+                    fields["ytd_interest_paid"] = self._parse_currency(ytd_nums[1])
+            if len(ytd_nums) >= 5:
+                if fields.get("ytd_taxes_disbursed") is None:
+                    fields["ytd_taxes_disbursed"] = self._parse_currency(ytd_nums[2])
+                if fields.get("ytd_insurance_disbursed") is None:
+                    fields["ytd_insurance_disbursed"] = self._parse_currency(ytd_nums[3])
+                if fields.get("ytd_reserve_disbursed") is None:
+                    fields["ytd_reserve_disbursed"] = self._parse_currency(ytd_nums[4])
+
+        # PAYMENT INFORMATION block
+        payment_block = re.search(
+            r"PAYMENT\s+INFORMATION.*?(?=Late\s+Charges|Total\s+Payment\s+Due)",
+            extracted_text,
+            re.IGNORECASE | re.DOTALL
+        )
+        if payment_block:
+            pay_nums = re.findall(currency_re, payment_block.group(0))
+            # First 11 values = past due rows, next 11 = current rows (Wells Fargo layout)
+            if len(pay_nums) >= 22:
+                past_due = pay_nums[:11]
+                current = pay_nums[11:22]
+
+                current_mapping = [
+                    ("principal_due", 0),
+                    ("interest_due", 1),
+                    ("tax_escrow_due", 2),
+                    ("insurance_escrow_due", 3),
+                    ("reserve_due", 4),
+                ]
+                for field_name, idx in current_mapping:
+                    if fields.get(field_name) is None:
+                        fields[field_name] = self._parse_currency(current[idx])
+
+                # Late and misc fees (use past due values first, then current if present)
+                if fields.get("late_fees") is None and len(past_due) > 7:
+                    fields["late_fees"] = self._parse_currency(past_due[7])
+                if fields.get("late_fees") is None and len(current) > 7:
+                    fields["late_fees"] = self._parse_currency(current[7])
+
+                if fields.get("other_fees") is None:
+                    misc_candidates = []
+                    if len(past_due) > 8:
+                        misc_candidates.append(past_due[8])
+                    if len(current) > 8:
+                        misc_candidates.append(current[8])
+                    for candidate in misc_candidates:
+                        parsed = self._parse_currency(candidate)
+                        if parsed is not None:
+                            fields["other_fees"] = parsed
+                            break
+
+                if fields.get("total_payment_due") is None:
+                    fields["total_payment_due"] = self._parse_currency(current[-1])
+
+        # Coupon/footer "Total Payment Due" (includes late charge warning) as final fallback
+        if fields.get("total_payment_due") is None:
+            total_due_match = re.search(
+                r"Total\s+Payment\s+Due\s*[\s\$]*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})",
+                extracted_text,
+                re.IGNORECASE | re.DOTALL
+            )
+            if total_due_match:
+                coupon_total = self._parse_currency(total_due_match.group(1))
+                if coupon_total is not None:
+                    fields["total_payment_due"] = coupon_total
+        else:
+            # Upgrade to coupon total if it exists and is larger (captures late-charge inclusive amount)
+            total_due_match = re.search(
+                r"Total\s+Payment\s+Due\s*[\s\$]*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})",
+                extracted_text,
+                re.IGNORECASE | re.DOTALL
+            )
+            if total_due_match:
+                coupon_total = self._parse_currency(total_due_match.group(1))
+                if coupon_total is not None and fields.get("total_payment_due") is not None:
+                    try:
+                        if coupon_total > Decimal(str(fields["total_payment_due"])):
+                            fields["total_payment_due"] = coupon_total
+                    except Exception:
+                        pass
     
     def _parse_currency(self, value: str) -> Optional[Decimal]:
         """Parse currency value from string"""
@@ -309,8 +453,9 @@ class MortgageExtractionService:
         insurance_escrow = fields.get("insurance_escrow_balance") or Decimal('0')
         reserve = fields.get("reserve_balance") or Decimal('0')
         other_escrow = fields.get("other_escrow_balance") or Decimal('0')
+        suspense = fields.get("suspense_balance") or Decimal('0')
         
-        fields["total_loan_balance"] = principal + tax_escrow + insurance_escrow + reserve + other_escrow
+        fields["total_loan_balance"] = principal + tax_escrow + insurance_escrow + reserve + other_escrow + suspense
         
         # Calculate ytd_total_paid
         ytd_principal = fields.get("ytd_principal_paid") or Decimal('0')
@@ -318,9 +463,17 @@ class MortgageExtractionService:
         fields["ytd_total_paid"] = ytd_principal + ytd_interest
         
         # Calculate monthly_debt_service
-        principal_due = fields.get("principal_due") or Decimal('0')
-        interest_due = fields.get("interest_due") or Decimal('0')
-        fields["monthly_debt_service"] = principal_due + interest_due
+        if fields.get("total_payment_due") is not None:
+            fields["monthly_debt_service"] = fields.get("total_payment_due")
+        else:
+            principal_due = fields.get("principal_due") or Decimal('0')
+            interest_due = fields.get("interest_due") or Decimal('0')
+            tax_due = fields.get("tax_escrow_due") or Decimal('0')
+            insurance_due = fields.get("insurance_escrow_due") or Decimal('0')
+            reserve_due = fields.get("reserve_due") or Decimal('0')
+            late_fees = fields.get("late_fees") or Decimal('0')
+            other_fees = fields.get("other_fees") or Decimal('0')
+            fields["monthly_debt_service"] = principal_due + interest_due + tax_due + insurance_due + reserve_due + late_fees + other_fees
         
         # Calculate annual_debt_service
         if fields.get("monthly_debt_service"):
@@ -509,11 +662,11 @@ class MortgageExtractionService:
             },
             "principal_balance": {
                 "patterns": [
-                    r"Principal\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Principal Balance                    $   22,199,562.43"
-                    r"BALANCES.*?Principal\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # Section-specific
-                    r"Outstanding\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Current\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Unpaid\s+Principal\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Principal\s+Balance[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Principal Balance                    $   22,199,562.43"
+                    r"BALANCES.*?Principal\s+Balance\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Section-specific
+                    r"Outstanding\s+Principal\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Current\s+Principal\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Unpaid\s+Principal\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": True
@@ -521,7 +674,8 @@ class MortgageExtractionService:
             "payment_due_date": {
                 "patterns": [
                     r"Payment\s+Due\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})",
-                    r"Due\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})"
+                    r"Due\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})",
+                    r"Payment\s+Date\s*:?\s*(\d{1,2}/\d{1,2}/\d{4})"
                 ],
                 "field_type": "date",
                 "required": False
@@ -548,64 +702,102 @@ class MortgageExtractionService:
             },
             "total_payment_due": {
                 "patterns": [
-                    r"Total\s+Payment\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Total Payment Due                    $   176,836.34"
-                    r"TOTAL.*?Current.*?Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",  # "TOTAL" row in payment section
-                    r"Amount\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Payment\s+Amount\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Total\s+Payment\s+Due[^\d]{0,40}\$?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})",  # Wells Fargo wide-spacing: "Total Payment Due                    $   176,836.34"
+                    r"TOTAL\s+PAYMENT\s+DUE[^\d]{0,40}([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})",  # Uppercase rows
+                    r"TOTAL.*?Payment\s+Due[^\d]{0,40}\$?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})",  # Total row near payment section
+                    r"Amount\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})",
+                    r"Payment\s+Amount\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2})"
                 ],
                 "field_type": "currency",
                 "required": False
             },
             "tax_escrow_balance": {
                 "patterns": [
-                    r"Tax\s+Escrow\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Tax Escrow Balance                   $   204,650.95"
-                    r"BALANCES.*?Tax\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Escrow\s+for\s+Taxes\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Tax\s+Escrow\s+Balance[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Tax Escrow Balance                   $   204,650.95"
+                    r"BALANCES.*?Tax\s+Escrow\s+Balance\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Escrow\s+for\s+Taxes\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": False
             },
             "insurance_escrow_balance": {
                 "patterns": [
-                    r"Insurance\s+Escrow\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Insurance Escrow Balance             $   205,315.30"
-                    r"BALANCES.*?Insurance\s+Escrow\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Escrow\s+for\s+Insurance\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Insurance\s+Escrow\s+Balance[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Insurance Escrow Balance             $   205,315.30"
+                    r"BALANCES.*?Insurance\s+Escrow\s+Balance\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Escrow\s+for\s+Insurance\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": False
             },
             "reserve_balance": {
                 "patterns": [
-                    r"Reserve\s+Balance\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Reserve Balance                      $   433,239.75"
-                    r"BALANCES.*?Reserve\s+Balance\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Reserve\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Reserve\s+Balance[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Reserve Balance                      $   433,239.75"
+                    r"BALANCES.*?Reserve\s+Balance\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Reserve\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "suspense_balance": {
+                "patterns": [
+                    r"Suspense\s+Balance[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Suspense\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "other_escrow_balance": {
+                "patterns": [
+                    r"FHA\s+Mtg\s+Ins\s+Prem.*?\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Other\s+Escrow\s+Balance\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Misc\s+Escrow\s+Balance\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": False
             },
             "tax_escrow_due": {
                 "patterns": [
-                    r"Current\s+Tax\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Tax Due                      $   16,048.79"
-                    r"PAYMENT\s+INFORMATION.*?Current\s+Tax\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Tax\s+Escrow\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Current\s+Tax\s+Due[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Current Tax Due                      $   16,048.79"
+                    r"PAYMENT\s+INFORMATION.*?Current\s+Tax\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Tax\s+Escrow\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Tax\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": False
             },
             "insurance_escrow_due": {
                 "patterns": [
-                    r"Current\s+Insurance\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Insurance Due                $   20,531.53"
-                    r"PAYMENT\s+INFORMATION.*?Current\s+Insurance\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Insurance\s+Escrow\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Current\s+Insurance\s+Due[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Current Insurance Due                $   20,531.53"
+                    r"PAYMENT\s+INFORMATION.*?Current\s+Insurance\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Insurance\s+Escrow\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Insurance\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": False
             },
             "reserve_due": {
                 "patterns": [
-                    r"Current\s+Reserves\s+Due\s+\$?\s*([\d,]+\.?\d*)",  # Wells Fargo wide-spacing: "Current Reserves Due                 $   14,626.31"
-                    r"PAYMENT\s+INFORMATION.*?Current\s+Reserves\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)",
-                    r"Reserve\s+Due\s*:?\s*\$?\s*([\d,]+\.?\d*)"
+                    r"Current\s+Reserves\s+Due[\s\$\n\r]*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",  # Wells Fargo wide-spacing: "Current Reserves Due                 $   14,626.31"
+                    r"PAYMENT\s+INFORMATION.*?Current\s+Reserves\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Reserve\s+Due\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "late_fees": {
+                "patterns": [
+                    r"Past\s+Due\s+Late\s+Charges\s+\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Late\s+Charge\s+Due\s+From\s+Last\s+Month\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Late\s+Charges?\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
+                ],
+                "field_type": "currency",
+                "required": False
+            },
+            "other_fees": {
+                "patterns": [
+                    r"Past\s+Due\s+Misc\s+Amount\s+-\s*(?:Fees|Other)\s+\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Misc\s+Amount\s+-\s*Fees\s+\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
+                    r"Misc\s+Fees\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
                 ],
                 "field_type": "currency",
                 "required": False
@@ -656,9 +848,9 @@ class MortgageExtractionService:
             },
             "interest_rate": {
                 "patterns": [
-                    r"Interest\s+Rate\s*:?\s*(\d+\.?\d*)\s*%",
-                    r"Rate\s*:?\s*(\d+\.?\d*)\s*%",
-                    r"(\d+\.?\d*)\s*%\s+Interest"
+                    r"Interest\s+Rate\s*:?\s*([0-9]+(?:\.[0-9]+)?)\s*%?",  # Allow long decimal without trailing % sign
+                    r"Rate\s*:?\s*([0-9]+(?:\.[0-9]+)?)\s*%?",
+                    r"([0-9]+(?:\.[0-9]+)?)\s*%\s+Interest"
                 ],
                 "field_type": "percentage",
                 "required": False
@@ -689,5 +881,3 @@ class MortgageExtractionService:
                 "required": False
             }
         }
-
-

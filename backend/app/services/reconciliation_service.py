@@ -365,11 +365,27 @@ class ReconciliationService:
                 MortgageStatementData.period_id == period_id
             )
         ).all()
-        
-        # Use record ID as key to preserve ALL records
-        return {
-            str(r.id): {
+
+        def _to_float(value):
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        result = {}
+        for r in records:
+            loan_code = r.loan_number or (f"loan-{r.id}" if r.id else "UNKNOWN_LOAN")
+            borrower_display = r.borrower_name or r.property_address or "Mortgage Statement"
+            account_label = f"Principal Balance ({borrower_display})"
+            principal_value = r.principal_balance if r.principal_balance is not None else r.total_loan_balance
+            amount_value = principal_value if principal_value is not None else None
+
+            result[str(r.id)] = {
                 'record_id': r.id,
+                'account_code': loan_code,
+                'account_name': account_label,
                 'loan_number': r.loan_number,
                 'loan_type': r.loan_type,
                 'property_address': r.property_address,
@@ -406,6 +422,7 @@ class ReconciliationService:
                 'remaining_term_months': r.remaining_term_months,
                 'monthly_debt_service': float(r.monthly_debt_service) if r.monthly_debt_service else None,
                 'annual_debt_service': float(r.annual_debt_service) if r.annual_debt_service else None,
+                'amount': _to_float(amount_value),
                 'extraction_confidence': float(r.extraction_confidence) if r.extraction_confidence else None,
                 'extraction_method': r.extraction_method,
                 'needs_review': r.needs_review,
@@ -413,8 +430,8 @@ class ReconciliationService:
                 'validation_score': float(r.validation_score) if r.validation_score else None,
                 'has_errors': r.has_errors
             }
-            for r in records
-        }
+
+        return result
     
     def get_database_data(
         self,
@@ -811,4 +828,3 @@ class ReconciliationService:
             }
             for s in sessions
         ]
-

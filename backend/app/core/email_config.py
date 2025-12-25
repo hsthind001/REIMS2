@@ -34,6 +34,7 @@ class EmailSettings(BaseSettings):
     class Config:
         env_file = ".env"
         env_prefix = "EMAIL_"
+        extra = "ignore"
 
 
 # Global email settings instance
@@ -51,4 +52,3 @@ def get_smtp_config() -> dict:
         "from_email": email_settings.SMTP_FROM_EMAIL,
         "from_name": email_settings.SMTP_FROM_NAME
     }
-

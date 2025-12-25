@@ -44,6 +44,7 @@ backups/
 # Local environment files
 .env.local
 .git-credentials
+.venv/
 
 # Test result files (regenerable)
 *_TEST_RESULTS.json

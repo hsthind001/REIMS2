@@ -721,6 +721,7 @@ class DocumentService:
                 
                 # Step 3: Detect month from filename (initial guess)
                 filename_month = detector.detect_month_from_filename(file.filename or "", year)
+                detected_year = year
                 
                 # Step 4: Read file content early to detect month from PDF for mortgage statements
                 file_content = await file.read()
@@ -758,6 +759,8 @@ class DocumentService:
                             # For other documents, use if confidence is very high (>= 70%)
                             if detected_type == "mortgage_statement" or pdf_period_confidence >= 70:
                                 detected_month = pdf_detected_month
+                                if pdf_detected_year and (detected_type == "mortgage_statement" or pdf_period_confidence >= 70):
+                                    detected_year = pdf_detected_year
                             if detected_type == "mortgage_statement":
                                 print(f"✅ Using PDF statement date for mortgage statement: month {detected_month} (confidence: {pdf_period_confidence}%)")
                                 # Learn period detection pattern for mortgage statements
@@ -796,7 +799,7 @@ class DocumentService:
 
                         # Year mismatch - SKIP for rent_roll to avoid false positives from lease dates
                         if (detected_type != "rent_roll" and 
-                            pdf_detected_year and pdf_detected_year != year):
+                            pdf_detected_year and pdf_detected_year != detected_year):
                             anomalies.append(f"Year mismatch: Expected {year} but PDF content shows {pdf_detected_year}")
 
                         # Month mismatch - only flag if confidence is high and not already corrected
@@ -874,7 +877,7 @@ class DocumentService:
                 # Step 6: Get or create period (after month is finalized)
                 period = self.get_or_create_period(
                     property_obj.id,
-                    year,
+                    detected_year,
                     detected_month
                 )
 
@@ -898,20 +901,29 @@ class DocumentService:
                     DocumentUpload.is_active == True
                 ).order_by(DocumentUpload.version.desc()).first()
 
+                hash_duplicate_replace = False
+
                 # Handle duplicate scenarios based on strategy
                 if duplicate_by_hash:
-                    # Exact same file (same hash) - always skip
+                    # Exact same file (same hash)
                     duplicates_found += 1
-                    result["status"] = "skipped"
-                    result["upload_id"] = duplicate_by_hash.id
-                    result["message"] = f"Identical file already exists (upload_id: {duplicate_by_hash.id})"
-                    results.append(result)
-                    skipped_count += 1
-                    continue
+                    hash_duplicate_replace = duplicate_strategy == "replace"
 
-                elif existing_upload:
+                    if not hash_duplicate_replace:
+                        result["status"] = "skipped"
+                        result["upload_id"] = duplicate_by_hash.id
+                        result["message"] = f"Identical file already exists (upload_id: {duplicate_by_hash.id})"
+                        results.append(result)
+                        skipped_count += 1
+                        continue
+                    else:
+                        existing_upload = duplicate_by_hash
+                        print(f"ℹ️  Identical file detected but replace strategy will re-upload (upload_id: {duplicate_by_hash.id})")
+
+                if existing_upload:
                     # Different file for same property/period/type
-                    duplicates_found += 1
+                    if not hash_duplicate_replace:
+                        duplicates_found += 1
 
                     if duplicate_strategy == "skip":
                         # Skip this upload
@@ -958,7 +970,7 @@ class DocumentService:
                 # Step 8: Generate file path
                 file_path = await self.generate_file_path(
                     property_obj,
-                    year,
+                    detected_year,
                     detected_type,
                     file.filename or "document",
                     period_month=detected_month
@@ -1054,4 +1066,3 @@ class DocumentService:
             "duplicate_strategy": duplicate_strategy,
             "results": results
         }
-
