@@ -1,10 +1,11 @@
 /**
  * Match Detail Modal Component
- * 
+ *
  * Side-by-side comparison of source and target values with algorithm explanation
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../design-system';
 import type { ForensicMatch } from '../../lib/forensic_reconciliation';
@@ -25,6 +26,24 @@ export default function MatchDetailModal({
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
 
+  // Handle ESC key to close modal and lock body scroll
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    // Prevent body scroll when modal is open
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
   const handleReject = () => {
     if (!rejectReason.trim()) {
       alert('Please provide a rejection reason');
@@ -33,15 +52,39 @@ export default function MatchDetailModal({
     onReject(rejectReason);
   };
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[60] p-4"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backdropFilter: 'blur(4px)'
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+        style={{
+          position: 'relative',
+          backgroundColor: '#ffffff',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between" style={{ backgroundColor: '#ffffff', zIndex: 10 }}>
           <h2 className="text-xl font-bold text-gray-900">Match Details</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1 transition-colors"
+            title="Close (or click outside)"
           >
             <X className="w-6 h-6" />
           </button>
@@ -240,5 +283,8 @@ export default function MatchDetailModal({
       </div>
     </div>
   );
+
+  // Render modal using portal to bypass parent container constraints
+  return createPortal(modalContent, document.body);
 }
 

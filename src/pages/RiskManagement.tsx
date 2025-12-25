@@ -29,6 +29,7 @@ import { useAuth } from '../components/AuthContext'
 import AnomalyDetail from '../components/anomalies/AnomalyDetail'
 import AlertDetailView from '../components/alerts/AlertDetailView'
 import { AlertService } from '../lib/alerts'
+import ValueSetupPanel from '../components/risk/ValueSetupPanel'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL 
   ? `${import.meta.env.VITE_API_URL}/api/v1` 
@@ -52,7 +53,7 @@ interface Property {
   property_type?: string
 }
 
-type ViewMode = 'unified' | 'anomalies' | 'alerts' | 'locks' | 'analytics'
+type ViewMode = 'unified' | 'anomalies' | 'alerts' | 'locks' | 'analytics' | 'value_setup'
 type DetailView = 'anomaly' | 'alert' | null
 
 export default function RiskManagement() {
@@ -631,7 +632,7 @@ export default function RiskManagement() {
         borderBottom: '2px solid #e5e7eb',
         paddingBottom: '0.5rem'
       }}>
-        {(['unified', 'anomalies', 'alerts', 'locks', 'analytics'] as ViewMode[]).map(mode => (
+        {(['unified', 'anomalies', 'alerts', 'locks', 'analytics', 'value_setup'] as ViewMode[]).map(mode => (
           <button
             key={mode}
             onClick={() => setViewMode(mode)}
@@ -639,7 +640,8 @@ export default function RiskManagement() {
             style={{ textTransform: 'capitalize' }}
           >
             {mode === 'unified' && <Activity size={16} style={{ marginRight: '0.25rem' }} />}
-            {mode}
+            {mode === 'value_setup' && <Settings size={16} style={{ marginRight: '0.25rem' }} />}
+            {mode === 'value_setup' ? 'Value Setup' : mode}
           </button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
@@ -757,6 +759,10 @@ export default function RiskManagement() {
               Analytics view coming soon. This will include trend analysis, risk scoring, and predictive insights.
             </p>
           </div>
+        )}
+
+        {viewMode === 'value_setup' && (
+          <ValueSetupPanel />
         )}
       </div>
 

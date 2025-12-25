@@ -17,6 +17,7 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
+from app.models.mortgage_statement_data import MortgageStatementData
 
 
 router = APIRouter()
@@ -305,6 +306,10 @@ async def get_quality_summary(
                 records = db.query(RentRollData).filter(
                     RentRollData.upload_id == upload.id
                 ).all()
+            elif upload.document_type == "mortgage_statement":
+                records = db.query(MortgageStatementData).filter(
+                    MortgageStatementData.upload_id == upload.id
+                ).all()
             else:
                 continue
             
@@ -323,21 +328,21 @@ async def get_quality_summary(
                 total_records += 1
                 by_doc_type[doc_type]["total_records"] += 1
 
-                # Rent rolls don't have account_id, skip matching logic for them
-                if doc_type != "rent_roll":
+                # Rent rolls and mortgage statements don't have account_id, skip matching logic for them
+                if doc_type not in ["rent_roll", "mortgage_statement"]:
                     if hasattr(record, 'account_id') and record.account_id is not None:
                         total_matched += 1
                         by_doc_type[doc_type]["matched_records"] += 1
                 else:
-                    # For rent rolls, consider all as "matched"
+                    # For rent rolls and mortgage statements, consider all as "matched"
                     total_matched += 1
                     by_doc_type[doc_type]["matched_records"] += 1
 
                 conf = float(record.extraction_confidence) if record.extraction_confidence else 0
                 all_confidences.append(conf)
 
-                # For rent rolls, use validation_score instead of match logic
-                if doc_type == "rent_roll":
+                # For rent rolls and mortgage statements, use extraction confidence
+                if doc_type in ["rent_roll", "mortgage_statement"]:
                     validation_score = float(record.validation_score) if hasattr(record, 'validation_score') and record.validation_score else 0
                     if validation_score < 85:
                         total_critical += 1

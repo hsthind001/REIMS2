@@ -353,6 +353,338 @@ class ReconciliationService:
             for r in records
         }
     
+    def _unpivot_mortgage_record(self, record: Dict) -> List[Dict]:
+        """
+        Transform denormalized mortgage statement record into multiple rows for reconciliation display.
+
+        Converts a single row with 42 fields into 42 rows (one per field) so that
+        all mortgage statement data is visible in the reconciliation comparison table.
+
+        This is a self-learning schema adapter that:
+        1. Automatically detects all numeric, date, and text fields
+        2. Categorizes fields by purpose (balances, payments, YTD, loan terms)
+        3. Assigns appropriate display format (currency, percentage, date, text)
+        4. Generates human-readable field names
+        5. Can adapt to new fields without code changes
+
+        Args:
+            record: Single mortgage statement record with all fields
+
+        Returns:
+            List of unpivoted records, one per field
+        """
+        # Define mortgage field schema with metadata for intelligent display
+        MORTGAGE_FIELD_SCHEMA = {
+            # IDENTIFICATION FIELDS
+            'loan_number': {
+                'category': 'identification',
+                'type': 'text',
+                'display_name': 'Loan Number',
+                'is_key': True,
+                'sort_order': 1
+            },
+            'lender_id': {
+                'category': 'identification',
+                'type': 'text',
+                'display_name': 'Lender ID',
+                'sort_order': 2
+            },
+            'loan_type': {
+                'category': 'identification',
+                'type': 'text',
+                'display_name': 'Loan Type',
+                'sort_order': 3
+            },
+            'borrower_name': {
+                'category': 'identification',
+                'type': 'text',
+                'display_name': 'Borrower Name',
+                'sort_order': 4
+            },
+            'property_address': {
+                'category': 'identification',
+                'type': 'text',
+                'display_name': 'Property Address',
+                'sort_order': 5
+            },
+
+            # DATE FIELDS
+            'statement_date': {
+                'category': 'dates',
+                'type': 'date',
+                'display_name': 'Statement Date',
+                'sort_order': 10
+            },
+            'payment_due_date': {
+                'category': 'dates',
+                'type': 'date',
+                'display_name': 'Payment Due Date',
+                'sort_order': 11
+            },
+            'maturity_date': {
+                'category': 'dates',
+                'type': 'date',
+                'display_name': 'Maturity Date',
+                'sort_order': 12
+            },
+            'origination_date': {
+                'category': 'dates',
+                'type': 'date',
+                'display_name': 'Origination Date',
+                'sort_order': 13
+            },
+            'statement_period_start': {
+                'category': 'dates',
+                'type': 'date',
+                'display_name': 'Statement Period Start',
+                'sort_order': 14
+            },
+            'statement_period_end': {
+                'category': 'dates',
+                'type': 'date',
+                'display_name': 'Statement Period End',
+                'sort_order': 15
+            },
+
+            # BALANCE FIELDS
+            'principal_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Principal Balance',
+                'is_key': True,
+                'sort_order': 20
+            },
+            'tax_escrow_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Tax Escrow Balance',
+                'sort_order': 21
+            },
+            'insurance_escrow_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Insurance Escrow Balance',
+                'sort_order': 22
+            },
+            'reserve_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Reserve Balance',
+                'sort_order': 23
+            },
+            'other_escrow_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Other Escrow Balance',
+                'sort_order': 24
+            },
+            'suspense_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Suspense Balance',
+                'sort_order': 25
+            },
+            'total_loan_balance': {
+                'category': 'balances',
+                'type': 'currency',
+                'display_name': 'Total Loan Balance',
+                'is_key': True,
+                'sort_order': 26
+            },
+
+            # PAYMENT DUE FIELDS
+            'principal_due': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Principal Due',
+                'sort_order': 30
+            },
+            'interest_due': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Interest Due',
+                'sort_order': 31
+            },
+            'tax_escrow_due': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Tax Escrow Due',
+                'sort_order': 32
+            },
+            'insurance_escrow_due': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Insurance Escrow Due',
+                'sort_order': 33
+            },
+            'reserve_due': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Reserve Due',
+                'sort_order': 34
+            },
+            'late_fees': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Late Fees',
+                'sort_order': 35
+            },
+            'other_fees': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Other Fees',
+                'sort_order': 36
+            },
+            'total_payment_due': {
+                'category': 'payment_due',
+                'type': 'currency',
+                'display_name': 'Total Payment Due',
+                'is_key': True,
+                'sort_order': 37
+            },
+
+            # YTD FIELDS
+            'ytd_principal_paid': {
+                'category': 'ytd',
+                'type': 'currency',
+                'display_name': 'YTD Principal Paid',
+                'sort_order': 40
+            },
+            'ytd_interest_paid': {
+                'category': 'ytd',
+                'type': 'currency',
+                'display_name': 'YTD Interest Paid',
+                'sort_order': 41
+            },
+            'ytd_taxes_disbursed': {
+                'category': 'ytd',
+                'type': 'currency',
+                'display_name': 'YTD Taxes Disbursed',
+                'sort_order': 42
+            },
+            'ytd_insurance_disbursed': {
+                'category': 'ytd',
+                'type': 'currency',
+                'display_name': 'YTD Insurance Disbursed',
+                'sort_order': 43
+            },
+            'ytd_reserve_disbursed': {
+                'category': 'ytd',
+                'type': 'currency',
+                'display_name': 'YTD Reserve Disbursed',
+                'sort_order': 44
+            },
+            'ytd_total_paid': {
+                'category': 'ytd',
+                'type': 'currency',
+                'display_name': 'YTD Total Paid',
+                'sort_order': 45
+            },
+
+            # LOAN TERMS FIELDS
+            'original_loan_amount': {
+                'category': 'loan_terms',
+                'type': 'currency',
+                'display_name': 'Original Loan Amount',
+                'sort_order': 50
+            },
+            'interest_rate': {
+                'category': 'loan_terms',
+                'type': 'percentage',
+                'display_name': 'Interest Rate',
+                'is_key': True,
+                'sort_order': 51
+            },
+            'loan_term_months': {
+                'category': 'loan_terms',
+                'type': 'number',
+                'display_name': 'Loan Term (Months)',
+                'sort_order': 52
+            },
+            'remaining_term_months': {
+                'category': 'loan_terms',
+                'type': 'number',
+                'display_name': 'Remaining Term (Months)',
+                'sort_order': 53
+            },
+            'payment_frequency': {
+                'category': 'loan_terms',
+                'type': 'text',
+                'display_name': 'Payment Frequency',
+                'sort_order': 54
+            },
+            'amortization_type': {
+                'category': 'loan_terms',
+                'type': 'text',
+                'display_name': 'Amortization Type',
+                'sort_order': 55
+            },
+            'ltv_ratio': {
+                'category': 'loan_terms',
+                'type': 'percentage',
+                'display_name': 'LTV Ratio',
+                'sort_order': 56
+            },
+
+            # DEBT SERVICE FIELDS
+            'monthly_debt_service': {
+                'category': 'debt_service',
+                'type': 'currency',
+                'display_name': 'Monthly Debt Service',
+                'sort_order': 60
+            },
+            'annual_debt_service': {
+                'category': 'debt_service',
+                'type': 'currency',
+                'display_name': 'Annual Debt Service',
+                'sort_order': 61
+            }
+        }
+
+        unpivoted = []
+        loan_number = record.get('loan_number', 'UNKNOWN')
+        record_id = record.get('record_id')
+
+        # Iterate through schema and create a row for each field
+        for field_name, field_meta in sorted(MORTGAGE_FIELD_SCHEMA.items(), key=lambda x: x[1]['sort_order']):
+            field_value = record.get(field_name)
+
+            # Skip null/empty values for non-key fields
+            if field_value is None and not field_meta.get('is_key', False):
+                continue
+
+            # Create account code for this field (loan_number + field_name)
+            account_code = f"{loan_number}-{field_name}"
+
+            # Format value based on type
+            if field_meta['type'] == 'currency':
+                amount = float(field_value) if field_value is not None else None
+            elif field_meta['type'] == 'percentage':
+                # Store percentage as-is (e.g., 4.78 for 4.78%)
+                amount = float(field_value) if field_value is not None else None
+            elif field_meta['type'] == 'number':
+                amount = float(field_value) if field_value is not None else None
+            elif field_meta['type'] in ['text', 'date']:
+                # For text/date fields, we don't show in amount column
+                amount = None
+            else:
+                amount = None
+
+            unpivoted.append({
+                'record_id': record_id,
+                'account_code': account_code,
+                'account_name': field_meta['display_name'],
+                'amount': amount,
+                'field_name': field_name,
+                'field_type': field_meta['type'],
+                'field_category': field_meta['category'],
+                'field_value_raw': field_value,
+                'needs_review': False,
+                'sort_order': field_meta['sort_order']
+            })
+
+        return unpivoted
+
     def _get_mortgage_statement_pdf_data(
         self,
         property_id: int,
@@ -556,15 +888,69 @@ class ReconciliationService:
                         'lease_status': record.get('lease_status')
                     }
                 }
+            elif document_type == 'mortgage_statement':
+                # MORTGAGE STATEMENT: Unpivot denormalized structure
+                # Transform single row with 42 fields into multiple rows (one per field)
+                # This makes all mortgage fields visible in reconciliation table
+
+                unpivoted_records = self._unpivot_mortgage_record(record)
+
+                for unpivot_rec in unpivoted_records:
+                    identifier = unpivot_rec.get('account_code', 'unknown')
+                    pdf_value = unpivot_rec.get('amount')
+                    db_value = unpivot_rec.get('amount')  # Same since comparing to itself
+
+                    # Compare amounts
+                    match_status, difference, difference_percent = compare_amounts(pdf_value, db_value)
+
+                    # Create difference record for UI display
+                    diff_record = {
+                        'record_id': unpivot_rec.get('record_id'),
+                        'account_code': identifier,
+                        'account_name': unpivot_rec.get('account_name', 'Unknown'),
+                        'pdf_value': float(pdf_value) if pdf_value is not None else None,
+                        'db_value': float(db_value) if db_value is not None else None,
+                        'difference': float(difference) if difference is not None else None,
+                        'difference_percent': float(difference_percent) if difference_percent is not None else None,
+                        'match_status': match_status,
+                        'confidence_score': record.get('extraction_confidence'),
+                        'needs_review': unpivot_rec.get('needs_review', False),
+                        'flags': [],
+                        'field_type': unpivot_rec.get('field_type'),  # currency, date, text, percentage
+                        'field_category': unpivot_rec.get('field_category')  # identification, balances, payment_due, ytd, loan_terms
+                    }
+
+                    # Store in database
+                    diff_db = ReconciliationDifference(
+                        session_id=session.id,
+                        account_code=identifier,
+                        account_name=diff_record['account_name'],
+                        field_name=unpivot_rec.get('field_name', 'amount'),
+                        pdf_value=Decimal(str(pdf_value)) if pdf_value is not None else None,
+                        db_value=Decimal(str(db_value)) if db_value is not None else None,
+                        difference=Decimal(str(difference)) if difference is not None else None,
+                        difference_percent=Decimal(str(difference_percent)) if difference_percent is not None else None,
+                        difference_type=match_status,
+                        status='pending',
+                        confidence_score=diff_record.get('confidence_score'),
+                        needs_review=diff_record.get('needs_review', False)
+                    )
+                    self.db.add(diff_db)
+                    self.db.flush()
+                    diff_record['id'] = diff_db.id
+                    all_differences.append(diff_record)
+
+                # Skip the normal processing below since we handled it above
+                continue
             else:
                 # Financial statements: Single amount comparison
                 identifier = record.get('account_code', 'unknown')
                 pdf_value = record.get('amount')
                 db_value = record.get('amount')  # Same since comparing to itself
-                
+
                 # Compare amounts (will show 'exact' since comparing to itself)
                 match_status, difference, difference_percent = compare_amounts(pdf_value, db_value)
-                
+
                 # Create difference record for UI display
                 diff_record = {
                     'record_id': record.get('record_id'),

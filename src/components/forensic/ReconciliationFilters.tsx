@@ -86,7 +86,9 @@ export default function ReconciliationFilters({
               <option value="">All Properties</option>
               {properties.map(prop => (
                 <option key={prop.id} value={prop.id}>
-                  {prop.name || `Property ${prop.id}`}
+                  {prop.property_code && prop.property_name
+                    ? `${prop.property_code} - ${prop.property_name}`
+                    : prop.property_name || prop.name || `Property ${prop.id}`}
                 </option>
               ))}
             </select>

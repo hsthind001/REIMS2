@@ -394,17 +394,19 @@ class AnomalyThresholdService:
     ) -> List[Dict[str, Any]]:
         """
         Get all accounts from chart_of_accounts AND actual data tables with their thresholds.
-        Optionally filter by document types (income_statement, balance_sheet, cash_flow).
+        Optionally filter by document types (income_statement, balance_sheet, cash_flow, rent_roll, mortgage_statement).
         Returns list of dicts with account info and threshold if exists.
         
         This method combines:
         1. Accounts from chart_of_accounts (template/master list)
-        2. Accounts from actual data tables (income_statement_data, balance_sheet_data, cash_flow_data)
+        2. Accounts from actual data tables (income_statement_data, balance_sheet_data, cash_flow_data, mortgage_statement_data)
         """
         from sqlalchemy import distinct, func
         from app.models.income_statement_data import IncomeStatementData
         from app.models.balance_sheet_data import BalanceSheetData
         from app.models.cash_flow_data import CashFlowData
+        from app.models.mortgage_statement_data import MortgageStatementData
+        from app.models.rent_roll_data import RentRollData
         
         # Get all active thresholds
         thresholds = {
@@ -517,9 +519,61 @@ class AnomalyThresholdService:
                         "default_threshold": float(default_threshold)
                     }
         
+        if not document_types or 'mortgage_statement' in document_types:
+            mortgage_accounts = self.db.query(
+                distinct(MortgageStatementData.loan_number).label('loan_number')
+            ).filter(MortgageStatementData.loan_number.isnot(None)).all()
+
+            for acc in mortgage_accounts:
+                code = acc.loan_number
+                if code and code not in account_map:
+                    threshold_val = None
+                    is_custom = False
+                    if code in thresholds:
+                        threshold_val = float(thresholds[code].threshold_value)
+                        is_custom = True
+                    account_map[code] = {
+                        "account_code": code,
+                        "account_name": f"Loan {code} Principal Balance",
+                        "account_type": "liability",
+                        "threshold_value": threshold_val,
+                        "is_custom": is_custom,
+                        "default_threshold": float(default_threshold)
+                    }
+
+        if not document_types or 'rent_roll' in document_types:
+            # Use unit_number as the identifier; if missing, fall back to tenant_name
+            rent_roll_accounts = self.db.query(
+                distinct(RentRollData.unit_number).label('unit_number'),
+                func.max(RentRollData.tenant_name).label('tenant_name')
+            ).group_by(RentRollData.unit_number).all()
+
+            for acc in rent_roll_accounts:
+                identifier = acc.unit_number or acc.tenant_name
+                if not identifier:
+                    continue
+                if identifier not in account_map:
+                    threshold_val = None
+                    is_custom = False
+                    if identifier in thresholds:
+                        threshold_val = float(thresholds[identifier].threshold_value)
+                        is_custom = True
+
+                    display_name = acc.tenant_name or acc.unit_number
+                    if acc.unit_number and acc.tenant_name:
+                        display_name = f"{acc.unit_number} - {acc.tenant_name}"
+
+                    account_map[identifier] = {
+                        "account_code": identifier,
+                        "account_name": display_name,
+                        "account_type": "rent_roll",
+                        "threshold_value": threshold_val,
+                        "is_custom": is_custom,
+                        "default_threshold": float(default_threshold)
+                    }
+        
         # Convert to list and sort by account_code
         result = list(account_map.values())
         result.sort(key=lambda x: x["account_code"])
         
         return result
-

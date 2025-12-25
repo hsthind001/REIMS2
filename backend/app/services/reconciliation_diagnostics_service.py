@@ -241,20 +241,24 @@ class ReconciliationDiagnosticsService:
         }
         
         # Expected accounts for reconciliation
+        # Updated to match actual ESP001 chart of accounts (2025-12-25)
         expected_accounts = {
             'balance_sheet': [
                 ('3995-0000', 'Current Period Earnings'),
                 ('3910-0000', 'Retained Earnings'),
+                ('0121-0000', 'Cash - Depository'),
                 ('0122-0000', 'Cash - Operating'),
-                ('2610-0000', 'Long-Term Debt')
+                ('2700-0000', 'Long-Term Debt')  # Wells Fargo mortgage (was 2610-0000)
             ],
             'income_statement': [
                 ('9090-0000', 'Net Income'),
+                ('6299-0000', 'Net Operating Income'),
                 ('4010-0000', 'Base Rentals'),
-                ('6520-0000', 'Interest Expense')
+                ('7010-0000', 'Interest Expense')  # Mortgage Interest (was 6520-0000)
             ],
             'cash_flow': [
-                ('9999-0000', 'Ending Cash')
+                ('0121-0000', 'Cash - Depository'),  # Actual cash accounts (not 9999-0000)
+                ('0122-0000', 'Cash - Operating')
             ]
         }
         

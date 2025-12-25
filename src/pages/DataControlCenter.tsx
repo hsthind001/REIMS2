@@ -1086,7 +1086,7 @@ export default function DataControlCenter() {
                     <span className="font-medium">{qualityScore.completeness.requiredFieldsFilled}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-text-secondary">Missing Fields:</span>
+                    <span className="text-text-secondary">Needs Review:</span>
                     <span className="font-medium text-warning">{qualityScore.completeness.missingFields}</span>
                   </div>
                 </div>

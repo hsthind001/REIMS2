@@ -9,7 +9,7 @@ import { useState, useEffect } from 'react';
 import { X, Check, AlertTriangle, FileText, TrendingUp, TrendingDown, Info } from 'lucide-react';
 import { reviewService } from '../../lib/review';
 import { propertyService } from '../../lib/property';
-import { AnomalyPDFViewer } from '../anomalies/AnomalyPDFViewer';
+import { AnomalyPDFViewer } from '../AnomalyPDFViewer';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 

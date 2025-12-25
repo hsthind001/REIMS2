@@ -75,7 +75,7 @@ async def get_all_accounts_with_thresholds(
     Get all accounts from chart_of_accounts with their threshold information.
     This is used to populate the Value Setup table.
     
-    Returns accounts from Income Statement, Balance Sheet, and Cash Flow documents.
+    Returns accounts from Income Statement, Balance Sheet, Cash Flow, Mortgage Statement, and Rent Roll documents.
     """
     service = AnomalyThresholdService(db)
     
@@ -84,7 +84,7 @@ async def get_all_accounts_with_thresholds(
         document_types = [document_type]
     else:
         # Default: include all relevant document types
-        document_types = ["income_statement", "balance_sheet", "cash_flow"]
+        document_types = ["income_statement", "balance_sheet", "cash_flow", "mortgage_statement", "rent_roll"]
     
     accounts = service.get_all_accounts_with_thresholds(document_types=document_types)
     return accounts
@@ -241,4 +241,3 @@ async def set_default_threshold(
         default_threshold=Decimal(config.config_value),
         description="Default percentage threshold for anomaly detection (stored as decimal, e.g., 0.01 = 1%). Used when no custom threshold is set for an account."
     )
-
