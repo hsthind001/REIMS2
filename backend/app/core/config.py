@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     
     # External API Keys (Optional - for higher rate limits)
     CENSUS_API_KEY: Optional[str] = None  # Optional - Census API works without key for basic queries
+    FRED_API_KEY: Optional[str] = None  # Required for FRED economic indicators
     BLS_API_KEY: Optional[str] = None  # Optional - Bureau of Labor Statistics
     GOOGLE_PLACES_API_KEY: Optional[str] = None  # Optional - Google Places API
     
@@ -134,7 +135,7 @@ class Settings(BaseSettings):
         @classmethod
         def parse_env_var(cls, field_name: str, raw_val: str) -> any:
             # Ensure API keys are read from environment
-            if field_name in ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']:
+            if field_name in ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'FRED_API_KEY', 'CENSUS_API_KEY']:
                 return raw_val
             return cls.json_loads(raw_val)
 

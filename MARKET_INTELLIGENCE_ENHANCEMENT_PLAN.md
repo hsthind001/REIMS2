@@ -197,6 +197,52 @@ location_intelligence: {
     parking_spaces: number
   }
 }
+
+---
+
+## Implementation Plan (Actionable)
+
+### Phase 1: Foundation (Weeks 1-2)
+- Wire external data providers (Census, BLS, HUD, FRED) behind a `market_data_service` with caching and source/vintage tagging.
+- Add GIS/coordinates enrichment service using OpenStreetMap/Nominatim + census geocoding; persist lat/lon, tract/block, MSA, county, ZIP per property.
+- Introduce audit trail for market data pulls (source, vintage, confidence, last_updated) and store alongside property metadata.
+
+### Phase 2: Location Intelligence & Scores (Weeks 3-4)
+- Integrate walk/transit/bike scores (OpenStreetMap + custom heuristics if WalkScore API not licensed).
+- Add amenity counts within 1-mile/3-mile rings (OSM queries) and traffic/airport proximity fields.
+- Add environmental risk placeholders (flood/wildfire if data available later) and zoning/regulatory notes field.
+- Build GIS map widget (leaflet or maplibre) to visualize property pins, rings, and amenity layers.
+
+### Phase 3: Comparables & Competitive Analysis (Weeks 5-6)
+- Expand comps search radius options (1/3/5/10 miles) with filters (asset type, size, vintage, rent).
+- Add competitive set builder: manually curate comps + auto-suggest based on similarity (asset type, size, rent, vintage).
+- Add audit-grade comparables report export (PDF/Excel) with source footnotes and confidence.
+
+### Phase 4: Predictive & Scenario Modeling (Weeks 7-9)
+- Add time-series models for rent growth, occupancy, cap rates (per MSA/asset class) using FRED/BLS/Census inputs.
+- Scenario engine: sensitivities on rent growth, vacancy, expense inflation, exit cap; output DSCR/NOI/IRR deltas.
+- Economic impact snapshot: jobs supported, taxes, spend multipliers (static coefficients; upgrade later with regional IO tables if licensed).
+
+### Phase 5: Data Quality, Governance, and Self-Learning (Weeks 10-11)
+- Enforce validation rules on market fields (ranges, freshness thresholds, required sources) with audit logs.
+- Add confidence scoring per data point (source authority + vintage + completeness).
+- Self-learning loop: track user overrides/edits to adjust source priority and weighting for future pulls; surface “learned” preferred sources per region/asset class.
+
+### Phase 6: UI/UX Delivery (parallel sprints)
+- New “Market Intelligence” workspace: tabs for Overview, Map, Comps, Forecasts, Scenarios, Sources.
+- Inline source/vintage badges on every KPI; hover for audit trail.
+- Fast filters (radius, asset type, MSA) and exports (PDF/Excel) with footnotes listing sources/vintage.
+
+### Dependencies & Tooling
+- Backend: new services for data ingestion (`market_data_service`), caching, audit logging; scheduled refresh jobs.
+- Frontend: map via leaflet/maplibre; charts via existing library; new pages/components above.
+- Ops: add env toggles for external APIs; rate limiting + backoff; cache (Redis) and persistence tables for market data.
+
+### Success Criteria
+- 90% of properties enriched with geo + demographics + amenity rings and saved with source/vintage.
+- Comps search configurable radius with export; map with layers working.
+- Forecasts & scenarios delivered with auditability (inputs + model version).
+- Self-learning tracks overrides and adjusts source weighting; validation prevents stale/out-of-range data from surfacing.
 ```
 
 **Recommended Open Source Tools:**

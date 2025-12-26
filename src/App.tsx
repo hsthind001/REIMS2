@@ -17,6 +17,7 @@ const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
 const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
 const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
+const MarketIntelligenceDashboard = lazy(() => import('./pages/MarketIntelligenceDashboard'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -69,6 +70,10 @@ function AppContent() {
       // If navigating to forensic-reconciliation, ensure we're on operations page
       if (routeName === 'forensic-reconciliation' && currentPage !== 'operations') {
         setCurrentPage('operations')
+      }
+      // If navigating to market-intelligence, ensure we're on properties page
+      if (routeName.startsWith('market-intelligence') && currentPage !== 'properties') {
+        setCurrentPage('properties')
       }
     }
 
@@ -258,6 +263,10 @@ function AppContent() {
           ) : hashRoute === 'forensic-reconciliation' ? (
             <Suspense fallback={<PageLoader />}>
               <ForensicReconciliation />
+            </Suspense>
+          ) : hashRoute.startsWith('market-intelligence/') ? (
+            <Suspense fallback={<PageLoader />}>
+              <MarketIntelligenceDashboard />
             </Suspense>
           ) : (
             renderPage()

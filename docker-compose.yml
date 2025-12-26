@@ -223,6 +223,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_MODEL: ${LLM_MODEL:-gpt-4-turbo-preview}
+      # Market Intelligence API Keys
+      FRED_API_KEY: ${FRED_API_KEY}
+      CENSUS_API_KEY: ${CENSUS_API_KEY}
       
       # ============================================================================
       # ANOMALY DETECTION ENHANCEMENT CONFIGURATION

@@ -84,7 +84,10 @@
       "Bash(python:*)",
       "Bash(docker-compose logs:*)",
       "Bash(for:*)",
-      "Bash(time curl:*)"
+      "Bash(time curl:*)",
+      "Bash(alembic revision:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(PGPASSWORD=reims docker compose exec:*)"
     ]
   }
 }

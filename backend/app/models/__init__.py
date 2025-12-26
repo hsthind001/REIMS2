@@ -106,6 +106,10 @@ from app.models.reconciliation_learning_log import ReconciliationLearningLog
 # Self-learning period detection models
 from app.models.filename_period_pattern import FilenamePeriodPattern
 
+# Market intelligence models
+from app.models.market_intelligence import MarketIntelligence
+from app.models.market_data_lineage import MarketDataLineage, ForecastModel
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -211,4 +215,8 @@ __all__ = [
     "ReconciliationLearningLog",
     # Self-learning period detection
     "FilenamePeriodPattern",
+    # Market intelligence
+    "MarketIntelligence",
+    "MarketDataLineage",
+    "ForecastModel",
 ]

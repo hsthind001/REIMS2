@@ -1656,9 +1656,21 @@ export default function PortfolioHub() {
                     ) : marketIntel ? (
                       <>
                         <Card variant="premium" className="p-6">
-                          <div className="flex items-center gap-2 mb-4">
-                            <Sparkles className="w-5 h-5 text-premium" />
-                            <h3 className="text-lg font-semibold">Market Intelligence (AI-Powered)</h3>
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-5 h-5 text-premium" />
+                              <h3 className="text-lg font-semibold">Market Intelligence (AI-Powered)</h3>
+                            </div>
+                            <Button
+                              variant="primary"
+                              onClick={() => {
+                                if (selectedProperty) {
+                                  window.location.hash = `market-intelligence/${selectedProperty.property_code}`;
+                                }
+                              }}
+                            >
+                              View Full Dashboard
+                            </Button>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>

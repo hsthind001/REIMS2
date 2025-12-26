@@ -61,6 +61,11 @@ class Property(Base):
     # Self-learning pattern recognition
     filename_patterns = relationship("FilenamePeriodPattern", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
 
+    # Market intelligence relationships
+    market_intelligence = relationship("MarketIntelligence", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
+    market_data_lineage = relationship("MarketDataLineage", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
+    forecast_models = relationship("ForecastModel", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload", foreign_keys="ForecastModel.property_id")
+
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"
     
