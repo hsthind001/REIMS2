@@ -6,8 +6,6 @@ import { visualizer } from 'rollup-plugin-visualizer'
 export default defineConfig({
   plugins: [
     react({
-      // Enable React Fast Refresh
-      fastRefresh: true,
       // Babel plugins for optimization
       babel: {
         plugins: [
@@ -17,13 +15,13 @@ export default defineConfig({
       },
     }),
     // Bundle analyzer (only in analyze mode)
-    process.env.ANALYZE && visualizer({
+    ...(process.env.ANALYZE ? [visualizer({
       open: true,
       filename: 'dist/stats.html',
       gzipSize: true,
       brotliSize: true,
-    }),
-  ].filter(Boolean),
+    })] : []),
+  ],
 
   // Optimize dependencies
   optimizeDeps: {
@@ -128,18 +126,16 @@ export default defineConfig({
         },
 
         // Optimize chunk names
-        chunkFileNames: (chunkInfo) => {
-          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').slice(-1)[0] : 'chunk';
+        chunkFileNames: () => {
           return `assets/js/[name]-[hash].js`;
         },
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name.split('.');
-          const ext = info[info.length - 1];
-          if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(assetInfo.name)) {
+          const name = assetInfo.name || 'asset';
+          if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(name)) {
             return `assets/images/[name]-[hash][extname]`;
-          } else if (/\.css$/i.test(assetInfo.name)) {
+          } else if (/\.css$/i.test(name)) {
             return `assets/css/[name]-[hash][extname]`;
-          } else if (/\.(woff2?|eot|ttf|otf)$/i.test(assetInfo.name)) {
+          } else if (/\.(woff2?|eot|ttf|otf)$/i.test(name)) {
             return `assets/fonts/[name]-[hash][extname]`;
           }
           return `assets/[name]-[hash][extname]`;
@@ -179,24 +175,6 @@ export default defineConfig({
     port: 4173,
     host: '0.0.0.0',
     strictPort: true,
-  },
-
-  // Test configuration
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/test/setup.ts',
-    css: true,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      exclude: [
-        'node_modules/',
-        'src/test/',
-        '**/*.test.{ts,tsx}',
-        '**/*.spec.{ts,tsx}',
-      ],
-    },
   },
 
   // Enable JSON import optimization

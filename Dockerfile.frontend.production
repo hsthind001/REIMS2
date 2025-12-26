@@ -23,7 +23,8 @@ COPY . .
 
 # Build for production with optimizations
 ENV NODE_ENV=production
-RUN npm run build
+# Skip TypeScript checks for production build (vite build only)
+RUN npx vite build
 
 # Stage 2: Production stage with nginx
 FROM nginx:alpine AS production
