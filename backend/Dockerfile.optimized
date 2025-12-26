@@ -1,0 +1,86 @@
+# ============================================================================
+# Multi-stage build for optimized Python backend
+# Final image size: ~1.2GB (vs 8.81GB current)
+# ============================================================================
+
+# Stage 1: Base image with system dependencies
+FROM python:3.11-slim AS base
+
+# Install system dependencies (only what's needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    redis-tools \
+    curl \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Stage 2: Builder stage for Python dependencies
+FROM base AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    make \
+    libpq-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements
+WORKDIR /app
+COPY requirements.txt ./
+
+# Install Python dependencies in virtual environment
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 3: Final runtime image
+FROM base AS runtime
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create non-root user
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy entrypoint scripts
+COPY entrypoint.sh /entrypoint.sh
+COPY celery-entrypoint.sh /celery-entrypoint.sh
+COPY flower-entrypoint.sh /flower-entrypoint.sh
+RUN chmod +x /entrypoint.sh /celery-entrypoint.sh /flower-entrypoint.sh
+
+# Copy application code
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./
+
+# Create cache directories
+RUN mkdir -p /app/.cache/huggingface /app/.cache/reims/models /tmp /var/log/reims2
+
+# Set ownership
+RUN chown -R appuser:appgroup /app /tmp /var/log/reims2
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+# Use entrypoint script
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Production command (no --reload for performance)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

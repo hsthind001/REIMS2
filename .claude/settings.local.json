@@ -87,7 +87,9 @@
       "Bash(time curl:*)",
       "Bash(alembic revision:*)",
       "Bash(docker-compose exec:*)",
-      "Bash(PGPASSWORD=reims docker compose exec:*)"
+      "Bash(PGPASSWORD=reims docker compose exec:*)",
+      "Bash(tee:*)",
+      "Bash(npx vite build:*)"
     ]
   }
 }

@@ -317,6 +317,423 @@ async def get_location_intelligence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== ESG Assessment ==========
+
+@router.get("/properties/{property_code}/market-intelligence/esg", response_model=None)
+async def get_esg_assessment(
+    property_code: str,
+    refresh: bool = Query(False, description="Force refresh ESG assessment"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get ESG (Environmental, Social, Governance) assessment for a property.
+
+    Includes:
+    - Environmental risk (flood, wildfire, earthquake, climate, energy efficiency)
+    - Social risk (crime, schools, inequality, diversity, health)
+    - Governance risk (zoning, permits, taxes, legal issues)
+    - Composite ESG score and grade
+
+    Args:
+        property_code: Property code (e.g., ESP001)
+        refresh: Force refresh ESG assessment
+        db: Database session
+
+    Returns:
+        ESG assessment with composite score and grade
+    """
+    try:
+        # Get property
+        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        if not property_obj:
+            raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
+
+        # Get or create market intelligence record
+        mi = db.query(MarketIntelligence).filter(
+            MarketIntelligence.property_id == property_obj.id
+        ).first()
+
+        if not mi:
+            mi = MarketIntelligence(property_id=property_obj.id)
+            db.add(mi)
+            db.commit()
+            db.refresh(mi)
+
+        # Check if we need to fetch new data
+        if refresh or not mi.esg_assessment:
+            # Get market data service
+            market_data_service = get_market_data_service(db)
+
+            # Geocode property address
+            full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
+            geocoded = market_data_service.geocode_address(full_address)
+
+            if not geocoded:
+                raise HTTPException(status_code=400, detail="Could not geocode property address")
+
+            latitude = geocoded['data']['latitude']
+            longitude = geocoded['data']['longitude']
+
+            # Prepare property data for ESG assessment
+            property_data = {
+                'property_code': property_code,
+                'property_type': property_obj.property_type,
+                'year_built': property_obj.year_built
+            }
+
+            # Fetch ESG assessment
+            esg_assessment = market_data_service.fetch_esg_assessment(
+                latitude,
+                longitude,
+                property_data
+            )
+
+            if esg_assessment:
+                mi.esg_assessment = esg_assessment
+                mi.last_refreshed_at = datetime.utcnow()
+                mi.refresh_status = 'success'
+                db.commit()
+                db.refresh(mi)
+
+                # Log to lineage table
+                lineage = MarketDataLineage(
+                    property_id=property_obj.id,
+                    data_source=esg_assessment['lineage']['source'],
+                    data_category='esg',
+                    data_vintage=esg_assessment['lineage']['vintage'],
+                    fetched_at=datetime.utcnow(),
+                    confidence_score=esg_assessment['lineage']['confidence'],
+                    fetch_status='success',
+                    records_fetched=1,
+                    extra_metadata=esg_assessment['lineage']['extra_metadata']
+                )
+                db.add(lineage)
+                db.commit()
+            else:
+                raise HTTPException(status_code=500, detail="Failed to fetch ESG assessment")
+
+        return {
+            "property_code": property_code,
+            "esg_assessment": mi.esg_assessment,
+            "last_refreshed": mi.last_refreshed_at
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching ESG assessment for {property_code}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== Predictive Forecasts ==========
+
+@router.get("/properties/{property_code}/market-intelligence/forecasts", response_model=None)
+async def get_forecasts(
+    property_code: str,
+    refresh: bool = Query(False, description="Force refresh forecasts"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get predictive forecasts for a property.
+
+    Includes 12-month projections for:
+    - Rent growth
+    - Occupancy rates
+    - Cap rates
+    - Property value
+
+    Each forecast includes confidence intervals and model accuracy metrics.
+
+    Args:
+        property_code: Property code (e.g., ESP001)
+        refresh: Force regenerate forecasts
+        db: Database session
+
+    Returns:
+        Forecast data with 12-month projections
+    """
+    try:
+        # Get property
+        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        if not property_obj:
+            raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
+
+        # Get or create market intelligence record
+        mi = db.query(MarketIntelligence).filter(
+            MarketIntelligence.property_id == property_obj.id
+        ).first()
+
+        if not mi:
+            mi = MarketIntelligence(property_id=property_obj.id)
+            db.add(mi)
+            db.commit()
+            db.refresh(mi)
+
+        # Check if we need to generate new forecasts
+        if refresh or not mi.forecasts:
+            # Get market data service
+            market_data_service = get_market_data_service(db)
+
+            # Prepare property data for forecasting
+            property_data = {
+                'property_code': property_code,
+                'avg_rent': 1500,  # TODO: Get from actual property metrics
+                'occupancy_rate': 95.0,  # TODO: Get from actual property metrics
+                'noi': 500000,  # TODO: Get from financial data
+                'market_value': 10000000  # TODO: Get from property valuation
+            }
+
+            # TODO: Fetch historical data for better forecasting
+            historical_data = None
+
+            # Generate forecasts
+            forecasts = market_data_service.generate_forecasts(property_data, historical_data)
+
+            if forecasts:
+                mi.forecasts = forecasts
+                mi.last_refreshed_at = datetime.utcnow()
+                mi.refresh_status = 'success'
+                db.commit()
+                db.refresh(mi)
+
+                # Log to lineage table
+                lineage = MarketDataLineage(
+                    property_id=property_obj.id,
+                    data_source=forecasts['lineage']['source'],
+                    data_category='forecasts',
+                    data_vintage=forecasts['lineage']['vintage'],
+                    fetched_at=datetime.utcnow(),
+                    confidence_score=forecasts['lineage']['confidence'],
+                    fetch_status='success',
+                    records_fetched=1,
+                    extra_metadata=forecasts['lineage']['extra_metadata']
+                )
+                db.add(lineage)
+                db.commit()
+            else:
+                raise HTTPException(status_code=500, detail="Failed to generate forecasts")
+
+        return {
+            "property_code": property_code,
+            "forecasts": mi.forecasts,
+            "last_refreshed": mi.last_refreshed_at
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating forecasts for {property_code}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== Competitive Analysis ==========
+
+@router.get("/properties/{property_code}/market-intelligence/competitive", response_model=None)
+async def get_competitive_analysis(
+    property_code: str,
+    refresh: bool = Query(False, description="Force refresh competitive analysis"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get competitive analysis for a property within its submarket.
+
+    Includes:
+    - Submarket position (rent, occupancy, quality percentiles)
+    - Competitive threats
+    - Submarket trends
+    - Market share analysis
+
+    Args:
+        property_code: Property code (e.g., ESP001)
+        refresh: Force regenerate competitive analysis
+        db: Database session
+
+    Returns:
+        Competitive positioning data
+    """
+    try:
+        # Get property
+        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        if not property_obj:
+            raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
+
+        # Get or create market intelligence record
+        mi = db.query(MarketIntelligence).filter(
+            MarketIntelligence.property_id == property_obj.id
+        ).first()
+
+        if not mi:
+            mi = MarketIntelligence(property_id=property_obj.id)
+            db.add(mi)
+            db.commit()
+            db.refresh(mi)
+
+        # Check if we need to generate new competitive analysis
+        if refresh or not mi.competitive_analysis:
+            # Get market data service
+            market_data_service = get_market_data_service(db)
+
+            # Prepare property data
+            property_data = {
+                'property_code': property_code,
+                'avg_rent': 1500,  # TODO: Get from actual property metrics
+                'occupancy_rate': 95.0,  # TODO: Get from actual property metrics
+                'total_units': property_obj.total_units if hasattr(property_obj, 'total_units') else 100,
+                'property_type': property_obj.property_type,
+                'submarket': property_obj.city  # Simplified - use city as submarket
+            }
+
+            # TODO: Fetch submarket data from external API or database
+            submarket_data = None
+
+            # Analyze competitive position
+            competitive = market_data_service.analyze_competitive_position(property_data, submarket_data)
+
+            if competitive:
+                mi.competitive_analysis = competitive
+                mi.last_refreshed_at = datetime.utcnow()
+                mi.refresh_status = 'success'
+                db.commit()
+                db.refresh(mi)
+
+                # Log to lineage table
+                lineage = MarketDataLineage(
+                    property_id=property_obj.id,
+                    data_source=competitive['lineage']['source'],
+                    data_category='competitive',
+                    data_vintage=competitive['lineage']['vintage'],
+                    fetched_at=datetime.utcnow(),
+                    confidence_score=competitive['lineage']['confidence'],
+                    fetch_status='success',
+                    records_fetched=1,
+                    extra_metadata=competitive['lineage']['extra_metadata']
+                )
+                db.add(lineage)
+                db.commit()
+            else:
+                raise HTTPException(status_code=500, detail="Failed to analyze competitive position")
+
+        return {
+            "property_code": property_code,
+            "competitive_analysis": mi.competitive_analysis,
+            "last_refreshed": mi.last_refreshed_at
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing competitive position for {property_code}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== AI Insights ==========
+
+@router.get("/properties/{property_code}/market-intelligence/insights", response_model=None)
+async def get_ai_insights(
+    property_code: str,
+    refresh: bool = Query(False, description="Force regenerate AI insights"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-powered insights and recommendations for a property.
+
+    Synthesizes all market intelligence data to generate:
+    - SWOT analysis (Strengths, Weaknesses, Opportunities, Threats)
+    - Investment recommendation (BUY/HOLD/SELL)
+    - Risk assessment narrative
+    - Value-creation opportunities
+    - Market trend synthesis
+
+    Args:
+        property_code: Property code (e.g., ESP001)
+        refresh: Force regenerate AI insights
+        db: Database session
+
+    Returns:
+        AI-generated insights and recommendations
+    """
+    try:
+        # Get property
+        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        if not property_obj:
+            raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
+
+        # Get or create market intelligence record
+        mi = db.query(MarketIntelligence).filter(
+            MarketIntelligence.property_id == property_obj.id
+        ).first()
+
+        if not mi:
+            mi = MarketIntelligence(property_id=property_obj.id)
+            db.add(mi)
+            db.commit()
+            db.refresh(mi)
+
+        # Check if we need to generate new AI insights
+        if refresh or not mi.ai_insights:
+            # Get market data service
+            market_data_service = get_market_data_service(db)
+
+            # Prepare property data
+            property_data = {
+                'property_code': property_code,
+                'property_type': property_obj.property_type,
+                'year_built': property_obj.year_built if hasattr(property_obj, 'year_built') else None,
+                'avg_rent': 1500,  # TODO: Get from actual property metrics
+                'occupancy_rate': 95.0,  # TODO: Get from actual property metrics
+                'noi': 500000  # TODO: Get from financial data
+            }
+
+            # Gather all market intelligence data
+            market_intelligence = {
+                'demographics': mi.demographics,
+                'economic_indicators': mi.economic_indicators,
+                'location_intelligence': mi.location_intelligence,
+                'esg_assessment': mi.esg_assessment,
+                'forecasts': mi.forecasts,
+                'competitive_analysis': mi.competitive_analysis
+            }
+
+            # Generate AI insights
+            ai_insights = market_data_service.generate_ai_insights(property_data, market_intelligence)
+
+            if ai_insights:
+                mi.ai_insights = ai_insights
+                mi.last_refreshed_at = datetime.utcnow()
+                mi.refresh_status = 'success'
+                db.commit()
+                db.refresh(mi)
+
+                # Log to lineage table
+                lineage = MarketDataLineage(
+                    property_id=property_obj.id,
+                    data_source=ai_insights['lineage']['source'],
+                    data_category='insights',
+                    data_vintage=ai_insights['lineage']['vintage'],
+                    fetched_at=datetime.utcnow(),
+                    confidence_score=ai_insights['lineage']['confidence'],
+                    fetch_status='success',
+                    records_fetched=1,
+                    extra_metadata=ai_insights['lineage']['extra_metadata']
+                )
+                db.add(lineage)
+                db.commit()
+            else:
+                raise HTTPException(status_code=500, detail="Failed to generate AI insights")
+
+        return {
+            "property_code": property_code,
+            "ai_insights": mi.ai_insights,
+            "last_refreshed": mi.last_refreshed_at
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating AI insights for {property_code}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== Complete Market Intelligence ==========
 
 @router.get("/properties/{property_code}/market-intelligence")
@@ -472,6 +889,92 @@ async def refresh_market_intelligence(
             except Exception as e:
                 logger.error(f"Failed to refresh location intelligence: {e}")
                 errors.append({'category': 'location', 'error': str(e)})
+
+        # Refresh ESG assessment
+        if 'esg' in categories:
+            try:
+                # Geocode property address
+                full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
+                geocoded = service.geocode_address(full_address)
+                if geocoded:
+                    latitude = geocoded['data']['latitude']
+                    longitude = geocoded['data']['longitude']
+                    property_data = {
+                        'property_code': property_code,
+                        'property_type': property_obj.property_type,
+                        'year_built': property_obj.year_built
+                    }
+                    esg_assessment = service.fetch_esg_assessment(latitude, longitude, property_data)
+                    if esg_assessment:
+                        mi.esg_assessment = esg_assessment
+                        refreshed.append('esg')
+            except Exception as e:
+                logger.error(f"Failed to refresh ESG assessment: {e}")
+                errors.append({'category': 'esg', 'error': str(e)})
+
+        # Refresh forecasts
+        if 'forecasts' in categories:
+            try:
+                property_data = {
+                    'property_code': property_code,
+                    'avg_rent': 1500,  # TODO: Get from actual property metrics
+                    'occupancy_rate': 95.0,
+                    'noi': 500000,
+                    'market_value': 10000000
+                }
+                forecasts = service.generate_forecasts(property_data, None)
+                if forecasts:
+                    mi.forecasts = forecasts
+                    refreshed.append('forecasts')
+            except Exception as e:
+                logger.error(f"Failed to refresh forecasts: {e}")
+                errors.append({'category': 'forecasts', 'error': str(e)})
+
+        # Refresh competitive analysis
+        if 'competitive' in categories:
+            try:
+                property_data = {
+                    'property_code': property_code,
+                    'avg_rent': 1500,
+                    'occupancy_rate': 95.0,
+                    'total_units': property_obj.total_units if hasattr(property_obj, 'total_units') else 100,
+                    'property_type': property_obj.property_type,
+                    'submarket': property_obj.city
+                }
+                competitive = service.analyze_competitive_position(property_data, None)
+                if competitive:
+                    mi.competitive_analysis = competitive
+                    refreshed.append('competitive')
+            except Exception as e:
+                logger.error(f"Failed to refresh competitive analysis: {e}")
+                errors.append({'category': 'competitive', 'error': str(e)})
+
+        # Refresh AI insights
+        if 'insights' in categories:
+            try:
+                property_data = {
+                    'property_code': property_code,
+                    'property_type': property_obj.property_type,
+                    'year_built': property_obj.year_built if hasattr(property_obj, 'year_built') else None,
+                    'avg_rent': 1500,
+                    'occupancy_rate': 95.0,
+                    'noi': 500000
+                }
+                market_intelligence_data = {
+                    'demographics': mi.demographics,
+                    'economic_indicators': mi.economic_indicators,
+                    'location_intelligence': mi.location_intelligence,
+                    'esg_assessment': mi.esg_assessment,
+                    'forecasts': mi.forecasts,
+                    'competitive_analysis': mi.competitive_analysis
+                }
+                ai_insights = service.generate_ai_insights(property_data, market_intelligence_data)
+                if ai_insights:
+                    mi.ai_insights = ai_insights
+                    refreshed.append('insights')
+            except Exception as e:
+                logger.error(f"Failed to refresh AI insights: {e}")
+                errors.append({'category': 'insights', 'error': str(e)})
 
         # Update refresh status
         if errors:

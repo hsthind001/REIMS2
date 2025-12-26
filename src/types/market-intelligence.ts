@@ -197,12 +197,12 @@ export interface SubmarketTrends {
   rent_growth_3yr_cagr: number;
   occupancy_trend: string;
   new_supply_pipeline_units: number;
-  absorption_rate_units_per_month: number;
+  absorption_rate_units_per_mo: number;
+  months_of_supply: number;
 }
 
 export interface CompetitiveAnalysisData {
   submarket_position: SubmarketPosition;
-  market_share_pct: number;
   competitive_threats: CompetitiveThreat[];
   submarket_trends: SubmarketTrends;
 }
@@ -252,20 +252,26 @@ export type Comparables = TaggedData<ComparablesData>;
 // AI Insights (Phase 6)
 // ============================================================================
 
-export interface Insight {
-  insight: string;
-  confidence: number;
-  impact: 'high' | 'medium' | 'low';
+export interface SWOTAnalysis {
+  strengths: string[];
+  weaknesses: string[];
+  opportunities: string[];
+  threats: string[];
+}
+
+export interface InvestmentRecommendation {
+  recommendation: 'BUY' | 'HOLD' | 'SELL';
+  confidence_score: number;
+  rationale: string;
+  key_factors: string[];
 }
 
 export interface AIInsightsData {
-  strengths: Insight[];
-  weaknesses: Insight[];
-  opportunities: Insight[];
-  threats: Insight[];
-  overall_score: number;
-  investment_grade: string;
-  confidence: number;
+  swot_analysis: SWOTAnalysis;
+  investment_recommendation: InvestmentRecommendation;
+  risk_assessment: string;
+  opportunities: string[];
+  market_trend_synthesis: string;
 }
 
 export type AIInsights = TaggedData<AIInsightsData>;
@@ -308,6 +314,30 @@ export interface EconomicIndicatorsResponse {
 export interface LocationIntelligenceResponse {
   property_code: string;
   location_intelligence: LocationIntelligence;
+  last_refreshed: string;
+}
+
+export interface ESGAssessmentResponse {
+  property_code: string;
+  esg_assessment: ESGAssessment;
+  last_refreshed: string;
+}
+
+export interface ForecastsResponse {
+  property_code: string;
+  forecasts: Forecasts;
+  last_refreshed: string;
+}
+
+export interface CompetitiveAnalysisResponse {
+  property_code: string;
+  competitive_analysis: CompetitiveAnalysis;
+  last_refreshed: string;
+}
+
+export interface AIInsightsResponse {
+  property_code: string;
+  ai_insights: AIInsights;
   last_refreshed: string;
 }
 
@@ -403,6 +433,22 @@ export interface DemographicsRequest {
 }
 
 export interface LocationIntelligenceRequest {
+  refresh?: boolean;
+}
+
+export interface ESGAssessmentRequest {
+  refresh?: boolean;
+}
+
+export interface ForecastsRequest {
+  refresh?: boolean;
+}
+
+export interface CompetitiveAnalysisRequest {
+  refresh?: boolean;
+}
+
+export interface AIInsightsRequest {
   refresh?: boolean;
 }
 

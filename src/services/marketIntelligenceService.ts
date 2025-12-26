@@ -10,6 +10,10 @@ import type {
   DemographicsResponse,
   EconomicIndicatorsResponse,
   LocationIntelligenceResponse,
+  ESGAssessmentResponse,
+  ForecastsResponse,
+  CompetitiveAnalysisResponse,
+  AIInsightsResponse,
   RefreshResponse,
   LineageResponse,
   StatisticsResponse,
@@ -17,6 +21,10 @@ import type {
   EconomicIndicatorsRequest,
   DemographicsRequest,
   LocationIntelligenceRequest,
+  ESGAssessmentRequest,
+  ForecastsRequest,
+  CompetitiveAnalysisRequest,
+  AIInsightsRequest,
   LineageRequest,
 } from '../types/market-intelligence';
 
@@ -81,6 +89,66 @@ export async function getLocationIntelligence(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/location`;
+  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  return response.data;
+}
+
+/**
+ * Get ESG assessment for a property
+ */
+export async function getESGAssessment(
+  propertyCode: string,
+  options?: ESGAssessmentRequest
+): Promise<ESGAssessmentResponse> {
+  const params = new URLSearchParams();
+  if (options?.refresh) params.append('refresh', 'true');
+
+  const url = `${API_V1}/properties/${propertyCode}/market-intelligence/esg`;
+  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  return response.data;
+}
+
+/**
+ * Get predictive forecasts for a property
+ */
+export async function getForecasts(
+  propertyCode: string,
+  options?: ForecastsRequest
+): Promise<ForecastsResponse> {
+  const params = new URLSearchParams();
+  if (options?.refresh) params.append('refresh', 'true');
+
+  const url = `${API_V1}/properties/${propertyCode}/market-intelligence/forecasts`;
+  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  return response.data;
+}
+
+/**
+ * Get competitive analysis for a property
+ */
+export async function getCompetitiveAnalysis(
+  propertyCode: string,
+  options?: CompetitiveAnalysisRequest
+): Promise<CompetitiveAnalysisResponse> {
+  const params = new URLSearchParams();
+  if (options?.refresh) params.append('refresh', 'true');
+
+  const url = `${API_V1}/properties/${propertyCode}/market-intelligence/competitive`;
+  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  return response.data;
+}
+
+/**
+ * Get AI-powered insights for a property
+ */
+export async function getAIInsights(
+  propertyCode: string,
+  options?: AIInsightsRequest
+): Promise<AIInsightsResponse> {
+  const params = new URLSearchParams();
+  if (options?.refresh) params.append('refresh', 'true');
+
+  const url = `${API_V1}/properties/${propertyCode}/market-intelligence/insights`;
   const response = await axios.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }

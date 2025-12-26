@@ -24,13 +24,21 @@ import {
   TrendingUp as TrendingUpIcon,
   LocationOn as LocationIcon,
   Assessment as AssessmentIcon,
+  Nature as EcoIcon,
   Timeline as TimelineIcon,
+  CompareArrows as CompetitiveIcon,
+  Psychology as AIIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import type { MarketIntelligence } from '../types/market-intelligence';
 import * as marketIntelligenceService from '../services/marketIntelligenceService';
 import DemographicsPanel from '../components/MarketIntelligence/DemographicsPanel';
 import EconomicIndicatorsPanel from '../components/MarketIntelligence/EconomicIndicatorsPanel';
 import LocationIntelligencePanel from '../components/MarketIntelligence/LocationIntelligencePanel';
+import ESGAssessmentPanel from '../components/MarketIntelligence/ESGAssessmentPanel';
+import ForecastsPanel from '../components/MarketIntelligence/ForecastsPanel';
+import CompetitiveAnalysisPanel from '../components/MarketIntelligence/CompetitiveAnalysisPanel';
+import AIInsightsPanel from '../components/MarketIntelligence/AIInsightsPanel';
 import DataLineagePanel from '../components/MarketIntelligence/DataLineagePanel';
 
 interface TabPanelProps {
@@ -232,12 +240,30 @@ const MarketIntelligenceDashboard: React.FC = () => {
             disabled={!marketIntel.location_intelligence}
           />
           <Tab
+            icon={<EcoIcon />}
+            label="ESG Assessment"
+            iconPosition="start"
+            disabled={!marketIntel.esg_assessment}
+          />
+          <Tab
             icon={<TimelineIcon />}
             label="Forecasts"
             iconPosition="start"
             disabled={!marketIntel.forecasts}
           />
-          <Tab label="Data Lineage" />
+          <Tab
+            icon={<CompetitiveIcon />}
+            label="Competitive Analysis"
+            iconPosition="start"
+            disabled={!marketIntel.competitive_analysis}
+          />
+          <Tab
+            icon={<AIIcon />}
+            label="AI Insights"
+            iconPosition="start"
+            disabled={!marketIntel.ai_insights}
+          />
+          <Tab icon={<HistoryIcon />} label="Data Lineage" iconPosition="start" />
         </Tabs>
 
         <Divider />
@@ -314,20 +340,105 @@ const MarketIntelligenceDashboard: React.FC = () => {
           )}
         </TabPanel>
 
-        {/* Forecasts Tab */}
+        {/* ESG Assessment Tab */}
         <TabPanel value={activeTab} index={3}>
-          <Box p={3}>
-            <Alert severity="info">
-              Predictive Forecasting features coming in Phase 4 (Rent growth, occupancy, cap rate projections)
-            </Alert>
-          </Box>
+          {marketIntel.esg_assessment ? (
+            <ESGAssessmentPanel
+              data={marketIntel.esg_assessment}
+              propertyCode={marketIntel.property_code}
+              onRefresh={() => handleRefresh(['esg'])}
+            />
+          ) : (
+            <Box p={3}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                No ESG assessment data available for this property.
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => handleRefresh(['esg'])}
+                disabled={refreshing}
+              >
+                Fetch ESG Assessment
+              </Button>
+            </Box>
+          )}
+        </TabPanel>
+
+        {/* Forecasts Tab */}
+        <TabPanel value={activeTab} index={4}>
+          {marketIntel.forecasts ? (
+            <ForecastsPanel
+              data={marketIntel.forecasts}
+              propertyCode={marketIntel.property_code}
+              onRefresh={() => handleRefresh(['forecasts'])}
+            />
+          ) : (
+            <Box p={3}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                No forecast data available for this property.
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => handleRefresh(['forecasts'])}
+                disabled={refreshing}
+              >
+                Generate Forecasts
+              </Button>
+            </Box>
+          )}
+        </TabPanel>
+
+        {/* Competitive Analysis Tab */}
+        <TabPanel value={activeTab} index={5}>
+          {marketIntel.competitive_analysis ? (
+            <CompetitiveAnalysisPanel
+              data={marketIntel.competitive_analysis}
+              propertyCode={marketIntel.property_code}
+              onRefresh={() => handleRefresh(['competitive'])}
+            />
+          ) : (
+            <Box p={3}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                No competitive analysis data available for this property.
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => handleRefresh(['competitive'])}
+                disabled={refreshing}
+              >
+                Generate Competitive Analysis
+              </Button>
+            </Box>
+          )}
+        </TabPanel>
+
+        {/* AI Insights Tab */}
+        <TabPanel value={activeTab} index={6}>
+          {marketIntel.ai_insights ? (
+            <AIInsightsPanel
+              data={marketIntel.ai_insights}
+              propertyCode={marketIntel.property_code}
+              onRefresh={() => handleRefresh(['insights'])}
+            />
+          ) : (
+            <Box p={3}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                No AI insights available for this property.
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => handleRefresh(['insights'])}
+                disabled={refreshing}
+              >
+                Generate AI Insights
+              </Button>
+            </Box>
+          )}
         </TabPanel>
 
         {/* Data Lineage Tab */}
-        <TabPanel value={activeTab} index={4}>
-          {propertyCode && (
-            <DataLineagePanel propertyCode={propertyCode} />
-          )}
+        <TabPanel value={activeTab} index={7}>
+          {propertyCode && <DataLineagePanel propertyCode={propertyCode} />}
         </TabPanel>
       </Paper>
     </Container>
