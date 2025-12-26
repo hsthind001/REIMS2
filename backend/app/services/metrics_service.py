@@ -60,14 +60,52 @@ class MetricsService:
         # Income Statement Metrics (if data exists)
         if self._has_income_statement_data(property_id, period_id):
             metrics_data.update(self.calculate_income_statement_metrics(property_id, period_id))
+        else:
+            # Clear income statement fields if no data (prevent stale values)
+            # Exception: Don't clear NOI if we have mortgage data (needed for DSCR)
+            # It will be preserved from database and used in mortgage calculations
+            clear_noi = not self._has_mortgage_data(property_id, period_id)
+
+            metrics_data.update({
+                'total_revenue': None,
+                'total_expenses': None,
+                'gross_revenue': None,
+                'operating_expenses': None,
+                'net_operating_income': None if clear_noi else 'PRESERVE',  # Special marker
+                'net_income': None,
+                'operating_margin': None,
+                'profit_margin': None
+            })
         
         # Cash Flow Metrics (if data exists)
         if self._has_cash_flow_data(property_id, period_id):
             metrics_data.update(self.calculate_cash_flow_metrics(property_id, period_id))
-        
+        else:
+            # Clear cash flow fields if no data (prevent stale values)
+            metrics_data.update({
+                'operating_cash_flow': None,
+                'investing_cash_flow': None,
+                'financing_cash_flow': None,
+                'net_cash_flow': None,
+                'beginning_cash_balance': None,
+                'ending_cash_balance': None
+            })
+
         # Rent Roll Metrics (if data exists)
         if self._has_rent_roll_data(property_id, period_id):
             metrics_data.update(self.calculate_rent_roll_metrics(property_id, period_id))
+        else:
+            # Clear rent roll fields if no data (prevent stale values)
+            metrics_data.update({
+                'total_units': None,
+                'occupied_units': None,
+                'vacant_units': None,
+                'occupancy_rate': None,
+                'total_leasable_sqft': None,
+                'occupied_sqft': None,
+                'total_monthly_rent': None,
+                'total_annual_rent': None
+            })
         
         # Performance Metrics (requires both IS and RR data)
         if self._has_income_statement_data(property_id, period_id) and self._has_rent_roll_data(property_id, period_id):
@@ -75,6 +113,22 @@ class MetricsService:
         
         # Mortgage Metrics (if mortgage data exists)
         if self._has_mortgage_data(property_id, period_id):
+            # If NOI not yet in metrics_data or is marked for preservation, get from database
+            # (it might have been calculated in a previous period or entered manually)
+            if ('net_operating_income' not in metrics_data or
+                metrics_data['net_operating_income'] is None or
+                metrics_data['net_operating_income'] == 'PRESERVE'):
+
+                existing_metrics_record = self.db.query(FinancialMetrics).filter(
+                    FinancialMetrics.property_id == property_id,
+                    FinancialMetrics.period_id == period_id
+                ).first()
+                if existing_metrics_record and existing_metrics_record.net_operating_income:
+                    metrics_data['net_operating_income'] = existing_metrics_record.net_operating_income
+                else:
+                    # If no existing NOI, set to None (can't calculate DSCR)
+                    metrics_data['net_operating_income'] = None
+
             metrics_data.update(self.calculate_mortgage_metrics(property_id, period_id, metrics_data))
         
         # Store metrics (upsert)
@@ -439,7 +493,8 @@ class MetricsService:
         # This gives a more accurate picture of operating performance
         revenue_for_margin = gross_revenue_for_margin if gross_revenue_for_margin else total_revenue
         operating_margin = self.safe_divide(noi, revenue_for_margin) * Decimal('100') if noi is not None and revenue_for_margin is not None else None
-        profit_margin = self.safe_divide(net_income, total_revenue) * Decimal('100')
+        profit_margin_calc = self.safe_divide(net_income, total_revenue)
+        profit_margin = profit_margin_calc * Decimal('100') if profit_margin_calc is not None else None
         
         return {
             "total_revenue": total_revenue,
@@ -689,7 +744,38 @@ class MetricsService:
             MortgageStatementData.property_id == property_id,
             MortgageStatementData.period_id == period_id
         ).all()
-        
+
+        # If no mortgage data for this specific period, use the latest available mortgage data
+        if not mortgages:
+            from app.models.financial_period import FinancialPeriod
+
+            # Get the current period details to find earlier periods
+            current_period = self.db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id
+            ).first()
+
+            if current_period:
+                # Find the most recent period with mortgage data that's on or before current period
+                latest_mortgage_period = self.db.query(FinancialPeriod).join(
+                    MortgageStatementData,
+                    MortgageStatementData.period_id == FinancialPeriod.id
+                ).filter(
+                    FinancialPeriod.property_id == property_id,
+                    # Earlier or same year/month
+                    ((FinancialPeriod.period_year < current_period.period_year) |
+                     ((FinancialPeriod.period_year == current_period.period_year) &
+                      (FinancialPeriod.period_month <= current_period.period_month)))
+                ).order_by(
+                    FinancialPeriod.period_year.desc(),
+                    FinancialPeriod.period_month.desc()
+                ).first()
+
+                if latest_mortgage_period:
+                    mortgages = self.db.query(MortgageStatementData).filter(
+                        MortgageStatementData.property_id == property_id,
+                        MortgageStatementData.period_id == latest_mortgage_period.id
+                    ).all()
+
         if not mortgages:
             return {}
         
@@ -726,6 +812,11 @@ class MetricsService:
                 total_annual_debt_service += monthly * Decimal('12')
             elif m.principal_due and m.interest_due:
                 monthly = Decimal(str(m.principal_due or 0)) + Decimal(str(m.interest_due or 0))
+                total_monthly_debt_service += monthly
+                total_annual_debt_service += monthly * Decimal('12')
+            elif m.total_payment_due:
+                # Use total_payment_due if individual components not available
+                monthly = Decimal(str(m.total_payment_due))
                 total_monthly_debt_service += monthly
                 total_annual_debt_service += monthly * Decimal('12')
         
@@ -958,12 +1049,23 @@ class MetricsService:
         return count > 0
     
     def _has_mortgage_data(self, property_id: int, period_id: int) -> bool:
-        """Check if mortgage statement data exists"""
+        """Check if mortgage statement data exists (including fallback to earlier periods)"""
+        # Check current period first
         count = self.db.query(func.count(MortgageStatementData.id)).filter(
             MortgageStatementData.property_id == property_id,
             MortgageStatementData.period_id == period_id
         ).scalar()
-        return count > 0
+
+        if count > 0:
+            return True
+
+        # If no data for current period, check if ANY mortgage data exists for this property
+        # (the calculate_mortgage_metrics method will use fallback logic to find latest)
+        any_count = self.db.query(func.count(MortgageStatementData.id)).filter(
+            MortgageStatementData.property_id == property_id
+        ).scalar()
+
+        return any_count > 0
     
     def _sum_balance_sheet_accounts_by_codes(
         self,
@@ -1055,19 +1157,25 @@ class MetricsService:
             # Update existing metrics
             for key, value in metrics_data.items():
                 if hasattr(existing_metrics, key):
+                    # Handle 'PRESERVE' marker - keep existing value
+                    if value == 'PRESERVE':
+                        continue
                     setattr(existing_metrics, key, value)
-            
+
             self.db.commit()
             self.db.refresh(existing_metrics)
             return existing_metrics
         else:
             # Create new metrics
+            # Filter out 'PRESERVE' markers (they only apply to updates)
+            clean_metrics_data = {k: v for k, v in metrics_data.items() if v != 'PRESERVE'}
+
             metrics = FinancialMetrics(
                 property_id=property_id,
                 period_id=period_id,
-                **metrics_data
+                **clean_metrics_data
             )
-            
+
             self.db.add(metrics)
             self.db.commit()
             self.db.refresh(metrics)

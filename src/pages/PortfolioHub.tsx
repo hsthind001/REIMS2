@@ -259,6 +259,8 @@ export default function PortfolioHub() {
             total_units: periodSpecificMetrics.total_units,
             occupied_units: periodSpecificMetrics.occupied_units,
             total_leasable_sqft: periodSpecificMetrics.total_leasable_sqft,
+            dscr: periodSpecificMetrics.dscr, // Include DSCR from period-specific data
+            ltv_ratio: periodSpecificMetrics.ltv_ratio, // Include LTV from period-specific data
             period_id: periodSpecificMetrics.period_id // Include period_id for reference
           };
         } else {
@@ -279,66 +281,21 @@ export default function PortfolioHub() {
       }
       
       if (propertyMetric) {
-        // Calculate DSCR from real data only - use actual DSCR API endpoint
-        let dscr: number | null = null;
-        let ltv: number | null = null;
+        // Get DSCR and LTV from metrics summary (already calculated by backend)
+        let dscr: number | null = propertyMetric.dscr !== null && propertyMetric.dscr !== undefined ? propertyMetric.dscr : null;
+        let ltv: number | null = propertyMetric.ltv_ratio !== null && propertyMetric.ltv_ratio !== undefined ? propertyMetric.ltv_ratio : null;
         let capRate: number | null = null;
 
         try {
-          const [ltvRes, capRateRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/metrics/${propertyId}/ltv`, { credentials: 'include' }),
-            fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, { credentials: 'include' })
-          ]);
-
-          if (ltvRes.ok) {
-            const ltvData = await ltvRes.json();
-            ltv = ltvData.ltv || null;
-          }
-
-          // Fetch actual DSCR from API endpoint (same as Command Center uses)
-          // This uses real debt service data (interest + principal) instead of estimated calculation
-          try {
-            // Find the period with debt service data (Dec 2024) for DSCR calculation
-            const dec2024PeriodIdMap: Record<string, number> = {
-              'ESP001': 2,
-              'HMND001': 4,
-              'TCSH001': 9,
-              'WEND001': 6
-            };
-            
-            const periodIdToUse = dec2024PeriodIdMap[currentProperty.property_code] || propertyMetric?.period_id;
-            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-            
-            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${propertyId}/dscr/calculate${periodIdParam}`, {
-              method: 'POST',
-              credentials: 'include'
-            });
-            
-            if (dscrResponse.ok) {
-              const dscrData = await dscrResponse.json();
-              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                dscr = dscrData.dscr;
-              }
-            }
-          } catch (dscrErr) {
-            console.error('Failed to fetch DSCR from API:', dscrErr);
-            // Fallback to simplified calculation if API fails
-            if (ltv && propertyMetric) {
-              const loanAmount = ltv * (propertyMetric.total_assets || 0);
-              const annualDebtService = loanAmount * 0.08;
-              const noiForDscr = propertyMetric.net_operating_income || propertyMetric.net_income || 0;
-              if (annualDebtService > 0 && noiForDscr > 0) {
-                dscr = noiForDscr / annualDebtService;
-              }
-            }
-          }
+          // Only fetch cap rate (DSCR and LTV are already in metrics summary)
+          const capRateRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, { credentials: 'include' });
 
           if (capRateRes.ok) {
             const capRateData = await capRateRes.json();
             capRate = capRateData.cap_rate || null;
           }
         } catch (apiErr) {
-          console.error('Failed to fetch LTV/Cap Rate:', apiErr);
+          console.error('Failed to fetch Cap Rate:', apiErr);
         }
 
         // Calculate status only if we have real DSCR data
@@ -372,10 +329,10 @@ export default function PortfolioHub() {
         setMetrics({
           value: metricsValue,
           noi: metricsNoi,
-          dscr: dscr || 0,
-          ltv: ltv || 0,
+          dscr: dscr !== null ? dscr : 0,
+          ltv: ltv !== null ? ltv : 0,
           occupancy: metricsOccupancy,
-          capRate: capRate || 0,
+          capRate: capRate !== null ? capRate : 0,
           status,
           trends: {
             noi: noiTrend,
@@ -1282,7 +1239,7 @@ export default function PortfolioHub() {
                           <div className="flex justify-between mb-1">
                             <span className="text-sm text-text-secondary">DSCR</span>
                             <span className="text-sm font-medium">
-                              {metrics?.dscr.toFixed(2)} / 1.25 min
+                              {(metrics?.dscr !== null && metrics?.dscr !== undefined) ? metrics.dscr.toFixed(2) : '0.00'} / 1.25 min
                             </span>
                           </div>
                           <ProgressBar

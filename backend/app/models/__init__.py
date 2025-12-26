@@ -103,6 +103,9 @@ from app.models.account_code_synonym import AccountCodeSynonym
 from app.models.match_confidence_model import MatchConfidenceModel
 from app.models.reconciliation_learning_log import ReconciliationLearningLog
 
+# Self-learning period detection models
+from app.models.filename_period_pattern import FilenamePeriodPattern
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -206,4 +209,6 @@ __all__ = [
     "AccountCodeSynonym",
     "MatchConfidenceModel",
     "ReconciliationLearningLog",
+    # Self-learning period detection
+    "FilenamePeriodPattern",
 ]

@@ -82,7 +82,9 @@
       "Bash(docker-compose ps:*)",
       "Bash(docker-compose exec backend python:*)",
       "Bash(python:*)",
-      "Bash(docker-compose logs:*)"
+      "Bash(docker-compose logs:*)",
+      "Bash(for:*)",
+      "Bash(time curl:*)"
     ]
   }
 }

@@ -54,10 +54,10 @@ class FilenamePeriodPattern(Base):
     last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Additional metadata
-    metadata = Column(JSONB, nullable=True, comment="Additional metadata like detection_method, first_seen_filename")
+    extra_data = Column(JSONB, nullable=True, comment="Additional metadata like detection_method, first_seen_filename")
 
     # Relationships
-    property = relationship("Property", back_populates="filename_patterns")
+    property_obj = relationship("Property", back_populates="filename_patterns")
 
     # Calculated property for success rate
     @property

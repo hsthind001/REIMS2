@@ -59,7 +59,7 @@ class Property(Base):
     workflow_locks = relationship("WorkflowLock", back_populates="property", cascade="all, delete-orphan", lazy="noload")
 
     # Self-learning pattern recognition
-    filename_patterns = relationship("FilenamePeriodPattern", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    filename_patterns = relationship("FilenamePeriodPattern", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
 
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"

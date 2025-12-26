@@ -1,7 +1,7 @@
 """
 Document Upload API - Complete workflow for financial document management
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Form, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sql_func
 from typing import Optional, List

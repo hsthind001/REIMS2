@@ -215,75 +215,15 @@ export default function CommandCenter() {
           console.error('Failed to fetch portfolio DSCR:', dscrErr);
         }
       } else {
-        // Fetch property-specific DSCR
-        const selectedProp = _properties.find(p => p.property_code === selectedPropertyFilter);
-        if (selectedProp) {
-          try {
-            // Get the latest period for this property
-            const metric = propertyMap.get(selectedPropertyFilter);
-            
-            // Find the period with debt service data (Dec 2024) for DSCR calculation
-            // The latest period from metrics summary might be April 2025 which doesn't have debt service
-            // Use hardcoded Dec 2024 period IDs: ESP001=2, HMND001=4, TCSH001=9, WEND001=6
-            const dec2024PeriodIdMap: Record<string, number> = {
-              'ESP001': 2,
-              'HMND001': 4,
-              'TCSH001': 9,
-              'WEND001': 6
-            };
-            
-            const periodIdToUse = dec2024PeriodIdMap[selectedPropertyFilter] || metric?.period_id;
-            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-            
-            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate${periodIdParam}`, {
-              method: 'POST',
-              credentials: 'include'
-            });
-            if (dscrResponse.ok) {
-              const dscrData = await dscrResponse.json();
-              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                portfolioDSCR = dscrData.dscr;
-                // Calculate YoY change for property-specific DSCR
-                // Get previous period DSCR for comparison
-                if (metric) {
-                  const prevYear = metric.period_year;
-                  const prevMonth = metric.period_month - 1;
-                  const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
-                  const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
-                  
-                  // Try to get previous period DSCR (Dec 2023)
-                  // Use hardcoded Dec 2023 period IDs: ESP001=7, HMND001=3, TCSH001=8, WEND001=5
-                  const dec2023PeriodIdMap: Record<string, number> = {
-                    'ESP001': 7,
-                    'HMND001': 3,
-                    'TCSH001': 8,
-                    'WEND001': 5
-                  };
-                  
-                  const prevPeriodId = dec2023PeriodIdMap[selectedPropertyFilter];
-                  
-                  if (prevPeriodId) {
-                    try {
-                      const prevDscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${selectedProp.id}/dscr/calculate?financial_period_id=${prevPeriodId}`, {
-                        method: 'POST',
-                        credentials: 'include'
-                      });
-                      if (prevDscrResponse.ok) {
-                        const prevDscrData = await prevDscrResponse.json();
-                        if (prevDscrData.success && prevDscrData.dscr) {
-                          dscrChange = portfolioDSCR - prevDscrData.dscr;
-                        }
-                      }
-                    } catch (prevErr) {
-                      console.warn('Failed to fetch previous period DSCR for comparison:', prevErr);
-                    }
-                  }
-                }
-              }
-            }
-          } catch (dscrErr) {
-            console.error('Failed to fetch property-specific DSCR:', dscrErr);
-          }
+        // Get property-specific DSCR from metrics summary (already calculated)
+        const metric = propertyMap.get(selectedPropertyFilter);
+        if (metric) {
+          // Use DSCR from metrics summary
+          portfolioDSCR = metric.dscr !== null && metric.dscr !== undefined ? metric.dscr : 0;
+
+          // TODO: Calculate dscrChange by comparing with previous period's metrics
+          // For now, we'll leave dscrChange as 0 until we implement historical DSCR comparison
+          dscrChange = 0;
         }
       }
 
@@ -528,29 +468,10 @@ export default function CommandCenter() {
                 ? metric.net_income
                 : 0;
 
-            // Find the period with debt service data (Dec 2024) for DSCR calculation
-            const dec2024PeriodIdMap: Record<string, number> = {
-              'ESP001': 2,
-              'HMND001': 4,
-              'TCSH001': 9,
-              'WEND001': 6
-            };
-            const periodIdToUse = dec2024PeriodIdMap[property.property_code] || metric.period_id;
-            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-
-            // Parallelize all property-specific API calls
-            const [histRes, dscrRes, ltvRes] = await Promise.all([
-              fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
-                credentials: 'include'
-              }).catch(() => ({ ok: false })),
-              fetch(`${API_BASE_URL}/risk-alerts/properties/${property.id}/dscr/calculate${periodIdParam}`, {
-                method: 'POST',
-                credentials: 'include'
-              }).catch(() => ({ ok: false })),
-              fetch(`${API_BASE_URL}/metrics/${property.id}/ltv`, {
-                credentials: 'include'
-              }).catch(() => ({ ok: false }))
-            ]);
+            // Fetch historical data for trends
+            const histRes = await fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
+              credentials: 'include'
+            }).catch(() => ({ ok: false }));
 
             // Process historical data
             let noiTrend: number[] = [];
@@ -563,47 +484,17 @@ export default function CommandCenter() {
               }
             }
 
-            // Process DSCR
-            let dscr: number | null = null;
+            // Get DSCR from metrics summary (already calculated by backend)
+            let dscr: number | null = metric.dscr !== null && metric.dscr !== undefined ? metric.dscr : null;
             let status: 'critical' | 'warning' | 'good' = 'good';
-            if (dscrRes.ok) {
-              try {
-                const dscrData = await dscrRes.json();
-                if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                  dscr = dscrData.dscr;
-                  status = dscrData.status === 'healthy' ? 'good' : 
-                           dscrData.status === 'warning' ? 'warning' : 'critical';
-                }
-              } catch (dscrErr) {
-                console.error(`Failed to parse DSCR for ${property.property_code}:`, dscrErr);
-              }
+
+            // Determine status based on DSCR thresholds
+            if (dscr !== null) {
+              status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
             }
 
-            // Fallback DSCR calculation if API failed
-            if (dscr === null && ltvRes.ok) {
-              try {
-                const ltvData = await ltvRes.json();
-                const loanAmount = ltvData.loan_amount || 0;
-                const annualDebtService = loanAmount * 0.08;
-                if (annualDebtService > 0 && noi > 0) {
-                  dscr = noi / annualDebtService;
-                  status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
-                }
-              } catch (fallbackErr) {
-                console.error('Failed to calculate DSCR fallback:', fallbackErr);
-              }
-            }
-
-            // Process LTV
-            let ltv: number | null = null;
-            if (ltvRes.ok) {
-              try {
-                const ltvData = await ltvRes.json();
-                ltv = ltvData.ltv || null;
-              } catch (ltvErr) {
-                console.error(`Failed to parse LTV for ${property.property_code}:`, ltvErr);
-              }
-            }
+            // Get LTV from metrics summary (already calculated by backend)
+            let ltv: number | null = metric.ltv_ratio !== null && metric.ltv_ratio !== undefined ? metric.ltv_ratio : null;
 
             return {
               id: property.id,

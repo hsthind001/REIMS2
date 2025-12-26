@@ -2,10 +2,12 @@
 Financial Metrics API - Query calculated KPIs and performance metrics
 """
 from fastapi import APIRouter, HTTPException, status, Query, Path, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, List
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import lru_cache
+import time
 
 from app.db.database import get_db
 from app.db.minio_client import get_file_url
@@ -23,6 +25,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Simple in-memory cache for metrics summary (5-minute TTL)
+_metrics_summary_cache = {'data': None, 'timestamp': None, 'ttl': 300}
 
 
 # Response Models
@@ -124,7 +129,9 @@ class MetricsSummaryItem(BaseModel):
     net_income: Optional[float] = None
     net_operating_income: Optional[float] = None  # NOI for portfolio calculations
     occupancy_rate: Optional[float] = None
-    
+    dscr: Optional[float] = None  # Debt Service Coverage Ratio
+    ltv_ratio: Optional[float] = None  # Loan-to-Value Ratio
+
     class Config:
         from_attributes = True
 
@@ -334,15 +341,28 @@ async def get_metrics_summary(
 ):
     """
     Get metrics summary for all properties
-    
+
     Dashboard overview showing key metrics for all properties
     Returns most recent period for each property
-    
+
     Pagination:
     - skip: Number of records to skip
     - limit: Maximum records to return (max 500)
+
+    Performance: Implements 5-minute in-memory cache
     """
     try:
+        # Check cache first
+        cache_key = f"summary_{skip}_{limit}"
+        current_time = time.time()
+
+        if (_metrics_summary_cache['data'] is not None and
+            _metrics_summary_cache['timestamp'] is not None and
+            current_time - _metrics_summary_cache['timestamp'] < _metrics_summary_cache['ttl'] and
+            cache_key in _metrics_summary_cache['data']):
+            logger.info(f"Returning cached metrics summary (age: {current_time - _metrics_summary_cache['timestamp']:.1f}s)")
+            return _metrics_summary_cache['data'][cache_key]
+
         # Get most recent period data for each metric type per property
         # Different document types may have different most recent periods
         from sqlalchemy import func
@@ -378,7 +398,9 @@ async def get_metrics_summary(
                     'total_revenue': metrics.total_revenue,
                     'net_income': metrics.net_income,
                     'net_operating_income': metrics.net_operating_income,
-                    'occupancy_rate': metrics.occupancy_rate
+                    'occupancy_rate': metrics.occupancy_rate,
+                    'dscr': metrics.dscr,
+                    'ltv_ratio': metrics.ltv_ratio
                 }
             else:
                 # Merge data: use most recent non-null value for each metric type
@@ -430,17 +452,26 @@ async def get_metrics_summary(
                 total_revenue=float(data['total_revenue']) if data['total_revenue'] else None,
                 net_income=float(data['net_income']) if data['net_income'] else None,
                 net_operating_income=float(data['net_operating_income']) if data['net_operating_income'] else None,
-                occupancy_rate=float(data['occupancy_rate']) if data['occupancy_rate'] else None
+                occupancy_rate=float(data['occupancy_rate']) if data['occupancy_rate'] else None,
+                dscr=float(data['dscr']) if data['dscr'] else None,
+                ltv_ratio=float(data['ltv_ratio']) if data['ltv_ratio'] else None
             ))
         
         # Sort by property code for consistent ordering
         summary_items.sort(key=lambda x: x.property_code)
-        
+
         # Apply pagination
         paginated_items = summary_items[skip:skip + limit]
-        
+
+        # Store in cache
+        if _metrics_summary_cache['data'] is None:
+            _metrics_summary_cache['data'] = {}
+        _metrics_summary_cache['data'][cache_key] = paginated_items
+        _metrics_summary_cache['timestamp'] = current_time
+        logger.info(f"Cached metrics summary for {len(paginated_items)} properties")
+
         return paginated_items
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -453,6 +484,8 @@ async def get_metrics_trends(
     property_code: str,
     start_year: Optional[int] = Query(None, ge=2000, le=2100),
     end_year: Optional[int] = Query(None, ge=2000, le=2100),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
     db: Session = Depends(get_db)
 ):
     """
@@ -464,8 +497,10 @@ async def get_metrics_trends(
     Query params:
     - start_year: Start year (optional)
     - end_year: End year (optional)
+    - skip: Number of records to skip (default: 0)
+    - limit: Maximum records to return (default: 100, max: 500)
 
-    If not specified, returns all available periods
+    If years not specified, returns all available periods (paginated)
     """
     try:
         # Get property
@@ -502,7 +537,8 @@ async def get_metrics_trends(
             FinancialPeriod.period_month
         )
 
-        results = query.all()
+        # Apply pagination
+        results = query.offset(skip).limit(limit).all()
 
         if not results:
             raise HTTPException(
@@ -1592,34 +1628,45 @@ async def get_property_costs(
         if not property_obj:
             raise HTTPException(404, "Property not found")
 
-        # Get latest financial metrics WITH actual expense data (income statement)
-        # Don't use periods that only have rent roll data (like April 2025 for ESP001)
-        # Check for periods that have income statement data by looking for net_operating_income
-        latest_metrics = db.query(
-            FinancialMetrics,
+        # Get latest period WITH actual income statement line items (not just metrics)
+        # We need detailed expense breakdown from income_statement_data table
+        from app.models.income_statement_data import IncomeStatementData
+        from app.models.income_statement_header import IncomeStatementHeader
+
+        # Find the latest period that has income statement data
+        latest_period_with_data = db.query(
+            FinancialPeriod.id,
             FinancialPeriod.period_year,
             FinancialPeriod.period_month
-        ).join(FinancialPeriod).filter(
-            FinancialMetrics.property_id == property_id,
-            FinancialMetrics.net_operating_income.isnot(None)
+        ).join(
+            IncomeStatementData,
+            IncomeStatementData.period_id == FinancialPeriod.id
+        ).filter(
+            FinancialPeriod.property_id == property_id
+        ).group_by(
+            FinancialPeriod.id,
+            FinancialPeriod.period_year,
+            FinancialPeriod.period_month
         ).order_by(
             FinancialPeriod.period_year.desc(),
             FinancialPeriod.period_month.desc()
         ).first()
 
-        if not latest_metrics:
-            raise HTTPException(404, "No financial data found for property")
+        if not latest_period_with_data:
+            raise HTTPException(404, "No income statement data found for property")
 
-        metrics, year, month = latest_metrics
+        period_id, year, month = latest_period_with_data
 
-        # Get actual expense breakdown from income statement data (not estimates)
-        from app.models.income_statement_data import IncomeStatementData
-        from app.models.income_statement_header import IncomeStatementHeader
+        # Get financial metrics for this period (for total_expenses)
+        metrics = db.query(FinancialMetrics).filter(
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.period_id == period_id
+        ).first()
         
         # Get income statement header for this period
         income_header = db.query(IncomeStatementHeader).filter(
             IncomeStatementHeader.property_id == property_id,
-            IncomeStatementHeader.period_id == metrics.period_id
+            IncomeStatementHeader.period_id == period_id
         ).first()
         
         costs = {
@@ -1637,15 +1684,15 @@ async def get_property_costs(
         if income_header:
             expense_items = db.query(IncomeStatementData).filter(
                 IncomeStatementData.property_id == property_id,
-                IncomeStatementData.period_id == metrics.period_id,
+                IncomeStatementData.period_id == period_id,
                 IncomeStatementData.header_id == income_header.id
             ).all()
-        
+
         # If no items found with header_id, try without header_id (some data might not have header)
         if not expense_items:
             expense_items = db.query(IncomeStatementData).filter(
                 IncomeStatementData.property_id == property_id,
-                IncomeStatementData.period_id == metrics.period_id
+                IncomeStatementData.period_id == period_id
             ).all()
         
         if expense_items:
@@ -1653,17 +1700,22 @@ async def get_property_costs(
                 account_code = item.account_code or ''
                 account_name = (item.account_name or '').upper()
                 amount = float(item.period_amount or 0)
-                
+
+                # Skip revenue accounts (4000 series) - only process expense accounts (5000+)
+                if account_code.startswith('4') or account_code.startswith('3'):
+                    continue
+
                 # Map account codes to expense categories based on Chart of Accounts
-                if account_code.startswith('5012') or 'INSURANCE' in account_name:
+                # Only match expenses (5xxx, 6xxx, 7xxx, 8xxx series)
+                if account_code.startswith('5012') or (account_code.startswith('5') and 'INSURANCE' in account_name):
                     costs["insurance"] += amount
-                elif account_code.startswith('7000') or 'MORTGAGE' in account_name or 'INTEREST' in account_name:
+                elif account_code.startswith('7000') or (account_code.startswith('7') and ('MORTGAGE' in account_name or 'INTEREST' in account_name)):
                     costs["mortgage"] += amount
-                elif account_code.startswith('5100') or account_code.startswith('5105') or account_code.startswith('5115') or account_code.startswith('5125') or account_code.startswith('5199') or 'UTILITY' in account_name or 'ELECTRIC' in account_name or 'WATER' in account_name:
+                elif account_code.startswith('5100') or account_code.startswith('5105') or account_code.startswith('5115') or account_code.startswith('5125') or account_code.startswith('5199') or (account_code.startswith('5') and ('UTILITY' in account_name or 'ELECTRIC' in account_name or 'WATER' in account_name)):
                     costs["utilities"] += amount
-                elif account_code.startswith('5040') or account_code.startswith('5200') or account_code.startswith('5210') or 'MAINTENANCE' in account_name or 'REPAIR' in account_name:
+                elif account_code.startswith('5040') or account_code.startswith('5200') or account_code.startswith('5210') or account_code.startswith('53') or (account_code.startswith('5') and ('MAINTENANCE' in account_name or 'REPAIR' in account_name or 'R&M' in account_name)):
                     costs["maintenance"] += amount
-                elif account_code.startswith('5010') or account_code.startswith('5014') or 'TAX' in account_name:
+                elif account_code.startswith('5010') or account_code.startswith('5014') or (account_code.startswith('5') and 'TAX' in account_name):
                     costs["taxes"] += amount
                 elif account_code.startswith('8') or (amount < 0 and account_code.startswith('5')):
                     # Other expenses (8000 series or negative expense amounts)
@@ -1679,9 +1731,13 @@ async def get_property_costs(
         
         # Use total_expenses from metrics if available and reasonable, otherwise use calculated sum
         # total_expenses from metrics might include other expenses not categorized above
-        if metrics.total_expenses and metrics.total_expenses > 0:
+        if metrics and metrics.total_expenses and metrics.total_expenses > 0:
             # Use metrics total if it's close to our calculated sum (within 10%)
-            if abs(float(metrics.total_expenses) - total_operating_expenses) / total_operating_expenses < 0.1:
+            # Only compare if we have calculated expenses to avoid division by zero
+            if total_operating_expenses > 0 and abs(float(metrics.total_expenses) - total_operating_expenses) / total_operating_expenses < 0.1:
+                total_operating_expenses = float(metrics.total_expenses)
+            elif total_operating_expenses == 0:
+                # If we have no calculated expenses but metrics has total_expenses, use it
                 total_operating_expenses = float(metrics.total_expenses)
             # Otherwise use calculated sum (more accurate breakdown)
 
