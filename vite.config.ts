@@ -1,34 +1,32 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    react({
-      // Babel plugins for optimization
-      babel: {
-        plugins: [
-          // Remove propTypes in production
-          ['babel-plugin-transform-react-remove-prop-types', { removeImport: true }],
-        ],
-      },
-    }),
-    // Bundle analyzer (only in analyze mode)
-    ...(process.env.ANALYZE ? [visualizer({
+export default defineConfig(async () => {
+  // Conditionally import visualizer only when needed
+  const plugins = [
+    react(),
+  ];
+
+  // Only load visualizer plugin when ANALYZE mode is enabled
+  if (process.env.ANALYZE) {
+    const { visualizer } = await import('rollup-plugin-visualizer');
+    plugins.push(visualizer({
       open: true,
       filename: 'dist/stats.html',
       gzipSize: true,
       brotliSize: true,
-    })] : []),
-  ],
+    }));
+  }
+
+  return {
+    plugins,
 
   // Optimize dependencies
   optimizeDeps: {
     include: [
       'react',
       'react-dom',
-      'react-router-dom',
       'react-leaflet',
       'leaflet',
       'react-pdf',
@@ -186,4 +184,5 @@ export default defineConfig({
   worker: {
     format: 'es', // Use ES modules for workers
   },
+  };
 })

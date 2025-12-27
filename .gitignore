@@ -61,3 +61,87 @@ regenerated_*.pdf
 
 # Docker context
 .dockerignore
+
+# ============================================================================
+# REIMS2 DUPLICATE PREVENTION & CLEANUP
+# ============================================================================
+
+# Backup files (NEVER commit these)
+*.backup
+*.backup.*
+*.old
+*.old.*
+*_OLD
+*_OLD.*
+*_BACKUP
+*_BACKUP.*
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.*.swp
+.*.swo
+
+# Documentation archives (keep in docs/archive/ only)
+*_ARCHIVED_*
+*_DEPRECATED_*
+
+# Cleanup reports (regenerable)
+CLEANUP_REPORT_*.md
+CLEANUP_LOG_*.md
+
+# Large generated documentation (should be split/archived if >5MB)
+# Add specific files here if they become too large
+
+# Coverage reports (HTML)
+htmlcov/
+.coverage
+coverage.xml
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Docker optimization artifacts
+Dockerfile.*.backup
+docker-compose.*.backup
+*-entrypoint.sh.backup
+
+# Node modules are already ignored above
+# But being explicit about large dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build artifacts
+dist/
+build/
+*.bundle.js
+*.bundle.css
+
+# IDE workspace files
+.vscode/settings.json
+.vscode/launch.json
+.idea/workspace.xml
+.idea/tasks.xml

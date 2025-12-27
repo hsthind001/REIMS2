@@ -49,12 +49,14 @@ fi
 
 # Check if backend is reachable (optional health check)
 echo "⏳ Waiting for backend to be ready..."
-BACKEND_URL=${VITE_API_URL:-http://localhost:8000}
+# Use backend container name for internal health check, not VITE_API_URL (which is for browser)
+BACKEND_URL="http://backend:8000"
 MAX_RETRIES=30
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  if wget -q --spider "${BACKEND_URL}/api/v1/health" 2>/dev/null; then
+  # Use curl instead of wget --spider because the endpoint doesn't support HEAD method
+  if curl -f -s -o /dev/null "${BACKEND_URL}/api/v1/health" 2>/dev/null; then
     echo "✅ Backend is ready!"
     break
   fi
