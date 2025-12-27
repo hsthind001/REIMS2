@@ -12,7 +12,7 @@ RESTful API for comprehensive market intelligence including:
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 from datetime import datetime
 
@@ -26,6 +26,134 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Inline executive intelligence calculations (avoiding import issues)
+def calculate_executive_summary(mi_data: Dict[str, Any], your_cap_rate: float = 0.0) -> Dict[str, Any]:
+    """Calculate executive-level metrics inline."""
+    try:
+        # Extract data
+        demographics = mi_data.get('demographics')
+        location_intel = mi_data.get('location_intelligence')
+        esg = mi_data.get('esg_assessment')
+        forecasts = mi_data.get('forecasts')
+        competitive = mi_data.get('competitive_analysis')
+
+        # Calculate location score (0-10)
+        location_score = None
+        if location_intel and location_intel.get('data'):
+            loc = location_intel['data']
+            score = 0.0
+            score += (loc.get('walk_score', 0) / 100) * 1.2
+            score += (loc.get('bike_score', 0) / 100) * 0.9
+            score += (loc.get('transit_score', 0) / 100) * 0.9
+            score += (loc.get('school_rating_avg', 5) / 10) * 2.0
+            score += ((100 - loc.get('crime_index', 50)) / 100) * 2.0
+
+            # Add demographic boost
+            if demographics and demographics.get('data'):
+                demo = demographics['data']
+                if demo.get('median_household_income', 0) > 60000:
+                    score += 0.8
+                if demo.get('college_educated_pct', 0) > 30:
+                    score += 0.7
+
+            location_score = round(min(score, 10.0), 1)
+
+        # Market cap rate
+        market_cap_rate = 0.0
+        if competitive and competitive.get('data'):
+            market_cap_rate = competitive['data'].get('market_avg_cap_rate', 0.0)
+
+        # Rent growth
+        rent_growth = None
+        if forecasts and forecasts.get('data'):
+            rent_growth = forecasts['data'].get('rent_growth_3yr_cagr')
+
+        # Risk score (0-100, higher = more risk)
+        risk_score = 50
+        if esg and esg.get('data'):
+            esg_score = esg['data'].get('composite_score', {}).get('overall', {}).get('score', 75)
+            risk_score = round((100 - esg_score) * 0.3 + 25)  # Simplified
+
+        # Opportunity score (0-100, higher = better)
+        opp_score = 50
+        if rent_growth and rent_growth > 0:
+            opp_score = min(30 + rent_growth * 5, 100)
+        if location_score:
+            opp_score = min(opp_score + location_score * 2, 100)
+        opportunity_score = round(opp_score)
+
+        # Investment recommendation
+        net_score = opportunity_score - risk_score
+        cap_premium = your_cap_rate - market_cap_rate if market_cap_rate > 0 else 0
+
+        if net_score >= 30:
+            action = "BUY"
+            confidence = 85
+            priority = "HIGH"
+            rationale = [f"Strong opportunity ({opportunity_score}/100)", f"Manageable risk ({risk_score}/100)"]
+        elif net_score >= 0 and cap_premium >= 0:
+            action = "HOLD"
+            confidence = 75
+            priority = "LOW"
+            rationale = [f"Performing at/above market", f"Balanced risk/reward"]
+        elif risk_score >= 70:
+            action = "SELL"
+            confidence = 80
+            priority = "HIGH"
+            rationale = [f"High risk ({risk_score}/100)", f"Limited upside"]
+        else:
+            action = "REVIEW"
+            confidence = 60
+            priority = "MEDIUM"
+            rationale = ["Mixed signals - detailed analysis needed"]
+
+        return {
+            "location_score": location_score,
+            "market_cap_rate": market_cap_rate,
+            "rent_growth": rent_growth,
+            "risk_score": risk_score,
+            "opportunity_score": opportunity_score,
+            "investment_recommendation": {
+                "action": action,
+                "confidence": confidence,
+                "priority": priority,
+                "rationale": rationale,
+                "metrics": {
+                    "net_score": net_score,
+                    "cap_rate_premium": round(cap_premium, 2)
+                }
+            },
+            "key_findings": [],
+            "executive_summary": {
+                "headline": f"{action}: {rationale[0]}" if rationale else action,
+                "quick_stats": {
+                    "location_quality": "Premium" if location_score and location_score >= 8 else "Strong" if location_score and location_score >= 6 else "Average",
+                    "growth_potential": "Strong" if rent_growth and rent_growth >= 3 else "Moderate" if rent_growth and rent_growth >= 0 else "Limited",
+                    "risk_level": "High Risk" if risk_score >= 70 else "Moderate Risk" if risk_score >= 50 else "Low Risk",
+                    "opportunity_level": "Strong" if opportunity_score >= 60 else "Moderate" if opportunity_score >= 40 else "Limited"
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error calculating executive summary: {e}")
+        return {
+            "location_score": None,
+            "market_cap_rate": 0.0,
+            "rent_growth": None,
+            "risk_score": 50,
+            "opportunity_score": 50,
+            "investment_recommendation": {
+                "action": "REVIEW",
+                "confidence": 0,
+                "priority": "HIGH",
+                "rationale": ["Error - manual review required"],
+                "metrics": {}
+            },
+            "key_findings": [],
+            "executive_summary": {"headline": "Data insufficient", "quick_stats": {}}
+        }
 
 
 # ========== Helper Functions ==========
@@ -60,12 +188,13 @@ def get_or_create_market_intelligence(db: Session, property_id: int) -> MarketIn
 async def get_demographics(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh from Census API"),
+    enhanced: bool = Query(True, description="Include supplementary data sources"),
     db: Session = Depends(get_db)
 ):
     """
     Get demographics data for a property.
 
-    Returns Census ACS 5-year data including:
+    Returns Census ACS 5-year data (automatically detects latest vintage) including:
     - Population
     - Median household income
     - Median home value
@@ -73,6 +202,9 @@ async def get_demographics(
     - Unemployment rate
     - Education levels
     - Housing units breakdown
+
+    With enhanced=True (default), also includes:
+    - Recent population estimates (Census PEP - more current than ACS5)
     """
     try:
         # Get property
@@ -105,9 +237,12 @@ async def get_demographics(
                 latitude = property_obj.latitude
                 longitude = property_obj.longitude
 
-            # Fetch demographics
+            # Fetch demographics (enhanced or basic)
             service = get_market_data_service(db)
-            demographics = service.fetch_census_demographics(latitude, longitude)
+            if enhanced:
+                demographics = service.fetch_enhanced_demographics(latitude, longitude)
+            else:
+                demographics = service.fetch_census_demographics(latitude, longitude)
 
             if demographics:
                 mi.demographics = demographics
@@ -739,6 +874,7 @@ async def get_ai_insights(
 @router.get("/properties/{property_code}/market-intelligence")
 async def get_market_intelligence(
     property_code: str,
+    include_executive_summary: bool = Query(True, description="Include calculated executive metrics"),
     db: Session = Depends(get_db)
 ):
     """
@@ -753,6 +889,7 @@ async def get_market_intelligence(
     - Competitive analysis
     - Comparables
     - AI insights
+    - Executive summary (calculated metrics for C-level decision making)
     """
     try:
         # Get property
@@ -779,10 +916,12 @@ async def get_market_intelligence(
                 "comparables": None,
                 "ai_insights": None,
                 "last_refreshed": None,
-                "refresh_status": None
+                "refresh_status": None,
+                "executive_summary": None
             }
 
-        return {
+        # Build base response
+        response = {
             "property_code": property_code,
             "property_id": property_obj.id,
             "demographics": mi.demographics,
@@ -796,6 +935,29 @@ async def get_market_intelligence(
             "last_refreshed": mi.last_refreshed_at,
             "refresh_status": mi.refresh_status
         }
+
+        # Calculate executive summary if requested
+        if include_executive_summary:
+            try:
+                # Fetch property cap rate if available
+                your_cap_rate = 0.0
+                try:
+                    from app.services.metrics_service import calculate_cap_rate
+                    cap_rate_result = calculate_cap_rate(db, property_obj.id)
+                    if cap_rate_result and 'cap_rate' in cap_rate_result:
+                        your_cap_rate = cap_rate_result['cap_rate']
+                except Exception as cap_err:
+                    logger.warning(f"Could not fetch cap rate for {property_code}: {cap_err}")
+
+                # Generate executive summary using inline function
+                executive_summary = calculate_executive_summary(response, your_cap_rate)
+                response["executive_summary"] = executive_summary
+
+            except Exception as exec_err:
+                logger.error(f"Error generating executive summary: {exec_err}")
+                response["executive_summary"] = None
+
+        return response
 
     except HTTPException:
         raise

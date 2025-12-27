@@ -322,12 +322,58 @@ class MarketDataService:
 
     # ========== Census API ==========
 
+    @cache_with_ttl(ttl_seconds=604800)  # 7 days - vintages change rarely
+    def get_latest_census_vintage(self) -> int:
+        """
+        Automatically detect the latest available Census ACS5 vintage.
+
+        The Census Bureau typically releases ACS5 data with a 2-year lag.
+        For example, in 2025, the latest available data is usually 2022 or 2023.
+
+        Returns:
+            Latest available year (e.g., 2022)
+        """
+        try:
+            current_year = datetime.now().year
+            # Try years from most recent to 3 years back
+            for years_back in range(3, 6):  # Try 3, 4, 5 years back (more stable)
+                test_year = current_year - years_back
+                test_url = f"{self.CENSUS_API_BASE}/{test_year}/acs/acs5"
+
+                try:
+                    # Test if this vintage exists by making a minimal request
+                    # Test with actual variables to ensure the endpoint fully works
+                    params = {'get': 'B01003_001E,NAME', 'for': 'us:1'}
+                    if self.census_api_key:
+                        params['key'] = self.census_api_key
+
+                    response = requests.get(test_url, params=params, timeout=5)
+
+                    # Check if response is valid JSON (not HTML error page)
+                    if response.status_code == 200:
+                        try:
+                            response.json()  # Validate JSON response
+                            logger.info(f"Latest Census ACS5 vintage detected: {test_year}")
+                            return test_year
+                        except:
+                            continue
+                except:
+                    continue
+
+            # Fallback to a safe default (2022 is stable and widely available)
+            logger.warning("Could not detect latest Census vintage, using fallback: 2022")
+            return 2022
+
+        except Exception as e:
+            logger.error(f"Error detecting Census vintage: {e}")
+            return 2022  # Safe fallback
+
     @cache_with_ttl(ttl_seconds=86400)  # 24 hours
     def fetch_census_demographics(
         self,
         latitude: float,
         longitude: float,
-        year: int = 2021
+        year: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Fetch demographics from Census API for a location.
@@ -335,12 +381,16 @@ class MarketDataService:
         Args:
             latitude: Property latitude
             longitude: Property longitude
-            year: Census year (default: 2021 - latest ACS 5-year)
+            year: Census year (default: None - auto-detect latest available)
 
         Returns:
             Tagged demographics data or None
         """
         try:
+            # Auto-detect latest vintage if not specified
+            if year is None:
+                year = self.get_latest_census_vintage()
+                logger.info(f"Using auto-detected Census vintage: {year}")
             # First, get census tract from coordinates
             geocode_url = f"https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
             geocode_params = {
@@ -463,6 +513,133 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error fetching census demographics: {e}")
             self.log_data_pull('census', 'acs5', 'failure', error_message=str(e))
+            return None
+
+    @cache_with_ttl(ttl_seconds=2592000)  # 30 days - population estimates updated annually
+    def fetch_census_population_estimates(
+        self,
+        state_fips: str,
+        county_fips: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch recent population estimates from Census Population Estimates API.
+
+        These estimates are more current than ACS5 (typically 1 year lag vs 2-3 years)
+        and can supplement the detailed ACS5 demographics.
+
+        Args:
+            state_fips: State FIPS code (e.g., "04" for Arizona)
+            county_fips: County FIPS code (e.g., "013" for Maricopa)
+
+        Returns:
+            Tagged population estimates or None
+        """
+        try:
+            current_year = datetime.now().year
+            # Try current year and previous year
+            for year in [current_year, current_year - 1]:
+                try:
+                    # Population Estimates API
+                    pep_url = f"{self.CENSUS_API_BASE}/{year}/pep/population"
+                    params = {
+                        'get': 'POP,NAME',
+                        'for': f'county:{county_fips}',
+                        'in': f'state:{state_fips}'
+                    }
+
+                    if self.census_api_key:
+                        params['key'] = self.census_api_key
+
+                    result = self.fetch_with_retry('census', pep_url, params)
+
+                    if result and len(result) >= 2:
+                        headers = result[0]
+                        data = result[1]
+                        pep_data = dict(zip(headers, data))
+
+                        population = int(pep_data.get('POP', 0))
+
+                        if population > 0:
+                            logger.info(f"Fetched population estimate for {year}: {population:,}")
+                            self.log_data_pull('census', 'pep', 'success', records_fetched=1)
+
+                            return self.tag_data_source(
+                                {'population': population, 'county_name': pep_data.get('NAME', 'Unknown')},
+                                source='census_pep',
+                                vintage=str(year),
+                                confidence=90.0,
+                                extra_metadata={'state': state_fips, 'county': county_fips}
+                            )
+                except:
+                    continue
+
+            logger.warning("Could not fetch recent population estimates")
+            self.log_data_pull('census', 'pep', 'failure', error_message="No recent estimates available")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching population estimates: {e}")
+            self.log_data_pull('census', 'pep', 'failure', error_message=str(e))
+            return None
+
+    def fetch_enhanced_demographics(
+        self,
+        latitude: float,
+        longitude: float,
+        year: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch demographics with supplementary data from multiple sources.
+
+        Combines:
+        - Census ACS5 (detailed demographics, 2-3 year lag)
+        - Census Population Estimates (recent population, 1 year lag)
+
+        Args:
+            latitude: Property latitude
+            longitude: Property longitude
+            year: Census ACS5 year (default: None - auto-detect)
+
+        Returns:
+            Enhanced demographics with multiple data sources
+        """
+        try:
+            # Get base ACS5 demographics
+            acs_data = self.fetch_census_demographics(latitude, longitude, year)
+
+            if not acs_data:
+                return None
+
+            # Extract geography info from ACS data
+            geography = acs_data.get('data', {}).get('geography', {})
+            state_fips = geography.get('state_fips')
+            county_fips = geography.get('county_fips')
+
+            enhanced_data = acs_data.copy()
+
+            # Add recent population estimates if available
+            if state_fips and county_fips:
+                pop_estimates = self.fetch_census_population_estimates(state_fips, county_fips)
+
+                if pop_estimates:
+                    # Add supplementary data section
+                    if 'supplementary_sources' not in enhanced_data:
+                        enhanced_data['supplementary_sources'] = []
+
+                    enhanced_data['supplementary_sources'].append({
+                        'source': 'census_pep',
+                        'type': 'population_estimate',
+                        'vintage': pop_estimates.get('lineage', {}).get('vintage'),
+                        'data': pop_estimates.get('data', {}),
+                        'note': 'More recent than ACS5 but less detailed'
+                    })
+
+                    logger.info("Enhanced demographics with population estimates")
+
+            return enhanced_data
+
+        except Exception as e:
+            logger.error(f"Error fetching enhanced demographics: {e}")
             return None
 
     # ========== FRED API ==========

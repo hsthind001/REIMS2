@@ -180,8 +180,9 @@ def assess_development_impact(property_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.get("/{property_id}/market-intelligence")
-def get_comprehensive_market_intelligence(property_id: int, db: Session = Depends(get_db)):
+# DISABLED: Duplicate route - use /api/v1/properties/{property_code}/market-intelligence from market_intelligence.py instead
+# @router.get("/{property_id}/market-intelligence")
+def get_comprehensive_market_intelligence_DISABLED(property_id: int, db: Session = Depends(get_db)):
     """
     Get comprehensive market intelligence for a property
 

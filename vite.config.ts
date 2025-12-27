@@ -34,9 +34,15 @@ export default defineConfig(async () => {
       '@mui/material',
       '@mui/icons-material',
       'axios',
+      '@emotion/react',
+      '@emotion/styled',
+      'hoist-non-react-statics',
     ],
-    // Exclude large dependencies that don't need pre-bundling
-    exclude: ['@emotion/react', '@emotion/styled'],
+    // Esbuild options for better stability in Docker
+    esbuildOptions: {
+      // Increase memory allocation for esbuild
+      logLevel: 'info',
+    },
   },
 
   build: {

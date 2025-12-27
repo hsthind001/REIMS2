@@ -10,7 +10,8 @@ import {
   Sparkles,
   List,
   Map as MapIcon,
-  Download
+  Download,
+  TrendingUp
 } from 'lucide-react';
 import { Card, Button, ProgressBar } from '../components/design-system';
 import { PropertyMap } from '../components/PropertyMap';
@@ -1655,11 +1656,12 @@ export default function PortfolioHub() {
                       </Card>
                     ) : marketIntel ? (
                       <>
-                        <Card variant="premium" className="p-6">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="w-5 h-5 text-premium" />
-                              <h3 className="text-lg font-semibold">Market Intelligence (AI-Powered)</h3>
+                        {/* Executive Summary - Top Priority */}
+                        <Card variant="premium" className="p-8 mb-6">
+                          <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                              <Sparkles className="w-6 h-6 text-premium" />
+                              <h2 className="text-2xl font-bold">Executive Market Summary</h2>
                             </div>
                             <Button
                               variant="primary"
@@ -1669,139 +1671,200 @@ export default function PortfolioHub() {
                                 }
                               }}
                             >
-                              View Full Dashboard
+                              Full Market Dashboard
                             </Button>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div>
-                              <div className="text-sm text-text-secondary mb-1">Location Score</div>
-                              <div className="text-3xl font-bold mb-1">
-                                {marketIntel.locationScore !== null ? `${marketIntel.locationScore}/10` : 'N/A'}
+
+                          {/* Key Performance Indicators - Most Critical Metrics */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
+                            {/* Performance vs Market */}
+                            <div className="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 border-blue-200">
+                              <div className="text-sm font-semibold text-blue-700 mb-2">PERFORMANCE VS MARKET</div>
+                              <div className="text-4xl font-bold mb-2">
+                                {marketIntel.yourCapRate > 0 && marketIntel.marketCapRate > 0 ? (
+                                  <span className={marketIntel.yourCapRate > marketIntel.marketCapRate ? 'text-green-600' : 'text-orange-600'}>
+                                    {marketIntel.yourCapRate > marketIntel.marketCapRate ? '+' : ''}
+                                    {((marketIntel.yourCapRate - marketIntel.marketCapRate) / marketIntel.marketCapRate * 100).toFixed(1)}%
+                                  </span>
+                                ) : 'N/A'}
                               </div>
-                              <div className="text-xs text-text-secondary">
-                                {marketIntel.locationScore !== null 
-                                  ? 'Calculated from demographics data' 
-                                  : 'Location score not available'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-sm text-text-secondary mb-1">Market Cap Rate</div>
-                              <div className="text-2xl font-semibold mb-1">{marketIntel.marketCapRate}%</div>
-                              <div className="text-sm">
-                                Your property: <span className="font-medium">{marketIntel.yourCapRate}%</span>
-                                {marketIntel.yourCapRate < marketIntel.marketCapRate && (
-                                  <span className="text-warning"> (Below market by {(marketIntel.marketCapRate - marketIntel.yourCapRate).toFixed(2)}%)</span>
-                                )}
-                                {marketIntel.yourCapRate > marketIntel.marketCapRate && (
-                                  <span className="text-success"> (Above market by {(marketIntel.yourCapRate - marketIntel.marketCapRate).toFixed(2)}%)</span>
-                                )}
+                              <div className="text-xs text-blue-600">
+                                Your Cap: {marketIntel.yourCapRate}% vs Market: {marketIntel.marketCapRate}%
                               </div>
                             </div>
-                            <div>
-                              <div className="text-sm text-text-secondary mb-1">Market Rent Growth</div>
-                              <div className="text-2xl font-semibold mb-1">
-                                {marketIntel.rentGrowth !== null 
-                                  ? `+${marketIntel.rentGrowth}% YoY` 
-                                  : 'Data not available'}
+
+                            {/* Market Position */}
+                            <div className="text-center p-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border-2 border-purple-200">
+                              <div className="text-sm font-semibold text-purple-700 mb-2">LOCATION QUALITY</div>
+                              <div className="text-4xl font-bold mb-2">
+                                <span className={
+                                  marketIntel.locationScore >= 8 ? 'text-green-600' :
+                                  marketIntel.locationScore >= 6 ? 'text-blue-600' :
+                                  marketIntel.locationScore >= 4 ? 'text-orange-600' : 'text-red-600'
+                                }>
+                                  {marketIntel.locationScore !== null ? `${marketIntel.locationScore}/10` : 'N/A'}
+                                </span>
                               </div>
-                              <div className="text-sm">
+                              <div className="text-xs text-purple-600">
+                                {marketIntel.locationScore >= 8 ? 'Premium Location' :
+                                 marketIntel.locationScore >= 6 ? 'Strong Location' :
+                                 marketIntel.locationScore >= 4 ? 'Average Location' : 'Below Average'}
+                              </div>
+                            </div>
+
+                            {/* Growth Potential */}
+                            <div className="text-center p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border-2 border-green-200">
+                              <div className="text-sm font-semibold text-green-700 mb-2">RENT GROWTH POTENTIAL</div>
+                              <div className="text-4xl font-bold mb-2">
                                 {marketIntel.rentGrowth !== null ? (
-                                  <>
-                                    Your rent growth: <span className="font-medium">+{marketIntel.yourRentGrowth}% YoY</span>
-                                    {marketIntel.yourRentGrowth < marketIntel.rentGrowth && (
-                                      <span className="text-warning"> (Lagging market)</span>
-                                    )}
-                                    {marketIntel.yourRentGrowth > marketIntel.rentGrowth && (
-                                      <span className="text-success"> (Outperforming market)</span>
-                                    )}
-                                  </>
+                                  <span className={marketIntel.rentGrowth >= 5 ? 'text-green-600' : marketIntel.rentGrowth >= 2 ? 'text-blue-600' : 'text-orange-600'}>
+                                    +{marketIntel.rentGrowth}%
+                                  </span>
                                 ) : (
-                                  <span className="text-text-secondary">Insufficient historical data for rent growth calculation</span>
+                                  <span className="text-gray-400">N/A</span>
                                 )}
+                              </div>
+                              <div className="text-xs text-green-600">
+                                {marketIntel.rentGrowth !== null
+                                  ? `Market YoY Growth`
+                                  : 'Insufficient data'}
                               </div>
                             </div>
                           </div>
-                        </Card>
 
-                        <Card className="p-6">
-                          <h3 className="text-lg font-semibold mb-4">Demographics</h3>
-                          {marketIntel.demographics.dataSource && (
-                            <div className="text-xs text-text-secondary mb-2">
-                              Source: {marketIntel.demographics.dataSource}
+                          {/* AI Strategic Insights - Executive Level */}
+                          {marketIntel.aiInsights.length > 0 && (
+                            <div className="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-r-lg">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Sparkles className="w-5 h-5 text-indigo-600" />
+                                <h4 className="font-bold text-indigo-900">Strategic Recommendation</h4>
+                              </div>
+                              <div className="text-sm text-indigo-800 font-medium">
+                                {marketIntel.aiInsights[0]}
+                              </div>
                             </div>
                           )}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <div className="text-sm text-text-secondary">Population</div>
-                              <div className="text-xl font-semibold">
-                                {marketIntel.demographics.population !== null 
-                                  ? marketIntel.demographics.population.toLocaleString() 
-                                  : 'Data not available'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-sm text-text-secondary">Median Income</div>
-                              <div className="text-xl font-semibold">
-                                {marketIntel.demographics.medianIncome !== null 
-                                  ? `$${marketIntel.demographics.medianIncome.toLocaleString()}` 
-                                  : 'Data not available'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-sm text-text-secondary">Employment</div>
-                              <div className="text-xl font-semibold">
-                                {marketIntel.demographics.employmentType || 'Data not available'}
-                              </div>
-                            </div>
-                          </div>
                         </Card>
 
+                        {/* Market Comparison - Secondary Priority */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                          {/* Competitive Position */}
+                          <Card className="p-6">
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                              <TrendingUp className="w-5 h-5 text-success" />
+                              Competitive Position
+                            </h3>
+                            <div className="space-y-4">
+                              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                <span className="text-sm font-medium">Your Cap Rate</span>
+                                <span className="text-lg font-bold text-blue-600">{marketIntel.yourCapRate}%</span>
+                              </div>
+                              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                <span className="text-sm font-medium">Market Average</span>
+                                <span className="text-lg font-bold">{marketIntel.marketCapRate}%</span>
+                              </div>
+                              {marketIntel.rentGrowth !== null && (
+                                <>
+                                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                    <span className="text-sm font-medium">Your Rent Growth</span>
+                                    <span className={`text-lg font-bold ${marketIntel.yourRentGrowth >= marketIntel.rentGrowth ? 'text-green-600' : 'text-orange-600'}`}>
+                                      +{marketIntel.yourRentGrowth}%
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                    <span className="text-sm font-medium">Market Rent Growth</span>
+                                    <span className="text-lg font-bold">+{marketIntel.rentGrowth}%</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </Card>
+
+                          {/* Market Demographics - Decision Context */}
+                          <Card className="p-6">
+                            <h3 className="text-lg font-semibold mb-4">Market Demographics</h3>
+                            {marketIntel.demographics.dataSource && (
+                              <div className="text-xs text-text-secondary mb-3">
+                                Source: {marketIntel.demographics.dataSource}
+                              </div>
+                            )}
+                            <div className="space-y-4">
+                              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                <span className="text-sm font-medium">Population Density</span>
+                                <span className="text-lg font-bold">
+                                  {marketIntel.demographics.population !== null
+                                    ? marketIntel.demographics.population.toLocaleString()
+                                    : 'N/A'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                <span className="text-sm font-medium">Median Income</span>
+                                <span className="text-lg font-bold">
+                                  {marketIntel.demographics.medianIncome !== null
+                                    ? `$${marketIntel.demographics.medianIncome.toLocaleString()}`
+                                    : 'N/A'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                <span className="text-sm font-medium">Economic Base</span>
+                                <span className="text-sm font-semibold">
+                                  {marketIntel.demographics.employmentType || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                          </Card>
+                        </div>
+
+                        {/* Comparable Properties - Supporting Detail */}
                         <Card className="p-6">
-                          <h3 className="text-lg font-semibold mb-4">Comparable Properties (Within 2 miles)</h3>
+                          <h3 className="text-lg font-semibold mb-4">Competitive Set (2-mile radius)</h3>
                           <div className="space-y-3">
                             {marketIntel.comparables.length > 0 ? (
-                              marketIntel.comparables.map((comp, i) => (
-                                <div key={i} className="bg-premium-light/20 p-4 rounded-lg border border-border">
-                                  <div className="flex items-center justify-between">
-                                    <div className="font-medium">{comp.name}</div>
-                                    <div className="text-sm text-text-secondary">{comp.distance} miles away</div>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
-                                    <div>
-                                      <span className="text-text-secondary">Cap Rate: </span>
-                                      <span className="font-semibold">{comp.capRate}%</span>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {marketIntel.comparables.map((comp, i) => (
+                                  <div key={i} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <div className="font-semibold text-gray-900">{comp.name}</div>
+                                      <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded">{comp.distance} mi</div>
                                     </div>
-                                    <div>
-                                      <span className="text-text-secondary">Occupancy: </span>
-                                      <span className="font-semibold">{comp.occupancy}%</span>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="bg-white p-2 rounded text-center">
+                                        <div className="text-xs text-gray-500">Cap Rate</div>
+                                        <div className="text-lg font-bold text-blue-600">{comp.capRate}%</div>
+                                      </div>
+                                      <div className="bg-white p-2 rounded text-center">
+                                        <div className="text-xs text-gray-500">Occupancy</div>
+                                        <div className="text-lg font-bold text-green-600">{comp.occupancy}%</div>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))
+                                ))}
+                              </div>
                             ) : (
-                              <div className="text-text-secondary text-center py-4">No comparable properties found</div>
+                              <div className="text-text-secondary text-center py-8 bg-gray-50 rounded-lg">
+                                No comparable properties identified within 2-mile radius
+                              </div>
                             )}
                           </div>
                         </Card>
 
-                        <Card variant="info" className="p-6">
-                          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                            <Sparkles className="w-5 h-5 text-info" />
-                            AI Insights
-                          </h3>
-                          <div className="space-y-3">
-                            {marketIntel.aiInsights.length > 0 ? (
-                              marketIntel.aiInsights.map((insight, i) => (
-                                <div key={i} className="flex items-start gap-3">
+                        {/* Additional AI Insights - If More Available */}
+                        {marketIntel.aiInsights.length > 1 && (
+                          <Card variant="info" className="p-6 mt-6">
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                              <Sparkles className="w-5 h-5 text-info" />
+                              Additional Market Insights
+                            </h3>
+                            <div className="space-y-3">
+                              {marketIntel.aiInsights.slice(1).map((insight, i) => (
+                                <div key={i} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
                                   <span className="text-info text-xl">💡</span>
-                                  <span className="text-sm flex-1">{insight}</span>
+                                  <span className="text-sm flex-1 text-gray-700">{insight}</span>
                                 </div>
-                              ))
-                            ) : (
-                              <div className="text-text-secondary text-center py-4">No AI insights available</div>
-                            )}
-                          </div>
-                        </Card>
+                              ))}
+                            </div>
+                          </Card>
+                        )}
                       </>
                     ) : (
                       <Card className="p-8 text-center">

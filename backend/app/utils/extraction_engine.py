@@ -87,13 +87,13 @@ class MultiEngineExtractor:
     def detect_property_name(self, pdf_data: bytes, available_properties: list) -> Dict:
         """
         Detect property name from PDF content
-        
+
         Searches for property names, codes, and addresses in first 2 pages
-        
+
         Args:
             pdf_data: PDF file bytes
             available_properties: List of dicts with property_code, property_name, address
-        
+
         Returns:
             dict: {
                 "detected_property_code": str or None,
@@ -107,29 +107,29 @@ class MultiEngineExtractor:
             result = self.pymupdf.extract_text(pdf_data)
             if not result.get("success"):
                 return {"detected_property_code": None, "detected_property_name": None, "confidence": 0, "matches_found": []}
-            
+
             # Get text from first 2 pages
             pages = result.get("pages", [])
             sample_text = ""
             for page in pages[:2]:
                 sample_text += page.get("text", "")
-            
+
             sample_lower = sample_text.lower()
-            
+
             # Search for each property
             matches = []
             best_match = None
             best_score = 0
-            
+
             for prop in available_properties:
                 score = 0
                 prop_matches = []
-                
+
                 # Check property code (e.g., ESP001, HMND001)
                 if prop.get('property_code') and prop['property_code'].lower() in sample_lower:
                     score += 40
                     prop_matches.append(f"Code: {prop['property_code']}")
-                
+
                 # Check property name (e.g., "Eastern Shore Plaza", "Hammond Aire")
                 if prop.get('property_name'):
                     # Split name into words and check each
@@ -139,17 +139,17 @@ class MultiEngineExtractor:
                         word_score = (matched_words / len(name_words)) * 30
                         score += word_score
                         prop_matches.append(f"Name: {matched_words}/{len(name_words)} words")
-                
+
                 # Check address/city if available
                 if prop.get('city') and prop['city'].lower() in sample_lower:
                     score += 20
                     prop_matches.append(f"City: {prop['city']}")
-                
+
                 if score > best_score:
                     best_score = score
                     best_match = prop
                     matches = prop_matches
-            
+
             if best_match and best_score >= 30:
                 return {
                     "detected_property_code": best_match.get('property_code'),
@@ -157,20 +157,254 @@ class MultiEngineExtractor:
                     "confidence": round(best_score, 1),
                     "matches_found": matches
                 }
-            
+
             return {
                 "detected_property_code": None,
                 "detected_property_name": None,
                 "confidence": 0,
                 "matches_found": []
             }
-            
+
         except Exception as e:
             return {
                 "detected_property_code": None,
                 "detected_property_name": None,
                 "confidence": 0,
                 "matches_found": [],
+                "error": str(e)
+            }
+
+    def detect_property_with_intelligence(self, pdf_data: bytes, available_properties: list) -> Dict:
+        """
+        Enhanced property detection with A/R filtering and header/title focus.
+
+        This method distinguishes between:
+        - Primary property (in header, title, entity name)
+        - Referenced properties (in A/R line items, notes)
+
+        Scoring Strategy:
+        - Header/Title (50% weight): First 5 lines, entity name
+        - Metadata Fields (30% weight): "Property:", "Entity:", "Location:"
+        - Body Content (20% weight): Mentions NOT in A/R context
+        - Filename bonus (+10%): Property abbreviation in filename
+
+        Args:
+            pdf_data: PDF file bytes
+            available_properties: List of dicts with property_code, property_name, city
+
+        Returns:
+            dict: {
+                "primary_property": {
+                    "code": str,
+                    "name": str,
+                    "confidence": float,
+                    "evidence": [str]
+                },
+                "referenced_properties": [
+                    {
+                        "code": str,
+                        "name": str,
+                        "confidence": float,
+                        "evidence": [str]
+                    }
+                ],
+                "recommendation": str,  # property_code to use
+                "validation_status": str  # "HIGH_CONFIDENCE", "MEDIUM_CONFIDENCE", "UNCERTAIN"
+            }
+        """
+        import re
+
+        try:
+            # Extract text from first page
+            result = self.pymupdf.extract_text(pdf_data)
+            if not result.get("success"):
+                return {
+                    "primary_property": None,
+                    "referenced_properties": [],
+                    "recommendation": None,
+                    "validation_status": "UNCERTAIN"
+                }
+
+            pages = result.get("pages", [])
+            if not pages:
+                return {
+                    "primary_property": None,
+                    "referenced_properties": [],
+                    "recommendation": None,
+                    "validation_status": "UNCERTAIN"
+                }
+
+            first_page_text = pages[0].get("text", "")
+            first_page_lines = first_page_text.split('\n')
+
+            # Extract header (first 5 non-empty lines)
+            header_lines = [line.strip() for line in first_page_lines[:10] if line.strip()][:5]
+            header_text = ' '.join(header_lines)
+
+            # A/R exclusion patterns (case-insensitive)
+            ar_patterns = [
+                r'receivable\s+from',
+                r'due\s+from',
+                r'owed\s+by',
+                r'a/r\s+',
+                r'account\s+receivable',
+                r'\b\d{4}-\d{4}\b',  # Account codes like 1100-0001
+                r'payable\s+to',
+                r'due\s+to'
+            ]
+
+            # Property detection results
+            property_scores = {}
+
+            for prop in available_properties:
+                prop_code = prop.get('property_code', '')
+                prop_name = prop.get('property_name', '')
+                prop_city = prop.get('city', '')
+
+                if not prop_code:
+                    continue
+
+                # Initialize scoring
+                header_score = 0
+                metadata_score = 0
+                body_score = 0
+                evidence = []
+                ar_mentions = []
+
+                # === LAYER 1: Header/Title Analysis (50% weight, max 50 points) ===
+                header_lower = header_text.lower()
+
+                # Check for property code in header
+                if prop_code.lower() in header_lower:
+                    header_score += 25
+                    evidence.append(f"Code '{prop_code}' in header")
+
+                # Check for property name words in header
+                if prop_name:
+                    name_words = [w for w in prop_name.lower().split() if len(w) > 3]
+                    matched = sum(1 for w in name_words if w in header_lower)
+                    if matched > 0:
+                        name_match_score = (matched / len(name_words)) * 25
+                        header_score += name_match_score
+                        evidence.append(f"Name words ({matched}/{len(name_words)}) in header")
+
+                # === LAYER 2: Metadata Fields (30% weight, max 30 points) ===
+                # Look for "Property:", "Entity:", "Location:" fields
+                metadata_patterns = [
+                    rf'property\s*:?\s*{re.escape(prop_name)}',
+                    rf'entity\s*:?\s*{re.escape(prop_name)}',
+                    rf'location\s*:?\s*{re.escape(prop_name)}',
+                    rf'property\s*:?\s*{re.escape(prop_code)}',
+                ]
+
+                page_lower = first_page_text.lower()
+                for pattern in metadata_patterns:
+                    if re.search(pattern, page_lower, re.IGNORECASE):
+                        metadata_score += 15
+                        evidence.append(f"Metadata field match")
+                        break
+
+                # Check city in metadata
+                if prop_city and re.search(rf'city\s*:?\s*{re.escape(prop_city)}', page_lower, re.IGNORECASE):
+                    metadata_score += 15
+                    evidence.append(f"City '{prop_city}' in metadata")
+
+                # === LAYER 3: Body Content (20% weight, max 20 points) ===
+                # Find mentions NOT in A/R context
+                for line in first_page_lines:
+                    line_lower = line.lower()
+
+                    # Skip if line contains A/R patterns
+                    is_ar_line = any(re.search(pattern, line_lower, re.IGNORECASE) for pattern in ar_patterns)
+
+                    if prop_name and prop_name.lower() in line_lower:
+                        if is_ar_line:
+                            ar_mentions.append(line.strip())
+                        else:
+                            body_score += 5  # Non-A/R mention
+                            if body_score == 5:  # First non-A/R mention
+                                evidence.append(f"Property name in body (non-A/R)")
+
+                    if prop_code.lower() in line_lower:
+                        if is_ar_line:
+                            ar_mentions.append(line.strip())
+                        else:
+                            body_score += 5  # Non-A/R mention
+                            if len([e for e in evidence if 'code in body' in e.lower()]) == 0:
+                                evidence.append(f"Property code in body (non-A/R)")
+
+                # Cap scores at their maximums
+                header_score = min(header_score, 50)
+                metadata_score = min(metadata_score, 30)
+                body_score = min(body_score, 20)
+
+                # Total score
+                total_score = header_score + metadata_score + body_score
+
+                # Store results
+                property_scores[prop_code] = {
+                    "code": prop_code,
+                    "name": prop_name,
+                    "total_score": total_score,
+                    "header_score": header_score,
+                    "metadata_score": metadata_score,
+                    "body_score": body_score,
+                    "evidence": evidence,
+                    "ar_mentions": ar_mentions
+                }
+
+            # Find primary property (highest score)
+            if not property_scores:
+                return {
+                    "primary_property": None,
+                    "referenced_properties": [],
+                    "recommendation": None,
+                    "validation_status": "UNCERTAIN"
+                }
+
+            sorted_properties = sorted(property_scores.items(), key=lambda x: x[1]["total_score"], reverse=True)
+
+            primary_code, primary_data = sorted_properties[0]
+            primary_score = primary_data["total_score"]
+
+            # Find referenced properties (lower scores, with A/R mentions)
+            referenced = []
+            for prop_code, prop_data in sorted_properties[1:]:
+                if prop_data["ar_mentions"] and prop_data["total_score"] < primary_score * 0.5:
+                    referenced.append({
+                        "code": prop_code,
+                        "name": prop_data["name"],
+                        "confidence": round(prop_data["total_score"], 1),
+                        "evidence": prop_data["ar_mentions"][:2]  # First 2 A/R mentions
+                    })
+
+            # Determine validation status
+            if primary_score >= 60:
+                validation_status = "HIGH_CONFIDENCE"
+            elif primary_score >= 40:
+                validation_status = "MEDIUM_CONFIDENCE"
+            else:
+                validation_status = "UNCERTAIN"
+
+            return {
+                "primary_property": {
+                    "code": primary_code,
+                    "name": primary_data["name"],
+                    "confidence": round(primary_score, 1),
+                    "evidence": primary_data["evidence"]
+                } if primary_score >= 20 else None,
+                "referenced_properties": referenced,
+                "recommendation": primary_code if primary_score >= 40 else None,
+                "validation_status": validation_status
+            }
+
+        except Exception as e:
+            logger.error(f"Error in detect_property_with_intelligence: {e}")
+            return {
+                "primary_property": None,
+                "referenced_properties": [],
+                "recommendation": None,
+                "validation_status": "UNCERTAIN",
                 "error": str(e)
             }
     

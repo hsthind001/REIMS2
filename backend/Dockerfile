@@ -1,7 +1,7 @@
-# Use official Python 3.13 slim image
-FROM python:3.13-slim
+# Use official Python 3.12 slim image (better ML package compatibility)
+FROM python:3.12-slim
 
-# Install system dependencies including Rust toolchain
+# Install system dependencies including Rust toolchain and WeasyPrint dependencies
 USER root
 RUN apt-get update && apt-get install -y \
     postgresql-client \
@@ -13,6 +13,11 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     cmake \
     git \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust toolchain (required for tokenizers and sentencepiece)
@@ -21,6 +26,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Set working directory
 WORKDIR /app
+
+# Upgrade pip, setuptools, and wheel for better package compatibility
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .

@@ -18,6 +18,7 @@ import {
   CircularProgress,
   Chip,
   Divider,
+  IconButton,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -29,6 +30,7 @@ import {
   CompareArrows as CompetitiveIcon,
   Psychology as AIIcon,
   History as HistoryIcon,
+  ArrowBack as ArrowBackIcon,
 } from '@mui/icons-material';
 import type { MarketIntelligence } from '../types/market-intelligence';
 import * as marketIntelligenceService from '../services/marketIntelligenceService';
@@ -103,7 +105,21 @@ const MarketIntelligenceDashboard: React.FC = () => {
       setMarketIntel(data);
     } catch (err: any) {
       console.error('Error loading market intelligence:', err);
-      setError(err.response?.data?.detail || 'Failed to load market intelligence data');
+      // Handle different error response formats
+      let errorMessage = 'Failed to load market intelligence data';
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail;
+        } else if (Array.isArray(err.response.data.detail)) {
+          // Handle Pydantic validation errors (array of objects)
+          errorMessage = err.response.data.detail
+            .map((e: any) => `${e.loc?.join(' > ') || 'Field'}: ${e.msg}`)
+            .join(', ');
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -119,7 +135,21 @@ const MarketIntelligenceDashboard: React.FC = () => {
       await loadMarketIntelligence();
     } catch (err: any) {
       console.error('Error refreshing market intelligence:', err);
-      setError(err.response?.data?.detail || 'Failed to refresh market intelligence data');
+      // Handle different error response formats
+      let errorMessage = 'Failed to refresh market intelligence data';
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail;
+        } else if (Array.isArray(err.response.data.detail)) {
+          // Handle Pydantic validation errors (array of objects)
+          errorMessage = err.response.data.detail
+            .map((e: any) => `${e.loc?.join(' > ') || 'Field'}: ${e.msg}`)
+            .join(', ');
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
     } finally {
       setRefreshing(false);
     }
@@ -164,18 +194,39 @@ const MarketIntelligenceDashboard: React.FC = () => {
     ? marketIntelligenceService.needsRefresh(marketIntel.last_refreshed)
     : true;
 
+  const handleBack = () => {
+    window.history.back();
+  };
+
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={6}>
-            <Typography variant="h4" gutterBottom>
-              Market Intelligence
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary">
-              Property: {marketIntel.property_code}
-            </Typography>
+            <Box display="flex" alignItems="center" gap={2}>
+              <IconButton
+                onClick={handleBack}
+                sx={{
+                  backgroundColor: 'primary.main',
+                  color: 'white',
+                  '&:hover': {
+                    backgroundColor: 'primary.dark',
+                  },
+                }}
+                size="large"
+              >
+                <ArrowBackIcon />
+              </IconButton>
+              <Box>
+                <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+                  Market Intelligence
+                </Typography>
+                <Typography variant="subtitle1" color="text.secondary">
+                  Property: {marketIntel.property_code}
+                </Typography>
+              </Box>
+            </Box>
           </Grid>
           <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
             <Box display="flex" gap={2} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="wrap">

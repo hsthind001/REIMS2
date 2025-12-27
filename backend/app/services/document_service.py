@@ -102,17 +102,50 @@ class DocumentService:
             'city': p.city
         } for p in all_properties]
         
-        # Detect property
-        property_detection = detector.detect_property_name(file_content, available_props)
-        detected_property_code = property_detection.get("detected_property_code")
-        property_confidence = property_detection.get("confidence", 0)
-        
-        # Property validation DISABLED - caused false positives with A/R cross-references
-        # Financial documents often reference multiple properties in A/R accounts
-        # This was incorrectly flagging valid documents
-        # Users should ensure they select correct property manually
-        
-        print(f"ℹ️  Property detected: {detected_property_code or 'N/A'} (confidence: {property_confidence}%) - validation disabled")
+        # Detect property with ENHANCED intelligence (A/R filtering)
+        property_detection = detector.detect_property_with_intelligence(file_content, available_props)
+        primary_property = property_detection.get("primary_property")
+        detected_property_code = primary_property.get("code") if primary_property else None
+        property_confidence = primary_property.get("confidence", 0) if primary_property else 0
+        validation_status = property_detection.get("validation_status", "UNCERTAIN")
+        referenced_properties = property_detection.get("referenced_properties", [])
+
+        # Property validation NOW ENABLED with enhanced A/R-aware detection
+        # Uses header/title focus (50%), metadata (30%), body content (20%)
+        # Filters out A/R cross-references to avoid false positives
+
+        print(f"✅ Enhanced property detection:")
+        print(f"   Primary: {detected_property_code or 'N/A'} (confidence: {property_confidence}%, status: {validation_status})")
+        if referenced_properties:
+            ref_props = ', '.join([f"{p['code']} ({p['confidence']}%)" for p in referenced_properties])
+            print(f"   Referenced (A/R): {ref_props}")
+
+        # INTELLIGENT VALIDATION: Only flag mismatch if HIGH confidence and clear mismatch
+        if (validation_status == "HIGH_CONFIDENCE" and
+            detected_property_code and
+            detected_property_code != property_code and
+            property_confidence >= 60):
+            # Strong evidence this is wrong property
+            print(f"⚠️  Property mismatch detected!")
+            print(f"   Selected: {property_code} | Detected: {detected_property_code} (confidence: {property_confidence}%)")
+
+            evidence = primary_property.get("evidence", []) if primary_property else []
+            return {
+                "property_mismatch": True,
+                "selected_property_code": property_code,
+                "selected_property_name": property_obj.property_name,
+                "detected_property_code": detected_property_code,
+                "detected_property_name": primary_property.get("name") if primary_property else None,
+                "confidence": property_confidence,
+                "matches_found": evidence,
+                "referenced_properties": referenced_properties,
+                "message": f"Property mismatch! You selected '{property_code}' but the document appears to be for '{detected_property_code}' (confidence: {property_confidence}%). Evidence: {', '.join(evidence)}"
+            }
+        elif validation_status == "MEDIUM_CONFIDENCE" and detected_property_code and detected_property_code != property_code:
+            # Medium confidence - log warning but allow upload
+            print(f"⚠️  Property validation uncertain (confidence: {property_confidence}%). Allowing upload but flagging for review.")
+        else:
+            print(f"✅ Property validation passed or skipped (status: {validation_status})")
         
         # Detect document type
         type_detection = detector.detect_document_type(file_content)

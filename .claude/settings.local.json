@@ -97,7 +97,8 @@
       "Bash(ln:*)",
       "Bash(docker system:*)",
       "Bash(while ! docker images)",
-      "Bash(docker images:*)"
+      "Bash(docker images:*)",
+      "Bash(sudo chown:*)"
     ]
   }
 }

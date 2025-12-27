@@ -420,15 +420,13 @@ export default function DataControlCenter() {
   useEffect(() => {
     const loadProperties = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/properties`, {
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setProperties(data.properties || []);
-        }
+        const { PropertyService } = await import('../lib/property');
+        const propertyService = new PropertyService();
+        const propertiesData = await propertyService.getAllProperties();
+        setProperties(propertiesData || []);
       } catch (error) {
         console.error('Failed to load properties:', error);
+        setProperties([]);
       }
     };
     loadProperties();
