@@ -94,7 +94,10 @@
       "Bash(du -sh:*)",
       "Bash(xargs:*)",
       "Bash(docker-compose config:*)",
-      "Bash(ln:*)"
+      "Bash(ln:*)",
+      "Bash(docker system:*)",
+      "Bash(while ! docker images)",
+      "Bash(docker images:*)"
     ]
   }
 }

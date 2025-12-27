@@ -1,7 +1,7 @@
 # Use official Python 3.13 slim image
 FROM python:3.13-slim
 
-# Install system dependencies
+# Install system dependencies including Rust toolchain
 USER root
 RUN apt-get update && apt-get install -y \
     postgresql-client \
@@ -9,7 +9,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     libpq-dev \
+    pkg-config \
+    libssl-dev \
+    cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Rust toolchain (required for tokenizers and sentencepiece)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Set working directory
 WORKDIR /app
