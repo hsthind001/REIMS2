@@ -1,11 +1,22 @@
-# Use the pre-built base image with all dependencies
-FROM reims-base:latest
+# Use official Python 3.13 slim image
+FROM python:3.13-slim
 
-# Install PostgreSQL client for pg_isready and psql (for migrations and seeding)
-# Install Redis tools for redis-cli (for Flower entrypoint script)
-# Install curl for health checks
+# Install system dependencies
 USER root
-RUN apt-get update && apt-get install -y postgresql-client redis-tools curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    redis-tools \
+    curl \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create non-root user for security
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser

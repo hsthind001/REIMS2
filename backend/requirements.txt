@@ -52,7 +52,7 @@ pydantic==2.12.3
 pydantic-settings==2.11.0
 pydantic_core==2.41.4
 PyMuPDF==1.26.5
-pypdf==3.17.4
+pypdf>=4.0,<6.0  # Compatible with camelot-py for Python 3.13
 pypdfium2==5.0.0
 reportlab==4.2.5
 pytesseract==0.3.13
