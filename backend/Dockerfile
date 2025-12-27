@@ -1,5 +1,5 @@
-# Use official Python 3.13 slim image
-FROM python:3.13-slim
+# Use official Python slim image (3.12 has broad wheel support)
+FROM python:3.12-slim
 
 # Install system dependencies including Rust toolchain
 USER root
@@ -24,7 +24,8 @@ WORKDIR /app
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Create non-root user for security
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
