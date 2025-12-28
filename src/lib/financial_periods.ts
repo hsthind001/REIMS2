@@ -12,6 +12,10 @@ export interface FinancialPeriod {
   period_year: number;
   period_month: number;
   is_closed: boolean;
+  /**
+   * Convenience display name for UI components (e.g., "2024-03")
+   */
+  name?: string;
 }
 
 export interface FinancialPeriodParams {
@@ -27,25 +31,42 @@ export interface CreateFinancialPeriodRequest {
 }
 
 export class FinancialPeriodsService {
+  private formatPeriodName(period: FinancialPeriod): string {
+    if (period.period_year && period.period_month) {
+      return `${period.period_year}-${String(period.period_month).padStart(2, '0')}`;
+    }
+    return `Period ${period.id}`;
+  }
+
+  private withDisplayName(period: FinancialPeriod): FinancialPeriod {
+    return {
+      ...period,
+      name: this.formatPeriodName(period),
+    };
+  }
+
   /**
    * List financial periods with optional filters
    */
   async listPeriods(params?: FinancialPeriodParams): Promise<FinancialPeriod[]> {
-    return api.get<FinancialPeriod[]>('/financial-periods', params);
+    const periods = await api.get<FinancialPeriod[]>('/financial-periods', params);
+    return periods.map((period) => this.withDisplayName(period));
   }
 
   /**
    * Get a specific financial period by ID
    */
   async getPeriod(periodId: number): Promise<FinancialPeriod> {
-    return api.get<FinancialPeriod>(`/financial-periods/${periodId}`);
+    const period = await api.get<FinancialPeriod>(`/financial-periods/${periodId}`);
+    return this.withDisplayName(period);
   }
 
   /**
    * Create a new financial period (or return existing one)
    */
   async createPeriod(request: CreateFinancialPeriodRequest): Promise<FinancialPeriod> {
-    return api.post<FinancialPeriod>('/financial-periods', request);
+    const period = await api.post<FinancialPeriod>('/financial-periods', request);
+    return this.withDisplayName(period);
   }
 
   /**
@@ -64,7 +85,7 @@ export class FinancialPeriodsService {
     });
 
     if (periods && periods.length > 0) {
-      return periods[0];
+      return this.withDisplayName(periods[0]);
     }
 
     // If not found, create it
@@ -73,6 +94,14 @@ export class FinancialPeriodsService {
       period_year: year,
       period_month: month
     });
+  }
+
+  /**
+   * Legacy helper used by several dashboards to fetch periods by property
+   * Kept for backwards compatibility with earlier component implementations.
+   */
+  async getPeriods(propertyId: number): Promise<FinancialPeriod[]> {
+    return this.listPeriods({ property_id: propertyId });
   }
 }
 

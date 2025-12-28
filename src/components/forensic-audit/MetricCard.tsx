@@ -4,7 +4,7 @@
  * Reusable card for displaying single metrics with status and trend
  */
 
-import { LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Card } from '../design-system';
 import TrafficLightIndicator from './TrafficLightIndicator';
 import TrendIndicator from './TrendIndicator';

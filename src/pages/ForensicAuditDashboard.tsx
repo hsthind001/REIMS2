@@ -19,7 +19,7 @@ import {
 import { Card, Button } from '../components/design-system';
 import { forensicAuditService, type AuditScorecard } from '../lib/forensic_audit';
 import { propertyService } from '../lib/property';
-import { financialPeriodsService } from '../lib/financial_periods';
+import { financialPeriodsService, type FinancialPeriod } from '../lib/financial_periods';
 import type { Property } from '../types/api';
 import HealthScoreGauge from '../components/forensic-audit/HealthScoreGauge';
 import AuditOpinionBadge from '../components/forensic-audit/AuditOpinionBadge';
@@ -33,7 +33,7 @@ export default function ForensicAuditDashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
-  const [periods, setPeriods] = useState<any[]>([]);
+  const [periods, setPeriods] = useState<FinancialPeriod[]>([]);
 
   // Data
   const [scorecard, setScorecard] = useState<AuditScorecard | null>(null);
@@ -79,6 +79,8 @@ export default function ForensicAuditDashboard() {
       setPeriods(data);
       if (data.length > 0) {
         setSelectedPeriodId(String(data[0].id));
+      } else {
+        setSelectedPeriodId('');
       }
     } catch (err) {
       console.error('Error loading periods:', err);
@@ -170,6 +172,17 @@ export default function ForensicAuditDashboard() {
     });
   };
 
+  const formatPeriodLabel = (period: FinancialPeriod): string => {
+    if (period.period_year && period.period_month) {
+      return `${period.period_year}-${String(period.period_month).padStart(2, '0')}`;
+    }
+    return `Period ${period.id}`;
+  };
+
+  const getPropertyLabel = (property: Property): string => {
+    return property.property_name || property.property_code || `Property ${property.id}`;
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -189,7 +202,7 @@ export default function ForensicAuditDashboard() {
             <option value="">Select Property</option>
             {properties.map((property) => (
               <option key={property.id} value={property.id}>
-                {property.name}
+                {getPropertyLabel(property)}
               </option>
             ))}
           </select>
@@ -204,7 +217,7 @@ export default function ForensicAuditDashboard() {
             <option value="">Select Period</option>
             {periods.map((period) => (
               <option key={period.id} value={period.id}>
-                {period.name}
+                {formatPeriodLabel(period)}
               </option>
             ))}
           </select>
@@ -228,6 +241,19 @@ export default function ForensicAuditDashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Empty data guidance */}
+      {!loading && properties.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg">
+          No properties found. Add a property to run the forensic audit dashboard.
+        </div>
+      )}
+
+      {!loading && properties.length > 0 && periods.length === 0 && !error && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg">
+          Select a period to view forensic audit results. If no periods exist for this property, create one or run an audit to generate the first scorecard.
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (

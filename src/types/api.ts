@@ -37,6 +37,10 @@ export interface Property {
   id: number;
   property_code: string;
   property_name: string;
+  /**
+   * Convenience display name for UI components (alias of property_name or property_code)
+   */
+  name?: string;
   property_type?: string;
   address?: string;
   city?: string;
@@ -377,4 +381,3 @@ export interface ValidationAnalyticsResponse {
   top_failing_rules: TopFailingRule[];
   document_type_performance: DocumentTypePerformance[];
 }
-

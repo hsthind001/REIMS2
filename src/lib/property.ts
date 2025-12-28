@@ -8,6 +8,13 @@ import { api } from './api';
 import type { Property, PropertyCreate } from '../types/api';
 
 export class PropertyService {
+  private withDisplayName(property: Property): Property {
+    return {
+      ...property,
+      name: property.property_name || property.property_code || `Property ${property.id}`,
+    };
+  }
+
   /**
    * Get all properties
    */
@@ -16,21 +23,24 @@ export class PropertyService {
     limit?: number;
     status?: string;
   }): Promise<Property[]> {
-    return api.get<Property[]>('/properties', params);
+    const properties = await api.get<Property[]>('/properties', params);
+    return properties.map((property) => this.withDisplayName(property));
   }
 
   /**
    * Get property by ID
    */
   async getProperty(propertyId: number): Promise<Property> {
-    return api.get<Property>(`/properties/${propertyId}`);
+    const property = await api.get<Property>(`/properties/${propertyId}`);
+    return this.withDisplayName(property);
   }
 
   /**
    * Create new property
    */
   async createProperty(propertyData: PropertyCreate): Promise<Property> {
-    return api.post<Property>('/properties', propertyData);
+    const property = await api.post<Property>('/properties', propertyData);
+    return this.withDisplayName(property);
   }
 
   /**
@@ -40,7 +50,8 @@ export class PropertyService {
     propertyId: number,
     propertyData: Partial<PropertyCreate>
   ): Promise<Property> {
-    return api.put<Property>(`/properties/${propertyId}`, propertyData);
+    const property = await api.put<Property>(`/properties/${propertyId}`, propertyData);
+    return this.withDisplayName(property);
   }
 
   /**
@@ -60,4 +71,3 @@ export class PropertyService {
 
 // Export singleton
 export const propertyService = new PropertyService();
-
