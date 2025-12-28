@@ -19,6 +19,14 @@ const NotificationCenter = lazy(() => import('./components/notifications/Notific
 const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
 const MarketIntelligenceDashboard = lazy(() => import('./pages/MarketIntelligenceDashboard'))
 
+// Forensic Audit Framework Pages
+const ForensicAuditDashboard = lazy(() => import('./pages/ForensicAuditDashboard'))
+const FraudDetectionDashboard = lazy(() => import('./pages/FraudDetectionDashboard'))
+const CovenantComplianceDashboard = lazy(() => import('./pages/CovenantComplianceDashboard'))
+const ReconciliationResultsDashboard = lazy(() => import('./pages/ReconciliationResultsDashboard'))
+const TenantRiskDashboard = lazy(() => import('./pages/TenantRiskDashboard'))
+const CollectionsQualityDashboard = lazy(() => import('./pages/CollectionsQualityDashboard'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
@@ -267,6 +275,30 @@ function AppContent() {
           ) : hashRoute.startsWith('market-intelligence/') ? (
             <Suspense fallback={<PageLoader />}>
               <MarketIntelligenceDashboard />
+            </Suspense>
+          ) : hashRoute === 'forensic-audit-dashboard' ? (
+            <Suspense fallback={<PageLoader />}>
+              <ForensicAuditDashboard />
+            </Suspense>
+          ) : hashRoute === 'fraud-detection' ? (
+            <Suspense fallback={<PageLoader />}>
+              <FraudDetectionDashboard />
+            </Suspense>
+          ) : hashRoute === 'covenant-compliance' ? (
+            <Suspense fallback={<PageLoader />}>
+              <CovenantComplianceDashboard />
+            </Suspense>
+          ) : hashRoute === 'reconciliation-results' ? (
+            <Suspense fallback={<PageLoader />}>
+              <ReconciliationResultsDashboard />
+            </Suspense>
+          ) : hashRoute === 'tenant-risk' ? (
+            <Suspense fallback={<PageLoader />}>
+              <TenantRiskDashboard />
+            </Suspense>
+          ) : hashRoute === 'collections-quality' ? (
+            <Suspense fallback={<PageLoader />}>
+              <CollectionsQualityDashboard />
             </Suspense>
           ) : (
             renderPage()

@@ -1013,6 +1013,17 @@ export default function DataControlCenter() {
           >
             🔍 Forensic Reconciliation
           </button>
+
+          {/* Forensic Audit Dashboard Link */}
+          <button
+            onClick={() => {
+              window.location.hash = 'forensic-audit-dashboard';
+            }}
+            className="px-4 py-2 font-medium text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-colors flex items-center gap-2 shadow-lg"
+            title="Big 5 Forensic Audit Framework - CEO Dashboard, Fraud Detection, Covenant Compliance"
+          >
+            🛡️ Forensic Audit
+          </button>
         </div>
 
         {/* Tab Content */}
