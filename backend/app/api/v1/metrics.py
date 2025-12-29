@@ -2490,3 +2490,118 @@ async def get_metric_source(
             detail=f"Failed to get metric source: {str(e)}"
         )
 
+
+@router.get("/metrics/{property_id}/dscr/latest-complete")
+async def get_dscr_for_latest_complete_period(
+    property_id: int,
+    year: int = Query(..., description="Year to check for complete periods"),
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate DSCR for the latest period where all required documents are available.
+
+    Required documents: balance_sheet, income_statement, cash_flow, rent_roll, mortgage_statement
+    """
+    try:
+        from app.services.dscr_monitoring_service import DSCRMonitoringService
+        from app.models.mortgage_statement_data import MortgageStatementData
+        from app.models.document_upload import DocumentUpload
+
+        # Get all periods for the property and year, ordered by most recent first
+        periods = db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id,
+            FinancialPeriod.period_year == year
+        ).order_by(
+            FinancialPeriod.period_month.desc()
+        ).all()
+
+        if not periods:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No financial periods found for property {property_id} in year {year}"
+            )
+
+        # Required document types
+        required_doc_types = ['balance_sheet', 'income_statement', 'cash_flow', 'rent_roll', 'mortgage_statement']
+
+        # Find the latest complete period
+        latest_complete_period = None
+        for period in periods:
+            # Get all uploaded documents for this period
+            uploaded_docs = db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == property_id,
+                DocumentUpload.period_id == period.id,
+                DocumentUpload.extraction_status == 'completed'
+            ).all()
+
+            # Create a set of available document types
+            available_types = {doc.document_type for doc in uploaded_docs}
+
+            # Check for mortgage statement data
+            has_mortgage_data = db.query(MortgageStatementData).filter(
+                MortgageStatementData.property_id == property_id,
+                MortgageStatementData.period_id == period.id
+            ).first() is not None
+
+            if has_mortgage_data:
+                available_types.add('mortgage_statement')
+
+            # Check if all required documents are available
+            if all(doc_type in available_types for doc_type in required_doc_types):
+                latest_complete_period = period
+                break
+
+        if not latest_complete_period:
+            return {
+                "property_id": property_id,
+                "year": year,
+                "dscr": None,
+                "period": None,
+                "message": "No complete period found (missing required documents)",
+                "missing_documents": True
+            }
+
+        # Calculate DSCR for this period
+        dscr_service = DSCRMonitoringService(db)
+        dscr_result = dscr_service.calculate_dscr(property_id, latest_complete_period.id)
+
+        if not dscr_result.get("success"):
+            return {
+                "property_id": property_id,
+                "year": year,
+                "dscr": None,
+                "period": {
+                    "period_id": latest_complete_period.id,
+                    "month": latest_complete_period.period_month,
+                    "year": latest_complete_period.period_year
+                },
+                "error": dscr_result.get("error"),
+                "calculation_failed": True
+            }
+
+        return {
+            "property_id": property_id,
+            "year": year,
+            "dscr": dscr_result.get("dscr"),
+            "noi": dscr_result.get("noi"),
+            "total_debt_service": dscr_result.get("total_debt_service"),
+            "status": dscr_result.get("status"),
+            "period": {
+                "period_id": latest_complete_period.id,
+                "month": latest_complete_period.period_month,
+                "year": latest_complete_period.period_year
+            },
+            "threshold_breached": dscr_result.get("threshold_breached"),
+            "calculated_at": dscr_result.get("calculated_at")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to calculate DSCR for latest complete period: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate DSCR: {str(e)}"
+        )

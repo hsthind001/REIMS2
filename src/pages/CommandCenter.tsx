@@ -110,6 +110,10 @@ export default function CommandCenter() {
   const [analysisDetails, setAnalysisDetails] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear()); // Default to current year
+  const [documentMatrix, setDocumentMatrix] = useState<any>(null);
+  const [loadingDocMatrix, setLoadingDocMatrix] = useState(false);
+  const [latestCompleteDSCR, setLatestCompleteDSCR] = useState<any>(null);
   const [sparklineData, setSparklineData] = useState<{
     value: number[];
     noi: number[];
@@ -746,6 +750,43 @@ export default function CommandCenter() {
     }
   };
 
+  // Load document availability matrix and DSCR for latest complete period
+  const loadDocumentMatrixAndDSCR = async (propertyId: number, year: number) => {
+    try {
+      setLoadingDocMatrix(true);
+
+      // Fetch document matrix
+      const matrixResponse = await fetch(
+        `${API_BASE_URL}/documents/availability-matrix?property_id=${propertyId}&year=${year}`,
+        { credentials: 'include' }
+      );
+
+      if (matrixResponse.ok) {
+        const matrixData = await matrixResponse.json();
+        setDocumentMatrix(matrixData);
+
+        // If there's a latest complete period, fetch DSCR for it
+        if (matrixData.latest_complete_period) {
+          const dscrResponse = await fetch(
+            `${API_BASE_URL}/metrics/${propertyId}/dscr/latest-complete?year=${year}`,
+            { credentials: 'include' }
+          );
+
+          if (dscrResponse.ok) {
+            const dscrData = await dscrResponse.json();
+            setLatestCompleteDSCR(dscrData);
+          }
+        } else {
+          setLatestCompleteDSCR(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load document matrix and DSCR:', err);
+    } finally {
+      setLoadingDocMatrix(false);
+    }
+  };
+
   // Define loadDashboardData after all helper functions are defined
   const loadDashboardData = async () => {
     try {
@@ -792,6 +833,21 @@ export default function CommandCenter() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPropertyFilter]);
+
+  useEffect(() => {
+    // Load document matrix and DSCR when property filter or year changes
+    if (selectedPropertyFilter !== 'all' && properties.length > 0) {
+      const selectedProperty = properties.find(p => p.property_code === selectedPropertyFilter);
+      if (selectedProperty) {
+        loadDocumentMatrixAndDSCR(selectedProperty.id, selectedYear);
+      }
+    } else {
+      // Reset when showing all properties
+      setDocumentMatrix(null);
+      setLatestCompleteDSCR(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPropertyFilter, selectedYear, properties]);
 
   const loadPortfolioAnalysis = async () => {
     try {
@@ -1191,28 +1247,48 @@ export default function CommandCenter() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Property Filter */}
+        {/* Property and Year Filter */}
         <Card className="p-4 mb-6">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-              Filter by Property:
-            </label>
-            <select
-              value={selectedPropertyFilter}
-              onChange={(e) => setSelectedPropertyFilter(e.target.value)}
-              className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">📊 All Properties (Portfolio Overview)</option>
-              {properties.map((property) => (
-                <option key={property.id} value={property.property_code}>
-                  {property.property_code} - {property.property_name}
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-4 flex-1 min-w-[300px]">
+              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                Filter by Property:
+              </label>
+              <select
+                value={selectedPropertyFilter}
+                onChange={(e) => setSelectedPropertyFilter(e.target.value)}
+                className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">📊 All Properties (Portfolio Overview)</option>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.property_code}>
+                    {property.property_code} - {property.property_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedPropertyFilter !== 'all' && (
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                  Year:
+                </label>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="text-sm text-gray-600">
-              {selectedPropertyFilter === 'all' 
+              {selectedPropertyFilter === 'all'
                 ? `Showing metrics for ${properties.length} properties`
-                : `Showing metrics for selected property`
+                : `Showing ${selectedYear} data for selected property`
               }
             </div>
           </div>
@@ -1252,7 +1328,9 @@ export default function CommandCenter() {
           />
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
-            value={portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "0.00"}
+            value={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.dscr
+              ? latestCompleteDSCR.dscr.toFixed(2)
+              : portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "N/A"}
             change={portfolioHealth?.percentageChanges?.dscr_change || 0}
             trend={portfolioHealth?.percentageChanges?.dscr_change >= 0 ? "up" : "down"}
             icon="📈"
@@ -1261,6 +1339,117 @@ export default function CommandCenter() {
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('dscr') : undefined}
           />
         </div>
+
+        {/* Document Availability Matrix - Only show for individual property */}
+        {selectedPropertyFilter !== 'all' && documentMatrix && (
+          <Card className="mb-8 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                📄 Document Availability Matrix - {selectedYear}
+              </h2>
+              {latestCompleteDSCR && latestCompleteDSCR.period && (
+                <div className="flex items-center gap-4 bg-blue-50 px-4 py-2 rounded-lg">
+                  <span className="text-sm font-semibold text-gray-700">
+                    Latest Complete Period: {latestCompleteDSCR.period.year}-{String(latestCompleteDSCR.period.month).padStart(2, '0')}
+                  </span>
+                  <div className="h-6 w-px bg-gray-300"></div>
+                  <div className="text-sm">
+                    <span className="text-gray-600">DSCR: </span>
+                    <span className={`font-bold ${
+                      latestCompleteDSCR.dscr >= 1.25 ? 'text-green-600' :
+                      latestCompleteDSCR.dscr >= 1.10 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      {latestCompleteDSCR.dscr ? latestCompleteDSCR.dscr.toFixed(4) : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {loadingDocMatrix ? (
+              <div className="text-center py-8 text-gray-500">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+                Loading document matrix...
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Month</th>
+                      {documentMatrix.required_documents?.map((doc: string) => (
+                        <th key={doc} className="border border-gray-300 px-4 py-2 text-center font-semibold text-sm">
+                          {doc.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                        </th>
+                      ))}
+                      <th className="border border-gray-300 px-4 py-2 text-center font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documentMatrix.months?.map((month: any) => (
+                      <tr
+                        key={month.period_id}
+                        className={`
+                          ${month.all_available ? 'bg-green-50' : 'bg-white'}
+                          ${documentMatrix.latest_complete_period?.period_id === month.period_id ? 'ring-2 ring-blue-500' : ''}
+                          hover:bg-gray-50
+                        `}
+                      >
+                        <td className="border border-gray-300 px-4 py-2 font-medium">
+                          {month.month_name}
+                          {documentMatrix.latest_complete_period?.period_id === month.period_id && (
+                            <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded">
+                              Latest Complete
+                            </span>
+                          )}
+                        </td>
+                        {documentMatrix.required_documents?.map((doc: string) => (
+                          <td key={doc} className="border border-gray-300 px-4 py-2 text-center">
+                            {month.documents[doc] ? (
+                              <CheckCircle className="w-5 h-5 text-green-600 mx-auto" />
+                            ) : (
+                              <span className="text-gray-300 text-2xl">✗</span>
+                            )}
+                          </td>
+                        ))}
+                        <td className="border border-gray-300 px-4 py-2 text-center">
+                          {month.all_available ? (
+                            <span className="inline-block px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold">
+                              Complete
+                            </span>
+                          ) : (
+                            <span className="inline-block px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-semibold">
+                              Incomplete
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {!documentMatrix.latest_complete_period && (
+                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-yellow-800 text-sm">
+                      <AlertTriangle className="w-4 h-4 inline mr-2" />
+                      No complete period found for {selectedYear}. DSCR cannot be calculated until all required documents are uploaded for at least one month.
+                    </p>
+                  </div>
+                )}
+
+                {latestCompleteDSCR && !latestCompleteDSCR.dscr && latestCompleteDSCR.error && (
+                  <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-800 text-sm">
+                      <AlertTriangle className="w-4 h-4 inline mr-2" />
+                      DSCR Calculation Error: {latestCompleteDSCR.error}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Critical Alerts Section */}
         {criticalAlerts.length > 0 && (

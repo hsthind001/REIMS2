@@ -270,10 +270,10 @@ class AuditHistoryItem(BaseModel):
 # ============================================================================
 
 @router.post("/run-audit", response_model=AuditTaskResponse, summary="Trigger Complete Forensic Audit")
-async def run_complete_forensic_audit(
+def run_complete_forensic_audit(
     request: RunAuditRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Trigger a complete forensic audit in the background (2-5 minutes).
@@ -556,11 +556,11 @@ def get_audit_scorecard(
 @router.get("/reconciliations/{property_id}/{period_id}",
             response_model=CrossDocReconciliationResponse,
             summary="Get Cross-Document Reconciliation Results")
-async def get_cross_document_reconciliations(
+def get_cross_document_reconciliations(
     property_id: int,
     period_id: int,
     status_filter: Optional[ReconciliationStatus] = Query(None, description="Filter by status"),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get all cross-document reconciliation test results.
@@ -608,7 +608,7 @@ async def get_cross_document_reconciliations(
                 reconciliation_type
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
@@ -665,10 +665,10 @@ async def get_cross_document_reconciliations(
 @router.get("/fraud-detection/{property_id}/{period_id}",
             response_model=FraudDetectionResponse,
             summary="Get Fraud Detection Test Results")
-async def get_fraud_detection_results(
+def get_fraud_detection_results(
     property_id: int,
     period_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get fraud detection test results including:
@@ -700,7 +700,7 @@ async def get_fraud_detection_results(
             LIMIT 1
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
@@ -769,10 +769,10 @@ async def get_fraud_detection_results(
 @router.get("/covenant-compliance/{property_id}/{period_id}",
             response_model=CovenantComplianceResponse,
             summary="Get Lender Covenant Compliance Status")
-async def get_covenant_compliance(
+def get_covenant_compliance(
     property_id: int,
     period_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get lender covenant compliance monitoring results.
@@ -811,7 +811,7 @@ async def get_covenant_compliance(
             LIMIT 1
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
@@ -903,10 +903,10 @@ async def get_covenant_compliance(
 @router.get("/tenant-risk/{property_id}/{period_id}",
             response_model=TenantRiskResponse,
             summary="Get Tenant Concentration & Rollover Risk")
-async def get_tenant_risk_analysis(
+def get_tenant_risk_analysis(
     property_id: int,
     period_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get tenant concentration and lease rollover risk analysis.
@@ -945,7 +945,7 @@ async def get_tenant_risk_analysis(
             LIMIT 1
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
@@ -982,10 +982,10 @@ async def get_tenant_risk_analysis(
 @router.get("/collections-quality/{property_id}/{period_id}",
             response_model=CollectionsQualityResponse,
             summary="Get Collections & Revenue Quality Metrics")
-async def get_collections_revenue_quality(
+def get_collections_revenue_quality(
     property_id: int,
     period_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get collections and revenue quality metrics.
@@ -1023,7 +1023,7 @@ async def get_collections_revenue_quality(
             LIMIT 1
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
@@ -1057,10 +1057,10 @@ async def get_collections_revenue_quality(
 @router.get("/document-completeness/{property_id}/{period_id}",
             response_model=DocumentCompletenessResponse,
             summary="Get Document Completeness Matrix")
-async def get_document_completeness(
+def get_document_completeness(
     property_id: int,
     period_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get document completeness status for the period.
@@ -1093,7 +1093,7 @@ async def get_document_completeness(
             LIMIT 1
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
@@ -1148,11 +1148,11 @@ async def get_document_completeness(
 
 @router.get("/export-report/{property_id}/{period_id}",
             summary="Export Audit Report (PDF/Excel)")
-async def export_audit_report(
+def export_audit_report(
     property_id: int,
     period_id: int,
     format: str = Query("pdf", regex="^(pdf|excel)$", description="Export format: pdf or excel"),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Export complete audit report in PDF or Excel format.
@@ -1182,10 +1182,10 @@ async def export_audit_report(
 @router.get("/audit-history/{property_id}",
             response_model=List[AuditHistoryItem],
             summary="Get Audit History for Trend Analysis")
-async def get_audit_history(
+def get_audit_history(
     property_id: int,
     limit: int = Query(12, ge=1, le=60, description="Number of periods to return"),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Get historical audit scorecards for trend analysis.
@@ -1228,7 +1228,7 @@ async def get_audit_history(
             LIMIT :limit
         """)
 
-        result = await db.execute(
+        result = db.execute(
             query,
             {"property_id": str(property_id), "limit": limit}
         )
@@ -1258,7 +1258,7 @@ async def get_audit_history(
 
 
 @router.get("/audit-status/{task_id}", summary="Check Audit Task Status")
-async def get_audit_task_status(
+def get_audit_task_status(
     task_id: str
 ):
     """

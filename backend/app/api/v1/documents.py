@@ -2034,3 +2034,109 @@ async def get_pattern_learning_statistics(
             detail=f"Failed to get pattern statistics: {str(e)}"
         )
 
+
+@router.get("/documents/availability-matrix")
+def get_document_availability_matrix(
+    property_id: int = Query(..., description="Property ID"),
+    year: int = Query(..., description="Year to fetch document availability for"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get document availability matrix for a property for the entire year.
+
+    Returns a matrix showing which documents are available for each month,
+    and identifies the latest period where all required documents are available.
+
+    Required documents: balance_sheet, income_statement, cash_flow, rent_roll, mortgage_statement
+    """
+    try:
+        from app.models.mortgage_statement_data import MortgageStatementData
+        from datetime import datetime
+
+        # Get all periods for the property and year
+        periods = db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id,
+            FinancialPeriod.period_year == year
+        ).order_by(
+            FinancialPeriod.period_month.asc()
+        ).all()
+
+        if not periods:
+            return {
+                "property_id": property_id,
+                "year": year,
+                "months": [],
+                "latest_complete_period": None
+            }
+
+        # Required document types
+        required_doc_types = ['balance_sheet', 'income_statement', 'cash_flow', 'rent_roll', 'mortgage_statement']
+
+        matrix = []
+        latest_complete_period = None
+
+        for period in periods:
+            # Get all uploaded documents for this period
+            uploaded_docs = db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == property_id,
+                DocumentUpload.period_id == period.id,
+                DocumentUpload.extraction_status == 'completed'
+            ).all()
+
+            # Create a set of available document types
+            available_types = {doc.document_type for doc in uploaded_docs}
+
+            # Check for mortgage statement data (alternative to uploaded mortgage doc)
+            has_mortgage_data = db.query(MortgageStatementData).filter(
+                MortgageStatementData.property_id == property_id,
+                MortgageStatementData.period_id == period.id
+            ).first() is not None
+
+            if has_mortgage_data:
+                available_types.add('mortgage_statement')
+
+            # Build document status for each required type
+            doc_status = {}
+            for doc_type in required_doc_types:
+                doc_status[doc_type] = doc_type in available_types
+
+            # Check if all required documents are available
+            all_available = all(doc_status.values())
+
+            month_data = {
+                "period_id": period.id,
+                "month": period.period_month,
+                "month_name": datetime(year, period.period_month, 1).strftime('%B'),
+                "documents": doc_status,
+                "all_available": all_available,
+                "uploaded_count": len(uploaded_docs)
+            }
+
+            matrix.append(month_data)
+
+            # Track the latest complete period
+            if all_available:
+                latest_complete_period = {
+                    "period_id": period.id,
+                    "month": period.period_month,
+                    "month_name": datetime(year, period.period_month, 1).strftime('%B'),
+                    "year": year
+                }
+
+        return {
+            "property_id": property_id,
+            "year": year,
+            "months": matrix,
+            "latest_complete_period": latest_complete_period,
+            "required_documents": required_doc_types
+        }
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to get document availability matrix: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get document availability matrix: {str(e)}"
+        )
