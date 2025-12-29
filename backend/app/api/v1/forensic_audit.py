@@ -5,10 +5,9 @@ Implements 140+ audit rules across 7 phases
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List, Optional, Dict, Any
-from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -59,8 +58,8 @@ class AuditOpinion(str, Enum):
 # ============================================================================
 
 class RunAuditRequest(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     refresh_views: bool = Field(default=True, description="Refresh materialized views before audit")
     run_fraud_detection: bool = Field(default=True, description="Include fraud detection tests")
     run_covenant_analysis: bool = Field(default=True, description="Include covenant compliance checks")
@@ -145,9 +144,9 @@ class AuditScorecard(BaseModel):
     audit_opinion: AuditOpinion
 
     # Property Info
-    property_id: UUID
+    property_id: int
     property_name: str
-    period_id: UUID
+    period_id: int
     period_label: str
 
     # Traffic Light Metrics
@@ -184,8 +183,8 @@ class AuditTaskResponse(BaseModel):
 
 
 class DocumentCompletenessResponse(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     period_year: int
     period_month: int
     has_balance_sheet: bool
@@ -199,8 +198,8 @@ class DocumentCompletenessResponse(BaseModel):
 
 
 class CrossDocReconciliationResponse(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     period_label: str
     total_reconciliations: int
     passed: int
@@ -211,8 +210,8 @@ class CrossDocReconciliationResponse(BaseModel):
 
 
 class FraudDetectionResponse(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     period_label: str
     overall_risk_level: TrafficLightStatus
     tests_conducted: int
@@ -221,8 +220,8 @@ class FraudDetectionResponse(BaseModel):
 
 
 class CovenantComplianceResponse(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     period_label: str
     overall_compliance_status: TrafficLightStatus
     covenants_monitored: int
@@ -232,8 +231,8 @@ class CovenantComplianceResponse(BaseModel):
 
 
 class TenantRiskResponse(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     concentration_risk_status: TrafficLightStatus
     top_1_tenant_pct: float
     top_3_tenant_pct: float
@@ -245,8 +244,8 @@ class TenantRiskResponse(BaseModel):
 
 
 class CollectionsQualityResponse(BaseModel):
-    property_id: UUID
-    period_id: UUID
+    property_id: int
+    period_id: int
     days_sales_outstanding: float
     dso_status: TrafficLightStatus
     cash_conversion_ratio: float
@@ -255,7 +254,7 @@ class CollectionsQualityResponse(BaseModel):
 
 
 class AuditHistoryItem(BaseModel):
-    period_id: UUID
+    period_id: int
     period_label: str
     audit_date: datetime
     overall_health_score: int
@@ -353,10 +352,10 @@ async def run_complete_forensic_audit(
 
 
 @router.get("/scorecard/{property_id}/{period_id}", response_model=AuditScorecard, summary="Get CEO Audit Scorecard")
-async def get_audit_scorecard(
-    property_id: UUID,
-    period_id: UUID,
-    db: AsyncSession = Depends(get_db)
+def get_audit_scorecard(
+    property_id: int,
+    period_id: int,
+    db: Session = Depends(get_db)
 ):
     """
     Get the executive-level audit scorecard for CEO dashboard.
@@ -384,9 +383,9 @@ async def get_audit_scorecard(
             WHERE p.id = :property_id AND fp.id = :period_id
         """)
 
-        result = await db.execute(
+        result = db.execute(
             property_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         property_row = result.fetchone()
 
@@ -558,8 +557,8 @@ async def get_audit_scorecard(
             response_model=CrossDocReconciliationResponse,
             summary="Get Cross-Document Reconciliation Results")
 async def get_cross_document_reconciliations(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     status_filter: Optional[ReconciliationStatus] = Query(None, description="Filter by status"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -667,8 +666,8 @@ async def get_cross_document_reconciliations(
             response_model=FraudDetectionResponse,
             summary="Get Fraud Detection Test Results")
 async def get_fraud_detection_results(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -771,8 +770,8 @@ async def get_fraud_detection_results(
             response_model=CovenantComplianceResponse,
             summary="Get Lender Covenant Compliance Status")
 async def get_covenant_compliance(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -905,8 +904,8 @@ async def get_covenant_compliance(
             response_model=TenantRiskResponse,
             summary="Get Tenant Concentration & Rollover Risk")
 async def get_tenant_risk_analysis(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -984,8 +983,8 @@ async def get_tenant_risk_analysis(
             response_model=CollectionsQualityResponse,
             summary="Get Collections & Revenue Quality Metrics")
 async def get_collections_revenue_quality(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1059,8 +1058,8 @@ async def get_collections_revenue_quality(
             response_model=DocumentCompletenessResponse,
             summary="Get Document Completeness Matrix")
 async def get_document_completeness(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1150,8 +1149,8 @@ async def get_document_completeness(
 @router.get("/export-report/{property_id}/{period_id}",
             summary="Export Audit Report (PDF/Excel)")
 async def export_audit_report(
-    property_id: UUID,
-    period_id: UUID,
+    property_id: int,
+    period_id: int,
     format: str = Query("pdf", regex="^(pdf|excel)$", description="Export format: pdf or excel"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1184,7 +1183,7 @@ async def export_audit_report(
             response_model=List[AuditHistoryItem],
             summary="Get Audit History for Trend Analysis")
 async def get_audit_history(
-    property_id: UUID,
+    property_id: int,
     limit: int = Query(12, ge=1, le=60, description="Number of periods to return"),
     db: AsyncSession = Depends(get_db)
 ):

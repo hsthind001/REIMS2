@@ -27,6 +27,54 @@ import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
+// Utility function to safely format error messages
+const formatErrorMessage = (error: any): string => {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+
+  // Handle API error with nested detail: {detail: {detail: [...]}}
+  if (error?.detail?.detail && Array.isArray(error.detail.detail)) {
+    return error.detail.detail.map((e: any) => {
+      // Format field name nicely
+      const field = e.loc && e.loc.length > 0 ? e.loc[e.loc.length - 1] : '';
+      const fieldName = field ? field.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : '';
+      return fieldName ? `${fieldName}: ${e.msg}` : e.msg;
+    }).join('; ');
+  }
+
+  // Handle Pydantic validation errors: {detail: [{type, loc, msg, input, ctx}]}
+  if (error?.detail) {
+    if (Array.isArray(error.detail)) {
+      // Array of validation errors
+      return error.detail.map((e: any) => {
+        const field = e.loc && e.loc.length > 0 ? e.loc[e.loc.length - 1] : '';
+        const fieldName = field ? field.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : '';
+        return fieldName ? `${fieldName}: ${e.msg}` : e.msg;
+      }).join('; ');
+    }
+    if (typeof error.detail === 'object' && error.detail.msg) {
+      // Single validation error object
+      return error.detail.msg;
+    }
+    if (typeof error.detail === 'string') {
+      // String detail
+      return error.detail;
+    }
+  }
+
+  // Handle message property
+  if (error?.message && error.message !== 'Invalid request - please check your input') {
+    return String(error.message);
+  }
+
+  // Fallback: stringify the whole error
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
+};
+
 interface PropertyMetrics {
   value: number;
   noi: number;
@@ -2207,7 +2255,7 @@ function PropertyFormModal({
       }
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Operation failed');
+      setError(formatErrorMessage(err) || 'Operation failed');
     } finally {
       setLoading(false);
     }

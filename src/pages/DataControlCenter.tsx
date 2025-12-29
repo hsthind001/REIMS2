@@ -45,6 +45,54 @@ import type { TaskDashboard, Task } from '../types/tasks';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
+// Utility function to safely format error messages
+const formatErrorMessage = (error: any): string => {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+
+  // Handle API error with nested detail: {detail: {detail: [...]}}
+  if (error?.detail?.detail && Array.isArray(error.detail.detail)) {
+    return error.detail.detail.map((e: any) => {
+      // Format field name nicely
+      const field = e.loc && e.loc.length > 0 ? e.loc[e.loc.length - 1] : '';
+      const fieldName = field ? field.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : '';
+      return fieldName ? `${fieldName}: ${e.msg}` : e.msg;
+    }).join('; ');
+  }
+
+  // Handle Pydantic validation errors: {detail: [{type, loc, msg, input, ctx}]}
+  if (error?.detail) {
+    if (Array.isArray(error.detail)) {
+      // Array of validation errors
+      return error.detail.map((e: any) => {
+        const field = e.loc && e.loc.length > 0 ? e.loc[e.loc.length - 1] : '';
+        const fieldName = field ? field.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : '';
+        return fieldName ? `${fieldName}: ${e.msg}` : e.msg;
+      }).join('; ');
+    }
+    if (typeof error.detail === 'object' && error.detail.msg) {
+      // Single validation error object
+      return error.detail.msg;
+    }
+    if (typeof error.detail === 'string') {
+      // String detail
+      return error.detail;
+    }
+  }
+
+  // Handle message property
+  if (error?.message && error.message !== 'Invalid request - please check your input') {
+    return String(error.message);
+  }
+
+  // Fallback: stringify the whole error
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
+};
+
 type ControlTab = 'quality' | 'tasks' | 'validation' | 'import' | 'review' | 'documents';
 
 interface QualityScore {
@@ -267,16 +315,20 @@ export default function DataControlCenter() {
           ? Math.round(validationTotalChecks * (1 - validationPassRate / 100))
           : 0;
         const validationCriticalFailures = validationStats?.summary?.critical_failures ?? 0;
-        const validationActiveRules = validationStats?.summary?.active_rules ?? 24;
+        const validationActiveRules = validationStats?.summary?.active_rules ?? 0;
         const validationWarnings = validationStats?.summary?.warnings ?? 0;
 
+        // Use actual data values - no hardcoded defaults
+        const overallScore = quality.overall_avg_confidence ?? 0;
+        const matchRate = quality.overall_match_rate ?? 0;
+
         setQualityScore({
-          overallScore: quality.overall_avg_confidence || 96,
-          status: (quality.overall_avg_confidence || 96) >= 95 ? 'excellent' : (quality.overall_avg_confidence || 96) >= 90 ? 'good' : (quality.overall_avg_confidence || 96) >= 80 ? 'fair' : 'poor',
+          overallScore: overallScore,
+          status: overallScore >= 95 ? 'excellent' : overallScore >= 90 ? 'good' : overallScore >= 80 ? 'fair' : 'poor',
           extraction: {
-            accuracy: quality.overall_match_rate || 98.5,
-            confidence: quality.overall_avg_confidence || 97.2,
-            failureRate: 100 - (quality.overall_match_rate || 98.5),
+            accuracy: matchRate,
+            confidence: quality.overall_avg_confidence ?? 0,
+            failureRate: matchRate > 0 ? 100 - matchRate : 0,
             documentsProcessed: quality.total_documents || 0
           },
           validation: {
@@ -286,9 +338,9 @@ export default function DataControlCenter() {
             criticalFailures: validationCriticalFailures
           },
           completeness: {
-            score: quality.overall_match_rate || 97.8,
+            score: matchRate,
             missingFields: quality.needs_review_count || 0,
-            requiredFieldsFilled: quality.overall_match_rate || 98.5
+            requiredFieldsFilled: matchRate
           },
           byDocumentType: quality.by_document_type || {},
           totalRecords: quality.total_records || 0,
@@ -406,11 +458,11 @@ export default function DataControlCenter() {
         loadData(); // Reload the data
       } else {
         const error = await response.json();
-        alert(`Failed to delete history: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to delete history: ${formatErrorMessage(error)}`);
       }
     } catch (error) {
       console.error('Failed to delete history:', error);
-      alert('Failed to delete history. Please try again.');
+      alert(`Failed to delete history: ${formatErrorMessage(error)}`);
     } finally {
       setDeleting(false);
     }
@@ -456,7 +508,7 @@ export default function DataControlCenter() {
         setPreviewData(data);
       } else {
         const error = await response.json();
-        alert(`Failed to preview: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to preview: ${formatErrorMessage(error)}`);
       }
     } catch (error) {
       console.error('Failed to preview deletion:', error);
@@ -518,7 +570,7 @@ export default function DataControlCenter() {
         loadData(); // Reload the data
       } else {
         const error = await response.json();
-        alert(`Failed to delete: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to delete: ${formatErrorMessage(error)}`);
       }
     } catch (error) {
       console.error('Failed to delete:', error);
@@ -539,7 +591,7 @@ export default function DataControlCenter() {
       await loadTaskDashboard(); // Refresh dashboard
       alert('Task cancelled successfully.');
     } catch (error: any) {
-      alert(`Failed to cancel task: ${error.message || 'Unknown error'}`);
+      alert(`Failed to cancel task: ${formatErrorMessage(error)}`);
     } finally {
       setCancelingTaskId(null);
     }
@@ -557,7 +609,7 @@ export default function DataControlCenter() {
       await loadTaskDashboard(); // Refresh dashboard
       loadData(); // Also refresh documents
     } catch (error: any) {
-      alert(`Failed to retry extractions: ${error.message || 'Unknown error'}`);
+      alert(`Failed to retry extractions: ${formatErrorMessage(error)}`);
     } finally {
       setReprocessing(false);
     }
@@ -575,7 +627,7 @@ export default function DataControlCenter() {
       await loadTaskDashboard(); // Refresh dashboard
       loadData(); // Also refresh documents
     } catch (error: any) {
-      alert(`Failed to recover stuck documents: ${error.message || 'Unknown error'}`);
+      alert(`Failed to recover stuck documents: ${formatErrorMessage(error)}`);
     } finally {
       setReprocessing(false);
     }
@@ -605,7 +657,7 @@ export default function DataControlCenter() {
         loadData(); // Reload the data
       } else {
         const error = await response.json();
-        alert(`Failed to reprocess files: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to reprocess files: ${formatErrorMessage(error)}`);
       }
     } catch (error) {
       console.error('Failed to reprocess files:', error);
@@ -630,7 +682,7 @@ export default function DataControlCenter() {
         loadData(); // Reload the data to reflect new anomaly counts
       } else {
         const error = await response.json();
-        alert(`Failed to run anomaly detection: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to run anomaly detection: ${formatErrorMessage(error)}`);
       }
     } catch (error) {
       console.error('Failed to run anomaly detection:', error);
@@ -655,7 +707,7 @@ export default function DataControlCenter() {
         loadData(); // Reload the data to reflect new status
       } else {
         const error = await response.json();
-        alert(`Failed to reprocess document: ${error.detail || 'Unknown error'}`);
+        alert(`Failed to reprocess document: ${formatErrorMessage(error)}`);
       }
     } catch (error) {
       console.error('Failed to reprocess document:', error);
@@ -742,7 +794,7 @@ export default function DataControlCenter() {
       setSelectedTasks(new Set());
       await loadTaskDashboard();
     } catch (error: any) {
-      alert(`Failed to cancel tasks: ${error.message || 'Unknown error'}`);
+      alert(`Failed to cancel tasks: ${formatErrorMessage(error)}`);
     }
   };
 
@@ -1718,7 +1770,7 @@ export default function DataControlCenter() {
 
                       if (!response.ok) {
                         const error = await response.json();
-                        throw new Error(error.detail || 'Failed to schedule task');
+                        throw new Error(formatErrorMessage(error) || 'Failed to schedule task');
                       }
 
                       const result = await response.json();

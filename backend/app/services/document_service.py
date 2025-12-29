@@ -717,14 +717,41 @@ class DocumentService:
                 # Step 2: Detect document type from filename
                 type_detection = detector.detect_from_filename(file.filename or "")
                 detected_type = type_detection.get("document_type", "unknown")
-                
+
+                # NEW: Don't reject files with unknown type - allow any filename
+                # If detection fails, try to extract from PDF content or use generic type
                 if detected_type == "unknown":
-                    result["error"] = "Could not detect document type from filename"
-                    results.append(result)
-                    failed_count += 1
-                    continue
-                
-                result["document_type"] = detected_type
+                    # Try to detect from PDF content as fallback
+                    try:
+                        file_content = await file.read()
+                        await file.seek(0)  # Reset file pointer for later use
+
+                        from app.utils.extraction_engine import MultiEngineExtractor
+                        content_detector = MultiEngineExtractor()
+                        content_type_detection = content_detector.detect_document_type(file_content)
+                        content_detected_type = content_type_detection.get("detected_type", "unknown")
+
+                        if content_detected_type != "unknown":
+                            detected_type = content_detected_type
+                            result["document_type"] = detected_type
+                            result["detection_method"] = "content"
+                            result["warning"] = f"Document type detected from PDF content (filename didn't match patterns)"
+                        else:
+                            # Still unknown - this is OK, we'll handle it gracefully
+                            # Mark as unknown but don't reject - user can review later
+                            result["document_type"] = "unknown"
+                            result["detection_method"] = "none"
+                            result["warning"] = "Could not detect document type from filename or content - please verify manually"
+                            result["status"] = "needs_review"
+                    except Exception as e:
+                        # If content detection fails, mark for review
+                        result["document_type"] = "unknown"
+                        result["detection_method"] = "none"
+                        result["warning"] = f"Could not detect document type - please verify manually"
+                        result["status"] = "needs_review"
+                else:
+                    result["document_type"] = detected_type
+                    result["detection_method"] = "filename"
                 
                 # Step 2.5: Pre-flight check for known issues
                 try:
