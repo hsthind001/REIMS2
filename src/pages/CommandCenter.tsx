@@ -488,9 +488,28 @@ export default function CommandCenter() {
               }
             }
 
-            // Get DSCR from metrics summary (already calculated by backend)
-            let dscr: number | null = metric.dscr !== null && metric.dscr !== undefined ? metric.dscr : null;
+            // Get DSCR from latest complete period (not just latest period)
+            // This ensures we use DSCR only when all required documents are available
+            let dscr: number | null = null;
             let status: 'critical' | 'warning' | 'good' = 'good';
+
+            try {
+              const dscrResponse = await fetch(
+                `${API_BASE_URL}/dscr/latest-complete/${property.id}?year=${new Date().getFullYear()}`,
+                { credentials: 'include' }
+              );
+
+              if (dscrResponse.ok) {
+                const dscrData = await dscrResponse.json();
+                if (dscrData.dscr !== null && dscrData.dscr !== undefined) {
+                  dscr = dscrData.dscr;
+                }
+              }
+            } catch (dscrErr) {
+              console.warn(`Failed to fetch DSCR for ${property.property_code}, falling back to metrics summary`, dscrErr);
+              // Fallback to metrics summary DSCR if available
+              dscr = metric.dscr !== null && metric.dscr !== undefined ? metric.dscr : null;
+            }
 
             // Determine status based on DSCR thresholds
             if (dscr !== null) {

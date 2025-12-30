@@ -389,12 +389,15 @@ async def get_metrics_summary(
         property_data = {}
         for metrics, prop_code, prop_name, year, month, period_id in all_metrics:
             if prop_code not in property_data:
+                # Use net_property_value as fallback when total_assets is NULL
+                property_value = metrics.total_assets if metrics.total_assets is not None else metrics.net_property_value
+
                 property_data[prop_code] = {
                     'property_name': prop_name,
                     'period_id': period_id,  # Store period_id for API calls
                     'period_year': year,
                     'period_month': month,
-                    'total_assets': metrics.total_assets,
+                    'total_assets': property_value,
                     'total_revenue': metrics.total_revenue,
                     'net_income': metrics.net_income,
                     'net_operating_income': metrics.net_operating_income,
@@ -412,26 +415,30 @@ async def get_metrics_summary(
                 
                 # Update if we find more recent data for specific metrics
                 if current_period_key > existing_period_key:
+                    # Use net_property_value as fallback when total_assets is NULL
+                    property_value = metrics.total_assets if metrics.total_assets is not None else metrics.net_property_value
+
                     # Check each metric and use the most recent non-null value
-                    if metrics.total_assets is not None and current_data['total_assets'] is None:
-                        current_data['total_assets'] = metrics.total_assets
+                    if property_value is not None and current_data['total_assets'] is None:
+                        current_data['total_assets'] = property_value
                         current_data['total_revenue'] = metrics.total_revenue
                         current_data['net_income'] = metrics.net_income
                         current_data['net_operating_income'] = metrics.net_operating_income
-                    
+
                     if metrics.occupancy_rate is not None and current_data['occupancy_rate'] is None:
                         current_data['occupancy_rate'] = metrics.occupancy_rate
-                    
+
                     # Update period to most recent if we got any new data
-                    if (metrics.total_assets is not None or metrics.occupancy_rate is not None):
+                    if (property_value is not None or metrics.occupancy_rate is not None):
                         current_data['period_year'] = year
                         current_data['period_month'] = month
                         current_data['period_id'] = period_id  # Update period_id when period changes
-                
+
                 # Also check for older periods that might have data we're missing
                 elif current_period_key < existing_period_key:
-                    if metrics.total_assets is not None and current_data['total_assets'] is None:
-                        current_data['total_assets'] = metrics.total_assets
+                    property_value = metrics.total_assets if metrics.total_assets is not None else metrics.net_property_value
+                    if property_value is not None and current_data['total_assets'] is None:
+                        current_data['total_assets'] = property_value
                         current_data['total_revenue'] = metrics.total_revenue
                         current_data['net_income'] = metrics.net_income
                         current_data['net_operating_income'] = metrics.net_operating_income
