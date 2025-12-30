@@ -914,22 +914,53 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
         total_noi = Decimal('0')
         total_debt_service = Decimal('0')
         
-        # Calculate DSCR for each property using the latest period that has data
+        # Calculate DSCR for each property using the latest COMPLETE period
+        # (period where all required documents are available)
+        from app.models.document_upload import DocumentUpload
+        from app.models.mortgage_statement_data import MortgageStatementData
+
         for property in properties:
             try:
-                # Get period for this property (use latest period with data)
-                period = db.query(FinancialPeriod).filter(
+                # Find latest complete period for this property (all docs available)
+                periods = db.query(FinancialPeriod).filter(
                     FinancialPeriod.property_id == property.id,
-                    FinancialPeriod.period_year == current_year,
-                    FinancialPeriod.period_month == current_month
-                ).first()
-                
-                if not period:
+                    FinancialPeriod.period_year == current_year
+                ).order_by(
+                    FinancialPeriod.period_month.desc()
+                ).all()
+
+                latest_complete_period = None
+                required_doc_types = ['balance_sheet', 'income_statement', 'cash_flow', 'rent_roll', 'mortgage_statement']
+
+                for period in periods:
+                    uploaded_docs = db.query(DocumentUpload).filter(
+                        DocumentUpload.property_id == property.id,
+                        DocumentUpload.period_id == period.id,
+                        DocumentUpload.extraction_status == 'completed'
+                    ).all()
+
+                    available_types = {doc.document_type for doc in uploaded_docs}
+
+                    # Check for mortgage data
+                    has_mortgage_data = db.query(MortgageStatementData).filter(
+                        MortgageStatementData.property_id == property.id,
+                        MortgageStatementData.period_id == period.id
+                    ).first() is not None
+
+                    if has_mortgage_data:
+                        available_types.add('mortgage_statement')
+
+                    # Check if all required documents are available
+                    if all(doc_type in available_types for doc_type in required_doc_types):
+                        latest_complete_period = period
+                        break
+
+                if not latest_complete_period:
                     continue
-                
-                # Calculate DSCR (catch errors for individual properties)
+
+                # Calculate DSCR for latest complete period
                 try:
-                    dscr_result = dscr_service.calculate_dscr(property.id, period.id)
+                    dscr_result = dscr_service.calculate_dscr(property.id, latest_complete_period.id)
                 except Exception as prop_err:
                     # Rollback any failed transaction to prevent cascade failures
                     try:
