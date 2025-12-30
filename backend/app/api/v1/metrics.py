@@ -2492,7 +2492,7 @@ async def get_metric_source(
 
 
 @router.get("/metrics/{property_id}/dscr/latest-complete")
-async def get_dscr_for_latest_complete_period(
+def get_dscr_for_latest_complete_period(
     property_id: int,
     year: int = Query(..., description="Year to check for complete periods"),
     db: Session = Depends(get_db)
