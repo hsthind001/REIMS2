@@ -580,44 +580,36 @@ export default function FinancialCommand() {
         const summary = await financialDataService.getSummary(doc.id);
         console.log('Summary loaded:', summary);
 
-        // Load ALL items
-        const data = await financialDataService.getFinancialData(doc.id, {
-          limit: Math.max(summary.total_items || 10000, 10000),
+        // Respect API limit=1000; fetch in pages and aggregate
+        const totalItems = summary.total_items || 0;
+        const pageSize = Math.min(1000, Math.max(totalItems, 100));
+
+        const firstPage = await financialDataService.getFinancialData(doc.id, {
+          limit: pageSize,
           skip: 0
         });
-        console.log('Initial data loaded:', {
-          total_items: data.total_items,
-          items_loaded: data.items?.length,
-          document_type: data.document_type
-        });
 
-        // If paginated, load remaining pages
-        if (data.total_items > data.items.length) {
-          const allItems = [...data.items];
-          let skip = data.items.length;
+        const allItems: FinancialDataItem[] = [...(firstPage.items || [])];
+        let skip = allItems.length;
 
-          while (allItems.length < data.total_items) {
-            const nextPage = await financialDataService.getFinancialData(doc.id, {
-              limit: 1000,
-              skip: skip
-            });
-
-            allItems.push(...nextPage.items);
-            skip += nextPage.items.length;
-
-            if (nextPage.items.length === 0) break;
-          }
-
-          console.log('All pages loaded:', allItems.length, 'items');
-          setFinancialData({
-            ...data,
-            items: allItems,
-            limit: allItems.length
+        while (allItems.length < (firstPage.total_items || 0)) {
+          const nextPage = await financialDataService.getFinancialData(doc.id, {
+            limit: Math.min(1000, (firstPage.total_items || 0) - allItems.length),
+            skip
           });
-        } else {
-          console.log('Setting financial data with', data.items?.length, 'items');
-          setFinancialData(data);
+
+          if (!nextPage.items || nextPage.items.length === 0) break;
+          allItems.push(...nextPage.items);
+          skip += nextPage.items.length;
         }
+
+        console.log('Aggregated financial data items:', allItems.length, 'of', firstPage.total_items);
+
+        setFinancialData({
+          ...firstPage,
+          items: allItems,
+          limit: allItems.length
+        });
       } else {
         console.warn('No valid document found, setting financialData to null');
         setFinancialData(null);
@@ -800,76 +792,23 @@ export default function FinancialCommand() {
   };
 
   const handleViewFullFinancialData = async () => {
-    try {
-      console.log('View Full Financial Data clicked', {
-        selectedProperty: selectedProperty?.property_code,
-        availableDocumentsCount: availableDocuments.length
-      });
-
-      // Validate that a property is selected
-      if (!selectedProperty) {
-        console.error('No property selected');
-        alert('Please select a property first');
-        return;
-      }
-
-      // Open modal first to show loading state
-      setShowFullFinancialData(true);
-
-      // Ensure documents are loaded - get fresh data
-      let docsToUse = availableDocuments;
-      if (availableDocuments.length === 0) {
-        console.log('Loading available documents...');
-        try {
-          const docs = await documentService.getDocuments({
-            property_code: selectedProperty.property_code,
-            limit: 100
-          });
-          docsToUse = docs.items || [];
-          setAvailableDocuments(docsToUse);
-          console.log('Loaded documents:', docsToUse.length);
-        } catch (err) {
-          console.error('Failed to load documents:', err);
-        }
-      }
-
-      console.log('Documents to use:', docsToUse.length);
-
-      // Auto-select first available document type
-      // Prioritize financial statements (income, balance, cash flow) over mortgage statements
-      if (docsToUse.length > 0) {
-        // First try to find completed financial statements (not mortgage)
-        const firstDoc = docsToUse.find(d =>
-          (d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow') &&
-          d.extraction_status === 'completed'
-        ) || docsToUse.find(d =>
-          d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow'
-        ) || docsToUse.find(d =>
-          d.document_type === 'mortgage_statement' && d.extraction_status === 'completed'
-        ) || docsToUse.find(d =>
-          d.document_type === 'mortgage_statement'
-        );
-
-        console.log('First document selected:', firstDoc);
-
-        if (firstDoc && (firstDoc.document_type === 'income_statement' || firstDoc.document_type === 'balance_sheet' || firstDoc.document_type === 'cash_flow' || firstDoc.document_type === 'mortgage_statement')) {
-          setSelectedStatementType(firstDoc.document_type);
-          if (firstDoc.document_type === 'mortgage_statement') {
-            console.log('Mortgage statement selected - handled separately');
-          } else {
-            console.log('Loading financial data for:', firstDoc.document_type);
-            await loadFullFinancialData(firstDoc.document_type);
-          }
-        } else {
-          console.warn('No suitable document found');
-        }
-      } else {
-        console.warn('No available documents found for property:', selectedProperty.property_code);
-      }
-    } catch (err) {
-      console.error('Error in handleViewFullFinancialData:', err);
-      alert('Failed to load financial data. Please try again.');
+    // Navigate to dedicated full-financial-data page with context in hash params
+    if (!selectedProperty) {
+      alert('Please select a property first');
+      return;
     }
+
+    const params = new URLSearchParams({
+      property: selectedProperty.property_code,
+      year: String(selectedYear),
+      month: String(selectedMonth),
+    });
+
+    if (selectedStatementType) {
+      params.set('doc', selectedStatementType);
+    }
+
+    window.location.hash = `financial-data?${params.toString()}`;
   };
 
   return (
@@ -1081,230 +1020,257 @@ export default function FinancialCommand() {
 
             {/* Full Financial Data Modal */}
             {showFullFinancialData && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowFullFinancialData(false)}>
-                <div className="bg-surface rounded-xl p-6 max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-2xl font-bold">Complete Financial Data</h2>
-                    <button className="text-text-secondary hover:text-text-primary text-2xl" onClick={() => setShowFullFinancialData(false)}>×</button>
-                  </div>
-
-                  {/* Statement Type Selector */}
-                  <div className="flex gap-2 mb-4 flex-wrap">
-                    {(['income_statement', 'balance_sheet', 'cash_flow', 'mortgage_statement'] as const).map((type) => {
-                      const docs = availableDocuments.filter(d => d.document_type === type);
-                      const doc = docs.find(d => d.extraction_status === 'completed') || docs[0];
-                      return (
-                        <button
-                          key={type}
-                          onClick={() => {
-                            setSelectedStatementType(type);
-                            if (type === 'mortgage_statement') {
-                              // Mortgage statements handled separately
-                            } else {
-                              loadFullFinancialData(type);
-                            }
-                          }}
-                          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                            selectedStatementType === type
-                              ? 'bg-info text-white'
-                              : doc
-                              ? 'bg-background border border-border hover:bg-background'
-                              : 'bg-background border border-border opacity-50 cursor-not-allowed'
-                          }`}
-                          disabled={!doc}
-                          title={doc ? `${doc.extraction_status} - Upload ID: ${doc.id}` : 'No document available'}
-                        >
-                          {type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          {doc && (
-                            <span className="ml-2 text-xs">
-                              ({doc.extraction_status})
-                              {docs.length > 1 && ` - ${docs.length} available`}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  
-                  {/* Available Documents Info - Only show when no data is loaded */}
-                  {availableDocuments.length > 0 && !loadingFinancialData && !financialData && selectedStatementType !== 'mortgage_statement' && (
-                    <div className="mb-4 p-3 bg-info-light/20 rounded-lg">
-                      <div className="text-sm font-medium mb-2">Available Documents for {selectedProperty?.property_name}:</div>
-                      <div className="text-xs text-text-secondary space-y-1">
-                        {availableDocuments
-                          .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement')
-                          .slice(0, 10)
-                          .map((doc, i) => (
-                            <div key={i}>
-                              • {doc.document_type.replace('_', ' ')} - {doc.extraction_status} (ID: {doc.id})
-                            </div>
-                          ))}
-                        {availableDocuments.filter(d =>
-                          d.document_type === 'income_statement' || d.document_type === 'balance_sheet' ||
-                          d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement'
-                        ).length > 10 && (
-                          <div className="text-xs text-text-tertiary italic">
-                            ... and {availableDocuments.filter(d =>
-                              d.document_type === 'income_statement' || d.document_type === 'balance_sheet' ||
-                              d.document_type === 'cash_flow' || d.document_type === 'mortgage_statement'
-                            ).length - 10} more documents
-                          </div>
-                        )}
-                      </div>
+              <div
+                className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                onClick={() => setShowFullFinancialData(false)}
+              >
+                <div
+                  className="bg-surface rounded-2xl shadow-2xl w-full max-w-7xl mx-4 max-h-[90vh] overflow-hidden border border-border flex flex-col"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background sticky top-0 z-10">
+                    <div>
+                      <h2 className="text-2xl font-bold">Complete Financial Data</h2>
+                      <p className="text-sm text-text-secondary mt-1">
+                        {selectedProperty?.property_name || 'Select a property'} • {selectedYear}/{String(selectedMonth).padStart(2, '0')} • {availableDocuments.length} document{availableDocuments.length === 1 ? '' : 's'} available
+                      </p>
                     </div>
-                  )}
+                    <button
+                      className="text-text-secondary hover:text-text-primary text-2xl"
+                      onClick={() => setShowFullFinancialData(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
 
-                  {/* Mortgage Statement Display */}
-                  {selectedStatementType === 'mortgage_statement' && selectedProperty && currentPeriodId ? (
-                    <div className="space-y-6">
-                      <Card className="p-6">
-                        <h3 className="text-lg font-semibold mb-4">Mortgage Statements</h3>
-                        <MortgageDataTable
-                          propertyId={selectedProperty.id}
-                          periodId={currentPeriodId}
-                          onViewDetail={(mortgageId) => setSelectedMortgageId(mortgageId)}
-                        />
+                  <div className="grid lg:grid-cols-[320px_1fr] gap-4 p-6 h-full overflow-hidden">
+                    {/* Left rail: statement selector + docs */}
+                    <div className="h-full flex flex-col gap-4 overflow-hidden">
+                      <Card className="p-4 h-min">
+                        <div className="text-sm font-semibold mb-3 text-text-secondary">Statement Type</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['income_statement', 'balance_sheet', 'cash_flow', 'mortgage_statement'] as const).map((type) => {
+                            const docs = availableDocuments.filter(d => d.document_type === type);
+                            const doc = docs.find(d => d.extraction_status === 'completed') || docs[0];
+                            return (
+                              <button
+                                key={type}
+                                onClick={() => {
+                                  setSelectedStatementType(type);
+                                  if (type !== 'mortgage_statement') {
+                                    loadFullFinancialData(type);
+                                  }
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                                  selectedStatementType === type
+                                    ? 'bg-info text-white border-info'
+                                    : doc
+                                    ? 'bg-background border-border hover:bg-background'
+                                    : 'bg-background border-border opacity-50 cursor-not-allowed'
+                                }`}
+                                disabled={!doc}
+                                title={doc ? `${doc.extraction_status} - Upload ID: ${doc.id}` : 'No document available'}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span>{type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                                  {doc && (
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface border border-border">
+                                      {doc.extraction_status}
+                                    </span>
+                                  )}
+                                </div>
+                                {docs.length > 1 && (
+                                  <div className="text-[11px] text-text-secondary mt-1">
+                                    {docs.length} versions available
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </Card>
-                      {selectedProperty && currentPeriodId && (
-                        <Card className="p-6">
-                          <h3 className="text-lg font-semibold mb-4">Mortgage Metrics</h3>
-                          <MortgageMetrics
-                            propertyId={selectedProperty.id}
-                            periodId={currentPeriodId}
-                          />
+
+                      <Card className="p-4 flex-1 overflow-hidden">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-semibold text-text-secondary">Available Documents</div>
+                          <div className="text-xs text-text-tertiary">{availableDocuments.length} total</div>
+                        </div>
+                        <div className="space-y-2 overflow-y-auto pr-1 max-h-[60vh] custom-scrollbar">
+                          {availableDocuments.length === 0 ? (
+                            <div className="text-sm text-text-tertiary">
+                              No documents uploaded for this property yet.
+                            </div>
+                          ) : (
+                            availableDocuments
+                              .filter(d => ['income_statement', 'balance_sheet', 'cash_flow', 'mortgage_statement'].includes(d.document_type))
+                              .map((doc) => (
+                                <div
+                                  key={doc.id}
+                                  className={`p-3 rounded-lg border ${
+                                    selectedStatementType === doc.document_type ? 'border-info bg-info-light/15' : 'border-border bg-background'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between text-sm font-medium">
+                                    <span className="capitalize">{doc.document_type.replace('_', ' ')}</span>
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface border border-border">
+                                      {doc.extraction_status}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-text-secondary mt-1">
+                                    Upload #{doc.id} • Period {doc.period_year || '—'}/{String(doc.period_month || 0).padStart(2, '0')}
+                                  </div>
+                                </div>
+                              ))
+                          )}
+                        </div>
+                        <div className="text-[11px] text-text-tertiary mt-2">
+                          Scroll to see all uploads. Documents may belong to different periods.
+                        </div>
+                      </Card>
+                    </div>
+
+                    {/* Right rail: data display */}
+                    <div className="h-full overflow-hidden flex flex-col gap-4">
+                      {selectedStatementType === 'mortgage_statement' ? (
+                        selectedProperty && currentPeriodId ? (
+                          <div className="space-y-4 overflow-y-auto pr-1 custom-scrollbar">
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">Mortgage Statements</h3>
+                              <MortgageDataTable
+                                propertyId={selectedProperty.id}
+                                periodId={currentPeriodId}
+                                onViewDetail={(mortgageId) => setSelectedMortgageId(mortgageId)}
+                              />
+                            </Card>
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">Mortgage Metrics</h3>
+                              <MortgageMetrics
+                                propertyId={selectedProperty.id}
+                                periodId={currentPeriodId}
+                              />
+                            </Card>
+                          </div>
+                        ) : (
+                          <Card className="p-8 text-center flex-1 flex items-center justify-center">
+                            <div className="text-text-secondary">
+                              Please select a property and period to view mortgage statements.
+                            </div>
+                          </Card>
+                        )
+                      ) : loadingFinancialData ? (
+                        <Card className="p-8 text-center flex-1 flex flex-col items-center justify-center">
+                          <div className="text-text-secondary">Loading complete financial document data...</div>
+                          <div className="text-xs text-text-tertiary mt-2">Fetching all line items with zero data loss</div>
+                        </Card>
+                      ) : financialData && financialData.items && financialData.items.length > 0 ? (
+                        <Card className="p-6 flex-1 flex flex-col overflow-hidden">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h3 className="text-lg font-semibold">
+                                {financialData.document_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} - Complete Line Items
+                              </h3>
+                              <p className="text-sm text-text-secondary mt-1">
+                                Showing all {financialData.items.length} of {financialData.total_items} extracted line items
+                              </p>
+                            </div>
+                            <div className="text-sm text-text-secondary text-right">
+                              {financialData.property_code}<br />
+                              {financialData.period_year}/{String(financialData.period_month).padStart(2, '0')}
+                            </div>
+                          </div>
+                          
+                          <div className="overflow-x-auto overflow-y-auto max-h-[60vh] border border-border rounded-lg custom-scrollbar">
+                            <table className="w-full">
+                              <thead className="sticky top-0 bg-surface z-10 border-b-2 border-border">
+                                <tr>
+                                  <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Line</th>
+                                  <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Account Code</th>
+                                  <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Account Name</th>
+                                  <th className="text-right py-3 px-4 text-sm font-semibold bg-surface">Amount</th>
+                                  <th className="text-center py-3 px-4 text-sm font-semibold bg-surface">Confidence</th>
+                                  <th className="text-center py-3 px-4 text-sm font-semibold bg-surface">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {financialData.items.map((item: FinancialDataItem) => (
+                                  <tr 
+                                    key={item.id} 
+                                    className={`border-b border-border hover:bg-background ${
+                                      item.is_total ? 'font-bold bg-info-light/10' : 
+                                      item.is_subtotal ? 'font-semibold bg-background' : ''
+                                    }`}
+                                  >
+                                    <td className="py-2 px-4 text-sm text-text-secondary">
+                                      {item.line_number || '-'}
+                                    </td>
+                                    <td className="py-2 px-4">
+                                      <span className="font-mono font-medium">{item.account_code}</span>
+                                    </td>
+                                    <td className="py-2 px-4">
+                                      <div className="flex items-center gap-2">
+                                        {item.account_name}
+                                        {item.is_total && (
+                                          <span className="px-2 py-0.5 bg-info text-white rounded text-xs">
+                                            TOTAL
+                                          </span>
+                                        )}
+                                        {item.is_subtotal && (
+                                          <span className="px-2 py-0.5 bg-premium text-white rounded text-xs">
+                                            SUBTOTAL
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-2 px-4 text-right font-mono">
+                                      {item.amounts.amount !== undefined && item.amounts.amount !== null
+                                        ? `$${item.amounts.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                        : item.amounts.period_amount !== undefined && item.amounts.period_amount !== null
+                                        ? `$${item.amounts.period_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                        : item.amounts.ytd_amount !== undefined && item.amounts.ytd_amount !== null
+                                        ? `YTD: $${item.amounts.ytd_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                        : '-'}
+                                    </td>
+                                    <td className="py-2 px-4 text-center">
+                                      <div className="text-xs">
+                                        <div className="font-medium">
+                                          E: {item.extraction_confidence.toFixed(0)}%
+                                        </div>
+                                        <div className="text-text-secondary">
+                                          M: {item.match_confidence?.toFixed(0) || 0}%
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-2 px-4 text-center">
+                                      {item.severity === 'critical' && <span className="text-danger">🔴</span>}
+                                      {item.severity === 'warning' && <span className="text-warning">🟡</span>}
+                                      {item.severity === 'excellent' && <span className="text-success">🟢</span>}
+                                      {item.needs_review && (
+                                        <span className="ml-2 text-xs text-warning">Review</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </Card>
+                      ) : (
+                        <Card className="p-8 text-center flex-1 flex flex-col items-center justify-center">
+                          <div className="text-text-secondary mb-3">
+                            {selectedStatementType 
+                              ? `No ${selectedStatementType.replace('_', ' ')} document found.`
+                              : 'Please select a statement type on the left.'
+                            }
+                          </div>
+                          {availableDocuments.length > 0 && (
+                            <div className="text-xs text-text-tertiary max-w-md">
+                              Use the left rail to pick the statement type. Documents may be for different periods.
+                            </div>
+                          )}
                         </Card>
                       )}
                     </div>
-                  ) : selectedStatementType === 'mortgage_statement' ? (
-                    <div className="text-center py-8 text-text-secondary">
-                      Please select a property and period to view mortgage statements.
-                    </div>
-                  ) : null}
-
-                  {/* Financial Data Display */}
-                  {selectedStatementType !== 'mortgage_statement' && loadingFinancialData ? (
-                    <div className="text-center py-8">
-                      <div className="text-text-secondary">Loading complete financial document data...</div>
-                      <div className="text-xs text-text-tertiary mt-2">Fetching all line items with zero data loss</div>
-                    </div>
-                  ) : selectedStatementType !== 'mortgage_statement' && financialData && financialData.items && financialData.items.length > 0 ? (
-                    <Card className="p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-lg font-semibold">
-                            {financialData.document_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} - Complete Line Items
-                          </h3>
-                          <p className="text-sm text-text-secondary mt-1">
-                            Showing all {financialData.items.length} of {financialData.total_items} extracted line items
-                          </p>
-                        </div>
-                        <div className="text-sm text-text-secondary">
-                          {financialData.property_code} • {financialData.period_year}/{String(financialData.period_month).padStart(2, '0')}
-                        </div>
-                      </div>
-                      
-                      <div className="overflow-x-auto max-h-[500px] overflow-y-auto border border-border rounded-lg">
-                        <table className="w-full">
-                          <thead className="sticky top-0 bg-surface z-10 border-b-2 border-border">
-                            <tr>
-                              <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Line</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Account Code</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold bg-surface">Account Name</th>
-                              <th className="text-right py-3 px-4 text-sm font-semibold bg-surface">Amount</th>
-                              <th className="text-center py-3 px-4 text-sm font-semibold bg-surface">Confidence</th>
-                              <th className="text-center py-3 px-4 text-sm font-semibold bg-surface">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {financialData.items.map((item: FinancialDataItem) => (
-                              <tr 
-                                key={item.id} 
-                                className={`border-b border-border hover:bg-background ${
-                                  item.is_total ? 'font-bold bg-info-light/10' : 
-                                  item.is_subtotal ? 'font-semibold bg-background' : ''
-                                }`}
-                              >
-                                <td className="py-2 px-4 text-sm text-text-secondary">
-                                  {item.line_number || '-'}
-                                </td>
-                                <td className="py-2 px-4">
-                                  <span className="font-mono font-medium">{item.account_code}</span>
-                                </td>
-                                <td className="py-2 px-4">
-                                  <div className="flex items-center gap-2">
-                                    {item.account_name}
-                                    {item.is_total && (
-                                      <span className="px-2 py-0.5 bg-info text-white rounded text-xs">
-                                        TOTAL
-                                      </span>
-                                    )}
-                                    {item.is_subtotal && (
-                                      <span className="px-2 py-0.5 bg-premium text-white rounded text-xs">
-                                        SUBTOTAL
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-2 px-4 text-right font-mono">
-                                  {item.amounts.amount !== undefined && item.amounts.amount !== null
-                                    ? `$${item.amounts.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                    : item.amounts.period_amount !== undefined && item.amounts.period_amount !== null
-                                    ? `$${item.amounts.period_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                    : item.amounts.ytd_amount !== undefined && item.amounts.ytd_amount !== null
-                                    ? `YTD: $${item.amounts.ytd_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                    : '-'}
-                                </td>
-                                <td className="py-2 px-4 text-center">
-                                  <div className="text-xs">
-                                    <div className="font-medium">
-                                      E: {item.extraction_confidence.toFixed(0)}%
-                                    </div>
-                                    <div className="text-text-secondary">
-                                      M: {item.match_confidence?.toFixed(0) || 0}%
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="py-2 px-4 text-center">
-                                  {item.severity === 'critical' && <span className="text-danger">🔴</span>}
-                                  {item.severity === 'warning' && <span className="text-warning">🟡</span>}
-                                  {item.severity === 'excellent' && <span className="text-success">🟢</span>}
-                                  {item.needs_review && (
-                                    <span className="ml-2 text-xs text-warning">Review</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-                  ) : (
-                    <Card className="p-8 text-center">
-                      <div className="text-text-secondary mb-4">
-                        {selectedStatementType 
-                          ? `No ${selectedStatementType.replace('_', ' ')} document found.`
-                          : 'Please select a statement type above.'
-                        }
-                      </div>
-                      {availableDocuments.length > 0 && (
-                        <div className="text-xs text-text-tertiary mb-4">
-                          <div className="font-medium mb-2">Available documents for this property:</div>
-                          <div className="space-y-1">
-                            {availableDocuments
-                              .filter(d => d.document_type === 'income_statement' || d.document_type === 'balance_sheet' || d.document_type === 'cash_flow')
-                              .map((doc, i) => (
-                                <div key={i} className="text-left">
-                                  • {doc.document_type.replace('_', ' ')} - Status: {doc.extraction_status} (ID: {doc.id})
-                                </div>
-                              ))}
-                          </div>
-                          <div className="mt-3 text-text-secondary">
-                            Note: Documents may be for different periods. The year/month selector is for reference only.
-                          </div>
-                        </div>
-                      )}
-                    </Card>
-                  )}
+                  </div>
                 </div>
               </div>
             )}
@@ -2162,4 +2128,3 @@ export default function FinancialCommand() {
     </div>
   );
 }
-

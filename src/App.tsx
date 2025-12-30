@@ -13,6 +13,7 @@ const AdminHub = lazy(() => import('./pages/AdminHub'))
 const RiskManagement = lazy(() => import('./pages/RiskManagement'))
 const AlertRules = lazy(() => import('./pages/AlertRules'))
 const BulkImport = lazy(() => import('./pages/BulkImport'))
+const FullFinancialData = lazy(() => import('./pages/FullFinancialData'))
 const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
 const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
@@ -73,6 +74,9 @@ function AppContent() {
       }
       // If navigating to reports, ensure we're on reports page
       if (routeName === 'reports' && currentPage !== 'reports') {
+        setCurrentPage('reports')
+      }
+      if (routeName === 'financial-data' && currentPage !== 'reports') {
         setCurrentPage('reports')
       }
       // If navigating to forensic-reconciliation, ensure we're on operations page
@@ -256,7 +260,11 @@ function AppContent() {
 
         {/* Main Content */}
         <main className="content">
-          {hashRoute === 'bulk-import' ? (
+          {hashRoute.startsWith('financial-data') ? (
+            <Suspense fallback={<PageLoader />}>
+              <FullFinancialData />
+            </Suspense>
+          ) : hashRoute === 'bulk-import' ? (
             <Suspense fallback={<PageLoader />}>
               <BulkImport />
             </Suspense>

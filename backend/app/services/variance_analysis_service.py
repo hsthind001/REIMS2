@@ -578,45 +578,45 @@ class VarianceAnalysisService:
             current_by_account = {}
             for item in current_income:
                 if item.account_code:
-                    parent_code = self._extract_parent_account_code(item.account_code)
-                    if parent_code not in current_by_account:
-                        current_by_account[parent_code] = {
+                    code = item.account_code
+                    if code not in current_by_account:
+                        current_by_account[code] = {
                             "amount": Decimal("0"),
                             "account_name": item.account_name
                         }
-                    current_by_account[parent_code]["amount"] += Decimal(str(item.period_amount or 0))
+                    current_by_account[code]["amount"] += Decimal(str(item.period_amount or 0))
 
             for item in current_balance:
                 if item.account_code:
-                    parent_code = self._extract_parent_account_code(item.account_code)
-                    if parent_code not in current_by_account:
-                        current_by_account[parent_code] = {
+                    code = item.account_code
+                    if code not in current_by_account:
+                        current_by_account[code] = {
                             "amount": Decimal("0"),
                             "account_name": item.account_name
                         }
-                    current_by_account[parent_code]["amount"] += Decimal(str(item.amount or 0))
+                    current_by_account[code]["amount"] += Decimal(str(item.amount or 0))
 
             # Build previous period amounts by account
             previous_by_account = {}
             for item in previous_income:
                 if item.account_code:
-                    parent_code = self._extract_parent_account_code(item.account_code)
-                    if parent_code not in previous_by_account:
-                        previous_by_account[parent_code] = {
+                    code = item.account_code
+                    if code not in previous_by_account:
+                        previous_by_account[code] = {
                             "amount": Decimal("0"),
                             "account_name": item.account_name
                         }
-                    previous_by_account[parent_code]["amount"] += Decimal(str(item.period_amount or 0))
+                    previous_by_account[code]["amount"] += Decimal(str(item.period_amount or 0))
 
             for item in previous_balance:
                 if item.account_code:
-                    parent_code = self._extract_parent_account_code(item.account_code)
-                    if parent_code not in previous_by_account:
-                        previous_by_account[parent_code] = {
+                    code = item.account_code
+                    if code not in previous_by_account:
+                        previous_by_account[code] = {
                             "amount": Decimal("0"),
                             "account_name": item.account_name
                         }
-                    previous_by_account[parent_code]["amount"] += Decimal(str(item.amount or 0))
+                    previous_by_account[code]["amount"] += Decimal(str(item.amount or 0))
 
             # Analyze variances
             variances = []
