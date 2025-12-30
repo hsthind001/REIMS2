@@ -224,6 +224,7 @@ export interface ReviewQueueItem {
   period_amount?: number;
   monthly_rent?: number;
   extraction_confidence: number;
+  match_confidence?: number;
   needs_review: boolean;
   reviewed: boolean;
   needs_review_reason?: string;

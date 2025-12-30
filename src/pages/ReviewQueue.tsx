@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react'
 import { reviewService } from '../lib/review'
 import { propertyService } from '../lib/property'
+import { financialPeriodsService, type FinancialPeriod } from '../lib/financial_periods'
 import { QualityBadge } from '../components/QualityBadge'
 import { EditRecordModal } from '../components/EditRecordModal'
 import { DetailedReviewModal } from '../components/review/DetailedReviewModal'
@@ -41,11 +42,14 @@ export default function ReviewQueue() {
 
   const [reviewItems, setReviewItems] = useState<ReviewQueueItem[]>([])
   const [properties, setProperties] = useState<Property[]>([])
+  const [periods, setPeriods] = useState<FinancialPeriod[]>([])
+  const [allPeriods, setAllPeriods] = useState<FinancialPeriod[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
     property_code: '',
     document_type: '',
-    severity: getSeverityFromHash()
+    severity: getSeverityFromHash(),
+    period: ''
   })
   const [selectedItem, setSelectedItem] = useState<ReviewQueueItem | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -54,12 +58,22 @@ export default function ReviewQueue() {
   
   useEffect(() => {
     loadProperties()
+    loadAllPeriods()
     loadReviewQueue()
   }, [])
   
   useEffect(() => {
     loadReviewQueue()
   }, [filters])
+
+  // Load periods when property changes (after properties list is available)
+  useEffect(() => {
+    if (!filters.property_code) {
+      setPeriods(allPeriods)
+      return
+    }
+    loadPeriods(filters.property_code)
+  }, [filters.property_code, properties, allPeriods])
   
   const loadProperties = async () => {
     try {
@@ -69,6 +83,44 @@ export default function ReviewQueue() {
       console.error('Failed to load properties:', error)
     }
   }
+
+  const loadAllPeriods = async () => {
+    try {
+      const data = await financialPeriodsService.listPeriods()
+      const sorted = data
+        .map(p => ({ ...p, name: p.name || `${p.period_year}-${String(p.period_month).padStart(2, '0')}` }))
+        .sort((a, b) => (b.period_year - a.period_year) || (b.period_month - a.period_month))
+      setAllPeriods(sorted)
+      // Initialize dropdown when no property is chosen
+      if (!filters.property_code) {
+        setPeriods(sorted)
+      }
+    } catch (error) {
+      console.error('Failed to load periods:', error)
+      setAllPeriods([])
+      setPeriods([])
+    }
+  }
+
+  const loadPeriods = async (propertyCode: string) => {
+    const property = properties.find(p => p.property_code === propertyCode)
+    if (!property) {
+      setPeriods(allPeriods)
+      return
+    }
+
+    try {
+      const data = await financialPeriodsService.listPeriods({ property_id: property.id })
+      // Sort newest first
+      const sorted = data
+        .map(p => ({ ...p, name: p.name || `${p.period_year}-${String(p.period_month).padStart(2, '0')}` }))
+        .sort((a, b) => (b.period_year - a.period_year) || (b.period_month - a.period_month))
+      setPeriods(sorted)
+    } catch (error) {
+      console.error('Failed to load periods:', error)
+      setPeriods(allPeriods)
+    }
+  }
   
   const loadReviewQueue = async () => {
     try {
@@ -76,6 +128,16 @@ export default function ReviewQueue() {
       const params: any = {}
       if (filters.property_code) params.property_code = filters.property_code
       if (filters.document_type) params.document_type = filters.document_type
+      if (filters.severity) params.severity = filters.severity
+      if (filters.period) {
+        const [yearStr, monthStr] = filters.period.split('-')
+        const year = Number(yearStr)
+        const month = Number(monthStr)
+        if (!Number.isNaN(year) && !Number.isNaN(month)) {
+          params.period_year = year
+          params.period_month = month
+        }
+      }
       
       const data = await reviewService.getReviewQueue(params)
       
@@ -301,12 +363,12 @@ export default function ReviewQueue() {
         {/* Filters */}
         <div className="card">
           <h3>Filters</h3>
-          <div className="filters-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+          <div className="filters-section" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
             <div className="form-group">
               <label>Property</label>
               <select 
                 value={filters.property_code} 
-                onChange={(e) => setFilters({...filters, property_code: e.target.value})}
+                onChange={(e) => setFilters({...filters, property_code: e.target.value, period: ''})}
                 style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
               >
                 <option value="">All Properties</option>
@@ -331,6 +393,22 @@ export default function ReviewQueue() {
               </select>
             </div>
             
+            <div className="form-group">
+              <label>Period</label>
+              <select
+                value={filters.period}
+                onChange={(e) => setFilters({ ...filters, period: e.target.value })}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+              >
+                <option value="">All Periods</option>
+                {periods.map((p) => (
+                  <option key={`${p.period_year}-${p.period_month}`} value={`${p.period_year}-${String(p.period_month).padStart(2, '0')}`}>
+                    {p.name || `${p.period_year}-${String(p.period_month).padStart(2, '0')}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="form-group">
               <label>Severity</label>
               <select 
@@ -480,4 +558,3 @@ export default function ReviewQueue() {
     </div>
   )
 }
-

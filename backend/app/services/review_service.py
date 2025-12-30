@@ -66,6 +66,8 @@ class ReviewService:
         property_code: Optional[str] = None,
         document_type: Optional[str] = None,
         severity: Optional[str] = None,
+        period_year: Optional[int] = None,
+        period_month: Optional[int] = None,
         skip: int = 0,
         limit: int = 100
     ) -> Dict[str, Any]:
@@ -76,6 +78,8 @@ class ReviewService:
             property_code: Filter by property code (optional)
             document_type: Filter by document type (optional)
             severity: Filter by severity - 'critical' (<85%), 'warning' (85-95%), or 'all' (optional)
+            period_year: Filter by fiscal year (optional)
+            period_month: Filter by fiscal month (optional, requires year)
             skip: Pagination offset
             limit: Maximum records to return
 
@@ -122,6 +126,12 @@ class ReviewService:
             if property_code:
                 query = query.filter(Property.property_code == property_code)
             
+            # Apply period filter
+            if period_year:
+                query = query.filter(FinancialPeriod.period_year == period_year)
+            if period_month:
+                query = query.filter(FinancialPeriod.period_month == period_month)
+            
             # Apply document type filter (map to table)
             if document_type:
                 doc_table_map = {
@@ -156,6 +166,7 @@ class ReviewService:
                     "account_name": getattr(record, "account_name", None),
                     "unit_number": getattr(record, "unit_number", None),
                     "extraction_confidence": float(record.extraction_confidence) if record.extraction_confidence else None,
+                    "match_confidence": float(getattr(record, "match_confidence")) if getattr(record, "match_confidence", None) is not None else None,
                     "needs_review": record.needs_review,
                     "reviewed": record.reviewed,
                     "created_at": record.created_at,
@@ -989,4 +1000,3 @@ class ReviewService:
                 record_dict[field_name] = value
         
         return record_dict
-

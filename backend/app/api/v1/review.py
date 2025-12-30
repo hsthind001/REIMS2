@@ -27,6 +27,9 @@ router = APIRouter()
 async def get_review_queue(
     property_code: Optional[str] = Query(None, description="Filter by property code"),
     document_type: Optional[str] = Query(None, description="Filter by document type (balance_sheet, income_statement, cash_flow, rent_roll)"),
+    severity: Optional[str] = Query(None, description="Filter by severity: critical (<85%), warning (85-95%), or all"),
+    period_year: Optional[int] = Query(None, description="Filter by period year (e.g., 2025)"),
+    period_month: Optional[int] = Query(None, ge=1, le=12, description="Filter by period month (1-12)"),
     skip: int = Query(0, ge=0, description="Number of records to skip (pagination)"),
     limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
     db: Session = Depends(get_db)
@@ -43,6 +46,8 @@ async def get_review_queue(
     **Filters:**
     - property_code: Filter by specific property
     - document_type: Filter by financial statement type
+    - severity: Filter by severity level (critical, warning, all)
+    - period_year / period_month: Filter by specific fiscal period
     
     **Pagination:**
     - skip: Number of records to skip
@@ -58,6 +63,9 @@ async def get_review_queue(
         result = review_service.get_review_queue(
             property_code=property_code,
             document_type=document_type,
+            severity=severity,
+            period_year=period_year,
+            period_month=period_month,
             skip=skip,
             limit=limit
         )
@@ -308,4 +316,3 @@ async def bulk_approve_records(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Bulk approve failed: {str(e)}"
         )
-

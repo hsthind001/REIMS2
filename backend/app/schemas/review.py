@@ -25,6 +25,7 @@ class ReviewQueueItem(BaseModel):
     period_amount: Optional[float] = None
     monthly_rent: Optional[float] = None
     extraction_confidence: Optional[float] = None
+    match_confidence: Optional[float] = None
     needs_review: bool
     reviewed: bool
     needs_review_reason: Optional[str] = None
@@ -45,6 +46,7 @@ class ReviewQueueItem(BaseModel):
                 "unit_number": None,
                 "amount": 50000.00,
                 "extraction_confidence": 95.5,
+                "match_confidence": 98.0,
                 "needs_review": True,
                 "reviewed": False,
                 "created_at": "2024-12-01T10:00:00Z"
@@ -243,4 +245,3 @@ class ReviewSummaryResponse(BaseModel):
                 "avg_confidence": 92.5
             }
         }
-

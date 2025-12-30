@@ -14,6 +14,9 @@ export class ReviewService {
   async getReviewQueue(params?: {
     property_code?: string;
     document_type?: string;
+    severity?: string;
+    period_year?: number;
+    period_month?: number;
     skip?: number;
     limit?: number;
   }): Promise<any> {
@@ -63,7 +66,17 @@ export class ReviewService {
     document_type?: string;
     severity?: string;
   }): Promise<Blob> {
-    const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/review/export`, {
+    const queryString = params 
+      ? new URLSearchParams(
+          Object.entries(params)
+            .filter(([_, v]) => v !== undefined && v !== null && v !== '')
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : '';
+
+    const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/review/export${queryString ? `?${queryString}` : ''}`;
+
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -81,4 +94,3 @@ export class ReviewService {
 
 // Export singleton
 export const reviewService = new ReviewService();
-
