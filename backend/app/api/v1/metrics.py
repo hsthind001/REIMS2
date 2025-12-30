@@ -46,7 +46,8 @@ class FinancialMetricsResponse(BaseModel):
     total_equity: Optional[float] = None
     current_ratio: Optional[float] = None
     debt_to_equity_ratio: Optional[float] = None
-    
+    ltv_ratio: Optional[float] = None
+
     # Income Statement Metrics
     total_revenue: Optional[float] = None
     total_expenses: Optional[float] = None
@@ -220,6 +221,7 @@ async def get_financial_metrics(
             total_equity=float(metrics.total_equity) if metrics.total_equity else None,
             current_ratio=float(metrics.current_ratio) if metrics.current_ratio else None,
             debt_to_equity_ratio=float(metrics.debt_to_equity_ratio) if metrics.debt_to_equity_ratio else None,
+            ltv_ratio=float(metrics.ltv_ratio) if metrics.ltv_ratio else None,
             total_revenue=float(metrics.total_revenue) if metrics.total_revenue else None,
             total_expenses=float(metrics.total_expenses) if metrics.total_expenses else None,
             net_operating_income=float(metrics.net_operating_income) if metrics.net_operating_income else None,
