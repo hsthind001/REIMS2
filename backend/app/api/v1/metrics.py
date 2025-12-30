@@ -1656,59 +1656,41 @@ async def get_property_costs(
     db: Session = Depends(get_db)
 ):
     """
-    Get detailed cost breakdown for a property
+    Get detailed cost breakdown for a property - ANNUAL TOTALS
 
     Returns:
     - Insurance, Mortgage, Utilities, Maintenance, Taxes, Other
     - Total costs
-    - Based on latest financial period expenses
+    - Based on summing all 12 months of the latest year with data
     """
     try:
         property_obj = db.query(Property).filter(Property.id == property_id).first()
         if not property_obj:
             raise HTTPException(404, "Property not found")
 
-        # Get latest period WITH actual income statement line items (not just metrics)
-        # We need detailed expense breakdown from income_statement_data table
+        # Get latest year WITH actual income statement line items
         from app.models.income_statement_data import IncomeStatementData
         from app.models.income_statement_header import IncomeStatementHeader
 
-        # Find the latest period that has income statement data
-        latest_period_with_data = db.query(
-            FinancialPeriod.id,
-            FinancialPeriod.period_year,
-            FinancialPeriod.period_month
+        # Find the latest year that has income statement data
+        latest_year_with_data = db.query(
+            FinancialPeriod.period_year
         ).join(
             IncomeStatementData,
             IncomeStatementData.period_id == FinancialPeriod.id
         ).filter(
             FinancialPeriod.property_id == property_id
         ).group_by(
-            FinancialPeriod.id,
-            FinancialPeriod.period_year,
-            FinancialPeriod.period_month
+            FinancialPeriod.period_year
         ).order_by(
-            FinancialPeriod.period_year.desc(),
-            FinancialPeriod.period_month.desc()
+            FinancialPeriod.period_year.desc()
         ).first()
 
-        if not latest_period_with_data:
+        if not latest_year_with_data:
             raise HTTPException(404, "No income statement data found for property")
 
-        period_id, year, month = latest_period_with_data
+        year = latest_year_with_data[0]
 
-        # Get financial metrics for this period (for total_expenses)
-        metrics = db.query(FinancialMetrics).filter(
-            FinancialMetrics.property_id == property_id,
-            FinancialMetrics.period_id == period_id
-        ).first()
-        
-        # Get income statement header for this period
-        income_header = db.query(IncomeStatementHeader).filter(
-            IncomeStatementHeader.property_id == property_id,
-            IncomeStatementHeader.period_id == period_id
-        ).first()
-        
         costs = {
             "insurance": 0.0,
             "mortgage": 0.0,
@@ -1717,24 +1699,17 @@ async def get_property_costs(
             "taxes": 0.0,
             "other": 0.0
         }
-        
-        # Get expense line items from income statement
-        # Try with header_id first if header exists, then fall back to period_id only
-        expense_items = []
-        if income_header:
-            expense_items = db.query(IncomeStatementData).filter(
-                IncomeStatementData.property_id == property_id,
-                IncomeStatementData.period_id == period_id,
-                IncomeStatementData.header_id == income_header.id
-            ).all()
 
-        # If no items found with header_id, try without header_id (some data might not have header)
-        if not expense_items:
-            expense_items = db.query(IncomeStatementData).filter(
-                IncomeStatementData.property_id == property_id,
-                IncomeStatementData.period_id == period_id
-            ).all()
-        
+        # Get ALL expense line items for the entire year (all 12 months)
+        # Sum period_amount across all periods in the year
+        expense_items = db.query(IncomeStatementData).join(
+            FinancialPeriod,
+            IncomeStatementData.period_id == FinancialPeriod.id
+        ).filter(
+            IncomeStatementData.property_id == property_id,
+            FinancialPeriod.period_year == year
+        ).all()
+
         if expense_items:
             for item in expense_items:
                 account_code = item.account_code or ''
@@ -1763,31 +1738,20 @@ async def get_property_costs(
         
         # Round all costs
         costs = {k: round(v, 2) for k, v in costs.items()}
-        
+
         # Calculate total as sum of all operating expense categories
-        # This represents Total Annual Operating Expenses (Insurance + Mortgage + Utilities + Maintenance + Taxes + Other)
+        # This represents Total Annual Operating Expenses for the entire year
+        # (sum of all 12 months: Insurance + Mortgage + Utilities + Maintenance + Taxes + Other)
         # Note: Initial Buying (purchase price) is NOT included as it's a one-time cost, not an annual expense
-        total_operating_expenses = sum(costs.values())
-        
-        # Use total_expenses from metrics if available and reasonable, otherwise use calculated sum
-        # total_expenses from metrics might include other expenses not categorized above
-        if metrics and metrics.total_expenses and metrics.total_expenses > 0:
-            # Use metrics total if it's close to our calculated sum (within 10%)
-            # Only compare if we have calculated expenses to avoid division by zero
-            if total_operating_expenses > 0 and abs(float(metrics.total_expenses) - total_operating_expenses) / total_operating_expenses < 0.1:
-                total_operating_expenses = float(metrics.total_expenses)
-            elif total_operating_expenses == 0:
-                # If we have no calculated expenses but metrics has total_expenses, use it
-                total_operating_expenses = float(metrics.total_expenses)
-            # Otherwise use calculated sum (more accurate breakdown)
+        total_annual_expenses = sum(costs.values())
 
         return PropertyCostsResponse(
             property_id=property_id,
             property_code=property_obj.property_code,
             period_year=year,
-            period_month=month,
+            period_month=12,  # Represents full year (all 12 months summed)
             costs=costs,
-            total_costs=round(total_operating_expenses, 2),
+            total_costs=round(total_annual_expenses, 2),
             calculated_at=datetime.now()
         )
 
