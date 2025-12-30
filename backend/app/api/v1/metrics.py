@@ -210,13 +210,16 @@ async def get_financial_metrics(
             )
         
         # Build response
+        # Use net_property_value as fallback when total_assets is NULL
+        property_value = metrics.total_assets if metrics.total_assets is not None else metrics.net_property_value
+
         response = FinancialMetricsResponse(
             property_id=property_obj.id,
             property_code=property_code,
             period_id=period.id,
             period_year=year,
             period_month=month,
-            total_assets=float(metrics.total_assets) if metrics.total_assets else None,
+            total_assets=float(property_value) if property_value else None,
             total_liabilities=float(metrics.total_liabilities) if metrics.total_liabilities else None,
             total_equity=float(metrics.total_equity) if metrics.total_equity else None,
             current_ratio=float(metrics.current_ratio) if metrics.current_ratio else None,
