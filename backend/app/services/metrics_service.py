@@ -220,24 +220,41 @@ class MetricsService:
     def _calculate_leverage_metrics(self, property_id: int, period_id: int, totals: Dict) -> Dict:
         """
         Calculate leverage metrics (Template v1.0)
-        
+
         Metrics:
         - Debt-to-Assets Ratio: Total Liabilities / Total Assets
         - Debt-to-Equity Ratio: Total Liabilities / Total Equity
         - Equity Ratio: Total Equity / Total Assets
-        - LTV Ratio: Total Long-Term Debt / Net Property Value
+        - LTV Ratio: Total Loan Balance (from mortgage data) / Net Property Value
         """
         total_assets = totals.get("total_assets") or Decimal('0')
         total_liabilities = totals.get("total_liabilities") or Decimal('0')
         total_equity = totals.get("total_equity") or Decimal('0')
-        long_term_debt = totals.get("total_long_term_liabilities") or Decimal('0')
-        net_property_value = totals.get("total_property_equipment") or Decimal('0')
-        
+
+        # Get property value - use total_property_equipment if available, otherwise use net_property_value from existing metrics
+        net_property_value = totals.get("total_property_equipment")
+        if not net_property_value or net_property_value == Decimal('0'):
+            # Fallback to net_property_value from existing financial_metrics record
+            existing_metrics = self.db.query(FinancialMetrics).filter(
+                FinancialMetrics.property_id == property_id,
+                FinancialMetrics.period_id == period_id
+            ).first()
+            if existing_metrics and existing_metrics.net_property_value:
+                net_property_value = existing_metrics.net_property_value
+            else:
+                net_property_value = Decimal('0')
+
+        # Get loan balance from mortgage statement data (preferred) or balance sheet
+        loan_balance = self._get_loan_balance_from_mortgage(property_id, period_id)
+        if loan_balance == Decimal('0'):
+            # Fallback to balance sheet long-term debt if mortgage data not available
+            loan_balance = totals.get("total_long_term_liabilities") or Decimal('0')
+
         return {
             "debt_to_assets_ratio": self.safe_divide(total_liabilities, total_assets),
             "debt_to_equity_ratio": self.safe_divide(total_liabilities, total_equity),
             "equity_ratio": self.safe_divide(total_equity, total_assets),
-            "ltv_ratio": self.safe_divide(long_term_debt, net_property_value),
+            "ltv_ratio": self.safe_divide(loan_balance, net_property_value),
         }
     
     def _calculate_property_metrics(self, property_id: int, period_id: int) -> Dict:
@@ -925,9 +942,9 @@ class MetricsService:
         return result if result else None
     
     def _get_income_statement_total(
-        self, 
-        property_id: int, 
-        period_id: int, 
+        self,
+        property_id: int,
+        period_id: int,
         account_code: str
     ) -> Optional[Decimal]:
         """Query specific total from income statement"""
@@ -936,8 +953,26 @@ class MetricsService:
             IncomeStatementData.period_id == period_id,
             IncomeStatementData.account_code == account_code
         ).first()
-        
+
         return result[0] if result else None
+
+    def _get_loan_balance_from_mortgage(
+        self,
+        property_id: int,
+        period_id: int
+    ) -> Decimal:
+        """
+        Get total loan balance from mortgage statement data
+
+        Returns the total_loan_balance from mortgage_statement_data if available,
+        otherwise returns 0.
+        """
+        result = self.db.query(MortgageStatementData.total_loan_balance).filter(
+            MortgageStatementData.property_id == property_id,
+            MortgageStatementData.period_id == period_id
+        ).first()
+
+        return Decimal(str(result[0])) if result and result[0] else Decimal('0')
     
     def _sum_income_statement_accounts(
         self, 

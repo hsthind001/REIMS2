@@ -491,6 +491,7 @@ export default function CommandCenter() {
             // Get DSCR from latest complete period (not just latest period)
             // This ensures we use DSCR only when all required documents are available
             let dscr: number | null = null;
+            let ltv: number | null = null;
             let status: 'critical' | 'warning' | 'good' = 'good';
 
             try {
@@ -504,6 +505,23 @@ export default function CommandCenter() {
                 if (dscrData.dscr !== null && dscrData.dscr !== undefined) {
                   dscr = dscrData.dscr;
                 }
+                // Also get LTV from the same latest complete period
+                if (dscrData.period && dscrData.period.id) {
+                  try {
+                    const ltvResponse = await fetch(
+                      `${API_BASE_URL}/metrics/${property.property_code}/${dscrData.period.year}/${dscrData.period.month}`,
+                      { credentials: 'include' }
+                    );
+                    if (ltvResponse.ok) {
+                      const ltvData = await ltvResponse.json();
+                      if (ltvData.ltv_ratio !== null && ltvData.ltv_ratio !== undefined) {
+                        ltv = ltvData.ltv_ratio;
+                      }
+                    }
+                  } catch (ltvErr) {
+                    console.warn(`Failed to fetch LTV for ${property.property_code}`, ltvErr);
+                  }
+                }
               }
             } catch (dscrErr) {
               console.warn(`Failed to fetch DSCR for ${property.property_code}, falling back to metrics summary`, dscrErr);
@@ -516,8 +534,10 @@ export default function CommandCenter() {
               status = dscr < 1.25 ? 'critical' : dscr < 1.35 ? 'warning' : 'good';
             }
 
-            // Get LTV from metrics summary (already calculated by backend)
-            let ltv: number | null = metric.ltv_ratio !== null && metric.ltv_ratio !== undefined ? metric.ltv_ratio : null;
+            // Fallback to metrics summary LTV if not fetched from latest complete period
+            if (ltv === null) {
+              ltv = metric.ltv_ratio !== null && metric.ltv_ratio !== undefined ? metric.ltv_ratio : null;
+            }
 
             return {
               id: property.id,
