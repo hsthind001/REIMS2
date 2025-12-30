@@ -711,14 +711,12 @@ async def get_cap_rate(
                 detail="Property not found"
             )
 
-        # Get most recent metrics WITH actual NOI and total_assets data
-        # Don't use periods that only have rent roll data (like April 2025 for ESP001)
+        # Get most recent metrics WITH actual NOI and property value data
+        # Use net_property_value as fallback when total_assets is NULL
         latest_metrics = db.query(FinancialMetrics).filter(
             FinancialMetrics.property_id == property_id,
             FinancialMetrics.net_operating_income.isnot(None),
-            FinancialMetrics.total_assets.isnot(None),
-            FinancialMetrics.net_operating_income > 0,
-            FinancialMetrics.total_assets > 0
+            FinancialMetrics.net_operating_income > 0
         ).join(FinancialPeriod).order_by(
             FinancialPeriod.period_year.desc(),
             FinancialPeriod.period_month.desc()
@@ -727,11 +725,20 @@ async def get_cap_rate(
         if not latest_metrics:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Insufficient data to calculate cap rate (need NOI and property value)"
+                detail="Insufficient data to calculate cap rate (need NOI)"
+            )
+
+        # Use net_property_value as fallback when total_assets is NULL
+        property_value = latest_metrics.total_assets if latest_metrics.total_assets else latest_metrics.net_property_value
+
+        if not property_value or property_value <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Insufficient data to calculate cap rate (need property value)"
             )
 
         noi = float(latest_metrics.net_operating_income)
-        property_value = float(latest_metrics.total_assets)
+        property_value = float(property_value)
         cap_rate = (noi / property_value) * 100 if property_value > 0 else 0
 
         return CapRateResponse(
