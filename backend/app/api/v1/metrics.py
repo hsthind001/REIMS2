@@ -1746,10 +1746,10 @@ async def get_property_costs(
                     continue
 
                 # Map account codes to expense categories based on Chart of Accounts
-                # Only match expenses (5xxx, 6xxx, 7xxx, 8xxx series)
+                # Only match expenses (5xxx, 6xxx, 7xxx, 8xxx series) and mortgage interest (2909)
                 if account_code.startswith('5012') or (account_code.startswith('5') and 'INSURANCE' in account_name):
                     costs["insurance"] += amount
-                elif account_code.startswith('7000') or (account_code.startswith('7') and ('MORTGAGE' in account_name or 'INTEREST' in account_name)):
+                elif account_code == '2909-0000' or account_code.startswith('7000') or (account_code.startswith('7') and ('MORTGAGE' in account_name or 'INTEREST' in account_name)) or ('MORTGAGE' in account_name and 'INTEREST' in account_name):
                     costs["mortgage"] += amount
                 elif account_code.startswith('5100') or account_code.startswith('5105') or account_code.startswith('5115') or account_code.startswith('5125') or account_code.startswith('5199') or (account_code.startswith('5') and ('UTILITY' in account_name or 'ELECTRIC' in account_name or 'WATER' in account_name)):
                     costs["utilities"] += amount
