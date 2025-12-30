@@ -768,7 +768,7 @@ export default function CommandCenter() {
         // If there's a latest complete period, fetch DSCR for it
         if (matrixData.latest_complete_period) {
           const dscrResponse = await fetch(
-            `${API_BASE_URL}/metrics/${propertyId}/dscr/latest-complete?year=${year}`,
+            `${API_BASE_URL}/dscr/latest-complete/${propertyId}?year=${year}`,
             { credentials: 'include' }
           );
 
