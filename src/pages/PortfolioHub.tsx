@@ -330,13 +330,32 @@ export default function PortfolioHub() {
       }
       
       if (propertyMetric) {
-        // Get DSCR and LTV from metrics summary (already calculated by backend)
-        let dscr: number | null = propertyMetric.dscr !== null && propertyMetric.dscr !== undefined ? propertyMetric.dscr : null;
+        // Get DSCR from latest complete period (same logic as Command Center)
+        let dscr: number | null = null;
         let ltv: number | null = propertyMetric.ltv_ratio !== null && propertyMetric.ltv_ratio !== undefined ? propertyMetric.ltv_ratio : null;
         let capRate: number | null = null;
 
         try {
-          // Only fetch cap rate (DSCR and LTV are already in metrics summary)
+          // Fetch DSCR from latest complete period (all documents available)
+          const dscrResponse = await fetch(
+            `${API_BASE_URL}/dscr/latest-complete/${propertyId}?year=${new Date().getFullYear()}`,
+            { credentials: 'include' }
+          );
+
+          if (dscrResponse.ok) {
+            const dscrData = await dscrResponse.json();
+            if (dscrData.dscr !== null && dscrData.dscr !== undefined) {
+              dscr = dscrData.dscr;
+            }
+          }
+        } catch (dscrErr) {
+          console.error('Failed to fetch DSCR from latest complete period:', dscrErr);
+          // Fallback to metrics summary DSCR if latest complete period fetch fails
+          dscr = propertyMetric.dscr !== null && propertyMetric.dscr !== undefined ? propertyMetric.dscr : null;
+        }
+
+        try {
+          // Fetch cap rate
           const capRateRes = await fetch(`${API_BASE_URL}/metrics/${propertyId}/cap-rate`, { credentials: 'include' });
 
           if (capRateRes.ok) {
