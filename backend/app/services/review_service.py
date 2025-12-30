@@ -65,24 +65,26 @@ class ReviewService:
         self,
         property_code: Optional[str] = None,
         document_type: Optional[str] = None,
+        severity: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> Dict[str, Any]:
         """
         Get all records needing review across all financial tables
-        
+
         Args:
             property_code: Filter by property code (optional)
             document_type: Filter by document type (optional)
+            severity: Filter by severity - 'critical' (<85%), 'warning' (85-95%), or 'all' (optional)
             skip: Pagination offset
             limit: Maximum records to return
-        
+
         Returns:
             Dict with review queue items and counts
         """
         review_items = []
         total_count = 0
-        
+
         # Query each financial table
         for table_name, model in TABLE_MODEL_MAP.items():
             query = self.db.query(
@@ -98,9 +100,23 @@ class ReviewService:
                 FinancialPeriod, model.period_id == FinancialPeriod.id
             ).join(
                 DocumentUpload, model.upload_id == DocumentUpload.id
-            ).filter(
-                model.needs_review == True
             )
+
+            # Apply severity filter
+            if severity == 'critical':
+                # Critical: needs_review = True OR extraction_confidence < 85
+                query = query.filter(
+                    (model.needs_review == True) | (model.extraction_confidence < 85)
+                )
+            elif severity == 'warning':
+                # Warning: extraction_confidence 85-95%
+                query = query.filter(
+                    model.extraction_confidence >= 85,
+                    model.extraction_confidence < 95
+                )
+            else:
+                # Default: only show items with needs_review = True
+                query = query.filter(model.needs_review == True)
             
             # Apply property filter
             if property_code:
