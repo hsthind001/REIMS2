@@ -11,12 +11,39 @@ from app.services.statistical_anomaly_service import StatisticalAnomalyService
 from app.models.property import Property
 from app.models.financial_metrics import FinancialMetrics
 from app.core.config import settings
+from sqlalchemy import text
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Maximum number of parallel workers for anomaly detection
 MAX_PARALLEL_WORKERS = getattr(settings, 'BATCH_PROCESSING_MAX_CONCURRENT', 4)
+
+
+def _get_metrics_to_check() -> list:
+    base_metrics = [
+        "total_revenue",
+        "net_operating_income",
+        "occupancy_rate",
+        "dscr",
+        "total_expenses",
+        "net_income"
+    ]
+    skip_cols = {"id", "property_id", "period_id", "created_at", "updated_at", "calculated_at"}
+    for column in FinancialMetrics.__table__.columns:
+        if column.name in skip_cols:
+            continue
+        col_type = str(column.type).upper()
+        if "DECIMAL" in col_type or "NUMERIC" in col_type or "INTEGER" in col_type:
+            base_metrics.append(column.name)
+    # Deduplicate while preserving order
+    seen = set()
+    metrics = []
+    for name in base_metrics:
+        if name not in seen:
+            metrics.append(name)
+            seen.add(name)
+    return metrics
 
 
 @celery_app.task(name="app.tasks.anomaly_detection_tasks.run_nightly_anomaly_detection", bind=True)
@@ -38,7 +65,8 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
     db = SessionLocal()
     try:
         # Get all active properties
-        properties = db.query(Property).filter(Property.is_active == True).all()
+        properties = db.query(Property).filter(Property.status == "active").all()
+        logger.debug("Fetched %s active properties for anomaly detection", len(properties))
         
         if not properties:
             return {
@@ -50,14 +78,8 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
             }
         
         # Metrics to check for anomalies
-        metrics_to_check = [
-            "total_revenue",
-            "net_operating_income",
-            "occupancy_rate",
-            "dscr",
-            "total_expenses",
-            "net_income"
-        ]
+        metrics_to_check = _get_metrics_to_check()
+        logger.debug("Anomaly detection metrics: %s", metrics_to_check)
         
         # Use parallel processing if enabled and we have multiple properties
         if use_parallel and len(properties) > 1:
@@ -65,7 +87,7 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
             property_ids = [p.id for p in properties]
             result = detect_anomalies_parallel(property_ids=property_ids, metric_names=metrics_to_check)
             result["parallel_processing_used"] = True
-            result["timestamp"] = str(db.execute("SELECT NOW()").scalar())
+            result["timestamp"] = str(db.execute(text("SELECT NOW()")).scalar())
             return result
         
         # Sequential processing (fallback or single property)
@@ -79,6 +101,7 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
         for property_obj in properties:
             try:
                 property_anomalies = []
+                logger.debug("Scanning property %s (%s)", property_obj.id, property_obj.property_code)
                 
                 # Check each metric
                 for metric_name in metrics_to_check:
@@ -93,6 +116,27 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
                         
                         if zscore_result.get("success") and zscore_result.get("anomalies"):
                             property_anomalies.extend(zscore_result["anomalies"])
+                            persisted = anomaly_service.persist_statistical_anomalies(
+                                property_id=property_obj.id,
+                                metric_name=metric_name,
+                                anomalies=zscore_result.get("anomalies", []),
+                                detection_method="zscore",
+                                statistics=zscore_result.get("statistics")
+                            )
+                            if persisted:
+                                logger.debug(
+                                    "Persisted %s zscore anomalies for property %s metric %s",
+                                    persisted,
+                                    property_obj.id,
+                                    metric_name
+                                )
+                        elif not zscore_result.get("success"):
+                            logger.debug(
+                                "Z-score failed for property %s metric %s: %s",
+                                property_obj.id,
+                                metric_name,
+                                zscore_result.get("error")
+                            )
                         
                         # CUSUM detection
                         cusum_result = anomaly_service.detect_anomalies_cusum(
@@ -101,8 +145,29 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
                             lookback_periods=12
                         )
                         
-                        if cusum_result.get("success") and cusum_result.get("anomalies"):
-                            property_anomalies.extend(cusum_result["anomalies"])
+                        if cusum_result.get("success") and cusum_result.get("change_points"):
+                            property_anomalies.extend(cusum_result["change_points"])
+                            persisted = anomaly_service.persist_statistical_anomalies(
+                                property_id=property_obj.id,
+                                metric_name=metric_name,
+                                anomalies=cusum_result.get("change_points", []),
+                                detection_method="cusum",
+                                statistics=cusum_result.get("statistics")
+                            )
+                            if persisted:
+                                logger.debug(
+                                    "Persisted %s cusum anomalies for property %s metric %s",
+                                    persisted,
+                                    property_obj.id,
+                                    metric_name
+                                )
+                        elif not cusum_result.get("success"):
+                            logger.debug(
+                                "CUSUM failed for property %s metric %s: %s",
+                                property_obj.id,
+                                metric_name,
+                                cusum_result.get("error")
+                            )
                             
                     except Exception as e:
                         logger.error(f"Error checking {metric_name} for property {property_obj.id}: {e}")
@@ -116,6 +181,11 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
                         "anomalies": property_anomalies
                     }
                     total_anomalies += len(property_anomalies)
+                logger.debug(
+                    "Property %s anomalies: %s",
+                    property_obj.id,
+                    len(property_anomalies)
+                )
                 
                 properties_checked += 1
                 
@@ -129,7 +199,7 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
             "total_anomalies": total_anomalies,
             "anomalies_by_property": anomalies_by_property,
             "parallel_processing_used": False,
-            "timestamp": str(db.execute("SELECT NOW()").scalar())
+            "timestamp": str(db.execute(text("SELECT NOW()")).scalar())
         }
         
         logger.info(f"Nightly anomaly detection completed: {total_anomalies} anomalies found across {properties_checked} properties")
@@ -166,14 +236,8 @@ def detect_anomalies_for_property(self: Task, property_id: int, metric_name: str
         if not property_obj:
             return {"success": False, "error": "Property not found"}
         
-        metrics_to_check = [metric_name] if metric_name else [
-            "total_revenue",
-            "net_operating_income",
-            "occupancy_rate",
-            "dscr",
-            "total_expenses",
-            "net_income"
-        ]
+        metrics_to_check = [metric_name] if metric_name else _get_metrics_to_check()
+        logger.debug("On-demand anomaly scan property=%s metrics=%s", property_id, metrics_to_check)
         
         all_anomalies = []
         
@@ -189,6 +253,20 @@ def detect_anomalies_for_property(self: Task, property_id: int, metric_name: str
                 
                 if zscore_result.get("success") and zscore_result.get("anomalies"):
                     all_anomalies.extend(zscore_result["anomalies"])
+                    anomaly_service.persist_statistical_anomalies(
+                        property_id=property_id,
+                        metric_name=metric,
+                        anomalies=zscore_result.get("anomalies", []),
+                        detection_method="zscore",
+                        statistics=zscore_result.get("statistics")
+                    )
+                elif not zscore_result.get("success"):
+                    logger.debug(
+                        "Z-score failed for property %s metric %s: %s",
+                        property_id,
+                        metric,
+                        zscore_result.get("error")
+                    )
                 
                 # CUSUM detection
                 cusum_result = anomaly_service.detect_anomalies_cusum(
@@ -197,8 +275,22 @@ def detect_anomalies_for_property(self: Task, property_id: int, metric_name: str
                     lookback_periods=12
                 )
                 
-                if cusum_result.get("success") and cusum_result.get("anomalies"):
-                    all_anomalies.extend(cusum_result["anomalies"])
+                if cusum_result.get("success") and cusum_result.get("change_points"):
+                    all_anomalies.extend(cusum_result["change_points"])
+                    anomaly_service.persist_statistical_anomalies(
+                        property_id=property_id,
+                        metric_name=metric,
+                        anomalies=cusum_result.get("change_points", []),
+                        detection_method="cusum",
+                        statistics=cusum_result.get("statistics")
+                    )
+                elif not cusum_result.get("success"):
+                    logger.debug(
+                        "CUSUM failed for property %s metric %s: %s",
+                        property_id,
+                        metric,
+                        cusum_result.get("error")
+                    )
                     
             except Exception as e:
                 logger.error(f"Error checking {metric} for property {property_id}: {e}")
@@ -239,10 +331,12 @@ def detect_anomalies_parallel(self: Task, property_ids: list = None, metric_name
         if property_ids:
             properties = db.query(Property).filter(
                 Property.id.in_(property_ids),
-                Property.is_active == True
+                Property.status == "active"
             ).all()
         else:
-            properties = db.query(Property).filter(Property.is_active == True).all()
+            properties = db.query(Property).filter(Property.status == "active").all()
+
+        logger.debug("Prepared %s properties for parallel anomaly detection", len(properties))
         
         if not properties:
             return {
@@ -338,4 +432,3 @@ def detect_anomalies_parallel(self: Task, property_ids: list = None, metric_name
         }
     finally:
         db.close()
-

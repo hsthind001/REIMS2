@@ -99,28 +99,29 @@ export default function RiskManagement() {
     fetchProperties()
   }, [])
 
+  const shouldLoadRiskItems = ['unified', 'anomalies', 'alerts', 'locks'].includes(viewMode)
+
   // Auto-refresh
   useEffect(() => {
     if (!autoRefresh) return
     
     const interval = setInterval(() => {
-      if (viewMode === 'unified') {
+      loadDashboardStats()
+      if (shouldLoadRiskItems) {
         loadUnifiedRiskItems()
-      } else {
-        loadDashboardStats()
       }
     }, refreshInterval)
     
     return () => clearInterval(interval)
-  }, [autoRefresh, refreshInterval, viewMode, filters])
+  }, [autoRefresh, refreshInterval, viewMode, filters, shouldLoadRiskItems])
 
   // Load data when filters or view changes
   useEffect(() => {
     loadDashboardStats()
-    if (viewMode === 'unified') {
+    if (shouldLoadRiskItems) {
       loadUnifiedRiskItems()
     }
-  }, [selectedProperty, viewMode, filters.propertyId])
+  }, [selectedProperty, viewMode, filters.propertyId, shouldLoadRiskItems])
 
   const fetchProperties = async () => {
     try {
@@ -485,6 +486,19 @@ export default function RiskManagement() {
     return filtered
   }, [riskItems, filters])
 
+  const visibleItems = useMemo(() => {
+    if (viewMode === 'anomalies') {
+      return filteredItems.filter(item => item.type === 'anomaly')
+    }
+    if (viewMode === 'alerts') {
+      return filteredItems.filter(item => item.type === 'alert')
+    }
+    if (viewMode === 'locks') {
+      return []
+    }
+    return filteredItems
+  }, [filteredItems, viewMode])
+
   const exportData = async (format: 'excel' | 'csv') => {
     try {
       const params = new URLSearchParams()
@@ -727,9 +741,9 @@ export default function RiskManagement() {
           </div>
         )}
 
-        {viewMode === 'unified' && (
+        {['unified', 'anomalies', 'alerts', 'locks'].includes(viewMode) && (
           <>
-            {filteredItems.filter(item => item.type === 'alert').length > 0 && (
+            {viewMode === 'unified' && filteredItems.filter(item => item.type === 'alert').length > 0 && (
               <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   onClick={handleBulkDeleteAlerts}
@@ -742,7 +756,7 @@ export default function RiskManagement() {
               </div>
             )}
             <RiskWorkbenchTable
-              items={filteredItems}
+              items={visibleItems}
               loading={loading}
               onItemClick={handleItemClick}
               onAcknowledge={handleAcknowledge}

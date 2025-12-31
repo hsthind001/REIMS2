@@ -4,12 +4,9 @@
  * Unified table view of anomalies, alerts, and review items
  */
 
-import { useState, useEffect, useMemo } from 'react';
-import { Download, Filter, Save, Share2, CheckCircle, XCircle, Eye, AlertCircle, Trash2 } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Eye, AlertCircle, Trash2 } from 'lucide-react';
 import { ExportButton } from '../ExportButton';
-import { exportToExcel, exportToCSV } from '../../lib/exportUtils';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 export interface RiskItem {
   id: number;
@@ -71,12 +68,6 @@ export default function RiskWorkbenchTable({
   onReview,
   onDelete,
 }: RiskWorkbenchTableProps) {
-  const [filters, setFilters] = useState({
-    property: '',
-    documentType: '',
-    category: '',
-    severity: '',
-  });
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({
     key: 'created_at',
     direction: 'desc',
@@ -84,21 +75,6 @@ export default function RiskWorkbenchTable({
 
   const filteredAndSortedItems = useMemo(() => {
     let filtered = [...items];
-
-    // Apply filters
-    if (filters.property) {
-      filtered = filtered.filter(item => 
-        item.property_name?.toLowerCase().includes(filters.property.toLowerCase())
-      );
-    }
-    if (filters.severity) {
-      filtered = filtered.filter(item => item.severity === filters.severity);
-    }
-    if (filters.category && filters.category !== 'all') {
-      filtered = filtered.filter(item => 
-        item.metadata?.anomaly_category === filters.category
-      );
-    }
 
     // Apply sorting
     filtered.sort((a, b) => {
@@ -124,7 +100,7 @@ export default function RiskWorkbenchTable({
     });
 
     return filtered;
-  }, [items, filters, sortConfig]);
+  }, [items, sortConfig]);
 
   const handleSort = (key: string) => {
     setSortConfig(prev => ({
@@ -193,45 +169,13 @@ export default function RiskWorkbenchTable({
 
   return (
     <div style={{ padding: '1.5rem' }}>
-      {/* Filters and Actions */}
+      {/* Actions */}
       <div style={{ 
         display: 'flex', 
-        justifyContent: 'space-between', 
+        justifyContent: 'flex-end', 
         alignItems: 'center',
         marginBottom: '1.5rem',
-        flexWrap: 'wrap',
-        gap: '1rem',
       }}>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <input
-            type="text"
-            placeholder="Filter by property..."
-            value={filters.property}
-            onChange={(e) => setFilters(prev => ({ ...prev, property: e.target.value }))}
-            style={{
-              padding: '0.5rem',
-              borderRadius: '4px',
-              border: '1px solid #ddd',
-              minWidth: '200px',
-            }}
-          />
-          <select
-            value={filters.severity}
-            onChange={(e) => setFilters(prev => ({ ...prev, severity: e.target.value }))}
-            style={{
-              padding: '0.5rem',
-              borderRadius: '4px',
-              border: '1px solid #ddd',
-            }}
-          >
-            <option value="">All Severities</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-        </div>
-        
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <ExportButton
             data={getExportData()}

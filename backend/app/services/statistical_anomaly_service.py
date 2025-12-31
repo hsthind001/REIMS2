@@ -14,15 +14,18 @@ Use cases:
 - NOI fluctuation detection
 """
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
 from datetime import datetime, timedelta
+import json
 import logging
 import numpy as np
 from scipy import stats
 
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
+from app.models.document_upload import DocumentUpload
 from app.models.income_statement_data import IncomeStatementData
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.financial_metrics import FinancialMetrics
@@ -90,8 +93,20 @@ class StatisticalAnomalyService:
                 metric_name,
                 lookback_periods
             )
+            logger.debug(
+                "Z-score time series length=%s property=%s metric=%s",
+                len(time_series),
+                property_id,
+                metric_name
+            )
 
             if len(time_series) < 3:
+                logger.debug(
+                    "Insufficient time series for Z-score property=%s metric=%s count=%s",
+                    property_id,
+                    metric_name,
+                    len(time_series)
+                )
                 return {
                     "success": False,
                     "error": f"Insufficient data: need at least 3 periods, got {len(time_series)}"
@@ -106,6 +121,11 @@ class StatisticalAnomalyService:
             std_dev = np.std(values, ddof=1)  # Sample standard deviation
 
             if std_dev == 0:
+                logger.debug(
+                    "Z-score std_dev=0 property=%s metric=%s",
+                    property_id,
+                    metric_name
+                )
                 return {
                     "success": False,
                     "error": "Standard deviation is zero - no variation in data"
@@ -216,8 +236,20 @@ class StatisticalAnomalyService:
                 metric_name,
                 lookback_periods
             )
+            logger.debug(
+                "CUSUM time series length=%s property=%s metric=%s",
+                len(time_series),
+                property_id,
+                metric_name
+            )
 
             if len(time_series) < 5:
+                logger.debug(
+                    "Insufficient time series for CUSUM property=%s metric=%s count=%s",
+                    property_id,
+                    metric_name,
+                    len(time_series)
+                )
                 return {
                     "success": False,
                     "error": f"Insufficient data: need at least 5 periods, got {len(time_series)}"
@@ -232,6 +264,11 @@ class StatisticalAnomalyService:
             std_dev = np.std(values, ddof=1)
 
             if std_dev == 0:
+                logger.debug(
+                    "CUSUM std_dev=0 property=%s metric=%s",
+                    property_id,
+                    metric_name
+                )
                 return {
                     "success": False,
                     "error": "Standard deviation is zero - no variation in data"
@@ -480,13 +517,26 @@ class StatisticalAnomalyService:
                 # Try to get from financial metrics table
                 metric = self.db.query(FinancialMetrics).filter(
                     FinancialMetrics.property_id == property_id,
-                    FinancialMetrics.financial_period_id == period.id
+                    FinancialMetrics.period_id == period.id
                 ).first()
 
                 value = getattr(metric, metric_name, None) if metric else None
 
+            if value is None:
+                logger.debug(
+                    "No metric value for property=%s period=%s metric=%s",
+                    property_id,
+                    period.id,
+                    metric_name
+                )
+
             if value is not None:
+                period_payload = {
+                    "period_id": period.id,
+                    "period_date": period.period_end_date.isoformat()
+                }
                 time_series.append({
+                    "period": period_payload,
                     "period_id": period.id,
                     "period_date": period.period_end_date.isoformat(),
                     "value": float(value)
@@ -494,32 +544,233 @@ class StatisticalAnomalyService:
 
         return time_series
 
+    def persist_statistical_anomalies(
+        self,
+        property_id: int,
+        metric_name: str,
+        anomalies: List[Dict],
+        detection_method: str,
+        statistics: Optional[Dict] = None
+    ) -> int:
+        """
+        Persist statistical anomalies into anomaly_detections, linking to the latest
+        document for each period/property.
+        """
+        if not anomalies:
+            return 0
+
+        period_ids = {item.get("period_id") for item in anomalies if item.get("period_id")}
+        if not period_ids:
+            logger.debug("No period IDs found for anomalies property=%s metric=%s", property_id, metric_name)
+            return 0
+
+        preferred_document_type = self._preferred_document_type(metric_name)
+        documents_by_period = self._get_latest_documents_for_periods(
+            property_id,
+            period_ids,
+            preferred_document_type
+        )
+        if not documents_by_period:
+            logger.debug("No documents found for property=%s periods=%s", property_id, sorted(period_ids))
+            return 0
+
+        mean_value = statistics.get("mean") if statistics else None
+        inserted = 0
+
+        delete_sql = text("""
+            DELETE FROM anomaly_detections
+            WHERE document_id = :document_id
+              AND field_name = :field_name
+              AND anomaly_type = :anomaly_type
+              AND metadata->>'period_id' = :period_id
+        """)
+
+        insert_sql = text("""
+            INSERT INTO anomaly_detections
+            (document_id, field_name, field_value, expected_value,
+             anomaly_type, severity, confidence, z_score, percentage_change, metadata, detected_at)
+            VALUES (:document_id, :field_name, :field_value, :expected_value,
+                    :anomaly_type, :severity, :confidence, :z_score, :percentage_change, :metadata, NOW())
+            RETURNING id
+        """)
+
+        for anomaly in anomalies:
+            period_id = anomaly.get("period_id")
+            if not period_id:
+                continue
+
+            document = documents_by_period.get(period_id)
+            if not document:
+                logger.debug(
+                    "No document for property=%s period=%s metric=%s",
+                    property_id,
+                    period_id,
+                    metric_name
+                )
+                continue
+
+            value = anomaly.get("value")
+            severity = self._normalize_severity(anomaly.get("severity"))
+            anomaly_type = f"statistical_{detection_method}"
+            confidence = self._confidence_from_magnitude(
+                anomaly.get("abs_z_score") or anomaly.get("cusum_magnitude") or anomaly.get("z_score"),
+                4.0 if detection_method == "zscore" else 6.0
+            )
+
+            percentage_change = anomaly.get("deviation_percentage")
+            if percentage_change is None and mean_value not in (None, 0) and value is not None:
+                percentage_change = (float(value) - float(mean_value)) / float(mean_value) * 100
+
+            metadata = {
+                "property_id": property_id,
+                "metric_name": metric_name,
+                "detection_method": detection_method,
+                "period_id": str(period_id),
+                "period_date": anomaly.get("period_date"),
+                "direction": anomaly.get("direction"),
+                "document_type": document.document_type,
+                "preferred_document_type": preferred_document_type,
+            }
+
+            if mean_value is not None:
+                metadata["mean"] = float(mean_value)
+            if anomaly.get("cusum_magnitude") is not None:
+                metadata["cusum_magnitude"] = float(anomaly.get("cusum_magnitude"))
+
+            try:
+                self.db.execute(delete_sql, {
+                    "document_id": document.id,
+                    "field_name": metric_name,
+                    "anomaly_type": anomaly_type,
+                    "period_id": str(period_id)
+                })
+
+                result = self.db.execute(insert_sql, {
+                    "document_id": document.id,
+                    "field_name": metric_name,
+                    "field_value": str(value) if value is not None else None,
+                    "expected_value": str(mean_value) if mean_value is not None else None,
+                    "anomaly_type": anomaly_type,
+                    "severity": severity,
+                    "confidence": confidence,
+                    "z_score": anomaly.get("z_score"),
+                    "percentage_change": percentage_change,
+                    "metadata": json.dumps(metadata) if metadata else None
+                })
+                if result.scalar():
+                    inserted += 1
+            except Exception as exc:
+                logger.error(
+                    "Failed to persist anomaly property=%s metric=%s period=%s: %s",
+                    property_id,
+                    metric_name,
+                    period_id,
+                    exc
+                )
+                self.db.rollback()
+                continue
+
+        if inserted:
+            self.db.commit()
+        return inserted
+
+    def _get_latest_documents_for_periods(
+        self,
+        property_id: int,
+        period_ids: set,
+        document_type: Optional[str] = None
+    ) -> Dict[int, DocumentUpload]:
+        base_query = self.db.query(DocumentUpload).filter(
+            DocumentUpload.property_id == property_id,
+            DocumentUpload.period_id.in_(list(period_ids)),
+            DocumentUpload.is_active == True,
+            DocumentUpload.extraction_status == "completed"
+        )
+
+        if document_type:
+            base_query = base_query.filter(DocumentUpload.document_type == document_type)
+
+        documents = base_query.order_by(
+            DocumentUpload.period_id,
+            DocumentUpload.upload_date.desc(),
+            DocumentUpload.id.desc()
+        ).all()
+
+        document_map = {}
+        for doc in documents:
+            if doc.period_id not in document_map:
+                document_map[doc.period_id] = doc
+
+        missing = [pid for pid in period_ids if pid not in document_map]
+        if missing:
+            fallback_docs = self.db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == property_id,
+                DocumentUpload.period_id.in_(missing),
+                DocumentUpload.is_active == True
+            ).order_by(
+                DocumentUpload.period_id,
+                DocumentUpload.upload_date.desc(),
+                DocumentUpload.id.desc()
+            ).all()
+            for doc in fallback_docs:
+                if doc.period_id not in document_map:
+                    document_map[doc.period_id] = doc
+
+        return document_map
+
+    @staticmethod
+    def _normalize_severity(severity: Optional[str]) -> str:
+        if not severity:
+            return "medium"
+        severity_key = severity.lower()
+        mapping = {
+            "urgent": "critical",
+            "critical": "critical",
+            "warning": "high",
+            "info": "low"
+        }
+        return mapping.get(severity_key, severity_key)
+
+    @staticmethod
+    def _confidence_from_magnitude(magnitude: Optional[float], max_value: float) -> float:
+        try:
+            if magnitude is None or max_value <= 0:
+                return 0.6
+            ratio = min(abs(float(magnitude)) / max_value, 1.0)
+            return round(0.6 + (0.95 - 0.6) * ratio, 4)
+        except (TypeError, ValueError):
+            return 0.6
+
+    @staticmethod
+    def _preferred_document_type(metric_name: str) -> str:
+        return "income_statement"
+
     def _get_total_revenue(self, property_id: int, period_id: int) -> Optional[Decimal]:
         """Get total revenue for a period"""
         income_data = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
-            IncomeStatementData.financial_period_id == period_id,
+            IncomeStatementData.period_id == period_id,
             IncomeStatementData.account_code.like("4%")
         ).all()
 
-        total = sum(Decimal(str(item.amount or 0)) for item in income_data)
+        total = sum(Decimal(str(item.period_amount or 0)) for item in income_data)
         return total if total > 0 else None
 
     def _get_noi(self, property_id: int, period_id: int) -> Optional[Decimal]:
         """Get NOI for a period"""
         income_data = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
-            IncomeStatementData.financial_period_id == period_id
+            IncomeStatementData.period_id == period_id
         ).all()
 
         revenue = sum(
-            Decimal(str(item.amount or 0))
+            Decimal(str(item.period_amount or 0))
             for item in income_data
             if item.account_code and item.account_code.startswith("4")
         )
 
         expenses = sum(
-            Decimal(str(item.amount or 0))
+            Decimal(str(item.period_amount or 0))
             for item in income_data
             if item.account_code and (
                 item.account_code.startswith("5") or
@@ -536,14 +787,14 @@ class StatisticalAnomalyService:
 
         income_data = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
-            IncomeStatementData.financial_period_id == period_id,
+            IncomeStatementData.period_id == period_id,
             or_(
                 IncomeStatementData.account_code.like("5%"),
                 IncomeStatementData.account_code.like("6%")
             )
         ).all()
 
-        total = sum(Decimal(str(item.amount or 0)) for item in income_data)
+        total = sum(Decimal(str(item.period_amount or 0)) for item in income_data)
         return total if total > 0 else None
 
     def _get_net_income(self, property_id: int, period_id: int) -> Optional[Decimal]:
@@ -555,7 +806,7 @@ class StatisticalAnomalyService:
         """Get occupancy rate for a period"""
         metric = self.db.query(FinancialMetrics).filter(
             FinancialMetrics.property_id == property_id,
-            FinancialMetrics.financial_period_id == period_id
+            FinancialMetrics.period_id == period_id
         ).first()
 
         return Decimal(str(metric.occupancy_rate)) if metric and metric.occupancy_rate else None

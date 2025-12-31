@@ -30,6 +30,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _parse_metadata(raw_metadata):
+    if not raw_metadata:
+        return {}
+    if isinstance(raw_metadata, dict):
+        return raw_metadata
+    if isinstance(raw_metadata, str):
+        try:
+            return json.loads(raw_metadata)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
+    return {}
+
+
+def _safe_float(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.replace("$", "").replace(",", "").replace("%", "").strip()
+        if cleaned in {"", "-", "N/A", "NA", "n/a", "na"}:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class AnomalyResponse(BaseModel):
     """Anomaly response schema."""
     type: str
@@ -301,18 +331,20 @@ async def get_anomaly(
 ):
     """Get detailed information about a specific anomaly."""
     from sqlalchemy.orm import load_only
+    from app.models.document_upload import DocumentUpload
     
     anomaly = db.query(AnomalyDetection).options(
         load_only(
             AnomalyDetection.id,
+            AnomalyDetection.document_id,
+            AnomalyDetection.field_name,
+            AnomalyDetection.field_value,
+            AnomalyDetection.expected_value,
             AnomalyDetection.anomaly_type,
             AnomalyDetection.severity,
-            AnomalyDetection.message,
-            AnomalyDetection.property_id,
-            AnomalyDetection.account_code,
-            AnomalyDetection.actual_value,
-            AnomalyDetection.expected_value,
-            AnomalyDetection.detected_at
+            AnomalyDetection.confidence,
+            AnomalyDetection.detected_at,
+            AnomalyDetection.metadata_json
         )
     ).filter(
         AnomalyDetection.id == anomaly_id
@@ -323,16 +355,32 @@ async def get_anomaly(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Anomaly {anomaly_id} not found"
         )
+
+    metadata = _parse_metadata(anomaly.metadata_json)
+    property_id = metadata.get("property_id")
+    if isinstance(property_id, str) and property_id.isdigit():
+        property_id = int(property_id)
+    if property_id is None and anomaly.document_id:
+        property_id = db.query(DocumentUpload.property_id).filter(
+            DocumentUpload.id == anomaly.document_id
+        ).scalar()
+
+    account_code = metadata.get("account_code") or anomaly.field_name
+    actual_value = _safe_float(metadata.get("actual_value")) or _safe_float(anomaly.field_value)
+    expected_value = _safe_float(anomaly.expected_value)
+    message = metadata.get("message") or (
+        f"{account_code} = {anomaly.field_value} (expected: {anomaly.expected_value or 'normal range'})"
+    )
     
     return {
         "id": anomaly.id,
         "type": anomaly.anomaly_type,
         "severity": anomaly.severity,
-        "message": anomaly.message or f"Anomaly detected in {anomaly.account_code}",
-        "property_id": anomaly.property_id,
-        "account_code": anomaly.account_code,
-        "actual_value": float(anomaly.actual_value) if anomaly.actual_value else None,
-        "expected_value": float(anomaly.expected_value) if anomaly.expected_value else None,
+        "message": message,
+        "property_id": property_id,
+        "account_code": account_code,
+        "actual_value": actual_value,
+        "expected_value": expected_value,
         "detected_at": anomaly.detected_at.isoformat() if anomaly.detected_at else None
     }
 
@@ -362,6 +410,7 @@ async def get_anomaly_detailed(
     
     # Get anomaly - use load_only to avoid loading columns that don't exist in DB
     from sqlalchemy.orm import load_only
+    from app.models.document_upload import DocumentUpload
     
     # Load only the columns we actually use to avoid missing column errors
     anomaly = db.query(AnomalyDetection).options(
@@ -377,13 +426,7 @@ async def get_anomaly_detailed(
             AnomalyDetection.severity,
             AnomalyDetection.confidence,
             AnomalyDetection.detected_at,
-            AnomalyDetection.detection_method,
-            AnomalyDetection.context_suppressed,
-            AnomalyDetection.suppression_reason,
-            AnomalyDetection.property_id,
-            AnomalyDetection.account_code,
-            AnomalyDetection.message,
-            AnomalyDetection.actual_value
+            AnomalyDetection.metadata_json
         )
     ).filter(
         AnomalyDetection.id == anomaly_id
@@ -394,25 +437,92 @@ async def get_anomaly_detailed(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Anomaly {anomaly_id} not found"
         )
+
+    metadata = _parse_metadata(anomaly.metadata_json)
+    document = None
+    if anomaly.document_id:
+        document = db.query(DocumentUpload).filter(DocumentUpload.id == anomaly.document_id).first()
+
+    property_id = metadata.get("property_id")
+    if isinstance(property_id, str) and property_id.isdigit():
+        property_id = int(property_id)
+    if property_id is None and document:
+        property_id = document.property_id
+
+    period_id = metadata.get("period_id")
+    if isinstance(period_id, str) and period_id.isdigit():
+        period_id = int(period_id)
+    if period_id is None and document:
+        period_id = document.period_id
+
+    document_type = metadata.get("document_type")
+    if document_type is None and document:
+        document_type = document.document_type
+
+    account_code = metadata.get("account_code") or anomaly.field_name
+    actual_value = _safe_float(metadata.get("actual_value")) or _safe_float(anomaly.field_value)
+    expected_value = _safe_float(metadata.get("expected_value")) or _safe_float(anomaly.expected_value)
+
+    detection_method = metadata.get("detection_method")
+    if isinstance(detection_method, list):
+        detection_method = ", ".join([str(item) for item in detection_method if item])
+
+    message = metadata.get("message") or (
+        f"{account_code} = {anomaly.field_value} (expected: {anomaly.expected_value or 'normal range'})"
+    )
+
+    details = {
+        "property_id": property_id,
+        "document_id": anomaly.document_id,
+        "document_type": document_type,
+        "period_id": period_id,
+        "period_date": metadata.get("period_date"),
+        "metric_name": metadata.get("metric_name"),
+        "direction": metadata.get("direction"),
+    }
+
+    anomaly_payload = {
+        "id": anomaly.id,
+        "record_id": anomaly.id,
+        "anomaly_type": anomaly.anomaly_type,
+        "severity": anomaly.severity,
+        "account_code": account_code,
+        "field_name": anomaly.field_name,
+        "actual_value": actual_value,
+        "expected_value": expected_value,
+        "confidence_score": _safe_float(anomaly.confidence),
+        "confidence": _safe_float(anomaly.confidence),
+        "z_score": _safe_float(anomaly.z_score),
+        "percentage_change": _safe_float(anomaly.percentage_change),
+        "detected_at": anomaly.detected_at.isoformat() if anomaly.detected_at else None,
+        "message": message,
+        "document_id": anomaly.document_id,
+        "document_type": document_type,
+        "period_id": period_id,
+        "context_suppressed": bool(metadata.get("context_suppressed", False)),
+        "suppression_reason": metadata.get("suppression_reason"),
+        "details": details
+    }
     
     result = {
+        **anomaly_payload,
         "anomaly": {
             "id": anomaly.id,
             "type": anomaly.anomaly_type,
             "severity": anomaly.severity,
-            "message": anomaly.message or f"Anomaly detected in {anomaly.account_code}",
-            "property_id": anomaly.property_id,
-            "account_code": anomaly.account_code,
+            "message": message,
+            "property_id": property_id,
+            "account_code": account_code,
             "field_name": anomaly.field_name,
-            "actual_value": float(anomaly.actual_value) if anomaly.actual_value else None,
-            "expected_value": float(anomaly.expected_value) if anomaly.expected_value else None,
-            "confidence": float(anomaly.confidence) if anomaly.confidence else None,
-            "z_score": float(anomaly.z_score) if anomaly.z_score else None,
-            "percentage_change": float(anomaly.percentage_change) if anomaly.percentage_change else None,
+            "actual_value": actual_value,
+            "expected_value": expected_value,
+            "confidence": _safe_float(anomaly.confidence),
+            "z_score": _safe_float(anomaly.z_score),
+            "percentage_change": _safe_float(anomaly.percentage_change),
             "detected_at": anomaly.detected_at.isoformat() if anomaly.detected_at else None,
-            "detection_method": anomaly.detection_method,
-            "context_suppressed": anomaly.context_suppressed or False,
-            "suppression_reason": anomaly.suppression_reason
+            "detection_method": detection_method,
+            "context_suppressed": bool(metadata.get("context_suppressed", False)),
+            "suppression_reason": metadata.get("suppression_reason")
         },
         "xai_explanation": None,
         "pdf_coordinates": None,
@@ -445,13 +555,12 @@ async def get_anomaly_detailed(
     
     # Get PDF field coordinates if available
     try:
-        from app.models.pdf_field_coordinate import PdfFieldCoordinate
-        from app.models.document_upload import DocumentUpload
+        from app.models.pdf_field_coordinate import PDFFieldCoordinate
         
         if anomaly.document_id:
-            coordinates = db.query(PdfFieldCoordinate).filter(
-                PdfFieldCoordinate.document_id == anomaly.document_id,
-                PdfFieldCoordinate.field_name == anomaly.field_name
+            coordinates = db.query(PDFFieldCoordinate).filter(
+                PDFFieldCoordinate.document_upload_id == anomaly.document_id,
+                PDFFieldCoordinate.field_name == anomaly.field_name
             ).first()
             
             if coordinates:
@@ -459,8 +568,8 @@ async def get_anomaly_detailed(
                     "page_number": coordinates.page_number,
                     "x": float(coordinates.x) if coordinates.x else None,
                     "y": float(coordinates.y) if coordinates.y else None,
-                    "width": float(coordinates.width) if coordinates.width else None,
-                    "height": float(coordinates.height) if coordinates.height else None,
+                    "width": float(coordinates.x1 - coordinates.x0) if coordinates.x1 is not None and coordinates.x0 is not None else None,
+                    "height": float(coordinates.y1 - coordinates.y0) if coordinates.y1 is not None and coordinates.y0 is not None else None,
                     "confidence": float(coordinates.confidence) if coordinates.confidence else None
                 }
     except Exception as e:
@@ -471,19 +580,26 @@ async def get_anomaly_detailed(
         from sqlalchemy import and_
         from datetime import datetime, timedelta
         
-        similar = db.query(AnomalyDetection).options(
+        similar_query = db.query(AnomalyDetection).options(
             load_only(
                 AnomalyDetection.id,
                 AnomalyDetection.detected_at,
-                AnomalyDetection.actual_value,
+                AnomalyDetection.field_value,
                 AnomalyDetection.expected_value,
                 AnomalyDetection.severity
             )
-        ).filter(
+        )
+
+        if property_id is not None:
+            similar_query = similar_query.join(
+                DocumentUpload,
+                DocumentUpload.id == AnomalyDetection.document_id
+            ).filter(DocumentUpload.property_id == property_id)
+
+        similar = similar_query.filter(
             and_(
                 AnomalyDetection.id != anomaly_id,
-                AnomalyDetection.account_code == anomaly.account_code,
-                AnomalyDetection.property_id == anomaly.property_id,
+                AnomalyDetection.field_name == anomaly.field_name,
                 AnomalyDetection.detected_at >= datetime.now() - timedelta(days=365)
             )
         ).order_by(AnomalyDetection.detected_at.desc()).limit(5).all()
@@ -492,8 +608,8 @@ async def get_anomaly_detailed(
             {
                 "id": s.id,
                 "detected_at": s.detected_at.isoformat() if s.detected_at else None,
-                "actual_value": float(s.actual_value) if s.actual_value else None,
-                "expected_value": float(s.expected_value) if s.expected_value else None,
+                "actual_value": _safe_float(s.field_value),
+                "expected_value": _safe_float(s.expected_value),
                 "severity": s.severity,
                 "similarity_score": 0.8  # Would calculate based on value similarity
             }
@@ -505,12 +621,12 @@ async def get_anomaly_detailed(
     # Get feedback statistics
     try:
         from app.models.anomaly_feedback import AnomalyFeedback
-        from sqlalchemy import func
+        from sqlalchemy import func, Integer
         
         feedback_stats = db.query(
             func.count(AnomalyFeedback.id).label('total_feedback'),
-            func.sum(func.cast(AnomalyFeedback.feedback_type == 'true_positive', db.Integer)).label('true_positives'),
-            func.sum(func.cast(AnomalyFeedback.feedback_type == 'false_positive', db.Integer)).label('false_positives')
+            func.sum(func.cast(AnomalyFeedback.feedback_type == 'true_positive', Integer)).label('true_positives'),
+            func.sum(func.cast(AnomalyFeedback.feedback_type == 'false_positive', Integer)).label('false_positives')
         ).filter(
             AnomalyFeedback.anomaly_detection_id == anomaly_id
         ).first()
@@ -534,11 +650,11 @@ async def get_anomaly_detailed(
         from app.services.cross_property_intelligence import CrossPropertyIntelligenceService
         cross_property_service = CrossPropertyIntelligenceService(db)
         
-        if cross_property_service.enabled:
+        if cross_property_service.enabled and property_id is not None and account_code:
             # Get property ranking
             ranking = cross_property_service.get_property_ranking(
-                property_id=anomaly.property_id,
-                account_code=anomaly.account_code
+                property_id=property_id,
+                account_code=account_code
             )
             
             if ranking:
@@ -558,13 +674,15 @@ async def get_anomaly_detailed(
         from app.models.anomaly_feedback import AnomalyLearningPattern
         from sqlalchemy import and_
         
-        patterns = db.query(AnomalyLearningPattern).filter(
-            and_(
-                AnomalyLearningPattern.is_active == True,
-                AnomalyLearningPattern.property_id == anomaly.property_id,
-                AnomalyLearningPattern.account_code == anomaly.account_code
-            )
-        ).all()
+        if property_id is None or not account_code:
+            patterns = []
+        else:
+            patterns = db.query(AnomalyLearningPattern).filter(
+                and_(
+                    AnomalyLearningPattern.property_id == property_id,
+                    AnomalyLearningPattern.account_code == account_code
+                )
+            ).all()
         
         result["learned_patterns"] = [
             {
@@ -582,10 +700,10 @@ async def get_anomaly_detailed(
     
     # Get model information
     result["model_information"] = {
-        "detection_method": anomaly.detection_method,
+        "detection_method": detection_method,
         "algorithm_used": getattr(anomaly, 'algorithm_used', None),
         "model_version": getattr(anomaly, 'model_version', None),
-        "confidence_score": float(anomaly.confidence) if anomaly.confidence else None
+        "confidence_score": _safe_float(anomaly.confidence)
     }
     
     elapsed_time = time.time() - start_time

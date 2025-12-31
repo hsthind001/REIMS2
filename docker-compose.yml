@@ -468,7 +468,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: celery -A celery_worker.celery_app worker --loglevel=info
+    command: celery -A celery_worker.celery_app worker --loglevel=${LOG_LEVEL:-info}
 
   # Celery Beat - Scheduled task scheduler
   celery-beat:
@@ -526,7 +526,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: celery -A celery_worker.celery_app beat --loglevel=info
+    command: celery -A celery_worker.celery_app beat --loglevel=${LOG_LEVEL:-info}
 
   # Flower - Celery monitoring
   flower:
@@ -629,4 +629,3 @@ volumes:
     driver: local  # Cache for AI/ML models (LayoutLMv3, EasyOCR)
   model-cache:
     driver: local  # Cache for PyOD anomaly detection models (50x speedup)
-
