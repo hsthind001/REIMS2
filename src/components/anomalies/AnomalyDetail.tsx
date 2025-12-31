@@ -12,7 +12,7 @@
 
 import { useState, useEffect } from 'react';
 import { Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Link, FileText, ExternalLink, AlertCircle, TrendingUp, TrendingDown, Users, Copy } from 'lucide-react';
+import { FileText, ExternalLink, AlertCircle, TrendingUp, TrendingDown, Users, Copy } from 'lucide-react';
 import { anomaliesService, type Anomaly, type DetailedAnomalyResponse } from '../../lib/anomalies';
 import { XAIExplanation } from './XAIExplanation';
 import { AnomalyPDFViewer } from '../AnomalyPDFViewer';
@@ -93,39 +93,25 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
   const loadContributionData = async (anomaly: DetailedAnomalyResponse) => {
     try {
       // Fetch contribution data from backend
-      const response = await fetch(`${API_BASE_URL}/anomalies/${anomaly.id}/contribution-waterfall`);
+      const response = await fetch(`${API_BASE_URL}/anomalies/${anomaly.id}/contribution-waterfall`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         setContributionData(data.contributions || []);
       } else {
-        // Generate mock data if API not available
-        generateMockContributionData(anomaly);
+        setContributionData([]);
       }
     } catch (err) {
-      generateMockContributionData(anomaly);
+      setContributionData([]);
     }
-  };
-
-  const generateMockContributionData = (anomaly: DetailedAnomalyResponse) => {
-    // Mock contribution data for demonstration
-    const variance = anomaly.actual_value && anomaly.expected_value
-      ? Math.abs(Number(anomaly.actual_value) - Number(anomaly.expected_value))
-      : 0;
-
-    const data: ContributionData[] = [
-      { name: 'Base Value', value: Number(anomaly.expected_value) || 0, type: 'total' },
-      { name: 'Account A', value: variance * 0.4, type: 'positive' },
-      { name: 'Account B', value: variance * 0.3, type: 'positive' },
-      { name: 'Account C', value: variance * 0.2, type: 'positive' },
-      { name: 'Other', value: variance * 0.1, type: 'positive' },
-      { name: 'Total', value: Number(anomaly.actual_value) || 0, type: 'total' },
-    ];
-    setContributionData(data);
   };
 
   const loadPeerComparison = async (anomaly: DetailedAnomalyResponse) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/anomalies/${anomaly.id}/peer-comparison`);
+      const response = await fetch(`${API_BASE_URL}/anomalies/${anomaly.id}/peer-comparison`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         setPeerComparison(data.peers || []);
@@ -137,7 +123,9 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
 
   const loadSimilarCases = async (anomaly: DetailedAnomalyResponse) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/anomalies/${anomaly.id}/similar-cases`);
+      const response = await fetch(`${API_BASE_URL}/anomalies/${anomaly.id}/similar-cases`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         setSimilarCases(data.similar_cases || []);
@@ -149,7 +137,9 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
 
   const loadPDFCoordinates = async (anomalyId: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/anomalies/${anomalyId}/field-coordinates`);
+      const response = await fetch(`${API_BASE_URL}/anomalies/${anomalyId}/field-coordinates`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         setPdfUrl(data.pdf_url);
@@ -191,6 +181,12 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
     );
   }
 
+  const accountCode = anomaly.account_code || anomaly.field_name || 'N/A';
+  const fieldName =
+    anomaly.field_name && anomaly.account_code && anomaly.field_name !== anomaly.account_code
+      ? anomaly.field_name
+      : null;
+
   return (
     <div style={{
       padding: '2rem',
@@ -215,8 +211,13 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
           <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem', color: '#6c757d' }}>
             <span>ID: {anomaly.id}</span>
             <span>•</span>
-            <span>{anomaly.field_name || anomaly.account_code}</span>
-            <span>•</span>
+            <span>Account Code: {accountCode}</span>
+            {fieldName && (
+              <>
+                <span>•</span>
+                <span>Field: {fieldName}</span>
+              </>
+            )}
             <span style={{
               padding: '0.25rem 0.5rem',
               borderRadius: '4px',
@@ -482,7 +483,7 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <div style={{ fontWeight: 600 }}>{similar.property_name}</div>
                   <a
-                    href={`#anomaly-detail?id=${similar.id}`}
+                    href={`#anomaly-details?anomaly_id=${similar.id}`}
                     style={{
                       color: '#0dcaf0',
                       textDecoration: 'none',

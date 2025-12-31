@@ -6,6 +6,7 @@ Unifies anomalies, alerts, and review items in a single view.
 
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
+import json
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, case, String
@@ -24,10 +25,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/risk-workbench", tags=["risk-workbench"])
 
 
+def _parse_metadata(raw_metadata: Optional[str]) -> Dict[str, Any]:
+    if not raw_metadata:
+        return {}
+    if isinstance(raw_metadata, dict):
+        return raw_metadata
+    if isinstance(raw_metadata, str):
+        try:
+            return json.loads(raw_metadata)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
+    return {}
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.replace("$", "").replace(",", "").replace("%", "").strip()
+        if cleaned in {"", "-", "N/A", "NA", "n/a", "na"}:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @router.get("/unified")
 async def get_unified_risk_items(
     property_id: Optional[int] = Query(None),
     document_type: Optional[str] = Query(None),
+    period: Optional[str] = Query(None, description="Filter by period in YYYY-MM format"),
     anomaly_category: Optional[str] = Query(None),
     sla_breach: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
@@ -42,6 +74,21 @@ async def get_unified_risk_items(
     Returns columns: type, severity, property, age, impact, status, assignee, due_date
     """
     try:
+        period_year = None
+        period_month = None
+        if period:
+            try:
+                year_str, month_str = period.split("-", 1)
+                period_year = int(year_str)
+                period_month = int(month_str)
+                if period_month < 1 or period_month > 12:
+                    raise ValueError("Month out of range")
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid period format. Use YYYY-MM, e.g. 2025-10."
+                )
+
         # Build unified query
         # 1. Anomalies
         anomalies_query = db.query(
@@ -54,7 +101,10 @@ async def get_unified_risk_items(
             func.cast(None, String()).label('status'),
             func.cast(None, String()).label('assignee'),
             func.cast(None, String()).label('due_date'),
-            AnomalyDetection.detected_at.label('created_at')
+            AnomalyDetection.detected_at.label('created_at'),
+            AnomalyDetection.field_value.label('field_value'),
+            AnomalyDetection.expected_value.label('expected_value'),
+            func.cast(AnomalyDetection.metadata_json, String()).label('metadata_json')
         ).join(
             DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id
         ).join(
@@ -72,7 +122,10 @@ async def get_unified_risk_items(
             func.cast(CommitteeAlert.status, String()).label('status'),
             func.cast(None, String()).label('assignee'),
             func.cast(CommitteeAlert.sla_due_at, String()).label('due_date'),
-            CommitteeAlert.created_at.label('created_at')
+            CommitteeAlert.created_at.label('created_at'),
+            func.cast(None, String()).label('field_value'),
+            func.cast(None, String()).label('expected_value'),
+            func.cast(None, String()).label('metadata_json')
         ).join(
             Property, CommitteeAlert.property_id == Property.id
         )
@@ -84,10 +137,25 @@ async def get_unified_risk_items(
         
         if document_type:
             anomalies_query = anomalies_query.filter(DocumentUpload.document_type == document_type)
-        
+
+        if period_year and period_month:
+            anomalies_query = anomalies_query.join(
+                FinancialPeriod,
+                FinancialPeriod.id == DocumentUpload.period_id
+            ).filter(
+                FinancialPeriod.period_year == period_year,
+                FinancialPeriod.period_month == period_month
+            )
+
         if anomaly_category:
             anomalies_query = anomalies_query.filter(AnomalyDetection.anomaly_category == anomaly_category)
-        
+
+        if period_year and period_month:
+            alerts_query = alerts_query.filter(
+                func.extract('year', CommitteeAlert.created_at) == period_year,
+                func.extract('month', CommitteeAlert.created_at) == period_month
+            )
+
         if sla_breach is not None:
             if sla_breach:
                 alerts_query = alerts_query.filter(
@@ -149,13 +217,21 @@ async def get_unified_risk_items(
         results = []
         for item in items:
             try:
+                impact_value = item.impact
+                if item.type == 'anomaly' and impact_value is None:
+                    metadata = _parse_metadata(item.metadata_json)
+                    actual_value = _safe_float(metadata.get("actual_value")) or _safe_float(item.field_value)
+                    expected_value = _safe_float(metadata.get("expected_value")) or _safe_float(item.expected_value)
+                    if actual_value is not None and expected_value is not None:
+                        impact_value = abs(actual_value - expected_value)
+
                 results.append({
                     'id': item.id,
                     'type': item.type,
                     'severity': item.severity,
                     'property': item.property,
                     'age_days': round(item.age_seconds / 86400, 1) if item.age_seconds else 0,
-                    'impact': float(item.impact) if item.impact else 0.0,
+                    'impact': float(impact_value) if impact_value is not None else None,
                     'status': item.status,
                     'assignee': item.assignee,
                     'due_date': item.due_date.isoformat() if item.due_date else None,

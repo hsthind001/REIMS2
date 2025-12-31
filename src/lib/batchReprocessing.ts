@@ -9,7 +9,7 @@ import { api } from './api'
 export interface BatchReprocessingJob {
   id: number
   job_name: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'queued' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   total_documents: number
   processed_documents: number
   successful_count: number
@@ -29,34 +29,45 @@ export interface BatchJobCreateRequest {
   date_range_start?: string
   date_range_end?: string
   document_types?: string[]
-  extraction_status?: string
+  extraction_status_filter?: string
 }
 
-// Re-export types for better module compatibility
-export type { BatchReprocessingJob, BatchJobCreateRequest }
+export interface BatchJobCreateResponse {
+  job_id: number
+  job_name?: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  total_documents: number
+  created_at: string
+  task_id?: string
+}
+
+export interface BatchJobStatusResponse {
+  job_id: number
+  job_name?: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  progress_pct: number
+  total_documents: number
+  processed_documents: number
+  successful_count: number
+  failed_count: number
+  skipped_count: number
+  started_at?: string
+  completed_at?: string
+  estimated_completion_at?: string
+  celery_task_id?: string
+  results_summary?: any
+}
 
 export const batchReprocessingService = {
   /**
    * Create a new batch reprocessing job
    */
-  async createJob(request: BatchJobCreateRequest): Promise<BatchReprocessingJob> {
+  async createJob(request: BatchJobCreateRequest): Promise<BatchJobCreateResponse> {
     try {
-      return await api.post<BatchReprocessingJob>('/batch-reprocessing/', request)
+      return await api.post<BatchJobCreateResponse>('/batch-reprocessing/reprocess', request)
     } catch (error: any) {
       console.error('Failed to create batch job:', error)
       throw new Error(error.message || 'Failed to create batch job')
-    }
-  },
-
-  /**
-   * Start a batch reprocessing job
-   */
-  async startJob(jobId: number): Promise<BatchReprocessingJob> {
-    try {
-      return await api.post<BatchReprocessingJob>(`/batch-reprocessing/${jobId}/start`, {})
-    } catch (error: any) {
-      console.error('Failed to start batch job:', error)
-      throw new Error(error.message || 'Failed to start batch job')
     }
   },
 
@@ -65,7 +76,23 @@ export const batchReprocessingService = {
    */
   async getJobStatus(jobId: number): Promise<BatchReprocessingJob> {
     try {
-      return await api.get<BatchReprocessingJob>(`/batch-reprocessing/${jobId}`)
+      const job = await api.get<BatchJobStatusResponse>(`/batch-reprocessing/jobs/${jobId}`)
+      return {
+        id: job.job_id,
+        job_name: job.job_name || `Batch Job ${job.job_id}`,
+        status: job.status,
+        total_documents: job.total_documents,
+        processed_documents: job.processed_documents,
+        successful_count: job.successful_count,
+        failed_count: job.failed_count,
+        skipped_count: job.skipped_count,
+        progress_pct: job.progress_pct,
+        started_at: job.started_at,
+        completed_at: job.completed_at,
+        estimated_completion_at: job.estimated_completion_at,
+        celery_task_id: job.celery_task_id,
+        results_summary: job.results_summary
+      }
     } catch (error: any) {
       console.error('Failed to get job status:', error)
       throw new Error(error.message || 'Failed to get job status')
@@ -77,7 +104,7 @@ export const batchReprocessingService = {
    */
   async cancelJob(jobId: number): Promise<void> {
     try {
-      await api.post(`/batch-reprocessing/${jobId}/cancel`, {})
+      await api.post(`/batch-reprocessing/jobs/${jobId}/cancel`, {})
     } catch (error: any) {
       console.error('Failed to cancel batch job:', error)
       throw new Error(error.message || 'Failed to cancel batch job')
@@ -96,4 +123,3 @@ export const batchReprocessingService = {
     }
   },
 }
-

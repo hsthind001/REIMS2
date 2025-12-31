@@ -19,6 +19,7 @@ const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
 const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
 const MarketIntelligenceDashboard = lazy(() => import('./pages/MarketIntelligenceDashboard'))
+const AnomalyDetailPage = lazy(() => import('./pages/AnomalyDetailPage'))
 
 // Forensic Audit Framework Pages
 const ForensicAuditDashboard = lazy(() => import('./pages/ForensicAuditDashboard'))
@@ -86,6 +87,9 @@ function AppContent() {
       // If navigating to market-intelligence, ensure we're on properties page
       if (routeName.startsWith('market-intelligence') && currentPage !== 'properties') {
         setCurrentPage('properties')
+      }
+      if (routeName.startsWith('anomaly-details') && currentPage !== 'risk') {
+        setCurrentPage('risk')
       }
     }
 
@@ -283,6 +287,10 @@ function AppContent() {
           ) : hashRoute.startsWith('market-intelligence/') ? (
             <Suspense fallback={<PageLoader />}>
               <MarketIntelligenceDashboard />
+            </Suspense>
+          ) : hashRoute.startsWith('anomaly-details') ? (
+            <Suspense fallback={<PageLoader />}>
+              <AnomalyDetailPage />
             </Suspense>
           ) : hashRoute === 'forensic-audit-dashboard' ? (
             <Suspense fallback={<PageLoader />}>

@@ -20,6 +20,7 @@ from app.models.anomaly_detection import AnomalyDetection
 from app.models.anomaly_explanation import AnomalyExplanation
 from app.core.config import settings
 from app.core.feature_flags import FeatureFlags
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -159,8 +160,12 @@ class XAIExplanationService:
         Returns:
             Dictionary with root cause type, description, and contributing factors
         """
+        account_code = self._get_account_code(anomaly)
+        actual_value = self._get_actual_value(anomaly)
+        expected_value = self._get_expected_value(anomaly)
+
         root_cause_type = 'unknown'
-        description = f"Anomaly detected in {anomaly.account_code or 'unknown account'}"
+        description = f"Anomaly detected in {account_code or 'unknown account'}"
         factors = []
         
         # Analyze based on anomaly type
@@ -193,12 +198,12 @@ class XAIExplanationService:
                 })
         
         # Add context factors
-        if anomaly.expected_value and anomaly.actual_value:
-            deviation = abs(float(anomaly.actual_value) - float(anomaly.expected_value))
+        if expected_value is not None and actual_value is not None:
+            deviation = abs(actual_value - expected_value)
             factors.append({
                 'factor': 'deviation_from_expected',
                 'value': float(deviation),
-                'impact': 'high' if deviation > (float(anomaly.expected_value) * 0.5) else 'medium'
+                'impact': 'high' if deviation > (expected_value * 0.5) else 'medium'
             })
         
         return {
@@ -336,14 +341,17 @@ class XAIExplanationService:
         explanation_parts.append(root_cause['description'])
         
         # Add account context
-        if anomaly.account_code:
-            explanation_parts.append(f"Account: {anomaly.account_code}")
+        account_code = self._get_account_code(anomaly)
+        if account_code:
+            explanation_parts.append(f"Account: {account_code}")
         
         # Add value context
-        if anomaly.actual_value and anomaly.expected_value:
+        actual_value = self._get_actual_value(anomaly)
+        expected_value = self._get_expected_value(anomaly)
+        if actual_value is not None and expected_value is not None:
             explanation_parts.append(
-                f"Actual value: {anomaly.actual_value:,.2f}, "
-                f"Expected: {anomaly.expected_value:,.2f}"
+                f"Actual value: {actual_value:,.2f}, "
+                f"Expected: {expected_value:,.2f}"
             )
         
         # Add SHAP insights if available
@@ -567,6 +575,46 @@ class XAIExplanationService:
                     )
         
         return "; ".join(summary_parts) + "."
+
+    def _parse_metadata(self, raw_metadata: Any) -> Dict[str, Any]:
+        if not raw_metadata:
+            return {}
+        if isinstance(raw_metadata, dict):
+            return raw_metadata
+        if isinstance(raw_metadata, str):
+            try:
+                return json.loads(raw_metadata)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return {}
+        return {}
+
+    def _safe_float(self, value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.replace("$", "").replace(",", "").replace("%", "").strip()
+            if cleaned in {"", "-", "N/A", "NA", "n/a", "na"}:
+                return None
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _get_account_code(self, anomaly: AnomalyDetection) -> Optional[str]:
+        metadata = self._parse_metadata(getattr(anomaly, "metadata_json", None))
+        return metadata.get("account_code") or getattr(anomaly, "field_name", None)
+
+    def _get_actual_value(self, anomaly: AnomalyDetection) -> Optional[float]:
+        metadata = self._parse_metadata(getattr(anomaly, "metadata_json", None))
+        return self._safe_float(metadata.get("actual_value")) or self._safe_float(getattr(anomaly, "field_value", None))
+
+    def _get_expected_value(self, anomaly: AnomalyDetection) -> Optional[float]:
+        metadata = self._parse_metadata(getattr(anomaly, "metadata_json", None))
+        return self._safe_float(metadata.get("expected_value")) or self._safe_float(getattr(anomaly, "expected_value", None))
     
     def generate_explanation_for_ml_detector(
         self,
@@ -642,4 +690,3 @@ class XAIExplanationService:
                 logger.warning(f"LIME explanation failed for {detector_type}: {e}")
         
         return explanation_data
-

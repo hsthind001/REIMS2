@@ -177,6 +177,29 @@ export interface BatchReprocessingJob {
 }
 
 export const anomaliesService = {
+  normalizeExplanation(raw: any): AnomalyExplanation {
+    const shapSource = raw?.shap_feature_importance || raw?.shap_values
+    const shapValues = shapSource && !Array.isArray(shapSource) ? shapSource : undefined
+    const suggestions =
+      Array.isArray(raw?.action_suggestions) ? raw.action_suggestions
+      : Array.isArray(raw?.suggested_actions)
+        ? raw.suggested_actions.map((item: any) => {
+            if (typeof item === 'string') return item
+            const action = item?.action ? String(item.action) : ''
+            const description = item?.description ? String(item.description) : ''
+            return [action, description].filter(Boolean).join(' — ')
+          })
+        : []
+
+    return {
+      root_cause_type: raw?.root_cause_type || 'unknown',
+      root_cause_description: raw?.root_cause_description || 'No root cause description available.',
+      natural_language_explanation: raw?.natural_language_explanation || raw?.root_cause_description || '',
+      action_suggestions: suggestions,
+      shap_values: shapValues,
+      lime_explanation: raw?.lime_explanation,
+    }
+  },
   /**
    * Get field coordinates and PDF URL for an anomaly
    */
@@ -246,7 +269,8 @@ export const anomaliesService = {
    */
   async generateExplanation(anomalyId: number): Promise<AnomalyExplanation> {
     try {
-      return await api.post<AnomalyExplanation>(`/anomalies/${anomalyId}/explain`, {})
+      const response = await api.post<any>(`/anomalies/${anomalyId}/explain`, {})
+      return anomaliesService.normalizeExplanation(response)
     } catch (error: any) {
       console.error('Failed to generate explanation:', error)
       throw new Error(error.message || 'Failed to generate explanation')
@@ -258,7 +282,8 @@ export const anomaliesService = {
    */
   async getExplanation(anomalyId: number): Promise<AnomalyExplanation | null> {
     try {
-      return await api.get<AnomalyExplanation>(`/anomalies/${anomalyId}/explanation`)
+      const response = await api.get<any>(`/anomalies/${anomalyId}/explanation`)
+      return anomaliesService.normalizeExplanation(response)
     } catch (error: any) {
       if (error.status === 404) return null
       console.error('Failed to get explanation:', error)

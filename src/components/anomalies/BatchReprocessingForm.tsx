@@ -12,6 +12,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react'
 import { batchReprocessingService, type BatchReprocessingJob, type BatchJobCreateRequest } from '../../lib/batchReprocessing'
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
+
 interface BatchReprocessingFormProps {
   className?: string
 }
@@ -66,8 +68,9 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
   }
 
   const setupWebSocket = (jobId: number) => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/batch-job/${jobId}`
+    const protocol = API_BASE_URL.startsWith('https:') ? 'wss:' : 'ws:'
+    const wsHost = API_BASE_URL.replace(/^https?:\/\//, '')
+    const wsUrl = `${protocol}//${wsHost}/api/v1/ws/batch-job/${jobId}`
     
     try {
       const ws = new WebSocket(wsUrl)
@@ -111,17 +114,10 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
           : undefined,
       }
 
-      const job = await batchReprocessingService.createJob(request)
-      const startedJob = await batchReprocessingService.startJob(job.id)
-
-      setJobs((prev) => [startedJob, ...prev])
+      await batchReprocessingService.createJob(request)
+      await loadJobs()
       setShowCreateForm(false)
       resetForm()
-
-      // Set up WebSocket for the new job
-      if (startedJob.status === 'running') {
-        setupWebSocket(startedJob.id)
-      }
     } catch (err: any) {
       setError(err.message || 'Failed to create batch job')
     } finally {
@@ -157,6 +153,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
       case 'running':
         return <Loader className="h-5 w-5 text-blue-500 animate-spin" />
       case 'pending':
+      case 'queued':
         return <Clock className="h-5 w-5 text-yellow-500" />
       case 'cancelled':
         return <X className="h-5 w-5 text-gray-500" />
@@ -174,6 +171,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
       case 'running':
         return 'bg-blue-100 text-blue-800'
       case 'pending':
+      case 'queued':
         return 'bg-yellow-100 text-yellow-800'
       case 'cancelled':
         return 'bg-gray-100 text-gray-800'
@@ -347,7 +345,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                     </div>
                   </div>
                 </div>
-                {job.status === 'running' && (
+                {(job.status === 'running' || job.status === 'queued') && (
                   <button
                     onClick={() => handleCancelJob(job.id)}
                     className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-all flex items-center gap-1"
@@ -454,4 +452,3 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
     </div>
   )
 }
-

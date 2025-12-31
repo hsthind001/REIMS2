@@ -714,6 +714,239 @@ async def get_anomaly_detailed(
     return result
 
 
+@router.get("/{anomaly_id}/contribution-waterfall")
+async def get_contribution_waterfall(
+    anomaly_id: int,
+    top_n: int = Query(5, ge=1, le=20, description="Number of top accounts to include"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get contribution waterfall data for an anomaly using real account values.
+
+    Returns:
+        contributions: List of {name, value, type} entries for the chart.
+    """
+    from app.models.document_upload import DocumentUpload
+    from app.models.income_statement_data import IncomeStatementData
+    from app.models.balance_sheet_data import BalanceSheetData
+    from app.models.cash_flow_data import CashFlowData
+    from app.models.rent_roll_data import RentRollData
+    from app.models.mortgage_statement_data import MortgageStatementData
+
+    anomaly = db.query(AnomalyDetection).filter(AnomalyDetection.id == anomaly_id).first()
+    if not anomaly:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anomaly {anomaly_id} not found"
+        )
+
+    metadata = _parse_metadata(anomaly.metadata_json)
+    document = None
+    if anomaly.document_id:
+        document = db.query(DocumentUpload).filter(DocumentUpload.id == anomaly.document_id).first()
+
+    property_id = metadata.get("property_id")
+    if isinstance(property_id, str) and property_id.isdigit():
+        property_id = int(property_id)
+    if property_id is None and document:
+        property_id = document.property_id
+
+    period_id = metadata.get("period_id")
+    if isinstance(period_id, str) and period_id.isdigit():
+        period_id = int(period_id)
+    if period_id is None and document:
+        period_id = document.period_id
+
+    document_type = metadata.get("document_type")
+    if document_type is None and document:
+        document_type = document.document_type
+
+    expected_value = _safe_float(metadata.get("expected_value")) or _safe_float(anomaly.expected_value)
+    actual_value = _safe_float(metadata.get("actual_value")) or _safe_float(anomaly.field_value)
+
+    def build_chart(entries, total_override=None):
+        cleaned = [e for e in entries if e.get("value") is not None]
+        cleaned.sort(key=lambda e: abs(e["value"]), reverse=True)
+        top_entries = cleaned[:top_n]
+        remainder = cleaned[top_n:]
+        if remainder:
+            other_value = sum(e["value"] for e in remainder)
+            top_entries.append({
+                "name": "Other",
+                "value": other_value,
+                "type": "positive" if other_value >= 0 else "negative"
+            })
+
+        contributions = []
+        base_value = expected_value if expected_value is not None else 0
+        contributions.append({
+            "name": "Base Value",
+            "value": base_value,
+            "type": "total"
+        })
+        contributions.extend(top_entries)
+
+        if total_override is not None:
+            total_value = total_override
+        elif actual_value is not None:
+            total_value = actual_value
+        else:
+            total_value = sum(e["value"] for e in cleaned)
+
+        contributions.append({
+            "name": "Total",
+            "value": total_value,
+            "type": "total"
+        })
+
+        return contributions
+
+    entries = []
+
+    if document_type == "income_statement":
+        query = db.query(IncomeStatementData)
+        if anomaly.document_id:
+            query = query.filter(IncomeStatementData.upload_id == anomaly.document_id)
+        elif property_id and period_id:
+            query = query.filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id
+            )
+        items = query.filter(
+            IncomeStatementData.is_total.is_(False),
+            IncomeStatementData.is_subtotal.is_(False)
+        ).all()
+        for item in items:
+            value = _safe_float(item.period_amount)
+            if value is None:
+                continue
+            name = f"{item.account_code} - {item.account_name}"
+            entries.append({
+                "name": name,
+                "value": value,
+                "type": "positive" if value >= 0 else "negative"
+            })
+        return {"contributions": build_chart(entries)}
+
+    if document_type == "balance_sheet":
+        query = db.query(BalanceSheetData)
+        if anomaly.document_id:
+            query = query.filter(BalanceSheetData.upload_id == anomaly.document_id)
+        elif property_id and period_id:
+            query = query.filter(
+                BalanceSheetData.property_id == property_id,
+                BalanceSheetData.period_id == period_id
+            )
+        items = query.filter(
+            BalanceSheetData.is_total.is_(False),
+            BalanceSheetData.is_subtotal.is_(False)
+        ).all()
+        for item in items:
+            value = _safe_float(item.amount)
+            if value is None:
+                continue
+            name = f"{item.account_code} - {item.account_name}"
+            entries.append({
+                "name": name,
+                "value": value,
+                "type": "positive" if value >= 0 else "negative"
+            })
+        return {"contributions": build_chart(entries)}
+
+    if document_type == "cash_flow":
+        query = db.query(CashFlowData)
+        if anomaly.document_id:
+            query = query.filter(CashFlowData.upload_id == anomaly.document_id)
+        elif property_id and period_id:
+            query = query.filter(
+                CashFlowData.property_id == property_id,
+                CashFlowData.period_id == period_id
+            )
+        items = query.filter(
+            CashFlowData.is_total.is_(False),
+            CashFlowData.is_subtotal.is_(False)
+        ).all()
+        for item in items:
+            value = _safe_float(item.period_amount)
+            if value is None:
+                continue
+            name = f"{item.account_code} - {item.account_name}"
+            entries.append({
+                "name": name,
+                "value": value,
+                "type": "positive" if value >= 0 else "negative"
+            })
+        return {"contributions": build_chart(entries)}
+
+    if document_type == "rent_roll":
+        query = db.query(RentRollData)
+        if anomaly.document_id:
+            query = query.filter(RentRollData.upload_id == anomaly.document_id)
+        elif property_id and period_id:
+            query = query.filter(
+                RentRollData.property_id == property_id,
+                RentRollData.period_id == period_id
+            )
+        items = query.all()
+        for item in items:
+            value = _safe_float(item.monthly_rent)
+            if value is None:
+                value = _safe_float(item.annual_rent)
+            if value is None:
+                continue
+            name = f"{item.unit_number} - {item.tenant_name}"
+            entries.append({
+                "name": name,
+                "value": value,
+                "type": "positive" if value >= 0 else "negative"
+            })
+        return {"contributions": build_chart(entries)}
+
+    if document_type == "mortgage_statement":
+        query = db.query(MortgageStatementData)
+        if anomaly.document_id:
+            query = query.filter(MortgageStatementData.upload_id == anomaly.document_id)
+        elif property_id and period_id:
+            query = query.filter(
+                MortgageStatementData.property_id == property_id,
+                MortgageStatementData.period_id == period_id
+            )
+        items = query.all()
+        totals = {
+            "Principal Due": 0,
+            "Interest Due": 0,
+            "Tax Escrow Due": 0,
+            "Insurance Escrow Due": 0,
+            "Reserve Due": 0,
+            "Late Fees": 0,
+            "Other Fees": 0
+        }
+        total_payment = 0
+        for item in items:
+            totals["Principal Due"] += _safe_float(item.principal_due) or 0
+            totals["Interest Due"] += _safe_float(item.interest_due) or 0
+            totals["Tax Escrow Due"] += _safe_float(item.tax_escrow_due) or 0
+            totals["Insurance Escrow Due"] += _safe_float(item.insurance_escrow_due) or 0
+            totals["Reserve Due"] += _safe_float(item.reserve_due) or 0
+            totals["Late Fees"] += _safe_float(item.late_fees) or 0
+            totals["Other Fees"] += _safe_float(item.other_fees) or 0
+            total_payment += _safe_float(item.total_payment_due) or 0
+
+        for name, value in totals.items():
+            if value == 0:
+                continue
+            entries.append({
+                "name": name,
+                "value": float(value),
+                "type": "positive" if value >= 0 else "negative"
+            })
+        total_override = total_payment if total_payment != 0 else None
+        return {"contributions": build_chart(entries, total_override=total_override)}
+
+    return {"contributions": build_chart(entries)}
+
+
 @router.post("/{anomaly_id}/explain")
 async def generate_explanation(
     anomaly_id: int,

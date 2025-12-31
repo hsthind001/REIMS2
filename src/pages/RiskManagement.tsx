@@ -21,14 +21,11 @@ import {
 import { propertyService } from '../lib/property'
 import { anomaliesService } from '../lib/anomalies'
 import { workflowLockService, type WorkflowLock } from '../lib/workflowLocks'
-import { batchReprocessingService, type BatchReprocessingJob } from '../lib/batchReprocessing'
 import RiskWorkbenchTable, { type RiskItem } from '../components/risk-workbench/RiskWorkbenchTable'
 import { BatchReprocessingForm } from '../components/anomalies/BatchReprocessingForm'
 import { ExportButton } from '../components/ExportButton'
 import { useAuth } from '../components/AuthContext'
-import AnomalyDetail from '../components/anomalies/AnomalyDetail'
 import AlertDetailView from '../components/alerts/AlertDetailView'
-import { AlertService } from '../lib/alerts'
 import ValueSetupPanel from '../components/risk/ValueSetupPanel'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL 
@@ -54,7 +51,7 @@ interface Property {
 }
 
 type ViewMode = 'unified' | 'anomalies' | 'alerts' | 'locks' | 'analytics' | 'value_setup'
-type DetailView = 'anomaly' | 'alert' | null
+type DetailView = 'alert' | null
 
 export default function RiskManagement() {
   const { user } = useAuth()
@@ -85,8 +82,10 @@ export default function RiskManagement() {
     documentType: '',
     severity: '',
     status: '',
-    searchQuery: ''
+    searchQuery: '',
+    period: ''
   })
+  const [periodOptions, setPeriodOptions] = useState<{ value: string; label: string }[]>([])
   
   // Detail views
   const [selectedDetail, setSelectedDetail] = useState<{ type: DetailView; id: number } | null>(null)
@@ -97,7 +96,12 @@ export default function RiskManagement() {
   // Load properties on mount
   useEffect(() => {
     fetchProperties()
+    fetchPeriods()
   }, [])
+
+  useEffect(() => {
+    fetchPeriods()
+  }, [selectedProperty])
 
   const shouldLoadRiskItems = ['unified', 'anomalies', 'alerts', 'locks'].includes(viewMode)
 
@@ -121,7 +125,7 @@ export default function RiskManagement() {
     if (shouldLoadRiskItems) {
       loadUnifiedRiskItems()
     }
-  }, [selectedProperty, viewMode, filters.propertyId, shouldLoadRiskItems])
+  }, [selectedProperty, viewMode, filters.propertyId, filters.period, shouldLoadRiskItems])
 
   const fetchProperties = async () => {
     try {
@@ -137,6 +141,65 @@ export default function RiskManagement() {
       console.error('Failed to fetch properties:', err)
       setProperties([])
       setDashboardStats(prev => ({ ...prev, total_properties: 0 }))
+    }
+  }
+
+  const fetchPeriods = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (selectedProperty) {
+        params.append('property_id', selectedProperty.toString())
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/financial-periods/${params.toString() ? `?${params.toString()}` : ''}`,
+        { credentials: 'include' }
+      )
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      if (!Array.isArray(data)) {
+        setPeriodOptions([])
+        return
+      }
+
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ]
+
+      const uniquePeriods = new Map<string, string>()
+      data.forEach((period: any) => {
+        const year = Number(period.period_year)
+        const month = Number(period.period_month)
+        if (!Number.isFinite(year) || !Number.isFinite(month)) {
+          return
+        }
+        const value = `${year}-${String(month).padStart(2, '0')}`
+        const monthLabel = month >= 1 && month <= 12 ? monthNames[month - 1] : 'Unknown'
+        uniquePeriods.set(value, `${value} (${monthLabel})`)
+      })
+
+      const sorted = Array.from(uniquePeriods.entries())
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => {
+          const [aYear, aMonth] = a.value.split('-').map(Number)
+          const [bYear, bMonth] = b.value.split('-').map(Number)
+          if (aYear !== bYear) return bYear - aYear
+          return bMonth - aMonth
+        })
+
+      setPeriodOptions(sorted)
+
+      if (filters.period && !uniquePeriods.has(filters.period)) {
+        setFilters(prev => ({ ...prev, period: '' }))
+      }
+    } catch (err) {
+      console.error('Failed to fetch periods:', err)
+      setPeriodOptions([])
     }
   }
 
@@ -201,6 +264,7 @@ export default function RiskManagement() {
       if (filters.propertyId) params.append('property_id', filters.propertyId.toString())
       if (filters.documentType) params.append('document_type', filters.documentType)
       if (filters.severity) params.append('severity', filters.severity)
+      if (filters.period) params.append('period', filters.period)
       params.append('page', '1')
       params.append('page_size', '1000')
       params.append('sort_by', 'created_at')
@@ -271,7 +335,7 @@ export default function RiskManagement() {
 
   const handleItemClick = useCallback((item: RiskItem) => {
     if (item.type === 'anomaly') {
-      setSelectedDetail({ type: 'anomaly', id: item.id })
+      window.location.hash = `anomaly-details?anomaly_id=${item.id}`
     } else if (item.type === 'alert') {
       setSelectedDetail({ type: 'alert', id: item.id })
     }
@@ -724,6 +788,20 @@ export default function RiskManagement() {
           <option value="rent_roll">Rent Roll</option>
           <option value="mortgage_statement">Mortgage Statement</option>
         </select>
+        <select
+          value={filters.period}
+          onChange={(e) => setFilters(prev => ({ ...prev, period: e.target.value }))}
+          className="form-select"
+          style={{ minWidth: '200px' }}
+          aria-label="Filter by period (YYYY-MM)"
+        >
+          <option value="">All Periods</option>
+          {periodOptions.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Batch Operations Panel */}
@@ -781,17 +859,6 @@ export default function RiskManagement() {
       </div>
 
       {/* Detail Modals */}
-      {selectedDetail?.type === 'anomaly' && (
-        <div className="modal-overlay" onClick={() => setSelectedDetail(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', overflow: 'auto' }}>
-            <AnomalyDetail 
-              anomalyId={selectedDetail.id} 
-              onClose={() => setSelectedDetail(null)}
-            />
-          </div>
-        </div>
-      )}
-
       {selectedDetail?.type === 'alert' && (
         <div className="modal-overlay" onClick={() => setSelectedDetail(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', overflow: 'auto' }}>

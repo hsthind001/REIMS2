@@ -4,12 +4,9 @@
  */
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { Download, Search, Filter, Eye, AlertCircle, Brain, RefreshCw, FileText } from 'lucide-react'
-import { anomaliesService, type Anomaly, type DetailedAnomalyResponse, type UncertainAnomaly } from '../lib/anomalies'
-import { FeedbackButtons } from '../components/anomalies/FeedbackButtons'
-import { XAIExplanation } from '../components/anomalies/XAIExplanation'
+import { Search, Eye, AlertCircle, Brain, RefreshCw, FileText } from 'lucide-react'
+import { anomaliesService, type Anomaly, type UncertainAnomaly } from '../lib/anomalies'
 import { LearnedPatternsList } from '../components/anomalies/LearnedPatternsList'
-import { PortfolioBenchmarks } from '../components/anomalies/PortfolioBenchmarks'
 import { BatchReprocessingForm } from '../components/anomalies/BatchReprocessingForm'
 
 type TabType = 'all' | 'uncertain' | 'batch' | 'patterns'
@@ -18,14 +15,11 @@ export default function AnomalyDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('all')
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [uncertainAnomalies, setUncertainAnomalies] = useState<UncertainAnomaly[]>([])
-  const [selectedAnomaly, setSelectedAnomaly] = useState<DetailedAnomalyResponse | null>(null)
-  const [showDetailModal, setShowDetailModal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [severityFilter, setSeverityFilter] = useState<string>('')
   const [propertyId, setPropertyId] = useState<number | null>(null)
-  const [rerunningDocumentId, setRerunningDocumentId] = useState<number | null>(null)
 
   useEffect(() => {
     if (activeTab === 'all') {
@@ -62,57 +56,8 @@ export default function AnomalyDashboard() {
     }
   }
 
-  const handleViewDetails = async (anomalyId: number) => {
-    try {
-      const detailed = await anomaliesService.getAnomalyDetailed(anomalyId)
-      setSelectedAnomaly(detailed)
-      setShowDetailModal(true)
-    } catch (error) {
-      console.error('Failed to load anomaly details:', error)
-    }
-  }
-
-  const handleRerunAnomaliesForDocument = async (documentId: number) => {
-    if (!documentId) {
-      alert('Document ID not available for this anomaly')
-      return
-    }
-
-    setRerunningDocumentId(documentId)
-    try {
-      const result = await anomaliesService.triggerAnomalyDetection(documentId)
-      
-      // Show success message
-      alert(`✅ Anomaly detection completed!\n\n${result.new_anomalies_detected} new anomalies detected.\n${result.deleted_old_anomalies} old anomalies removed.\n\n${result.message}`)
-      
-      // Reload anomalies to show updated data
-      if (activeTab === 'all') {
-        loadAnomalies()
-      } else if (activeTab === 'uncertain') {
-        loadUncertainAnomalies()
-      }
-      
-      // If detail modal is open, reload it
-      if (selectedAnomaly) {
-        handleViewDetails(selectedAnomaly.id)
-      }
-    } catch (error: any) {
-      console.error('Failed to re-run anomaly detection:', error)
-      
-      // Show error message with details
-      let errorMessage = 'Failed to re-run anomaly detection.'
-      if (error.message) {
-        errorMessage = error.message
-      } else if (error.response?.data?.detail) {
-        errorMessage = typeof error.response.data.detail === 'string' 
-          ? error.response.data.detail 
-          : error.response.data.detail.message || errorMessage
-      }
-      
-      alert(`❌ ${errorMessage}`)
-    } finally {
-      setRerunningDocumentId(null)
-    }
+  const handleViewDetails = (anomalyId: number) => {
+    window.location.hash = `anomaly-details?anomaly_id=${anomalyId}`
   }
 
   const handleExport = async (format: 'csv' | 'excel' | 'json') => {
@@ -436,143 +381,6 @@ export default function AnomalyDashboard() {
         </>
       )}
 
-      {/* Detail Modal */}
-      {showDetailModal && selectedAnomaly && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 z-10">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Anomaly Details</h2>
-                <button
-                  onClick={() => {
-                    setShowDetailModal(false)
-                    setSelectedAnomaly(null)
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <span className="text-2xl">&times;</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* Re-run Detection Button */}
-              {selectedAnomaly.document_id && (
-                <div className="mb-4 pb-4 border-b border-gray-200">
-                  <button
-                    onClick={() => handleRerunAnomaliesForDocument(selectedAnomaly.document_id!)}
-                    disabled={rerunningDocumentId === selectedAnomaly.document_id}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                      rerunningDocumentId === selectedAnomaly.document_id
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-500 text-white hover:bg-blue-600'
-                    }`}
-                  >
-                    <RefreshCw 
-                      size={18} 
-                      className={rerunningDocumentId === selectedAnomaly.document_id ? 'animate-spin' : ''} 
-                    />
-                    {rerunningDocumentId === selectedAnomaly.document_id 
-                      ? 'Re-running Detection...' 
-                      : 'Re-run Anomaly Detection for This Document'}
-                  </button>
-                  <p className="text-sm text-gray-500 mt-2">
-                    This will delete existing anomalies and re-run detection for this document
-                  </p>
-                </div>
-              )}
-
-              {/* Basic Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-500">Account Code</div>
-                  <div className="text-lg font-semibold text-gray-900">{selectedAnomaly.account_code}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">Severity</div>
-                  <div className="text-lg font-semibold text-gray-900">{selectedAnomaly.severity}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">Actual Value</div>
-                  <div className="text-lg font-semibold text-gray-900">
-                    {selectedAnomaly.actual_value
-                      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-                          selectedAnomaly.actual_value
-                        )
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">Expected Value</div>
-                  <div className="text-lg font-semibold text-gray-900">
-                    {selectedAnomaly.expected_value
-                      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-                          selectedAnomaly.expected_value
-                        )
-                      : 'N/A'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Feedback Buttons */}
-              <FeedbackButtons
-                anomalyId={selectedAnomaly.id}
-                onFeedbackSubmitted={() => {
-                  handleViewDetails(selectedAnomaly.id) // Reload details
-                }}
-              />
-
-              {/* XAI Explanation */}
-              <XAIExplanation anomalyId={selectedAnomaly.id} />
-
-              {/* Portfolio Benchmarks */}
-              {selectedAnomaly.property_id && (
-                <PortfolioBenchmarks
-                  propertyId={selectedAnomaly.property_id}
-                  accountCode={selectedAnomaly.account_code}
-                />
-              )}
-
-              {/* Similar Anomalies */}
-              {selectedAnomaly.similar_anomalies && selectedAnomaly.similar_anomalies.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Similar Anomalies</h3>
-                  <div className="space-y-2">
-                    {selectedAnomaly.similar_anomalies.map((similar) => (
-                      <div
-                        key={similar.id}
-                        className="p-3 bg-gray-50 rounded-lg border border-gray-200"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {new Date(similar.detected_at).toLocaleDateString()}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Value: ${similar.actual_value?.toLocaleString() || 'N/A'}
-                            </div>
-                          </div>
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full ${
-                              similar.severity === 'critical'
-                                ? 'bg-red-100 text-red-800'
-                                : similar.severity === 'high'
-                                ? 'bg-orange-100 text-orange-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {similar.severity}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

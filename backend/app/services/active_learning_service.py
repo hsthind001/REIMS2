@@ -9,13 +9,16 @@ from typing import Dict, Optional, Any, List
 from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 import numpy as np
 import os
 import logging
 
 from app.models.anomaly_detection import AnomalyDetection
-from app.models.anomaly_feedback import AnomalyFeedback
+from app.models.anomaly_feedback import AnomalyFeedback, AnomalyLearningPattern
+from app.models.document_upload import DocumentUpload
+from app.core.feature_flags import FeatureFlags
+from app.core.config import settings
 from app.services.anomaly_risk_scorer import AnomalyRiskScorer
 from app.services.enhanced_anomaly_ensemble import EnhancedAnomalyEnsemble
 
@@ -202,3 +205,59 @@ class ActiveLearningService:
             Updated weights dictionary
         """
         return self.risk_scorer.calibrate_weights_from_feedback()
+
+    def should_suppress_anomaly(self, anomaly: AnomalyDetection) -> tuple[bool, Optional[AnomalyLearningPattern]]:
+        """
+        Determine whether to auto-suppress an anomaly using learned patterns.
+
+        Returns:
+            Tuple of (should_suppress, matched_pattern)
+        """
+        auto_suppression_enabled = FeatureFlags.is_auto_suppression_enabled() or settings.AUTO_SUPPRESSION_ENABLED
+        if not auto_suppression_enabled or anomaly is None:
+            return False, None
+
+        account_code = getattr(anomaly, "field_name", None)
+        if not account_code:
+            return False, None
+
+        property_id = None
+        if getattr(anomaly, "document_id", None):
+            doc = self.db.query(DocumentUpload.property_id).filter(
+                DocumentUpload.id == anomaly.document_id
+            ).first()
+            if doc:
+                property_id = doc.property_id
+
+        query = self.db.query(AnomalyLearningPattern).filter(
+            AnomalyLearningPattern.account_code == account_code,
+            AnomalyLearningPattern.auto_suppress.is_(True)
+        )
+
+        if getattr(anomaly, "anomaly_type", None):
+            query = query.filter(
+                or_(
+                    AnomalyLearningPattern.anomaly_type == anomaly.anomaly_type,
+                    AnomalyLearningPattern.anomaly_type.is_(None)
+                )
+            )
+
+        if property_id is not None:
+            query = query.filter(
+                or_(
+                    AnomalyLearningPattern.property_id == property_id,
+                    AnomalyLearningPattern.property_id.is_(None)
+                )
+            )
+        else:
+            query = query.filter(AnomalyLearningPattern.property_id.is_(None))
+
+        pattern = query.order_by(AnomalyLearningPattern.confidence.desc().nullslast()).first()
+        if not pattern:
+            return False, None
+
+        confidence = float(pattern.confidence) if pattern.confidence is not None else 0.0
+        if confidence < settings.AUTO_SUPPRESSION_CONFIDENCE_THRESHOLD:
+            return False, pattern
+
+        return True, pattern

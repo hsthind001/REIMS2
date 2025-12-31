@@ -28,6 +28,17 @@ class DatabaseTask(Task):
             self._db = SessionLocal()
         return self._db
 
+    def is_aborted(self) -> bool:
+        request = getattr(self, "request", None)
+        if not request:
+            return False
+        if getattr(request, "is_revoked", False):
+            return True
+        task_id = getattr(request, "id", None)
+        if not task_id:
+            return False
+        return celery_app.AsyncResult(task_id).state == "REVOKED"
+
     def after_return(self, *args, **kwargs):
         if self._db is not None:
             self._db.close()
@@ -270,4 +281,3 @@ def reprocess_documents_batch(self, job_id: int):
     
     finally:
         db.close()
-

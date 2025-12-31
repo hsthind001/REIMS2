@@ -208,7 +208,7 @@ class BatchReprocessingService:
         Returns:
             True if cancelled successfully
         """
-        from app.core.celery_app import celery_app
+        from app.core.celery_config import celery_app
 
         job = self.db.query(BatchReprocessingJob).filter(BatchReprocessingJob.id == job_id).first()
 
@@ -259,4 +259,3 @@ class BatchReprocessingService:
         query = query.order_by(BatchReprocessingJob.created_at.desc()).limit(limit)
 
         return query.all()
-

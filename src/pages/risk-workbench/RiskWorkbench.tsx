@@ -76,7 +76,7 @@ export default function RiskWorkbench() {
   const handleItemClick = (item: RiskItem) => {
     // Navigate to detail view based on type
     if (item.type === 'anomaly') {
-      window.location.hash = `#anomaly-detail?id=${item.id}`;
+      window.location.hash = `anomaly-details?anomaly_id=${item.id}`;
     } else if (item.type === 'alert') {
       window.location.hash = `#alert-detail?id=${item.id}`;
     } else if (item.type === 'review_item') {
