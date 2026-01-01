@@ -3,7 +3,7 @@ Risk Alerts API Endpoints
 
 Handles committee alerts, DSCR monitoring, and covenant compliance
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 from pydantic import BaseModel
@@ -17,6 +17,7 @@ from app.services.committee_notification_service import CommitteeNotificationSer
 from app.services.alert_correlation_service import AlertCorrelationService
 from app.services.alert_escalation_service import AlertEscalationService
 from app.services.alert_prioritization_service import AlertPrioritizationService
+from app.services.alert_backfill_job_service import AlertBackfillJobService
 from app.models.committee_alert import CommitteeAlert, AlertType, AlertStatus, AlertSeverity, CommitteeType
 from app.models.property import Property
 from app.models.user import User
@@ -26,6 +27,12 @@ from app.models.document_upload import DocumentUpload
 from app.models.financial_period import FinancialPeriod
 from app.models.financial_metrics import FinancialMetrics
 from app.api.dependencies import get_current_user
+from app.schemas.batch_reprocessing import (
+    BatchJobCreate,
+    BatchJobResponse,
+    BatchJobStatusResponse,
+    BatchJobListItem
+)
 
 router = APIRouter(prefix="/risk-alerts", tags=["risk_alerts"])
 logger = logging.getLogger(__name__)
@@ -482,6 +489,162 @@ def backfill_alerts(
         "alerts_created": total_alerts,
         "results": results
     }
+
+
+@router.post("/backfill-jobs", response_model=BatchJobResponse, status_code=status.HTTP_201_CREATED)
+async def create_alert_backfill_job(
+    request: BatchJobCreate,
+    ignore_cooldown: bool = Query(True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Create and start an alert backfill batch job.
+
+    Uses date_range_start/date_range_end to scope financial periods.
+    """
+    if not request.date_range_start or not request.date_range_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_range_start and date_range_end are required for alert backfill jobs"
+        )
+
+    try:
+        service = AlertBackfillJobService(db)
+        job = service.create_batch_job(
+            user_id=current_user.id,
+            property_ids=request.property_ids,
+            date_range_start=request.date_range_start,
+            date_range_end=request.date_range_end,
+            document_types=request.document_types,
+            job_name=request.job_name,
+            ignore_cooldown=ignore_cooldown
+        )
+
+        job_info = service.start_batch_job(job.id)
+
+        return BatchJobResponse(
+            job_id=job.id,
+            job_name=job.job_name,
+            status=job.status,
+            total_documents=job.total_documents,
+            created_at=job.created_at,
+            task_id=job_info.get("task_id")
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating alert backfill job: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create alert backfill job: {str(e)}"
+        )
+
+
+@router.get("/backfill-jobs", response_model=List[BatchJobListItem])
+async def list_alert_backfill_jobs(
+    user_id: Optional[int] = Query(None, description="Filter by user ID"),
+    status_filter: Optional[str] = Query(None, description="Filter by status (queued, running, completed, failed, cancelled)"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of jobs to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List alert backfill batch jobs with optional filters.
+    """
+    try:
+        service = AlertBackfillJobService(db)
+
+        filter_user_id = user_id if user_id else (current_user.id if not current_user.is_superuser else None)
+
+        jobs = service.list_jobs(
+            user_id=filter_user_id,
+            status=status_filter,
+            limit=limit
+        )
+
+        result = []
+        for job in jobs:
+            progress_pct = 0
+            if job.total_documents > 0:
+                progress_pct = int((job.processed_documents / job.total_documents) * 100)
+
+            result.append(BatchJobListItem(
+                id=job.id,
+                job_name=job.job_name,
+                status=job.status,
+                total_documents=job.total_documents,
+                processed_documents=job.processed_documents,
+                successful_count=job.successful_count,
+                failed_count=job.failed_count,
+                skipped_count=job.skipped_count,
+                progress_pct=progress_pct,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+                estimated_completion_at=job.estimated_completion_at,
+                celery_task_id=job.celery_task_id,
+                results_summary=job.results_summary,
+                created_at=job.created_at,
+                initiated_by=job.initiated_by
+            ))
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error listing alert backfill jobs: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list alert backfill jobs: {str(e)}"
+        )
+
+
+@router.get("/backfill-jobs/{job_id}", response_model=BatchJobStatusResponse)
+async def get_alert_backfill_job_status(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current status of an alert backfill job.
+    """
+    try:
+        service = AlertBackfillJobService(db)
+        status_info = service.get_job_status(job_id)
+        return BatchJobStatusResponse(**status_info)
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting alert backfill job status: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get alert backfill job status: {str(e)}"
+        )
+
+
+@router.post("/backfill-jobs/{job_id}/cancel", status_code=status.HTTP_200_OK)
+async def cancel_alert_backfill_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancel a running or queued alert backfill job.
+    """
+    try:
+        service = AlertBackfillJobService(db)
+        service.cancel_job(job_id)
+        return {"status": "cancelled", "job_id": job_id, "message": "Job cancelled successfully"}
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error cancelling alert backfill job: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel alert backfill job: {str(e)}"
+        )
 
 
 @router.get("")

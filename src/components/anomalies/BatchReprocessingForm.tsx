@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react'
+import { alertBackfillService } from '../../lib/alertBackfill'
 import { batchReprocessingService, type BatchReprocessingJob, type BatchJobCreateRequest } from '../../lib/batchReprocessing'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
@@ -24,6 +25,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [jobType, setJobType] = useState<'anomaly_reprocessing' | 'alert_backfill'>('anomaly_reprocessing')
 
   // Form state
   const [jobName, setJobName] = useState('')
@@ -44,14 +46,16 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
       wsConnections.current.forEach((ws) => ws.close())
       wsConnections.current.clear()
     }
-  }, [])
+  }, [jobType])
 
   const loadJobs = async () => {
     setLoading(true)
     setError(null)
 
     try {
-      const data = await batchReprocessingService.listJobs()
+      const data = jobType === 'alert_backfill'
+        ? await alertBackfillService.listJobs()
+        : await batchReprocessingService.listJobs('anomaly_reprocessing')
       setJobs(data)
 
       // Set up WebSocket connections for running jobs
@@ -114,7 +118,11 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
           : undefined,
       }
 
-      await batchReprocessingService.createJob(request)
+      if (jobType === 'alert_backfill') {
+        await alertBackfillService.createJob(request)
+      } else {
+        await batchReprocessingService.createJob(request)
+      }
       await loadJobs()
       setShowCreateForm(false)
       resetForm()
@@ -129,7 +137,11 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
     if (!confirm('Are you sure you want to cancel this job?')) return
 
     try {
-      await batchReprocessingService.cancelJob(jobId)
+      if (jobType === 'alert_backfill') {
+        await alertBackfillService.cancelJob(jobId)
+      } else {
+        await batchReprocessingService.cancelJob(jobId)
+      }
       await loadJobs()
     } catch (err: any) {
       setError(err.message || 'Failed to cancel job')
@@ -182,8 +194,21 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
 
   return (
     <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-semibold text-gray-900">Batch Reprocessing</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <h3 className="text-xl font-semibold text-gray-900">Batch Jobs</h3>
+          <label className="text-sm font-medium text-gray-700">
+            Job Type
+          </label>
+          <select
+            value={jobType}
+            onChange={(e) => setJobType(e.target.value as 'anomaly_reprocessing' | 'alert_backfill')}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="anomaly_reprocessing">Anomaly Reprocessing</option>
+            <option value="alert_backfill">Alert Backfill</option>
+          </select>
+        </div>
         <button
           onClick={() => setShowCreateForm(!showCreateForm)}
           className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all flex items-center gap-2"
@@ -232,6 +257,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                 type="date"
                 value={dateStart}
                 onChange={(e) => setDateStart(e.target.value)}
+                required={jobType === 'alert_backfill'}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
@@ -244,6 +270,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                 type="date"
                 value={dateEnd}
                 onChange={(e) => setDateEnd(e.target.value)}
+                required={jobType === 'alert_backfill'}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
@@ -306,7 +333,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
       ) : jobs.length === 0 ? (
         <div className="text-center py-8">
           <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <p className="text-gray-600">No batch reprocessing jobs found.</p>
+          <p className="text-gray-600">No batch jobs found.</p>
         </div>
       ) : (
         <div className="space-y-4">

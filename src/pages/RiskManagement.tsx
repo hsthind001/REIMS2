@@ -757,75 +757,77 @@ export default function RiskManagement() {
       </div>
 
       {/* Filters */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '1rem', 
-        marginBottom: '1.5rem',
-        flexWrap: 'wrap',
-        alignItems: 'center'
-      }}>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flex: 1, minWidth: '200px' }}>
-          <Search size={16} style={{ color: '#6b7280' }} />
-          <input
-            type="text"
-            placeholder="Search risks..."
-            value={filters.searchQuery}
-            onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-            className="form-input"
-            style={{ flex: 1, padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-          />
+      {viewMode !== 'value_setup' && (
+        <div style={{ 
+          display: 'flex', 
+          gap: '1rem', 
+          marginBottom: '1.5rem',
+          flexWrap: 'wrap',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flex: 1, minWidth: '200px' }}>
+            <Search size={16} style={{ color: '#6b7280' }} />
+            <input
+              type="text"
+              placeholder="Search risks..."
+              value={filters.searchQuery}
+              onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
+              className="form-input"
+              style={{ flex: 1, padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+            />
+          </div>
+          <select
+            value={filters.severity}
+            onChange={(e) => setFilters(prev => ({ ...prev, severity: e.target.value }))}
+            className="select-input"
+            style={{ minWidth: '150px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+          >
+            <option value="">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+            className="select-input"
+            style={{ minWidth: '150px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
+          >
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="resolved">Resolved</option>
+            <option value="acknowledged">Acknowledged</option>
+          </select>
+          <select
+            value={filters.documentType}
+            onChange={(e) => setFilters(prev => ({ ...prev, documentType: e.target.value }))}
+            className="form-select"
+            style={{ minWidth: '180px' }}
+          >
+            <option value="">All Document Types</option>
+            <option value="income_statement">Income Statement</option>
+            <option value="balance_sheet">Balance Sheet</option>
+            <option value="cash_flow">Cash Flow</option>
+            <option value="rent_roll">Rent Roll</option>
+            <option value="mortgage_statement">Mortgage Statement</option>
+          </select>
+          <select
+            value={filters.period}
+            onChange={(e) => setFilters(prev => ({ ...prev, period: e.target.value }))}
+            className="form-select"
+            style={{ minWidth: '200px' }}
+            aria-label="Filter by period (YYYY-MM)"
+          >
+            <option value="">All Periods</option>
+            {periodOptions.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          value={filters.severity}
-          onChange={(e) => setFilters(prev => ({ ...prev, severity: e.target.value }))}
-          className="select-input"
-          style={{ minWidth: '150px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-        >
-          <option value="">All Severities</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <select
-          value={filters.status}
-          onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-          className="select-input"
-          style={{ minWidth: '150px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-        >
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="resolved">Resolved</option>
-          <option value="acknowledged">Acknowledged</option>
-        </select>
-        <select
-          value={filters.documentType}
-          onChange={(e) => setFilters(prev => ({ ...prev, documentType: e.target.value }))}
-          className="form-select"
-          style={{ minWidth: '180px' }}
-        >
-          <option value="">All Document Types</option>
-          <option value="income_statement">Income Statement</option>
-          <option value="balance_sheet">Balance Sheet</option>
-          <option value="cash_flow">Cash Flow</option>
-          <option value="rent_roll">Rent Roll</option>
-          <option value="mortgage_statement">Mortgage Statement</option>
-        </select>
-        <select
-          value={filters.period}
-          onChange={(e) => setFilters(prev => ({ ...prev, period: e.target.value }))}
-          className="form-select"
-          style={{ minWidth: '200px' }}
-          aria-label="Filter by period (YYYY-MM)"
-        >
-          <option value="">All Periods</option>
-          {periodOptions.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      )}
 
       {/* Batch Operations Panel */}
       {showBatchForm && (

@@ -12,6 +12,7 @@ celery_app = Celery(
         "app.tasks.extraction_tasks",
         "app.tasks.anomaly_detection_tasks",  # BR-008: Nightly anomaly detection
         "app.tasks.batch_reprocessing_tasks",  # Phase 1: Batch reprocessing for anomaly detection
+        "app.tasks.alert_backfill_tasks",  # Alert backfill batch jobs
         "app.tasks.learning_tasks"  # Self-learning system tasks
     ]
 )
@@ -108,4 +109,3 @@ celery_app.conf.beat_schedule = {
 #     "app.tasks.extraction_tasks.retry_failed_extraction": {"queue": "extraction"},
 #     "app.tasks.extraction_tasks.batch_extract_documents": {"queue": "extraction"},
 # }
-

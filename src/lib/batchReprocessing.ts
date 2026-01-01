@@ -114,9 +114,10 @@ export const batchReprocessingService = {
   /**
    * List all batch reprocessing jobs
    */
-  async listJobs(): Promise<BatchReprocessingJob[]> {
+  async listJobs(jobType?: string): Promise<BatchReprocessingJob[]> {
     try {
-      return await api.get<BatchReprocessingJob[]>('/batch-reprocessing/jobs')
+      const params = jobType ? `?job_type=${encodeURIComponent(jobType)}` : ''
+      return await api.get<BatchReprocessingJob[]>(`/batch-reprocessing/jobs${params}`)
     } catch (error: any) {
       console.error('Failed to list batch jobs:', error)
       throw new Error(error.message || 'Failed to list batch jobs')

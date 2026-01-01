@@ -228,14 +228,16 @@ def reprocess_documents_batch(self, job_id: int):
         # Mark job as completed
         job.status = 'completed'
         job.completed_at = datetime.now()
-        job.results_summary = {
+        summary = dict(job.results_summary or {})
+        summary.update({
             "total_processed": total_processed,
             "successful": successful,
             "failed": failed,
             "skipped": skipped,
             "completion_time": datetime.now().isoformat(),
             "error_details": error_details[:100]  # Store first 100 errors to avoid bloat
-        }
+        })
+        job.results_summary = summary
         db.commit()
         
         logger.info(f"Completed batch job {job_id}: {successful} successful, {failed} failed, {skipped} skipped")
@@ -265,7 +267,9 @@ def reprocess_documents_batch(self, job_id: int):
         if job:
             job.status = 'failed'
             job.completed_at = datetime.now()
-            job.results_summary = {"error": "Time limit exceeded"}
+            summary = dict(job.results_summary or {})
+            summary.update({"error": "Time limit exceeded"})
+            job.results_summary = summary
             db.commit()
         return {"status": "timeout", "message": "Processing time limit exceeded"}
     
@@ -275,7 +279,9 @@ def reprocess_documents_batch(self, job_id: int):
         if job:
             job.status = 'failed'
             job.completed_at = datetime.now()
-            job.results_summary = {"error": str(e)}
+            summary = dict(job.results_summary or {})
+            summary.update({"error": str(e)})
+            job.results_summary = summary
             db.commit()
         return {"status": "error", "message": str(e)}
     

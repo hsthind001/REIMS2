@@ -8,7 +8,7 @@ Allows filtering by property, date range, document type, and extraction status.
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 import logging
 
 from app.models.batch_reprocessing_job import BatchReprocessingJob
@@ -102,7 +102,10 @@ class BatchReprocessingService:
             processed_documents=0,
             successful_count=0,
             failed_count=0,
-            skipped_count=0
+            skipped_count=0,
+            results_summary={
+                "job_type": "anomaly_reprocessing"
+            }
         )
 
         self.db.add(batch_job)
@@ -235,6 +238,7 @@ class BatchReprocessingService:
         self,
         user_id: Optional[int] = None,
         status: Optional[str] = None,
+        job_type: Optional[str] = None,
         limit: int = 50
     ) -> List[BatchReprocessingJob]:
         """
@@ -249,6 +253,19 @@ class BatchReprocessingService:
             List of batch jobs
         """
         query = self.db.query(BatchReprocessingJob)
+
+        if job_type:
+            job_type_expr = BatchReprocessingJob.results_summary['job_type'].astext
+            if job_type == "anomaly_reprocessing":
+                query = query.filter(
+                    or_(
+                        BatchReprocessingJob.results_summary.is_(None),
+                        job_type_expr.is_(None),
+                        job_type_expr == job_type
+                    )
+                )
+            else:
+                query = query.filter(job_type_expr == job_type)
 
         if user_id:
             query = query.filter(BatchReprocessingJob.initiated_by == user_id)

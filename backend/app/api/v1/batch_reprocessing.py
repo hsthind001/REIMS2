@@ -156,6 +156,7 @@ async def cancel_job(
 async def list_jobs(
     user_id: Optional[int] = Query(None, description="Filter by user ID"),
     status_filter: Optional[str] = Query(None, description="Filter by status (queued, running, completed, failed, cancelled)"),
+    job_type: Optional[str] = Query(None, description="Filter by job type (anomaly_reprocessing, alert_backfill)"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of jobs to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -175,6 +176,7 @@ async def list_jobs(
         jobs = service.list_jobs(
             user_id=filter_user_id,
             status=status_filter,
+            job_type=job_type,
             limit=limit
         )
         
@@ -213,4 +215,3 @@ async def list_jobs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list jobs: {str(e)}"
         )
-
