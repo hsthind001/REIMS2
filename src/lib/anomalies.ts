@@ -23,6 +23,7 @@ export interface Anomaly {
   id: number
   property_id: number
   account_code: string
+  account_name?: string
   field_name?: string
   anomaly_type: string
   severity: 'critical' | 'high' | 'medium' | 'low'

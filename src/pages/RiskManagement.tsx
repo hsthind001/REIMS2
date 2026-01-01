@@ -125,7 +125,14 @@ export default function RiskManagement() {
     if (shouldLoadRiskItems) {
       loadUnifiedRiskItems()
     }
-  }, [selectedProperty, viewMode, filters.propertyId, filters.period, shouldLoadRiskItems])
+  }, [
+    selectedProperty,
+    viewMode,
+    filters.propertyId,
+    filters.period,
+    filters.documentType,
+    shouldLoadRiskItems
+  ])
 
   const fetchProperties = async () => {
     try {
@@ -213,13 +220,27 @@ export default function RiskManagement() {
       
       if (alertsResponse.ok) {
         const alertsData = await alertsResponse.json()
+        const criticalAlerts = alertsData.total_critical_alerts
+          ?? alertsData.critical_alerts
+          ?? alertsData.summary?.critical_alerts
+          ?? 0
+        const activeAlerts = alertsData.total_active_alerts
+          ?? alertsData.active_alerts
+          ?? alertsData.summary?.active_alerts
+          ?? 0
+        const propertiesAtRisk = alertsData.properties_at_risk
+          ?? alertsData.summary?.properties_at_risk
+          ?? 0
+        const slaComplianceRate = alertsData.sla_compliance_rate
+          ?? alertsData.summary?.sla_compliance_rate
+          ?? 0
         setDashboardStats(prev => ({
           ...prev,
-          total_critical_alerts: alertsData.critical_alerts || 0,
-          total_active_alerts: alertsData.active_alerts || 0,
-          properties_at_risk: alertsData.properties_at_risk || 0,
+          total_critical_alerts: criticalAlerts,
+          total_active_alerts: activeAlerts,
+          properties_at_risk: propertiesAtRisk,
           avg_resolution_time_hours: alertsData.avg_resolution_time_hours || 0,
-          sla_compliance_rate: alertsData.sla_compliance_rate || 0
+          sla_compliance_rate: slaComplianceRate
         }))
       }
 
@@ -241,14 +262,16 @@ export default function RiskManagement() {
 
       // Load anomalies count
       const anomaliesResponse = await fetch(
-        `${API_BASE_URL}/anomalies?${selectedProperty ? `property_id=${selectedProperty}&` : ''}limit=1`,
+        `${API_BASE_URL}/risk-workbench/unified?item_type=anomaly&page=1&page_size=1${selectedProperty ? `&property_id=${selectedProperty}` : ''}`,
         { credentials: 'include' }
       )
       
       if (anomaliesResponse.ok) {
-        // We'll get total from unified endpoint
         const anomaliesData = await anomaliesResponse.json()
-        // For now, we'll update from unified load
+        setDashboardStats(prev => ({
+          ...prev,
+          total_anomalies: anomaliesData.total || 0
+        }))
       }
     } catch (err: any) {
       console.error('Failed to load dashboard stats:', err)
@@ -261,6 +284,8 @@ export default function RiskManagement() {
     
     try {
       const params = new URLSearchParams()
+      if (viewMode === 'anomalies') params.append('item_type', 'anomaly')
+      if (viewMode === 'alerts') params.append('item_type', 'alert')
       if (filters.propertyId) params.append('property_id', filters.propertyId.toString())
       if (filters.documentType) params.append('document_type', filters.documentType)
       if (filters.severity) params.append('severity', filters.severity)
@@ -294,6 +319,8 @@ export default function RiskManagement() {
       const transformedItems: RiskItem[] = data.items.map((item: any) => {
         const propertyCode = item.property || item.property_code
         const propertyName = propertyMap.get(propertyCode) || propertyCode || 'Unknown Property'
+        const accountCode = item.account_code || item.field_name || item.metadata?.account_code
+        const accountName = item.account_name || item.metadata?.account_name || item.metadata?.account_description
         
         return {
           id: item.id,
@@ -301,6 +328,8 @@ export default function RiskManagement() {
           severity: item.severity?.toLowerCase() || 'medium',
           property_id: filters.propertyId || 0,
           property_name: propertyName,
+          account_code: accountCode,
+          account_name: accountName,
           age_days: item.age_days || Math.floor((item.age_seconds || 0) / 86400),
           impact_amount: item.impact ? parseFloat(item.impact) : undefined,
           status: item.status || 'active',
@@ -319,12 +348,6 @@ export default function RiskManagement() {
 
       setRiskItems(transformedItems)
       
-      // Update stats
-      setDashboardStats(prev => ({
-        ...prev,
-        total_anomalies: transformedItems.filter(i => i.type === 'anomaly').length,
-        total_active_alerts: transformedItems.filter(i => i.type === 'alert' && i.status === 'active').length
-      }))
     } catch (err: any) {
       setError(err.message || 'Failed to load risk items')
       console.error('Error loading risk items:', err)

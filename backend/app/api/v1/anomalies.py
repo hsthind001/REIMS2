@@ -21,6 +21,7 @@ from datetime import date
 from app.models.anomaly_explanation import AnomalyExplanation
 from app.models.anomaly_detection import AnomalyDetection
 from app.models.anomaly_feedback import AnomalyFeedback
+from app.models.chart_of_accounts import ChartOfAccounts
 from pydantic import BaseModel
 import logging
 
@@ -366,6 +367,11 @@ async def get_anomaly(
         ).scalar()
 
     account_code = metadata.get("account_code") or anomaly.field_name
+    account_name = metadata.get("account_name")
+    if not account_name and account_code:
+        account_name = db.query(ChartOfAccounts.account_name).filter(
+            ChartOfAccounts.account_code == account_code
+        ).scalar()
     actual_value = _safe_float(metadata.get("actual_value")) or _safe_float(anomaly.field_value)
     expected_value = _safe_float(anomaly.expected_value)
     message = metadata.get("message") or (
@@ -379,6 +385,7 @@ async def get_anomaly(
         "message": message,
         "property_id": property_id,
         "account_code": account_code,
+        "account_name": account_name,
         "actual_value": actual_value,
         "expected_value": expected_value,
         "detected_at": anomaly.detected_at.isoformat() if anomaly.detected_at else None
@@ -460,6 +467,11 @@ async def get_anomaly_detailed(
         document_type = document.document_type
 
     account_code = metadata.get("account_code") or anomaly.field_name
+    account_name = metadata.get("account_name")
+    if not account_name and account_code:
+        account_name = db.query(ChartOfAccounts.account_name).filter(
+            ChartOfAccounts.account_code == account_code
+        ).scalar()
     actual_value = _safe_float(metadata.get("actual_value")) or _safe_float(anomaly.field_value)
     expected_value = _safe_float(metadata.get("expected_value")) or _safe_float(anomaly.expected_value)
 
@@ -487,6 +499,7 @@ async def get_anomaly_detailed(
         "anomaly_type": anomaly.anomaly_type,
         "severity": anomaly.severity,
         "account_code": account_code,
+        "account_name": account_name,
         "field_name": anomaly.field_name,
         "actual_value": actual_value,
         "expected_value": expected_value,
@@ -513,6 +526,7 @@ async def get_anomaly_detailed(
             "message": message,
             "property_id": property_id,
             "account_code": account_code,
+            "account_name": account_name,
             "field_name": anomaly.field_name,
             "actual_value": actual_value,
             "expected_value": expected_value,

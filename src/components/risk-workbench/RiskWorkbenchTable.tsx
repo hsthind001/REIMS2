@@ -14,6 +14,8 @@ export interface RiskItem {
   severity: 'critical' | 'high' | 'medium' | 'low' | 'urgent' | 'warning' | 'info';
   property_id: number;
   property_name?: string;
+  account_code?: string;
+  account_name?: string;
   age_days: number;
   impact_amount?: number;
   status: string;
@@ -111,6 +113,8 @@ export default function RiskWorkbenchTable({
 
   const getExportData = () => {
     return filteredAndSortedItems.map(item => ({
+      'Account Code': item.account_code || '',
+      'Account Name': item.account_name || '',
       Type: item.type,
       Severity: item.severity,
       Property: item.property_name || `Property ${item.property_id}`,
@@ -200,6 +204,28 @@ export default function RiskWorkbenchTable({
                   cursor: 'pointer',
                   fontWeight: 600,
                 }}
+                onClick={() => handleSort('account_code')}
+              >
+                Account Code
+              </th>
+              <th
+                style={{
+                  padding: '0.75rem',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+                onClick={() => handleSort('account_name')}
+              >
+                Account Name
+              </th>
+              <th
+                style={{
+                  padding: '0.75rem',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
                 onClick={() => handleSort('type')}
               >
                 Type
@@ -267,7 +293,7 @@ export default function RiskWorkbenchTable({
           <tbody>
             {filteredAndSortedItems.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#6c757d' }}>
+                <td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: '#6c757d' }}>
                   No risk items found
                 </td>
               </tr>
@@ -287,6 +313,12 @@ export default function RiskWorkbenchTable({
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
+                  <td style={{ padding: '0.75rem', fontFamily: 'monospace' }}>
+                    {item.account_code || '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem' }}>
+                    {item.account_name || '—'}
+                  </td>
                   <td style={{ padding: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     {getTypeIcon(item.type)}
                     <span style={{ textTransform: 'capitalize' }}>{item.type.replace('_', ' ')}</span>
@@ -297,7 +329,7 @@ export default function RiskWorkbenchTable({
                   </td>
                   <td style={{ padding: '0.75rem' }}>{item.age_days} days</td>
                   <td style={{ padding: '0.75rem' }}>
-                    {item.impact_amount 
+                    {item.impact_amount !== undefined && item.impact_amount !== null
                       ? `$${item.impact_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : 'N/A'}
                   </td>

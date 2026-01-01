@@ -5,6 +5,7 @@ Handles committee alerts, DSCR monitoring, and covenant compliance
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, or_
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -22,6 +23,8 @@ from app.models.user import User
 from app.models.income_statement_data import IncomeStatementData
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.document_upload import DocumentUpload
+from app.models.financial_period import FinancialPeriod
+from app.models.financial_metrics import FinancialMetrics
 from app.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/risk-alerts", tags=["risk_alerts"])
@@ -398,6 +401,87 @@ def trigger_alerts_for_property(
     except Exception as e:
         logger.error(f"Failed to trigger alerts for property {property_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to trigger alerts: {str(e)}")
+
+
+@router.post("/backfill-alerts")
+def backfill_alerts(
+    start_year: int = Query(..., ge=2000, le=2100),
+    start_month: int = Query(..., ge=1, le=12),
+    end_year: int = Query(..., ge=2000, le=2100),
+    end_month: int = Query(..., ge=1, le=12),
+    property_id: Optional[int] = Query(None),
+    ignore_cooldown: bool = Query(True),
+    db: Session = Depends(get_db)
+):
+    """
+    Backfill alerts for a date range (YYYY-MM to YYYY-MM).
+
+    Evaluates alert rules for each property/period that has metrics in the range.
+    """
+    if (end_year, end_month) < (start_year, start_month):
+        raise HTTPException(status_code=400, detail="End period must be >= start period")
+
+    from app.services.alert_trigger_service import AlertTriggerService
+
+    period_query = db.query(FinancialPeriod, FinancialMetrics).join(
+        FinancialMetrics, FinancialMetrics.period_id == FinancialPeriod.id
+    )
+
+    if property_id:
+        period_query = period_query.filter(FinancialPeriod.property_id == property_id)
+
+    period_query = period_query.filter(
+        or_(
+            FinancialPeriod.period_year > start_year,
+            and_(
+                FinancialPeriod.period_year == start_year,
+                FinancialPeriod.period_month >= start_month
+            )
+        ),
+        or_(
+            FinancialPeriod.period_year < end_year,
+            and_(
+                FinancialPeriod.period_year == end_year,
+                FinancialPeriod.period_month <= end_month
+            )
+        )
+    ).order_by(
+        FinancialPeriod.property_id,
+        FinancialPeriod.period_year,
+        FinancialPeriod.period_month
+    )
+
+    results = []
+    total_alerts = 0
+    trigger_service = AlertTriggerService(db)
+    period_rows = period_query.all()
+
+    for period, metrics in period_rows:
+        alerts = trigger_service.evaluate_and_trigger_alerts(
+            property_id=period.property_id,
+            period_id=period.id,
+            metrics=metrics,
+            ignore_cooldown=ignore_cooldown
+        )
+        if alerts:
+            results.append({
+                "property_id": period.property_id,
+                "period_id": period.id,
+                "period_year": period.period_year,
+                "period_month": period.period_month,
+                "alerts_created": len(alerts)
+            })
+        total_alerts += len(alerts)
+
+    return {
+        "success": True,
+        "property_id": property_id,
+        "start_period": f"{start_year}-{start_month:02d}",
+        "end_period": f"{end_year}-{end_month:02d}",
+        "periods_evaluated": len(period_rows),
+        "alerts_created": total_alerts,
+        "results": results
+    }
 
 
 @router.get("")
@@ -1110,10 +1194,39 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
         AND p.status = 'active'
     """
     good_dscr_count = db.execute(text(properties_with_good_dscr_sql)).scalar() or 0
-    
+
+    # Properties at risk (distinct properties with active alerts)
+    properties_at_risk_sql = """
+        SELECT COUNT(DISTINCT p.id)
+        FROM properties p
+        LEFT JOIN committee_alerts ca
+          ON ca.property_id = p.id AND ca.status = 'ACTIVE'
+        LEFT JOIN document_uploads du
+          ON du.property_id = p.id
+        LEFT JOIN alerts a
+          ON a.document_id = du.id AND a.status = 'active'
+        WHERE p.status = 'active'
+          AND (ca.id IS NOT NULL OR a.id IS NOT NULL)
+    """
+    properties_at_risk = db.execute(text(properties_at_risk_sql)).scalar() or 0
+
+    # SLA compliance (percent of alerts meeting SLA deadlines)
+    from sqlalchemy import func
+    now = datetime.utcnow()
+    total_sla = db.query(func.count(CommitteeAlert.id)).filter(
+        CommitteeAlert.sla_due_at.isnot(None)
+    ).scalar() or 0
+    compliant_sla = db.query(func.count(CommitteeAlert.id)).filter(
+        CommitteeAlert.sla_due_at.isnot(None),
+        or_(
+            CommitteeAlert.status == AlertStatus.RESOLVED,
+            CommitteeAlert.sla_due_at >= now
+        )
+    ).scalar() or 0
+    sla_compliance_rate = (compliant_sla / total_sla * 100) if total_sla else 0.0
+
     # Count active workflow locks
     from app.models.workflow_lock import WorkflowLock, LockStatus
-    from sqlalchemy import func
     try:
         active_locks = db.query(func.count(WorkflowLock.id)).filter(
             WorkflowLock.status == LockStatus.ACTIVE
@@ -1152,12 +1265,16 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
         "total_critical_alerts": critical_alerts,
         "total_active_alerts": active_alerts,
         "total_active_locks": active_locks,
+        "properties_at_risk": properties_at_risk,
+        "sla_compliance_rate": sla_compliance_rate,
         "properties_with_good_dscr": good_dscr_count,
         "summary": {
             "total_alerts": total_alerts,
             "active_alerts": active_alerts,
             "critical_alerts": critical_alerts,
             "active_locks": active_locks,
+            "properties_at_risk": properties_at_risk,
+            "sla_compliance_rate": sla_compliance_rate,
             "properties_with_good_dscr": good_dscr_count,
             "alerts_by_committee": alerts_by_committee,
             "alerts_by_type": alerts_by_type,

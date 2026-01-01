@@ -182,6 +182,7 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
   }
 
   const accountCode = anomaly.account_code || anomaly.field_name || 'N/A';
+  const accountName = anomaly.account_name || anomaly.details?.account_name || 'N/A';
   const fieldName =
     anomaly.field_name && anomaly.account_code && anomaly.field_name !== anomaly.account_code
       ? anomaly.field_name
@@ -212,6 +213,10 @@ export default function AnomalyDetail({ anomalyId, onClose }: AnomalyDetailProps
             <span>ID: {anomaly.id}</span>
             <span>•</span>
             <span>Account Code: {accountCode}</span>
+            <>
+              <span>•</span>
+              <span>Account Name: {accountName}</span>
+            </>
             {fieldName && (
               <>
                 <span>•</span>

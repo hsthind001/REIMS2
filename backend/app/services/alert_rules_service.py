@@ -69,7 +69,8 @@ class AlertRulesService:
         rule: AlertRule,
         property_id: int,
         period_id: int,
-        metrics: Optional[FinancialMetrics] = None
+        metrics: Optional[FinancialMetrics] = None,
+        ignore_cooldown: bool = False
     ) -> Dict[str, Any]:
         """
         Evaluate a single rule against current metrics
@@ -93,7 +94,7 @@ class AlertRulesService:
         """
         try:
             # Check cooldown
-            if rule.is_in_cooldown():
+            if not ignore_cooldown and rule.is_in_cooldown():
                 return {
                     "triggered": False,
                     "reason": "cooldown",
@@ -128,8 +129,9 @@ class AlertRulesService:
             
             # Evaluate condition
             threshold = float(rule.threshold_value) if rule.threshold_value else None
+            condition_value = self._normalize_condition(rule.condition)
             triggered, breach_magnitude = self._evaluate_condition(
-                rule.condition,
+                condition_value,
                 field_value,
                 threshold,
                 metrics,
@@ -149,7 +151,7 @@ class AlertRulesService:
             severity = self._determine_severity(rule, breach_magnitude, field_value, threshold)
             
             # Generate message
-            message = self._generate_alert_message(rule, field_value, threshold, breach_magnitude)
+            message = self._generate_alert_message(rule, field_value, threshold, breach_magnitude, condition_value)
             
             # Update rule execution tracking
             rule.execution_count = (rule.execution_count or 0) + 1
@@ -167,7 +169,7 @@ class AlertRulesService:
                     "rule_id": rule.id,
                     "rule_name": rule.rule_name,
                     "field_name": rule.field_name,
-                    "condition": rule.condition.value if rule.condition else None,
+                    "condition": condition_value or None,
                     "breach_percentage": abs(breach_magnitude) * 100 if breach_magnitude else 0
                 }
             }
@@ -184,7 +186,8 @@ class AlertRulesService:
         self,
         property_id: int,
         period_id: int,
-        metrics: Optional[FinancialMetrics] = None
+        metrics: Optional[FinancialMetrics] = None,
+        ignore_cooldown: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Evaluate all active rules for a property/period
@@ -196,7 +199,7 @@ class AlertRulesService:
         results = []
         
         for rule in rules:
-            result = self.evaluate_rule(rule, property_id, period_id, metrics)
+            result = self.evaluate_rule(rule, property_id, period_id, metrics, ignore_cooldown=ignore_cooldown)
             if result.get("triggered"):
                 results.append({
                     "rule": rule,
@@ -249,7 +252,7 @@ class AlertRulesService:
     
     def _evaluate_condition(
         self,
-        condition: RuleCondition,
+        condition: str,
         field_value: Decimal,
         threshold: Optional[float],
         metrics: FinancialMetrics,
@@ -342,7 +345,8 @@ class AlertRulesService:
         rule: AlertRule,
         actual_value: Decimal,
         threshold: Optional[float],
-        breach_magnitude: float
+        breach_magnitude: float,
+        condition: str
     ) -> str:
         """Generate human-readable alert message"""
         field_display = rule.field_name.replace("_", " ").title()
@@ -350,12 +354,21 @@ class AlertRulesService:
         threshold_str = f"{threshold:,.2f}" if threshold else "N/A"
         breach_pct = abs(breach_magnitude) * 100
         
-        if rule.condition == "less_than":
+        if condition == "less_than":
             return f"{field_display} is {actual_str}, which is below the threshold of {threshold_str} ({breach_pct:.1f}% below threshold)"
-        elif rule.condition == "greater_than":
+        elif condition == "greater_than":
             return f"{field_display} is {actual_str}, which exceeds the threshold of {threshold_str} ({breach_pct:.1f}% above threshold)"
         else:
             return f"{field_display} is {actual_str}, which violates the rule threshold of {threshold_str}"
+
+    def _normalize_condition(self, condition: Optional[Any]) -> str:
+        if condition is None:
+            return ""
+        if isinstance(condition, RuleCondition):
+            return condition.value
+        if hasattr(condition, "value"):
+            return str(condition.value)
+        return str(condition)
     
     def _get_previous_period_metrics(
         self,
@@ -435,4 +448,3 @@ class AlertRulesService:
         
         z_score = (float(value) - mean) / std_dev
         return z_score
-

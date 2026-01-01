@@ -33,7 +33,8 @@ class AlertTriggerService:
         self,
         property_id: int,
         period_id: int,
-        metrics: Optional[FinancialMetrics] = None
+        metrics: Optional[FinancialMetrics] = None,
+        ignore_cooldown: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Evaluate all active rules for a property/period and trigger alerts
@@ -62,7 +63,8 @@ class AlertTriggerService:
             evaluation_results = self.rules_service.evaluate_all_rules(
                 property_id=property_id,
                 period_id=period_id,
-                metrics=metrics
+                metrics=metrics,
+                ignore_cooldown=ignore_cooldown
             )
             
             if not evaluation_results:
@@ -160,4 +162,3 @@ class AlertTriggerService:
             "periods_evaluated": len(periods),
             "alerts_by_period": alerts_by_period
         }
-

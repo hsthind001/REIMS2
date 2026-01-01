@@ -52,6 +52,8 @@ export default function RiskWorkbench() {
         severity: item.severity.toLowerCase(),
         property_id: item.property_id || 0,
         property_name: item.property_name,
+        account_code: item.account_code || item.field_name || item.metadata?.account_code,
+        account_name: item.account_name || item.metadata?.account_name || item.metadata?.account_description,
         age_days: Math.floor(item.age_seconds / 86400) || 0,
         impact_amount: item.impact_amount ? parseFloat(item.impact_amount) : undefined,
         status: item.status || 'active',

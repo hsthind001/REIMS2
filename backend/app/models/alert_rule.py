@@ -5,7 +5,7 @@ Defines rules for automatic alert generation based on financial metrics
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, Text, Enum as SQLEnum, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 from app.db.database import Base
@@ -110,5 +110,5 @@ class AlertRule(Base):
         
         from datetime import timedelta
         cooldown_end = self.last_triggered_at + timedelta(minutes=self.cooldown_period)
-        return datetime.utcnow() < cooldown_end
-
+        now = datetime.now(timezone.utc) if self.last_triggered_at.tzinfo else datetime.utcnow()
+        return now < cooldown_end

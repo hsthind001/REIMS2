@@ -3,6 +3,7 @@ Alert Creation Service
 Creates CommitteeAlert records from rule evaluation results
 """
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import logging
@@ -31,6 +32,16 @@ class AlertCreationService:
     
     def __init__(self, db: Session):
         self.db = db
+        self._legacy_alert_types = {
+            "ANOMALY_DETECTED",
+            "COVENANT_VIOLATION",
+            "DSCR_BREACH",
+            "FINANCIAL_THRESHOLD",
+            "LTV_BREACH",
+            "OCCUPANCY_CRITICAL",
+            "OCCUPANCY_WARNING",
+            "VARIANCE_BREACH",
+        }
     
     def create_alert_from_rule_result(
         self,
@@ -70,6 +81,9 @@ class AlertCreationService:
             
             # Map rule result to alert type
             alert_type = self._map_rule_to_alert_type(rule, evaluation_result)
+            alert_type_value = alert_type.value if hasattr(alert_type, "value") else str(alert_type)
+            if alert_type_value not in self._legacy_alert_types:
+                alert_type = AlertType.FINANCIAL_THRESHOLD
             
             # Determine severity
             severity_str = evaluation_result.get("severity", "warning")
@@ -104,8 +118,8 @@ class AlertCreationService:
                 alert_metadata={
                     "rule_id": rule.id,
                     "rule_name": rule.rule_name,
-                    "rule_type": rule.rule_type.value if rule.rule_type else None,
-                    "condition": rule.condition.value if rule.condition else None,
+                    "rule_type": rule.rule_type.value if hasattr(rule.rule_type, "value") else (str(rule.rule_type) if rule.rule_type else None),
+                    "condition": rule.condition.value if hasattr(rule.condition, "value") else (str(rule.condition) if rule.condition else None),
                     "breach_magnitude": evaluation_result.get("breach_magnitude"),
                     "breach_percentage": evaluation_result.get("metadata", {}).get("breach_percentage"),
                     "evaluation_result": evaluation_result.get("metadata", {})
@@ -130,7 +144,11 @@ class AlertCreationService:
                 # Don't fail alert creation if notification fails
             
             # Create workflow lock for critical/urgent alerts that require approval
-            if severity in [AlertSeverity.CRITICAL, AlertSeverity.URGENT] and alert.requires_approval:
+            if (
+                severity in [AlertSeverity.CRITICAL, AlertSeverity.URGENT]
+                and alert.requires_approval
+                and self._workflow_lock_supported()
+            ):
                 try:
                     self._create_workflow_lock_for_alert(alert)
                 except Exception as e:
@@ -199,6 +217,13 @@ class AlertCreationService:
             return AlertType.RENT_COLLECTION_RATE
         else:
             return AlertType.FINANCIAL_THRESHOLD
+
+    def _workflow_lock_supported(self) -> bool:
+        try:
+            columns = {col["name"] for col in inspect(self.db.get_bind()).get_columns("workflow_locks")}
+            return "lock_metadata" in columns
+        except Exception:
+            return False
     
     def _generate_alert_title(
         self,
@@ -423,4 +448,3 @@ class AlertCreationService:
             CommitteeType.EXECUTIVE_COMMITTEE: "Executive Committee",
         }
         return mapping.get(committee, "Risk Committee")
-
