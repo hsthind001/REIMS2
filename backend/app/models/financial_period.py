@@ -49,7 +49,8 @@ class FinancialPeriod(Base):
     rent_roll_data = relationship("RentRollData", back_populates="period", cascade="all, delete-orphan")
     mortgage_statements = relationship("MortgageStatementData", back_populates="period", cascade="all, delete-orphan")
     financial_metrics = relationship("FinancialMetrics", back_populates="period", cascade="all, delete-orphan")
-    
+    document_completeness = relationship("PeriodDocumentCompleteness", back_populates="period", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<FinancialPeriod {self.property_id}: {self.period_year}-{self.period_month:02d}>"
     

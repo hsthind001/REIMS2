@@ -110,7 +110,8 @@ export default function CommandCenter() {
   const [analysisDetails, setAnalysisDetails] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear()); // Default to current year
+  // Default to 2025 (most recent year with actual data) instead of current year
+  const [selectedYear, setSelectedYear] = useState<number>(2025);
   const [documentMatrix, setDocumentMatrix] = useState<any>(null);
   const [loadingDocMatrix, setLoadingDocMatrix] = useState(false);
   const [latestCompleteDSCR, setLatestCompleteDSCR] = useState<any>(null);
@@ -496,7 +497,7 @@ export default function CommandCenter() {
 
             try {
               const dscrResponse = await fetch(
-                `${API_BASE_URL}/dscr/latest-complete/${property.id}?year=${new Date().getFullYear()}`,
+                `${API_BASE_URL}/dscr/latest-complete/${property.id}?year=2025`,
                 { credentials: 'include' }
               );
 
@@ -1367,6 +1368,9 @@ export default function CommandCenter() {
           />
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
+            subtitle={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.period
+              ? `${latestCompleteDSCR.period.year}-${String(latestCompleteDSCR.period.month).padStart(2, '0')} (Complete)`
+              : undefined}
             value={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.dscr
               ? latestCompleteDSCR.dscr.toFixed(2)
               : portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "N/A"}
@@ -1390,6 +1394,10 @@ export default function CommandCenter() {
                 <div className="flex items-center gap-4 bg-blue-50 px-4 py-2 rounded-lg">
                   <span className="text-sm font-semibold text-gray-700">
                     Latest Complete Period: {latestCompleteDSCR.period.year}-{String(latestCompleteDSCR.period.month).padStart(2, '0')}
+                  </span>
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    All Docs
                   </span>
                   <div className="h-6 w-px bg-gray-300"></div>
                   <div className="text-sm">

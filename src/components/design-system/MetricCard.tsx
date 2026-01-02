@@ -6,6 +6,7 @@ import styles from './MetricCard.module.css';
 
 export interface MetricCardProps {
   title: string;
+  subtitle?: string; // Optional subtitle text
   value: string | number;
   change?: number; // percentage change
   trend?: 'up' | 'down' | 'neutral';
@@ -18,6 +19,7 @@ export interface MetricCardProps {
 
 export const MetricCard: React.FC<MetricCardProps> = ({
   title,
+  subtitle,
   value,
   change,
   trend,
@@ -71,10 +73,13 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       <div className={styles.header}>
         <div className={styles.iconContainer}>
           {icon && <span className={styles.icon}>{icon}</span>}
-          <h3 className={styles.title}>{title}</h3>
+          <div>
+            <h3 className={styles.title}>{title}</h3>
+            {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+          </div>
         </div>
       </div>
-      
+
       <div className="mb-2">
         <div className={styles.value}>{formatValue(value)}</div>
         {change !== undefined && (

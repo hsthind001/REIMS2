@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 from app.db.database import get_db
@@ -657,11 +657,14 @@ def get_risk_alerts(
     property_id: Optional[int] = None,
     committee: Optional[str] = None,
     limit: int = Query(default=50, ge=1, le=200),
+    max_age_months: int = Query(default=12, ge=1, le=60, description="Maximum age of alerts in months (default: 12)"),
     db: Session = Depends(get_db)
 ):
     """
     Get all risk alerts with optional filtering
     Supports both /risk-alerts?priority=critical and /risk-alerts/alerts?severity=critical
+
+    Auto-expiration: Alerts older than max_age_months are automatically hidden (default: 12 months)
     """
     # Map priority to severity if provided
     if priority:
@@ -673,7 +676,25 @@ def get_risk_alerts(
         }
         severity = priority_map.get(priority.lower(), severity)
 
-    query = db.query(CommitteeAlert).options(joinedload(CommitteeAlert.property))
+    query = db.query(CommitteeAlert).options(
+        joinedload(CommitteeAlert.property),
+        joinedload(CommitteeAlert.financial_period)  # Load period for date filtering
+    )
+
+    # ALERT EXPIRATION: Filter out alerts for periods older than max_age_months
+    # We filter by PERIOD date, not alert creation date (triggered_at)
+    # This ensures alerts about old financial data are hidden, even if recently created
+    expiration_cutoff = datetime.now() - timedelta(days=max_age_months * 30)
+
+    # Use a subquery to filter by period end date
+    query = query.join(
+        FinancialPeriod,
+        CommitteeAlert.financial_period_id == FinancialPeriod.id
+    ).filter(
+        FinancialPeriod.period_end_date >= expiration_cutoff.date()
+    )
+
+    logger.info(f"Filtering alerts to those for periods ending after {expiration_cutoff.strftime('%Y-%m-%d')} (max_age: {max_age_months} months)")
 
     if status:
         query = query.filter(CommitteeAlert.status == status)
@@ -718,7 +739,6 @@ def get_risk_alerts(
         
         # Add period information if financial_period_id exists
         if alert.financial_period_id:
-            from app.models.financial_period import FinancialPeriod
             period = db.query(FinancialPeriod).filter(FinancialPeriod.id == alert.financial_period_id).first()
             if period:
                 alert_dict["period"] = {
@@ -817,7 +837,6 @@ def get_all_alerts(
         
         # Add period information if financial_period_id exists
         if alert.financial_period_id:
-            from app.models.financial_period import FinancialPeriod
             period = db.query(FinancialPeriod).filter(FinancialPeriod.id == alert.financial_period_id).first()
             if period:
                 alert_dict["period"] = {

@@ -30,6 +30,7 @@ from app.services.active_learning_service import ActiveLearningService
 from app.services.model_monitoring_service import ModelMonitoringService
 from app.services.anomaly_detector import StatisticalAnomalyDetector
 from app.services.concordance_service import ConcordanceService
+from app.services.period_completeness_service import PeriodCompletenessService
 logger = logging.getLogger(__name__)
 
 try:
@@ -1885,13 +1886,27 @@ class ExtractionOrchestrator:
         """
         try:
             from app.services.metrics_service import MetricsService
-            
+
+            # Update period document completeness status
+            try:
+                completeness_service = PeriodCompletenessService(self.db)
+                completeness_service.update_document_status(
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    document_type=upload.document_type,
+                    extraction_completed=True
+                )
+                print(f"✅ Updated period completeness for {upload.document_type}")
+            except Exception as completeness_error:
+                # Log but don't fail extraction
+                print(f"⚠️  Period completeness update failed (non-blocking): {str(completeness_error)}")
+
             metrics_service = MetricsService(self.db)
             metrics = metrics_service.calculate_all_metrics(
                 property_id=upload.property_id,
                 period_id=upload.period_id
             )
-            
+
             # Trigger alert evaluation after metrics calculation (Phase 2)
             if metrics:
                 try:
@@ -1906,9 +1921,9 @@ class ExtractionOrchestrator:
                 except Exception as alert_error:
                     # Don't fail extraction if alert generation fails
                     print(f"⚠️  Alert evaluation failed (non-blocking): {str(alert_error)}")
-            
+
             return metrics
-        
+
         except Exception as e:
             # Log error but don't fail extraction
             print(f"Warning: Metrics calculation failed for upload {upload.id}: {str(e)}")

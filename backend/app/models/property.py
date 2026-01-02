@@ -25,7 +25,12 @@ class Property(Base):
     total_area_sqft = Column(DECIMAL(12, 2))
     acquisition_date = Column(Date)
     ownership_structure = Column(String(100))  # Partnership, LLC, etc.
-    
+
+    # Financial information
+    purchase_price = Column(DECIMAL(15, 2))  # Original acquisition price
+    acquisition_costs = Column(DECIMAL(15, 2))  # Closing costs, legal fees, due diligence, etc.
+    # Note: total_acquisition_cost = purchase_price + acquisition_costs (calculated in queries)
+
     # Status
     status = Column(String(50), default='active', index=True)  # active, sold, under_contract
     
@@ -65,6 +70,9 @@ class Property(Base):
     market_intelligence = relationship("MarketIntelligence", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
     market_data_lineage = relationship("MarketDataLineage", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
     forecast_models = relationship("ForecastModel", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload", foreign_keys="ForecastModel.property_id")
+
+    # Document completeness tracking
+    document_completeness = relationship("PeriodDocumentCompleteness", back_populates="property", cascade="all, delete-orphan", lazy="noload")
 
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"
