@@ -1,0 +1,67 @@
+# Docker Compose Override for Performance
+# Rename to docker-compose.override.yml to use
+
+version: '3.8'
+
+services:
+  postgres:
+    # Increase shared memory for PostgreSQL
+    shm_size: 2gb
+    # CPU and memory limits
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 12G
+        reservations:
+          cpus: '4'
+          memory: 8G
+    # Custom PostgreSQL config
+    # volumes:
+    #   - ./config/postgresql-custom.conf:/etc/postgresql/postgresql.conf:ro
+    # command: postgres -c config_file=/etc/postgresql/postgresql.conf
+
+  backend:
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+    environment:
+      - WORKERS=4  # Number of Gunicorn workers
+
+  celery-worker:
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 6G
+        reservations:
+          cpus: '3'
+          memory: 3G
+    environment:
+      - CELERY_WORKERS=4  # Concurrent Celery workers
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    command: redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G

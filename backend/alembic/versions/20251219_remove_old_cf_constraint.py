@@ -1,6 +1,6 @@
 """Remove old cash flow unique constraint
 
-Revision ID: 20251219_remove_old_cf_constraint
+Revision ID: 20251219_rm_cf_constraint
 Revises: 20251219_extraction_task_id
 Create Date: 2025-12-19 12:00:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20251219_remove_old_cf_constraint'
+revision = '20251219_rm_cf_constraint'
 down_revision = '20251219_extraction_task_id'
 branch_labels = None
 depends_on = None

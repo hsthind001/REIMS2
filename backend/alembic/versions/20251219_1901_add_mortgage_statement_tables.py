@@ -1,7 +1,7 @@
 """Add Mortgage Statement Tables
 
 Revision ID: 20251219_1901_add_mortgage_statement_tables
-Revises: 20251219_remove_old_cf_constraint
+Revises: 20251219_rm_cf_constraint
 Create Date: 2025-12-19 19:01:00.000000
 
 Adds tables for mortgage statement data:
@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.
 revision = '20251219_1901'  # Shortened to fit VARCHAR(32) limit
-down_revision = '45d5e95beac4'
+down_revision = '20251219_1900'
 branch_labels = None
 depends_on = None
 

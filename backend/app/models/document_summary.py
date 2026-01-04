@@ -43,7 +43,7 @@ class DocumentSummary(Base):
 
     # Reference
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
+    document_id = Column(Integer, ForeignKey("document_uploads.id"), nullable=True, index=True)
 
     # Document details
     document_type = Column(SQLEnum(DocumentType), nullable=False, index=True)

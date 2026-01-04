@@ -1,7 +1,7 @@
 """Add Alert History Table
 
 Revision ID: 20251220_0202_add_alert_history
-Revises: 20251220_0201_add_alert_enhancements
+Revises: 20251220_0201
 Create Date: 2025-12-20 02:02:00.000000
 
 Creates alert_history table to track:
@@ -18,20 +18,25 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20251220_0202_add_alert_history'
-down_revision = '20251220_0201_add_alert_enhancements'
+down_revision = '20251220_0201'
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     """Create alert_history table"""
-    
+
     # Check if table already exists
     from sqlalchemy import inspect
     conn = op.get_bind()
     inspector = inspect(conn)
     existing_tables = inspector.get_table_names()
-    
+
+    # Skip if committee_alerts table doesn't exist
+    if 'committee_alerts' not in existing_tables:
+        print("⚠️  committee_alerts table does not exist. Skipping alert_history migration.")
+        return
+
     if 'alert_history' not in existing_tables:
         op.create_table(
             'alert_history',
@@ -46,20 +51,14 @@ def upgrade():
         sa.Column('new_severity', sa.String(20), nullable=True),
         sa.Column('notes', sa.Text(), nullable=True),
         sa.Column('action_metadata', postgresql.JSONB, nullable=True),  # Additional action-specific data (renamed from metadata to avoid SQLAlchemy reserved word)
-        sa.PrimaryKeyConstraint('id')
+        sa.PrimaryKeyConstraint('id'),
+        sa.ForeignKeyConstraint(
+            ['alert_id'],
+            ['committee_alerts.id'],
+            name='fk_alert_history_alert',
+            ondelete='CASCADE'
         )
-        
-        # Add foreign key to committee_alerts
-        try:
-            op.create_foreign_key(
-                'fk_alert_history_alert',
-                'alert_history', 'committee_alerts',
-                ['alert_id'], ['id'],
-                ondelete='CASCADE'
-            )
-        except Exception:
-            # Table might not exist yet
-            pass
+        )
         
         # Add indexes for performance
         existing_indexes = [idx['name'] for idx in inspector.get_indexes('alert_history')] if 'alert_history' in existing_tables else []
@@ -69,7 +68,8 @@ def upgrade():
             op.create_index('ix_alert_history_action_type', 'alert_history', ['action_type'])
         if 'ix_alert_history_action_at' not in existing_indexes:
             op.create_index('ix_alert_history_action_at', 'alert_history', ['action_at'])
-    op.create_index('ix_alert_history_action_by', 'alert_history', ['action_by'])
+        if 'ix_alert_history_action_by' not in existing_indexes:
+            op.create_index('ix_alert_history_action_by', 'alert_history', ['action_by'])
 
 
 def downgrade():

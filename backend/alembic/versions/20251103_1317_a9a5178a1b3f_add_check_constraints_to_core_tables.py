@@ -1,7 +1,7 @@
 """Add CHECK constraints to core tables
 
 Revision ID: a9a5178a1b3f
-Revises: 61e979087abb
+Revises: 20251103_1300
 Create Date: 2025-11-03 13:17:55.234224
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'a9a5178a1b3f'
-down_revision: Union[str, Sequence[str], None] = '61e979087abb'
+down_revision: Union[str, Sequence[str], None] = '20251103_1300'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

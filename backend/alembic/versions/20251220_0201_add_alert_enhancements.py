@@ -1,7 +1,7 @@
 """Add Alert Enhancements
 
-Revision ID: 20251220_0201_add_alert_enhancements
-Revises: 20251220_0200_add_alert_rules_enhancements
+Revision ID: 20251220_0201
+Revises: 20251220_0200
 Create Date: 2025-12-20 02:01:00.000000
 
 Enhances committee_alerts table with:
@@ -20,19 +20,27 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '20251220_0201_add_alert_enhancements'
-down_revision = '20251220_0200'  # Shortened revision ID
+revision = '20251220_0201'
+down_revision = '20251220_0200'
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     """Add enhancements to committee_alerts table"""
-    
-    # Check if columns already exist
+
+    # Check if table exists first
     from sqlalchemy import inspect
     conn = op.get_bind()
     inspector = inspect(conn)
+    existing_tables = inspector.get_table_names()
+
+    if 'committee_alerts' not in existing_tables:
+        # Table doesn't exist, skip this migration
+        print("⚠️  committee_alerts table does not exist. Skipping alert enhancements migration.")
+        return
+
+    # Check if columns already exist
     existing_columns = [col['name'] for col in inspector.get_columns('committee_alerts')]
     
     # Add new columns to committee_alerts table (only if they don't exist)

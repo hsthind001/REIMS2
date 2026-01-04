@@ -1,7 +1,7 @@
 """add_anomaly_detection_improvements
 
 Revision ID: 20251220_0300
-Revises: 20251220_0202
+Revises: 20251220_0202_add_alert_history
 Create Date: 2025-12-20 03:00:00.000000
 
 """
@@ -11,12 +11,22 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20251220_0300'
-down_revision = '20251220_0202_add_alert_history'  # Update this to match your latest migration
+down_revision = '20251220_0202_add_alert_history'
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    # Check if anomaly_detections table exists
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    existing_tables = inspector.get_table_names()
+
+    if 'anomaly_detections' not in existing_tables:
+        print("⚠️  anomaly_detections table does not exist. Skipping anomaly improvements migration.")
+        return
+
     # Add new fields to anomaly_detections table
     op.add_column('anomaly_detections', sa.Column('forecast_method', sa.String(50), nullable=True))
     op.add_column('anomaly_detections', sa.Column('confidence_calibrated', sa.Numeric(5, 4), nullable=True))

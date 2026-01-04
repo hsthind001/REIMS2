@@ -25,11 +25,18 @@ depends_on = None
 
 def upgrade():
     """Add new fields to committee_alerts table"""
-    
-    # Check if columns already exist
+
+    # Check if table exists first
     from sqlalchemy import inspect
     conn = op.get_bind()
     inspector = inspect(conn)
+    existing_tables = inspector.get_table_names()
+
+    if 'committee_alerts' not in existing_tables:
+        print("⚠️  committee_alerts table does not exist. Skipping alert schema extension migration.")
+        return
+
+    # Check if columns already exist
     existing_columns = [col['name'] for col in inspector.get_columns('committee_alerts')]
     
     # Add new columns (only if they don't exist)
