@@ -133,7 +133,8 @@
       "Bash(timeout 5 docker version:*)",
       "Bash(./fix-docker-and-start-reims.sh:*)",
       "Bash(1)",
-      "Bash(/home/hsthind/Documents/GitHub/REIMS2/create_admin_user.sh)"
+      "Bash(/home/hsthind/Documents/GitHub/REIMS2/create_admin_user.sh)",
+      "Bash(psql:*)"
     ]
   }
 }

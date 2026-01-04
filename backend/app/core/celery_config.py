@@ -54,6 +54,13 @@ celery_app.conf.beat_schedule = {
         }
     },
     # Self-Learning System Tasks
+    '🔥-discover-extraction-patterns': {
+        'task': 'app.tasks.learning_tasks.discover_extraction_patterns',
+        'schedule': crontab(hour=2, minute=30),  # 2:30 AM UTC daily (after anomaly detection)
+        'options': {
+            'expires': 3600,  # Task expires after 1 hour if not picked up
+        }
+    },
     'analyze-captured-issues': {
         'task': 'app.tasks.learning_tasks.analyze_captured_issues',
         'schedule': crontab(hour='*/6', minute=0),  # Every 6 hours

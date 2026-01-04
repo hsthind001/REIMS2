@@ -7,16 +7,248 @@ Background tasks for analyzing issues and syncing with MCP server.
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy import func, and_
 from celery import Task
 from app.core.celery_config import celery_app
 from app.db.database import SessionLocal
 from app.services.self_learning_engine import SelfLearningEngine
 from app.services.mcp_learning_service import MCPLearningService
 from app.services.issue_capture_service import IssueCaptureService
+from app.services.self_learning_extraction_service import SelfLearningExtractionService
 from app.models.issue_knowledge_base import IssueKnowledgeBase
 from app.models.issue_capture import IssueCapture
+from app.models.extraction_learning_pattern import ExtractionLearningPattern
+from app.models.balance_sheet_data import BalanceSheetData
+from app.models.income_statement_data import IncomeStatementData
+from app.models.cash_flow_data import CashFlowData
 
 logger = logging.getLogger(__name__)
+
+
+@celery_app.task(name="app.tasks.learning_tasks.discover_extraction_patterns", bind=True)
+def discover_extraction_patterns(self: Task, min_occurrences: int = 10, min_confidence: float = 80.0):
+    """
+    🔥 CRITICAL LEARNING TASK: Automatically discovers patterns from successful extractions.
+
+    Runs daily to analyze successful extractions and create learned patterns for auto-approval.
+    This is the PRIMARY way the system learns from data (not just from errors).
+
+    Args:
+        min_occurrences: Minimum times an account must appear to create pattern (default: 10)
+        min_confidence: Minimum extraction confidence to consider successful (default: 80%)
+
+    Returns:
+        Dict with patterns_created count
+    """
+    db = SessionLocal()
+    patterns_created = 0
+    patterns_updated = 0
+
+    try:
+        learning_service = SelfLearningExtractionService(db)
+
+        logger.info(f"🔍 Starting extraction pattern discovery (min_occurrences={min_occurrences}, min_confidence={min_confidence}%)")
+
+        # =========== BALANCE SHEET PATTERNS ===========
+        logger.info("📊 Analyzing Balance Sheet data...")
+        bs_patterns = db.query(
+            BalanceSheetData.account_code,
+            BalanceSheetData.account_name,
+            BalanceSheetData.property_id,
+            func.count(BalanceSheetData.id).label('count'),
+            func.avg(BalanceSheetData.extraction_confidence).label('avg_confidence'),
+            func.min(BalanceSheetData.extraction_confidence).label('min_confidence'),
+            func.max(BalanceSheetData.extraction_confidence).label('max_confidence')
+        ).filter(
+            BalanceSheetData.extraction_confidence >= min_confidence,
+            BalanceSheetData.account_code.isnot(None),
+            BalanceSheetData.account_code != 'UNMATCHED'
+        ).group_by(
+            BalanceSheetData.account_code,
+            BalanceSheetData.account_name,
+            BalanceSheetData.property_id
+        ).having(
+            func.count(BalanceSheetData.id) >= min_occurrences
+        ).all()
+
+        for pattern in bs_patterns:
+            result = _create_or_update_pattern(
+                db, learning_service, pattern, 'balance_sheet'
+            )
+            if result == 'created':
+                patterns_created += 1
+            elif result == 'updated':
+                patterns_updated += 1
+
+        logger.info(f"✅ Balance Sheet: {len(bs_patterns)} patterns found")
+
+        # =========== INCOME STATEMENT PATTERNS ===========
+        logger.info("📈 Analyzing Income Statement data...")
+        is_patterns = db.query(
+            IncomeStatementData.account_code,
+            IncomeStatementData.account_name,
+            IncomeStatementData.property_id,
+            func.count(IncomeStatementData.id).label('count'),
+            func.avg(IncomeStatementData.extraction_confidence).label('avg_confidence'),
+            func.min(IncomeStatementData.extraction_confidence).label('min_confidence'),
+            func.max(IncomeStatementData.extraction_confidence).label('max_confidence')
+        ).filter(
+            IncomeStatementData.extraction_confidence >= min_confidence,
+            IncomeStatementData.account_code.isnot(None),
+            IncomeStatementData.account_code != 'UNMATCHED'
+        ).group_by(
+            IncomeStatementData.account_code,
+            IncomeStatementData.account_name,
+            IncomeStatementData.property_id
+        ).having(
+            func.count(IncomeStatementData.id) >= min_occurrences
+        ).all()
+
+        for pattern in is_patterns:
+            result = _create_or_update_pattern(
+                db, learning_service, pattern, 'income_statement'
+            )
+            if result == 'created':
+                patterns_created += 1
+            elif result == 'updated':
+                patterns_updated += 1
+
+        logger.info(f"✅ Income Statement: {len(is_patterns)} patterns found")
+
+        # =========== CASH FLOW PATTERNS ===========
+        logger.info("💵 Analyzing Cash Flow data...")
+        cf_patterns = db.query(
+            CashFlowData.account_code,
+            CashFlowData.account_name,
+            CashFlowData.property_id,
+            func.count(CashFlowData.id).label('count'),
+            func.avg(CashFlowData.extraction_confidence).label('avg_confidence'),
+            func.min(CashFlowData.extraction_confidence).label('min_confidence'),
+            func.max(CashFlowData.extraction_confidence).label('max_confidence')
+        ).filter(
+            CashFlowData.extraction_confidence >= min_confidence,
+            CashFlowData.account_code.isnot(None),
+            CashFlowData.account_code != 'UNMATCHED'
+        ).group_by(
+            CashFlowData.account_code,
+            CashFlowData.account_name,
+            CashFlowData.property_id
+        ).having(
+            func.count(CashFlowData.id) >= min_occurrences
+        ).all()
+
+        for pattern in cf_patterns:
+            result = _create_or_update_pattern(
+                db, learning_service, pattern, 'cash_flow'
+            )
+            if result == 'created':
+                patterns_created += 1
+            elif result == 'updated':
+                patterns_updated += 1
+
+        logger.info(f"✅ Cash Flow: {len(cf_patterns)} patterns found")
+
+        # Commit all changes
+        db.commit()
+
+        logger.info(f"""
+🎉 Pattern discovery complete!
+   Created: {patterns_created} new patterns
+   Updated: {patterns_updated} existing patterns
+   Total: {patterns_created + patterns_updated} patterns processed
+        """)
+
+        return {
+            'success': True,
+            'patterns_created': patterns_created,
+            'patterns_updated': patterns_updated,
+            'total_processed': patterns_created + patterns_updated
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error discovering extraction patterns: {e}")
+        db.rollback()
+        return {
+            'success': False,
+            'error': str(e),
+            'patterns_created': patterns_created,
+            'patterns_updated': patterns_updated
+        }
+    finally:
+        db.close()
+
+
+def _create_or_update_pattern(
+    db: Session,
+    learning_service: SelfLearningExtractionService,
+    pattern_data,
+    document_type: str
+) -> str:
+    """
+    Helper function to create or update an extraction learning pattern.
+
+    Returns:
+        'created' | 'updated' | 'skipped'
+    """
+    account_code, account_name, property_id, count, avg_confidence, min_conf, max_conf = pattern_data
+
+    # Check if pattern already exists
+    existing_pattern = db.query(ExtractionLearningPattern).filter(
+        and_(
+            ExtractionLearningPattern.account_code == account_code,
+            ExtractionLearningPattern.document_type == document_type,
+            ExtractionLearningPattern.property_id == property_id
+        )
+    ).first()
+
+    if existing_pattern:
+        # Update existing pattern
+        old_total = existing_pattern.total_occurrences
+        existing_pattern.total_occurrences = int(count)
+        existing_pattern.avg_confidence = float(avg_confidence)
+        existing_pattern.min_confidence_seen = float(min_conf)
+        existing_pattern.max_confidence_seen = float(max_conf)
+        existing_pattern.last_updated_at = datetime.now()
+
+        # Recalculate reliability (assume all are successful if high confidence)
+        if float(avg_confidence) >= 90.0:
+            existing_pattern.reliability_score = 0.95
+            existing_pattern.is_trustworthy = True
+        elif float(avg_confidence) >= 85.0:
+            existing_pattern.reliability_score = 0.85
+            existing_pattern.is_trustworthy = int(count) >= 20  # Need more samples for mid-confidence
+        else:
+            existing_pattern.reliability_score = 0.75
+            existing_pattern.is_trustworthy = False
+
+        logger.debug(f"📝 Updated pattern: {account_code} ({old_total} → {count} occurrences)")
+        return 'updated'
+    else:
+        # Create new pattern
+        new_pattern = ExtractionLearningPattern(
+            account_code=account_code,
+            account_name=account_name,
+            document_type=document_type,
+            property_id=property_id,
+            total_occurrences=int(count),
+            approved_count=int(count),  # Assume all successful if high confidence
+            rejected_count=0,
+            auto_approved_count=0,
+            min_confidence_seen=float(min_conf),
+            max_confidence_seen=float(max_conf),
+            avg_confidence=float(avg_confidence),
+            learned_confidence_threshold=float(avg_confidence) - 5.0,  # Set threshold 5% below average
+            auto_approve_threshold=float(avg_confidence) if float(avg_confidence) >= 90.0 else None,
+            pattern_strength=min(1.0, float(count) / 50.0),  # Stronger with more occurrences
+            reliability_score=0.95 if float(avg_confidence) >= 90.0 else 0.85 if float(avg_confidence) >= 85.0 else 0.75,
+            is_trustworthy=(float(avg_confidence) >= 90.0 and int(count) >= 10) or (float(avg_confidence) >= 85.0 and int(count) >= 20),
+            first_seen_at=datetime.now(),
+            last_updated_at=datetime.now(),
+            notes=f"Auto-discovered from {count} successful extractions (avg confidence: {avg_confidence:.1f}%)"
+        )
+        db.add(new_pattern)
+        logger.debug(f"✨ Created new pattern: {account_code} ({count} occurrences, avg conf: {avg_confidence:.1f}%)")
+        return 'created'
 
 
 @celery_app.task(name="app.tasks.learning_tasks.analyze_captured_issues", bind=True)

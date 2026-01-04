@@ -64,8 +64,21 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       
       echo "🌱 Seeding default alert rules..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_default_alert_rules.sql
-      
-      echo "✅ Database seeded successfully!"
+
+      echo "🌱 Deploying comprehensive validation rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/01_balance_sheet_rules.sql
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/02_income_statement_rules.sql
+
+      echo "🌱 Deploying prevention rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/03_prevention_rules_corrected.sql
+
+      echo "🌱 Deploying auto-resolution rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/04_auto_resolution_rules_corrected.sql
+
+      echo "🌱 Deploying forensic audit framework..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/05_forensic_audit_framework.sql
+
+      echo "✅ Database seeded successfully with 131+ validation rules!"
     else
       echo "ℹ️  Database already seeded, skipping..."
     fi

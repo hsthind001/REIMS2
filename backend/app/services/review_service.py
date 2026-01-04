@@ -22,6 +22,7 @@ from app.models.document_upload import DocumentUpload
 from app.models.review_approval_chain import ReviewApprovalChain, ApprovalStatus
 from app.services.anomaly_impact_calculator import AnomalyImpactCalculator
 from app.services.dscr_monitoring_service import DSCRMonitoringService
+from app.services.self_learning_extraction_service import SelfLearningExtractionService
 from functools import wraps
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class ReviewService:
         self.db = db
         self.impact_calculator = AnomalyImpactCalculator(db)
         self.high_risk_threshold = Decimal('10000')  # $10,000 variance threshold
+        self.learning_service = SelfLearningExtractionService(db)
     
     def get_review_queue(
         self,
@@ -263,11 +265,46 @@ class ReviewService:
             reason=notes or "Record approved without changes"
         )
         self.db.add(audit_entry)
-        
+
         # Commit
         self.db.commit()
         self.db.refresh(record)
-        
+
+        # 🔥 LEARNING FEEDBACK: Record approval for pattern learning
+        try:
+            # Map table to document type
+            doc_type_map = {
+                "balance_sheet_data": "balance_sheet",
+                "income_statement_data": "income_statement",
+                "cash_flow_data": "cash_flow",
+                "rent_roll_data": "rent_roll"
+            }
+            doc_type = doc_type_map.get(table_name, "unknown")
+
+            # Record review feedback for learning (only if has account_code)
+            if hasattr(record, "account_code") and record.account_code:
+                self.learning_service.record_review_feedback(
+                    account_code=record.account_code,
+                    account_name=getattr(record, "account_name", ""),
+                    document_type=doc_type,
+                    confidence=float(record.extraction_confidence) if record.extraction_confidence else 85.0,
+                    approved=True,  # User approved this extraction
+                    property_id=record.property_id
+                )
+
+                # Also record for adaptive thresholds
+                self.learning_service.record_extraction_result(
+                    account_code=record.account_code,
+                    account_name=getattr(record, "account_name", ""),
+                    confidence=float(record.extraction_confidence) if record.extraction_confidence else 85.0,
+                    success=True  # Approved = successful extraction
+                )
+
+                logger.info(f"✅ Recorded approval feedback for learning: {record.account_code} (confidence: {record.extraction_confidence})")
+        except Exception as e:
+            logger.warning(f"Failed to record learning feedback (non-critical): {e}")
+            # Don't fail the approval if learning fails
+
         return {
             "success": True,
             "message": "Record approved",
@@ -275,7 +312,8 @@ class ReviewService:
             "table_name": table_name,
             "reviewed_at": record.reviewed_at,
             "audit_trail_id": audit_entry.id,
-            "dual_approval_required": False
+            "dual_approval_required": False,
+            "learning_recorded": True
         }
     
     def correct_record(
@@ -385,7 +423,43 @@ class ReviewService:
         # Commit changes
         self.db.commit()
         self.db.refresh(record)
-        
+
+        # 🔥 LEARNING FEEDBACK: Record correction as rejection (original extraction was wrong)
+        try:
+            # Map table to document type
+            doc_type_map = {
+                "balance_sheet_data": "balance_sheet",
+                "income_statement_data": "income_statement",
+                "cash_flow_data": "cash_flow",
+                "rent_roll_data": "rent_roll"
+            }
+            doc_type = doc_type_map.get(table_name, "unknown")
+
+            # Record review feedback for learning (only if has account_code)
+            if hasattr(record, "account_code") and record.account_code:
+                # Correction = rejection of original extraction
+                self.learning_service.record_review_feedback(
+                    account_code=record.account_code,
+                    account_name=getattr(record, "account_name", ""),
+                    document_type=doc_type,
+                    confidence=float(record.extraction_confidence) if record.extraction_confidence else 85.0,
+                    approved=False,  # User corrected = rejection of original
+                    property_id=record.property_id
+                )
+
+                # Also record for adaptive thresholds
+                self.learning_service.record_extraction_result(
+                    account_code=record.account_code,
+                    account_name=getattr(record, "account_name", ""),
+                    confidence=float(record.extraction_confidence) if record.extraction_confidence else 85.0,
+                    success=False  # Correction needed = failed extraction
+                )
+
+                logger.info(f"⚠️ Recorded correction feedback for learning: {record.account_code} (original confidence: {record.extraction_confidence}) - system will learn to be more cautious")
+        except Exception as e:
+            logger.warning(f"Failed to record learning feedback (non-critical): {e}")
+            # Don't fail the correction if learning fails
+
         result = {
             "success": True,
             "message": f"Corrected {len(changed_fields)} field(s)",
@@ -397,9 +471,10 @@ class ReviewService:
             "reviewed_at": record.reviewed_at,
             "audit_trail_id": audit_entry.id,
             "metrics_recalculated": False,
-            "dual_approval_required": False
+            "dual_approval_required": False,
+            "learning_recorded": True
         }
-        
+
         # Trigger metrics recalculation if needed
         if recalculate_metrics and changed_fields:
             try:
@@ -412,7 +487,7 @@ class ReviewService:
                 result["metrics_calculated"] = metrics_result.get("metrics_count", 0)
             except Exception as e:
                 result["metrics_error"] = str(e)
-        
+
         return result
     
     def _calculate_correction_impact(
