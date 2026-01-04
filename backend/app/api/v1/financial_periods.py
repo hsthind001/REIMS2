@@ -3,7 +3,7 @@ Financial Periods API Endpoints
 
 Manage financial periods for properties
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -25,6 +25,12 @@ class FinancialPeriodResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FinancialPeriodCreateRequest(BaseModel):
+    property_id: int
+    period_year: int
+    period_month: int
 
 
 @router.get("/", response_model=List[FinancialPeriodResponse])
@@ -76,15 +82,27 @@ def get_financial_period(
 
 @router.post("/", response_model=FinancialPeriodResponse)
 def create_financial_period(
-    property_id: int,
-    period_year: int,
-    period_month: int,
+    request: Optional[FinancialPeriodCreateRequest] = Body(None),
+    property_id: Optional[int] = Query(None),
+    period_year: Optional[int] = Query(None),
+    period_month: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """
     Create a new financial period (or return existing one)
     """
+    if request:
+        property_id = request.property_id
+        period_year = request.period_year
+        period_month = request.period_month
+
+    if property_id is None or period_year is None or period_month is None:
+        raise HTTPException(
+            status_code=422,
+            detail="property_id, period_year, and period_month are required"
+        )
+
     # Check if property exists
     property = db.query(Property).filter(Property.id == property_id).first()
     if not property:

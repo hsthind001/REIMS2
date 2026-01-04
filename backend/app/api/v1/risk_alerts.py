@@ -1338,7 +1338,7 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
     Get summary statistics for alerts dashboard
     Queries both alerts table and committee_alerts table
     """
-    from sqlalchemy import text
+    from sqlalchemy import text, inspect
     
     # Query alerts table (main alerts system)
     alerts_sql = """
@@ -1349,7 +1349,20 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
         FROM alerts a
         JOIN document_uploads du ON a.document_id = du.id
     """
-    alerts_stats = db.execute(text(alerts_sql)).fetchone()
+    alerts_total = 0
+    alerts_active = 0
+    alerts_critical = 0
+    inspector = inspect(db.bind)
+    if inspector.has_table("alerts"):
+        try:
+            alerts_stats = db.execute(text(alerts_sql)).fetchone()
+            alerts_total = alerts_stats.total or 0
+            alerts_active = alerts_stats.active or 0
+            alerts_critical = alerts_stats.critical or 0
+        except Exception as e:
+            logger.warning(f"Failed to query alerts table: {e}")
+    else:
+        logger.warning("alerts table missing; using committee_alerts only")
     
     # Query committee_alerts
     total_committee_alerts = db.query(CommitteeAlert).count()
@@ -1362,9 +1375,9 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
     ).count()
     
     # Combine counts
-    total_alerts = (alerts_stats.total or 0) + total_committee_alerts
-    active_alerts = (alerts_stats.active or 0) + active_committee_alerts
-    critical_alerts = (alerts_stats.critical or 0) + critical_committee_alerts
+    total_alerts = alerts_total + total_committee_alerts
+    active_alerts = alerts_active + active_committee_alerts
+    critical_alerts = alerts_critical + critical_committee_alerts
     
     # Count properties with good DSCR (properties with DSCR >= 1.2)
     properties_with_good_dscr_sql = """
@@ -1378,18 +1391,27 @@ def get_alert_dashboard_summary(db: Session = Depends(get_db)):
     good_dscr_count = db.execute(text(properties_with_good_dscr_sql)).scalar() or 0
 
     # Properties at risk (distinct properties with active alerts)
-    properties_at_risk_sql = """
-        SELECT COUNT(DISTINCT p.id)
-        FROM properties p
-        LEFT JOIN committee_alerts ca
-          ON ca.property_id = p.id AND ca.status = 'ACTIVE'
-        LEFT JOIN document_uploads du
-          ON du.property_id = p.id
-        LEFT JOIN alerts a
-          ON a.document_id = du.id AND a.status = 'active'
-        WHERE p.status = 'active'
-          AND (ca.id IS NOT NULL OR a.id IS NOT NULL)
-    """
+    if inspector.has_table("alerts"):
+        properties_at_risk_sql = """
+            SELECT COUNT(DISTINCT p.id)
+            FROM properties p
+            LEFT JOIN committee_alerts ca
+              ON ca.property_id = p.id AND ca.status = 'ACTIVE'
+            LEFT JOIN document_uploads du
+              ON du.property_id = p.id
+            LEFT JOIN alerts a
+              ON a.document_id = du.id AND a.status = 'active'
+            WHERE p.status = 'active'
+              AND (ca.id IS NOT NULL OR a.id IS NOT NULL)
+        """
+    else:
+        properties_at_risk_sql = """
+            SELECT COUNT(DISTINCT p.id)
+            FROM properties p
+            JOIN committee_alerts ca
+              ON ca.property_id = p.id AND ca.status = 'ACTIVE'
+            WHERE p.status = 'active'
+        """
     properties_at_risk = db.execute(text(properties_at_risk_sql)).scalar() or 0
 
     # SLA compliance (percent of alerts meeting SLA deadlines)

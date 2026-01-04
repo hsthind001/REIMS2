@@ -377,49 +377,84 @@ async def get_metrics_summary(
         logger.info(f"Redis cache MISS: {cache_key} - querying database")
 
         # OPTIMIZED: Use SQL window function to get latest COMPLETE period per property (single query)
-        from sqlalchemy import func, and_
+        from sqlalchemy import func, and_, inspect
         from sqlalchemy.sql import text
-        from app.models.period_document_completeness import PeriodDocumentCompleteness
 
-        # Use ROW_NUMBER() to get only the most recent COMPLETE period per property
-        # IMPORTANT: Only includes periods where is_complete = true (all 5 documents uploaded)
-        latest_metrics_query = db.query(
-            FinancialMetrics.property_id,
-            Property.property_code,
-            Property.property_name,
-            FinancialPeriod.id.label('period_id'),
-            FinancialPeriod.period_year,
-            FinancialPeriod.period_month,
-            FinancialMetrics.total_assets,
-            FinancialMetrics.net_property_value,
-            FinancialMetrics.total_revenue,
-            FinancialMetrics.net_income,
-            FinancialMetrics.net_operating_income,
-            FinancialMetrics.occupancy_rate,
-            FinancialMetrics.dscr,
-            FinancialMetrics.ltv_ratio,
-            PeriodDocumentCompleteness.is_complete,
-            func.row_number().over(
-                partition_by=FinancialMetrics.property_id,
-                order_by=[
-                    FinancialPeriod.period_year.desc(),
-                    FinancialPeriod.period_month.desc()
-                ]
-            ).label('row_num')
-        ).join(
-            Property, and_(
-                FinancialMetrics.property_id == Property.id,
-                Property.status == 'active'
-            )
-        ).join(
-            FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
-        ).join(
-            PeriodDocumentCompleteness, and_(
-                PeriodDocumentCompleteness.property_id == FinancialMetrics.property_id,
-                PeriodDocumentCompleteness.period_id == FinancialMetrics.period_id,
-                PeriodDocumentCompleteness.is_complete == True  # Only complete periods
-            )
-        ).subquery()
+        has_completeness = inspect(db.bind).has_table("period_document_completeness")
+        if has_completeness:
+            from app.models.period_document_completeness import PeriodDocumentCompleteness
+
+            # Use ROW_NUMBER() to get only the most recent COMPLETE period per property
+            # IMPORTANT: Only includes periods where is_complete = true (all 5 documents uploaded)
+            latest_metrics_query = db.query(
+                FinancialMetrics.property_id,
+                Property.property_code,
+                Property.property_name,
+                FinancialPeriod.id.label('period_id'),
+                FinancialPeriod.period_year,
+                FinancialPeriod.period_month,
+                FinancialMetrics.total_assets,
+                FinancialMetrics.net_property_value,
+                FinancialMetrics.total_revenue,
+                FinancialMetrics.net_income,
+                FinancialMetrics.net_operating_income,
+                FinancialMetrics.occupancy_rate,
+                FinancialMetrics.dscr,
+                FinancialMetrics.ltv_ratio,
+                PeriodDocumentCompleteness.is_complete,
+                func.row_number().over(
+                    partition_by=FinancialMetrics.property_id,
+                    order_by=[
+                        FinancialPeriod.period_year.desc(),
+                        FinancialPeriod.period_month.desc()
+                    ]
+                ).label('row_num')
+            ).join(
+                Property, and_(
+                    FinancialMetrics.property_id == Property.id,
+                    Property.status == 'active'
+                )
+            ).join(
+                FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+            ).join(
+                PeriodDocumentCompleteness, and_(
+                    PeriodDocumentCompleteness.property_id == FinancialMetrics.property_id,
+                    PeriodDocumentCompleteness.period_id == FinancialMetrics.period_id,
+                    PeriodDocumentCompleteness.is_complete == True  # Only complete periods
+                )
+            ).subquery()
+        else:
+            logger.warning("period_document_completeness table missing; falling back to metrics-only summary")
+            latest_metrics_query = db.query(
+                FinancialMetrics.property_id,
+                Property.property_code,
+                Property.property_name,
+                FinancialPeriod.id.label('period_id'),
+                FinancialPeriod.period_year,
+                FinancialPeriod.period_month,
+                FinancialMetrics.total_assets,
+                FinancialMetrics.net_property_value,
+                FinancialMetrics.total_revenue,
+                FinancialMetrics.net_income,
+                FinancialMetrics.net_operating_income,
+                FinancialMetrics.occupancy_rate,
+                FinancialMetrics.dscr,
+                FinancialMetrics.ltv_ratio,
+                func.row_number().over(
+                    partition_by=FinancialMetrics.property_id,
+                    order_by=[
+                        FinancialPeriod.period_year.desc(),
+                        FinancialPeriod.period_month.desc()
+                    ]
+                ).label('row_num')
+            ).join(
+                Property, and_(
+                    FinancialMetrics.property_id == Property.id,
+                    Property.status == 'active'
+                )
+            ).join(
+                FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+            ).subquery()
 
         # Select only row_num = 1 (latest period per property)
         results = db.query(latest_metrics_query).filter(

@@ -10,6 +10,7 @@ import logging
 from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, self_learning, extraction_learning, market_intelligence
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
+import app.models  # noqa: F401
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
@@ -195,4 +196,3 @@ async def root():
         "docs": "/docs",
         "openapi": f"{settings.API_V1_STR}/openapi.json"
     }
-

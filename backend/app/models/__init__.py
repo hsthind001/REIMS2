@@ -4,6 +4,7 @@ from app.models.extraction_log import ExtractionLog
 from app.models.extraction_field_metadata import ExtractionFieldMetadata
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
+from app.models.period_document_completeness import PeriodDocumentCompleteness
 from app.models.document_upload import DocumentUpload
 from app.models.chart_of_accounts import ChartOfAccounts
 from app.models.lender import Lender
@@ -116,6 +117,7 @@ __all__ = [
     "ExtractionFieldMetadata",
     "Property",
     "FinancialPeriod",
+    "PeriodDocumentCompleteness",
     "DocumentUpload",
     "ChartOfAccounts",
     "Lender",
