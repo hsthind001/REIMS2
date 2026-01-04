@@ -43,6 +43,10 @@ services:
         reservations:
           cpus: '3'
           memory: 3G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     environment:
       - CELERY_WORKERS=4  # Concurrent Celery workers
 
@@ -55,7 +59,7 @@ services:
         reservations:
           cpus: '1'
           memory: 1G
-    command: redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru
+    command: redis-server --protected-mode no --maxmemory 1gb --maxmemory-policy allkeys-lru
 
   frontend:
     deploy:

@@ -2,7 +2,8 @@
  * Registration Form Component
  */
 
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useAuth } from './AuthContext';
 import type { UserCreate } from '../types/api';
 
@@ -170,4 +171,3 @@ export function RegisterForm() {
     </div>
   );
 }
-

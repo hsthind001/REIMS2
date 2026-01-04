@@ -229,10 +229,10 @@ export function formatNumber(value: number | null | undefined): string {
 /**
  * Get confidence level badge color
  */
-export function getConfidenceBadgeColor(confidence: number): string {
-  if (confidence >= 90) return 'green';
-  if (confidence >= 70) return 'yellow';
-  return 'red';
+export function getConfidenceBadgeColor(confidence: number): 'success' | 'warning' | 'error' {
+  if (confidence >= 90) return 'success';
+  if (confidence >= 70) return 'warning';
+  return 'error';
 }
 
 /**

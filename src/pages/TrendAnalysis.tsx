@@ -9,7 +9,7 @@ import { useParams } from 'react-router-dom';
 import TrendAnalysisDashboard from '../components/charts/TrendAnalysisDashboard';
 import { propertyService } from '../lib/property';
 import { Card, Button } from '../components/design-system';
-import { ArrowLeft, Filter } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import type { Property } from '../types/api';
 
 export default function TrendAnalysis() {
@@ -133,4 +133,3 @@ export default function TrendAnalysis() {
     </div>
   );
 }
-

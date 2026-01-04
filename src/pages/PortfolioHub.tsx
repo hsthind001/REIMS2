@@ -132,6 +132,7 @@ interface MarketIntelligence {
     occupancy: number;
   }>;
   aiInsights: string[];
+  dataQuality?: string;
 }
 
 interface TenantMatch {
@@ -175,6 +176,7 @@ export default function PortfolioHub() {
   const [tenantDetails, setTenantDetails] = useState<any[]>([]);
   const [loadingTenants, setLoadingTenants] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const locationScore = marketIntel?.locationScore ?? 0;
 
   useEffect(() => {
     loadProperties();
@@ -1765,17 +1767,19 @@ export default function PortfolioHub() {
                               <div className="text-sm font-semibold text-purple-700 mb-2">LOCATION QUALITY</div>
                               <div className="text-4xl font-bold mb-2">
                                 <span className={
-                                  marketIntel.locationScore >= 8 ? 'text-green-600' :
-                                  marketIntel.locationScore >= 6 ? 'text-blue-600' :
-                                  marketIntel.locationScore >= 4 ? 'text-orange-600' : 'text-red-600'
+                                  locationScore >= 8 ? 'text-green-600' :
+                                  locationScore >= 6 ? 'text-blue-600' :
+                                  locationScore >= 4 ? 'text-orange-600' : 'text-red-600'
                                 }>
                                   {marketIntel.locationScore !== null ? `${marketIntel.locationScore}/10` : 'N/A'}
                                 </span>
                               </div>
                               <div className="text-xs text-purple-600">
-                                {marketIntel.locationScore >= 8 ? 'Premium Location' :
-                                 marketIntel.locationScore >= 6 ? 'Strong Location' :
-                                 marketIntel.locationScore >= 4 ? 'Average Location' : 'Below Average'}
+                                {marketIntel.locationScore !== null
+                                  ? (locationScore >= 8 ? 'Premium Location' :
+                                     locationScore >= 6 ? 'Strong Location' :
+                                     locationScore >= 4 ? 'Average Location' : 'Below Average')
+                                  : 'Data unavailable'}
                               </div>
                             </div>
 
@@ -2460,4 +2464,3 @@ function PropertyFormModal({
     </div>
   );
 }
-

@@ -365,6 +365,8 @@ export function generateExecutiveSummary(
     const riskScore = calculateRiskScore(esg_assessment, marketIntelligence.economic_indicators, forecasts, location_intelligence);
     const opportunityScore = calculateOpportunityScore(locationScore, rentGrowth, demographics, competitive_analysis);
     const investmentRecommendation = generateInvestmentRecommendation(riskScore, opportunityScore, yourCapRate, marketCapRate);
+    const safeLocationScore = locationScore ?? 0;
+    const safeRentGrowth = rentGrowth ?? 0;
 
     // Extract key findings
     const keyFindings: string[] = [];
@@ -376,8 +378,8 @@ export function generateExecutiveSummary(
     // Generate headline
     const { action, rationale } = investmentRecommendation;
     let headline = `${action}: ${rationale[0] || 'Evaluation needed'}`;
-    if (action === 'BUY' && investmentRecommendation.confidence >= 80 && locationScore) {
-      headline = `STRONG BUY: Premium location (${locationScore}/10) with ${rentGrowth}% growth potential`;
+    if (action === 'BUY' && investmentRecommendation.confidence >= 80 && locationScore !== null) {
+      headline = `STRONG BUY: Premium location (${safeLocationScore}/10) with ${safeRentGrowth}% growth potential`;
     }
 
     return {
@@ -391,8 +393,8 @@ export function generateExecutiveSummary(
       executiveSummary: {
         headline,
         quickStats: {
-          locationQuality: locationScore >= 8 ? 'Premium' : locationScore >= 6 ? 'Strong' : locationScore >= 4 ? 'Average' : 'Below Average',
-          growthPotential: rentGrowth >= 5 ? 'Exceptional' : rentGrowth >= 3 ? 'Strong' : rentGrowth >= 2 ? 'Moderate' : rentGrowth >= 0 ? 'Stable' : 'Declining',
+          locationQuality: safeLocationScore >= 8 ? 'Premium' : safeLocationScore >= 6 ? 'Strong' : safeLocationScore >= 4 ? 'Average' : 'Below Average',
+          growthPotential: safeRentGrowth >= 5 ? 'Exceptional' : safeRentGrowth >= 3 ? 'Strong' : safeRentGrowth >= 2 ? 'Moderate' : safeRentGrowth >= 0 ? 'Stable' : 'Declining',
           riskLevel: riskScore >= 70 ? 'High Risk' : riskScore >= 50 ? 'Moderate Risk' : riskScore >= 30 ? 'Low Risk' : 'Minimal Risk',
           opportunityLevel: opportunityScore >= 75 ? 'Exceptional' : opportunityScore >= 60 ? 'Strong' : opportunityScore >= 40 ? 'Moderate' : 'Limited'
         }

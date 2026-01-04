@@ -1,9 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import type { HTMLMotionProps } from 'framer-motion';
 import styles from './Button.module.css';
 
-export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onDrag' | 'onDragEnd' | 'onDragStart'> {
-  variant?: 'primary' | 'success' | 'danger' | 'premium' | 'info';
+export interface ButtonProps
+  extends Omit<HTMLMotionProps<'button'>, 'onDrag' | 'onDragEnd' | 'onDragStart'> {
+  variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'premium' | 'info' | 'default' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
   icon?: React.ReactNode;
@@ -27,16 +29,13 @@ export const Button: React.FC<ButtonProps> = ({
     className
   ].filter(Boolean).join(' ');
 
-  // Filter out drag handlers that conflict with framer-motion
-  const { onDrag, onDragEnd, onDragStart, ...restProps } = props;
-
   return (
     <motion.button
       whileHover={!disabled && !isLoading ? { scale: 1.02 } : {}}
       whileTap={!disabled && !isLoading ? { scale: 0.98 } : {}}
       className={classes}
       disabled={disabled || isLoading}
-      {...restProps}
+      {...props}
     >
       {isLoading ? (
         <span className={styles.loading}>
@@ -55,4 +54,3 @@ export const Button: React.FC<ButtonProps> = ({
     </motion.button>
   );
 };
-

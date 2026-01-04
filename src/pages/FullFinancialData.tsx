@@ -126,11 +126,16 @@ export default function FullFinancialData() {
 
       if (!match && selectedYear && selectedMonth) {
         // Ensure period exists
-        match = await financialPeriodsService.getOrCreatePeriod(propertyId, selectedYear, selectedMonth);
+        const createdPeriod = await financialPeriodsService.getOrCreatePeriod(
+          propertyId,
+          selectedYear,
+          selectedMonth
+        );
+        match = createdPeriod;
         // Add to list if new
-        const exists = sorted.find((p) => p.id === match.id);
+        const exists = sorted.find((p) => p.id === createdPeriod.id);
         if (!exists) {
-          setAvailablePeriods((prev) => [match!, ...prev]);
+          setAvailablePeriods((prev) => [createdPeriod, ...prev]);
         }
       }
 

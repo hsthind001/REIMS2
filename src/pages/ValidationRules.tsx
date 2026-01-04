@@ -34,6 +34,18 @@ interface RuleTemplate {
   rule_count: number;
 }
 
+interface RuleFormState {
+  rule_name: string;
+  rule_type: string;
+  formula: string;
+  tolerance: string;
+  alert_level: ValidationRule['alert_level'];
+  applies_to_all_properties: boolean;
+  property_ids: number[];
+  actions_on_failure: ValidationRule['actions_on_failure'];
+  frequency: string;
+}
+
 export default function ValidationRules() {
   const [rules, setRules] = useState<ValidationRule[]>([]);
   const [disabledRules, setDisabledRules] = useState<ValidationRule[]>([]);
@@ -44,12 +56,12 @@ export default function ValidationRules() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
-  const [ruleForm, setRuleForm] = useState({
+  const [ruleForm, setRuleForm] = useState<RuleFormState>({
     rule_name: '',
     rule_type: 'Financial Metric',
     formula: '',
     tolerance: '',
-    alert_level: 'MEDIUM' as const,
+    alert_level: 'MEDIUM',
     applies_to_all_properties: true,
     property_ids: [] as number[],
     actions_on_failure: {

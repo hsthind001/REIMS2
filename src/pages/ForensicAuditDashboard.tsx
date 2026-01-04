@@ -183,6 +183,32 @@ export default function ForensicAuditDashboard() {
     return property.property_name || property.property_code || `Property ${property.id}`;
   };
 
+  const reconciliationPassRate = scorecard
+    ? scorecard.reconciliation_summary.pass_rate_pct ?? scorecard.reconciliation_summary.pass_rate ?? 0
+    : 0;
+
+  const fraudSummary = scorecard
+    ? scorecard.fraud_summary ?? {
+        fraud_risk_level: scorecard.fraud_detection_summary?.overall_risk_level ?? 'Unknown',
+        overall_status: scorecard.traffic_light_status,
+      }
+    : null;
+
+  const financialTotals = scorecard
+    ? {
+        totalRevenue:
+          scorecard.financial_summary.total_revenue ??
+          scorecard.financial_summary.ytd_revenue ??
+          0,
+        netIncome:
+          scorecard.financial_summary.net_income ??
+          scorecard.financial_summary.ytd_net_income ??
+          0,
+        noi: scorecard.financial_summary.noi ?? scorecard.financial_summary.ytd_noi ?? 0,
+        cashBalance: scorecard.financial_summary.cash_balance ?? 0,
+      }
+    : null;
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -365,18 +391,18 @@ export default function ForensicAuditDashboard() {
 
               <MetricCard
                 title="Fraud Risk"
-                value={scorecard.fraud_summary.fraud_risk_level}
+                value={fraudSummary?.fraud_risk_level || 'Unknown'}
                 subtitle="Overall Assessment"
-                status={scorecard.fraud_summary.overall_status}
+                status={fraudSummary?.overall_status || scorecard.traffic_light_status}
                 icon={Shield}
                 iconColor="text-purple-600"
               />
 
               <MetricCard
                 title="Reconciliation Pass Rate"
-                value={`${scorecard.reconciliation_summary.pass_rate_pct.toFixed(1)}%`}
+                value={`${reconciliationPassRate.toFixed(1)}%`}
                 subtitle={`${scorecard.reconciliation_summary.passed}/${scorecard.reconciliation_summary.total_reconciliations} passed`}
-                status={scorecard.reconciliation_summary.pass_rate_pct >= 90 ? 'GREEN' : scorecard.reconciliation_summary.pass_rate_pct >= 75 ? 'YELLOW' : 'RED'}
+                status={reconciliationPassRate >= 90 ? 'GREEN' : reconciliationPassRate >= 75 ? 'YELLOW' : 'RED'}
                 icon={CheckCircle2}
                 iconColor="text-teal-600"
               />
@@ -461,25 +487,25 @@ export default function ForensicAuditDashboard() {
               <Card className="p-4">
                 <div className="text-sm text-gray-600">Total Revenue</div>
                 <div className="text-xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(scorecard.financial_summary.total_revenue)}
+                  {formatCurrency(financialTotals?.totalRevenue ?? 0)}
                 </div>
               </Card>
               <Card className="p-4">
                 <div className="text-sm text-gray-600">Net Income</div>
                 <div className="text-xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(scorecard.financial_summary.net_income)}
+                  {formatCurrency(financialTotals?.netIncome ?? 0)}
                 </div>
               </Card>
               <Card className="p-4">
                 <div className="text-sm text-gray-600">NOI</div>
                 <div className="text-xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(scorecard.financial_summary.noi)}
+                  {formatCurrency(financialTotals?.noi ?? 0)}
                 </div>
               </Card>
               <Card className="p-4">
                 <div className="text-sm text-gray-600">Cash Balance</div>
                 <div className="text-xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(scorecard.financial_summary.cash_balance)}
+                  {formatCurrency(financialTotals?.cashBalance ?? 0)}
                 </div>
               </Card>
             </div>

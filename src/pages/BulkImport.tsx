@@ -101,7 +101,7 @@ export default function BulkImport() {
   const [result, setResult] = useState<any>(null)
   const [showMonitoring, setShowMonitoring] = useState(false)
   const [monitoringData, setMonitoringData] = useState<any>(null)
-  const [monitoringInterval, setMonitoringInterval] = useState<NodeJS.Timeout | null>(null)
+  const [monitoringInterval, setMonitoringInterval] = useState<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     fetchProperties()

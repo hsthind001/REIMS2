@@ -80,15 +80,6 @@ export interface AlertAnalytics {
   property_id?: number;
 }
 
-// Re-export types for better ES module compatibility
-export type {
-  Alert,
-  AlertSummary,
-  AlertTrend,
-  AlertTrendsResponse,
-  AlertAnalytics
-}
-
 export class AlertService {
   /**
    * Get all alerts with optional filtering
@@ -270,4 +261,3 @@ export class AlertService {
     return response;
   }
 }
-

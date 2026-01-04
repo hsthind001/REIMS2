@@ -119,6 +119,7 @@ export interface EnvironmentalRisk {
   climate_risk_composite: number;
   energy_efficiency_rating: string;
   emissions_intensity_kg_co2_sqft: number;
+  composite_score?: number;
 }
 
 export interface SocialRisk {
@@ -127,6 +128,7 @@ export interface SocialRisk {
   income_inequality_gini: number;
   diversity_index: number;
   community_health_score: number;
+  composite_score?: number;
 }
 
 export interface GovernanceRisk {
@@ -135,6 +137,7 @@ export interface GovernanceRisk {
   tax_delinquency_risk: string;
   legal_issues_count: number;
   regulatory_risk_score: number;
+  composite_score?: number;
 }
 
 export interface ESGAssessmentData {

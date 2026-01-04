@@ -100,7 +100,7 @@ export interface DocumentUpload {
   file_name: string;
   file_path: string;
   file_size_bytes: number;
-  extraction_status: 'pending' | 'processing' | 'completed' | 'failed';
+  extraction_status: 'pending' | 'processing' | 'completed' | 'failed' | 'validating' | 'extracting';
   extraction_started_at?: string;
   extraction_completed_at?: string;
   upload_date: string;
@@ -122,6 +122,12 @@ export interface DocumentUploadResponse {
   message: string;
   file_path: string;
   extraction_status: string;
+  file_exists?: boolean;
+  existing_file?: {
+    path: string;
+    size: number;
+    last_modified: string;
+  };
 }
 
 // ===== Financial Data =====

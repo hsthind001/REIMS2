@@ -301,7 +301,7 @@ export default function CovenantComplianceDashboard() {
               </div>
               <div className="flex items-center gap-3">
                 <TrendIndicator
-                  trend={results.tests.dscr.trend}
+                  trend={results.tests.dscr.trend || 'STABLE'}
                   value={results.tests.dscr.dscr}
                   previousValue={results.tests.dscr.prior_period_dscr}
                   showLabel
@@ -356,7 +356,7 @@ export default function CovenantComplianceDashboard() {
               </div>
               <div className="flex items-center gap-3">
                 <TrendIndicator
-                  trend={results.tests.ltv.trend}
+                  trend={results.tests.ltv.trend || 'STABLE'}
                   value={results.tests.ltv.ltv}
                   previousValue={results.tests.ltv.prior_period_ltv}
                   showLabel

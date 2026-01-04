@@ -32,6 +32,7 @@ interface PortfolioHealth {
   totalNOI: number;
   avgOccupancy: number;
   portfolioDSCR: number;
+  portfolioIRR?: number;
   percentageChanges?: {
     total_value_change: number;
     noi_change: number;
@@ -77,8 +78,8 @@ interface PropertyPerformance {
   code: string;
   value: number;
   noi: number;
-  dscr: number;
-  ltv: number;
+  dscr: number | null;
+  ltv: number | null;
   occupancy: number;
   status: 'critical' | 'warning' | 'good';
   trends: {
@@ -474,19 +475,18 @@ export default function CommandCenter() {
                 : 0;
 
             // Fetch historical data for trends
-            const histRes = await fetch(`${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`, {
-              credentials: 'include'
-            }).catch(() => ({ ok: false }));
-
-            // Process historical data
             let noiTrend: number[] = [];
-            if (histRes.ok) {
-              try {
+            try {
+              const histRes = await fetch(
+                `${API_BASE_URL}/metrics/historical?property_id=${property.id}&months=12`,
+                { credentials: 'include' }
+              );
+              if (histRes.ok) {
                 const histData = await histRes.json();
                 noiTrend = histData.data?.noi?.map((n: number) => n / 1000000) || [];
-              } catch (histErr) {
-                console.error('Failed to parse historical data:', histErr);
               }
+            } catch (histErr) {
+              console.error('Failed to load historical data:', histErr);
             }
 
             // Get DSCR from latest complete period (not just latest period)
@@ -1002,7 +1002,11 @@ export default function CommandCenter() {
       return;
     }
 
-    exportPortfolioHealthToPDF(portfolioHealth, propertyPerformance, 'portfolio-health-report');
+    exportPortfolioHealthToPDF(
+      { ...portfolioHealth, portfolioIRR: portfolioHealth.portfolioIRR ?? 0 },
+      propertyPerformance,
+      'portfolio-health-report'
+    );
     setShowExportMenu(false);
   };
 
@@ -1059,13 +1063,13 @@ export default function CommandCenter() {
   };
 
   // Button handlers for critical alerts
-  const handleViewFinancials = (alert: CriticalAlert) => {
+  const handleViewFinancials = (criticalAlert: CriticalAlert) => {
     // Navigate to Financial Command page (reports page) with property filter
     // The FinancialCommand page will read the property code from URL hash
-    window.location.hash = `reports?property=${alert.property.code}`;
+    window.location.hash = `reports?property=${criticalAlert.property.code}`;
   };
 
-  const handleAIRecommendations = async (alert: CriticalAlert) => {
+  const handleAIRecommendations = async (criticalAlert: CriticalAlert) => {
     setLoadingAnalysis(true);
     try {
       const response = await fetch(`${API_BASE_URL}/nlq/query`, {
@@ -1073,13 +1077,13 @@ export default function CommandCenter() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          question: `What are the recommendations for ${alert.property.name} with ${alert.metric.name} of ${alert.metric.current} (threshold: ${alert.metric.threshold})?`,
+          question: `What are the recommendations for ${criticalAlert.property.name} with ${criticalAlert.metric.name} of ${criticalAlert.metric.current} (threshold: ${criticalAlert.metric.threshold})?`,
           context: {
-            property_id: alert.property.id,
-            alert_id: alert.id,
-            metric: alert.metric.name,
-            current_value: alert.metric.current,
-            threshold: alert.metric.threshold
+            property_id: criticalAlert.property.id,
+            alert_id: criticalAlert.id,
+            metric: criticalAlert.metric.name,
+            current_value: criticalAlert.metric.current,
+            threshold: criticalAlert.metric.threshold
           }
         })
       });
@@ -1091,14 +1095,14 @@ export default function CommandCenter() {
         if (!data.success) {
           // Display error in modal for better UX
           setAnalysisDetails({
-            title: `AI Recommendations for ${alert.property.name}`,
+            title: `AI Recommendations for ${criticalAlert.property.name}`,
             summary: data.answer || data.error || 'Unable to generate recommendations at this time.',
             details: [
-              `Property: ${alert.property.name} (${alert.property.code})`,
-              `Metric: ${alert.metric.name}`,
-              `Current Value: ${alert.metric.current}`,
-              `Threshold: ${alert.metric.threshold}`,
-              `Impact: ${alert.metric.impact}`
+              `Property: ${criticalAlert.property.name} (${criticalAlert.property.code})`,
+              `Metric: ${criticalAlert.metric.name}`,
+              `Current Value: ${criticalAlert.metric.current}`,
+              `Threshold: ${criticalAlert.metric.threshold}`,
+              `Impact: ${criticalAlert.metric.impact}`
             ],
             recommendations: [
               'The AI recommendation service is currently unavailable.',
@@ -1111,14 +1115,14 @@ export default function CommandCenter() {
         
         // Successful query - display results
         setAnalysisDetails({
-          title: `AI Recommendations for ${alert.property.name}`,
+          title: `AI Recommendations for ${criticalAlert.property.name}`,
           summary: data.answer || data.response || data.message || 'AI analysis unavailable',
           details: [
-            `Property: ${alert.property.name} (${alert.property.code})`,
-            `Metric: ${alert.metric.name}`,
-            `Current Value: ${alert.metric.current}`,
-            `Threshold: ${alert.metric.threshold}`,
-            `Impact: ${alert.metric.impact}`
+            `Property: ${criticalAlert.property.name} (${criticalAlert.property.code})`,
+            `Metric: ${criticalAlert.metric.name}`,
+            `Current Value: ${criticalAlert.metric.current}`,
+            `Threshold: ${criticalAlert.metric.threshold}`,
+            `Impact: ${criticalAlert.metric.impact}`
           ],
           recommendations: data.recommendations || (data.answer ? [data.answer] : ['No specific recommendations available at this time.'])
         });
@@ -1135,17 +1139,17 @@ export default function CommandCenter() {
     }
   };
 
-  const handleAcknowledgeAlert = async (alert: CriticalAlert) => {
+  const handleAcknowledgeAlert = async (criticalAlert: CriticalAlert) => {
     // Get current user ID from auth context
     const currentUserId = user?.id || 1; // Fallback to 1 if not available
     
     if (!currentUserId) {
-      alert('Please log in to acknowledge alerts');
+      window.alert('Please log in to acknowledge alerts');
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${alert.id}/acknowledge`, {
+      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${criticalAlert.id}/acknowledge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1159,23 +1163,28 @@ export default function CommandCenter() {
         const data = await response.json();
         if (data.success) {
           // Remove alert from list
-          setCriticalAlerts(prev => prev.filter(a => a.id !== alert.id));
+          setCriticalAlerts(prev => prev.filter(a => a.id !== criticalAlert.id));
           // Show success message
-          alert('Alert acknowledged successfully');
+          window.alert('Alert acknowledged successfully');
           // Refresh alerts to get updated list
           await loadCriticalAlerts();
         } else {
-          alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
+          window.alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
         }
       } else {
         const error = await response.json();
-        alert(`Failed to acknowledge alert: ${error.detail || 'Unknown error'}`);
+        window.alert(`Failed to acknowledge alert: ${error.detail || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Failed to acknowledge alert:', err);
-      alert('Failed to acknowledge alert. Please try again.');
+      window.alert('Failed to acknowledge alert. Please try again.');
     }
   };
+
+  const totalValueChange = portfolioHealth?.percentageChanges?.total_value_change ?? 0;
+  const noiChange = portfolioHealth?.percentageChanges?.noi_change ?? 0;
+  const occupancyChange = portfolioHealth?.percentageChanges?.occupancy_change ?? 0;
+  const dscrChange = portfolioHealth?.percentageChanges?.dscr_change ?? 0;
 
   if (loading && !portfolioHealth) {
     return (
@@ -1339,8 +1348,8 @@ export default function CommandCenter() {
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
             value={portfolioHealth?.totalValue || 0}
-            change={portfolioHealth?.percentageChanges?.total_value_change || 0}
-            trend={portfolioHealth?.percentageChanges?.total_value_change >= 0 ? "up" : "down"}
+            change={totalValueChange}
+            trend={totalValueChange >= 0 ? "up" : "down"}
             icon="💰"
             variant="success"
             sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
@@ -1349,8 +1358,8 @@ export default function CommandCenter() {
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
             value={portfolioHealth?.totalNOI || 0}
-            change={portfolioHealth?.percentageChanges?.noi_change || 0}
-            trend={portfolioHealth?.percentageChanges?.noi_change >= 0 ? "up" : "down"}
+            change={noiChange}
+            trend={noiChange >= 0 ? "up" : "down"}
             icon="📊"
             variant="info"
             sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
@@ -1359,8 +1368,8 @@ export default function CommandCenter() {
           <MetricCard
             title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
             value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
-            change={portfolioHealth?.percentageChanges?.occupancy_change || 0}
-            trend={portfolioHealth?.percentageChanges?.occupancy_change >= 0 ? "up" : "down"}
+            change={occupancyChange}
+            trend={occupancyChange >= 0 ? "up" : "down"}
             icon="🏘️"
             variant="warning"
             sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
@@ -1374,8 +1383,8 @@ export default function CommandCenter() {
             value={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.dscr
               ? latestCompleteDSCR.dscr.toFixed(2)
               : portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "N/A"}
-            change={portfolioHealth?.percentageChanges?.dscr_change || 0}
-            trend={portfolioHealth?.percentageChanges?.dscr_change >= 0 ? "up" : "down"}
+            change={dscrChange}
+            trend={dscrChange >= 0 ? "up" : "down"}
             icon="📈"
             variant="success"
             sparkline={sparklineData.dscr.length > 0 ? sparklineData.dscr : undefined}
@@ -1887,4 +1896,3 @@ export default function CommandCenter() {
     </div>
   );
 }
-

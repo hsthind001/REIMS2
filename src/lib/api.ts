@@ -85,7 +85,7 @@ export class ApiClient {
   /**
    * Generic request handler with error handling and retry logic
    */
-  private async request<T>(
+  private async request<T = any>(
     endpoint: string,
     options: RequestInit = {},
     retries: number = 2
@@ -200,7 +200,7 @@ export class ApiClient {
   /**
    * GET request
    */
-  async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
+  async get<T = any>(endpoint: string, params?: Record<string, any>): Promise<T> {
     let url = endpoint;
     
     if (params) {
@@ -221,7 +221,7 @@ export class ApiClient {
   /**
    * POST request
    */
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T = any>(endpoint: string, data?: any): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
@@ -231,7 +231,7 @@ export class ApiClient {
   /**
    * PUT request
    */
-  async put<T>(endpoint: string, data?: any): Promise<T> {
+  async put<T = any>(endpoint: string, data?: any): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
@@ -241,14 +241,14 @@ export class ApiClient {
   /**
    * DELETE request
    */
-  async delete<T>(endpoint: string): Promise<T> {
+  async delete<T = any>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
 
   /**
    * Upload file (multipart/form-data)
    */
-  async uploadFile<T>(
+  async uploadFile<T = any>(
     endpoint: string,
     formData: FormData
   ): Promise<T> {
@@ -295,4 +295,3 @@ export const api = new ApiClient();
 export function useApi() {
   return api;
 }
-

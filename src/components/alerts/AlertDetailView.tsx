@@ -21,7 +21,7 @@ export default function AlertDetailView({
   onResolve,
   onDismiss
 }: AlertDetailViewProps) {
-  const [alert, setAlert] = useState<Alert | null>(null);
+  const [currentAlert, setCurrentAlert] = useState<Alert | null>(null);
   const [relatedAlerts, setRelatedAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export default function AlertDetailView({
         AlertService.getRelatedAlerts(alertId)
       ]);
 
-      setAlert(alertData);
+      setCurrentAlert(alertData);
       setRelatedAlerts(relatedData.related_alerts || []);
     } catch (err: any) {
       setError(err.message || 'Failed to load alert details');
@@ -54,7 +54,7 @@ export default function AlertDetailView({
   };
 
   const handleAcknowledge = async () => {
-    if (!alert) return;
+    if (!currentAlert) return;
 
     try {
       setActionLoading(true);
@@ -64,15 +64,15 @@ export default function AlertDetailView({
       await loadAlertDetails();
       onAcknowledge?.(alertId);
     } catch (err: any) {
-      alert(err.message || 'Failed to acknowledge alert');
+      window.alert(err.message || 'Failed to acknowledge alert');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleResolve = async () => {
-    if (!alert || !resolutionNotes.trim()) {
-      alert('Please provide resolution notes');
+    if (!currentAlert || !resolutionNotes.trim()) {
+      window.alert('Please provide resolution notes');
       return;
     }
 
@@ -85,14 +85,14 @@ export default function AlertDetailView({
       await loadAlertDetails();
       onResolve?.(alertId);
     } catch (err: any) {
-      alert(err.message || 'Failed to resolve alert');
+      window.alert(err.message || 'Failed to resolve alert');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleDismiss = async () => {
-    if (!alert) return;
+    if (!currentAlert) return;
 
     const reason = prompt('Please provide a reason for dismissing this alert:');
     if (!reason) return;
@@ -104,7 +104,7 @@ export default function AlertDetailView({
       await loadAlertDetails();
       onDismiss?.(alertId);
     } catch (err: any) {
-      alert(err.message || 'Failed to dismiss alert');
+      window.alert(err.message || 'Failed to dismiss alert');
     } finally {
       setActionLoading(false);
     }
@@ -119,7 +119,7 @@ export default function AlertDetailView({
     );
   }
 
-  if (error || !alert) {
+  if (error || !currentAlert) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center', color: '#dc3545' }}>
         <p>Error: {error || 'Alert not found'}</p>
@@ -166,29 +166,29 @@ export default function AlertDetailView({
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1.5rem' }}>
         <div>
-          <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>{alert.title}</h2>
+          <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>{currentAlert.title}</h2>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
             <span style={{
               padding: '0.25rem 0.75rem',
               borderRadius: '4px',
-              background: getSeverityColor(alert.severity),
+              background: getSeverityColor(currentAlert.severity),
               color: '#fff',
               fontSize: '0.875rem',
               fontWeight: '600'
             }}>
-              {alert.severity}
+              {currentAlert.severity}
             </span>
             <span style={{
               padding: '0.25rem 0.75rem',
               borderRadius: '4px',
-              background: getStatusColor(alert.status),
+              background: getStatusColor(currentAlert.status),
               color: '#fff',
               fontSize: '0.875rem',
               fontWeight: '600'
             }}>
-              {alert.status}
+              {currentAlert.status}
             </span>
-            {alert.priority_score && (
+            {currentAlert.priority_score && (
               <span style={{
                 padding: '0.25rem 0.75rem',
                 borderRadius: '4px',
@@ -196,7 +196,7 @@ export default function AlertDetailView({
                 color: '#fff',
                 fontSize: '0.875rem'
               }}>
-                Priority: {alert.priority_score.toFixed(1)}
+                Priority: {currentAlert.priority_score.toFixed(1)}
               </span>
             )}
           </div>
@@ -236,33 +236,33 @@ export default function AlertDetailView({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div>
               <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Alert Type</div>
-              <div style={{ fontWeight: '500' }}>{alert.alert_type.replace(/_/g, ' ')}</div>
+              <div style={{ fontWeight: '500' }}>{currentAlert.alert_type.replace(/_/g, ' ')}</div>
             </div>
             <div>
               <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Property ID</div>
-              <div style={{ fontWeight: '500' }}>{alert.property_id}</div>
+              <div style={{ fontWeight: '500' }}>{currentAlert.property_id}</div>
             </div>
-            {alert.financial_period_id && (
+            {currentAlert.financial_period_id && (
               <div>
                 <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Period ID</div>
-                <div style={{ fontWeight: '500' }}>{alert.financial_period_id}</div>
+                <div style={{ fontWeight: '500' }}>{currentAlert.financial_period_id}</div>
               </div>
             )}
             <div>
               <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Assigned Committee</div>
-              <div style={{ fontWeight: '500' }}>{alert.assigned_committee.replace(/_/g, ' ')}</div>
+              <div style={{ fontWeight: '500' }}>{currentAlert.assigned_committee.replace(/_/g, ' ')}</div>
             </div>
             <div>
               <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Triggered At</div>
               <div style={{ fontWeight: '500' }}>
-                {new Date(alert.triggered_at).toLocaleString()}
+                {new Date(currentAlert.triggered_at).toLocaleString()}
               </div>
             </div>
           </div>
         </div>
 
         {/* Threshold Information */}
-        {(alert.threshold_value !== undefined || alert.actual_value !== undefined) && (
+        {(currentAlert.threshold_value !== undefined || currentAlert.actual_value !== undefined) && (
           <div style={{
             padding: '1.5rem',
             background: '#fff',
@@ -271,26 +271,26 @@ export default function AlertDetailView({
           }}>
             <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>Threshold Information</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {alert.threshold_value !== undefined && (
+              {currentAlert.threshold_value !== undefined && (
                 <div>
                   <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Threshold</div>
                   <div style={{ fontWeight: '500' }}>
-                    {alert.threshold_value.toLocaleString()} {alert.threshold_unit || ''}
+                    {currentAlert.threshold_value.toLocaleString()} {currentAlert.threshold_unit || ''}
                   </div>
                 </div>
               )}
-              {alert.actual_value !== undefined && (
+              {currentAlert.actual_value !== undefined && (
                 <div>
                   <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Actual Value</div>
                   <div style={{ fontWeight: '500' }}>
-                    {alert.actual_value.toLocaleString()} {alert.threshold_unit || ''}
+                    {currentAlert.actual_value.toLocaleString()} {currentAlert.threshold_unit || ''}
                   </div>
                 </div>
               )}
-              {alert.related_metric && (
+              {currentAlert.related_metric && (
                 <div>
                   <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Related Metric</div>
-                  <div style={{ fontWeight: '500' }}>{alert.related_metric}</div>
+                  <div style={{ fontWeight: '500' }}>{currentAlert.related_metric}</div>
                 </div>
               )}
             </div>
@@ -309,30 +309,30 @@ export default function AlertDetailView({
             <div>
               <div style={{ fontSize: '0.875rem', color: '#666' }}>Created</div>
               <div style={{ fontSize: '0.875rem' }}>
-                {new Date(alert.triggered_at).toLocaleString()}
+                {new Date(currentAlert.triggered_at).toLocaleString()}
               </div>
             </div>
-            {alert.acknowledged_at && (
+            {currentAlert.acknowledged_at && (
               <div>
                 <div style={{ fontSize: '0.875rem', color: '#666' }}>Acknowledged</div>
                 <div style={{ fontSize: '0.875rem' }}>
-                  {new Date(alert.acknowledged_at).toLocaleString()}
+                  {new Date(currentAlert.acknowledged_at).toLocaleString()}
                 </div>
               </div>
             )}
-            {alert.resolved_at && (
+            {currentAlert.resolved_at && (
               <div>
                 <div style={{ fontSize: '0.875rem', color: '#666' }}>Resolved</div>
                 <div style={{ fontSize: '0.875rem' }}>
-                  {new Date(alert.resolved_at).toLocaleString()}
+                  {new Date(currentAlert.resolved_at).toLocaleString()}
                 </div>
               </div>
             )}
-            {alert.escalated_at && (
+            {currentAlert.escalated_at && (
               <div>
                 <div style={{ fontSize: '0.875rem', color: '#666' }}>Escalated</div>
                 <div style={{ fontSize: '0.875rem' }}>
-                  {new Date(alert.escalated_at).toLocaleString()} (Level {alert.escalation_level || 0})
+                  {new Date(currentAlert.escalated_at).toLocaleString()} (Level {currentAlert.escalation_level || 0})
                 </div>
               </div>
             )}
@@ -341,7 +341,7 @@ export default function AlertDetailView({
       </div>
 
       {/* Description */}
-      {alert.description && (
+      {currentAlert.description && (
         <div style={{
           padding: '1.5rem',
           background: '#fff',
@@ -350,12 +350,12 @@ export default function AlertDetailView({
           marginBottom: '1.5rem'
         }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>Description</h3>
-          <p style={{ lineHeight: '1.6', color: '#333' }}>{alert.description}</p>
+          <p style={{ lineHeight: '1.6', color: '#333' }}>{currentAlert.description}</p>
         </div>
       )}
 
       {/* Resolution Notes */}
-      {alert.resolution_notes && (
+      {currentAlert.resolution_notes && (
         <div style={{
           padding: '1.5rem',
           background: '#f8f9fa',
@@ -363,7 +363,7 @@ export default function AlertDetailView({
           marginBottom: '1.5rem'
         }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>Resolution Notes</h3>
-          <p style={{ lineHeight: '1.6', color: '#333' }}>{alert.resolution_notes}</p>
+          <p style={{ lineHeight: '1.6', color: '#333' }}>{currentAlert.resolution_notes}</p>
         </div>
       )}
 
@@ -402,7 +402,7 @@ export default function AlertDetailView({
       )}
 
       {/* Actions */}
-      {alert.status === 'ACTIVE' && (
+      {currentAlert.status === 'ACTIVE' && (
         <div style={{
           padding: '1.5rem',
           background: '#fff',
@@ -412,7 +412,7 @@ export default function AlertDetailView({
         }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>Actions</h3>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            {!alert.acknowledged_at && (
+            {!currentAlert.acknowledged_at && (
               <button
                 onClick={handleAcknowledge}
                 disabled={actionLoading}
@@ -518,4 +518,3 @@ export default function AlertDetailView({
     </div>
   );
 }
-

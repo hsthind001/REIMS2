@@ -23,6 +23,8 @@ export interface ForensicReconciliationSession {
     inferred_matches?: number;
     discrepancies?: number;
     health_score?: number;
+    approved?: number;
+    pending_review?: number;
   };
   notes?: string;
 }
@@ -299,4 +301,3 @@ export const forensicReconciliationService = {
     return api.put(`/forensic-reconciliation/health-score-configs/${persona}`, config);
   },
 };
-

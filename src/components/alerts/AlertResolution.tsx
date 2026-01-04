@@ -72,7 +72,7 @@ export default function AlertResolution({ alert, onResolve, onCancel }: AlertRes
 
       await onResolve(alert.id, resolutionData);
     } catch (err: any) {
-      alert(err.message || 'Failed to resolve alert');
+      window.alert(err.message || 'Failed to resolve alert');
     } finally {
       setLoading(false);
     }
@@ -254,4 +254,3 @@ export default function AlertResolution({ alert, onResolve, onCancel }: AlertRes
     </div>
   );
 }
-

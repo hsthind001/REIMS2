@@ -9,7 +9,8 @@
  */
 
 import { useState, useCallback } from 'react';
-import { workflowLockService, OperationCheckResult } from '../lib/workflowLocks';
+import { workflowLockService } from '../lib/workflowLocks';
+import type { OperationCheckResult } from '../lib/workflowLocks';
 
 export const useOperationCheck = () => {
   const [checking, setChecking] = useState(false);
@@ -81,4 +82,3 @@ export const useOperationCheck = () => {
     lastCheck,
   };
 };
-

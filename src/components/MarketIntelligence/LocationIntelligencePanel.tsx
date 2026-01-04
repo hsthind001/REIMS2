@@ -8,7 +8,6 @@
 import React from 'react';
 import {
   Box,
-  Grid,
   Card,
   CardContent,
   Typography,
@@ -24,6 +23,7 @@ import {
   Alert,
   Tooltip,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   DirectionsWalk as WalkIcon,
   DirectionsBus as TransitIcon,

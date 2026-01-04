@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { Icon, LatLngExpression } from 'leaflet';
+import { Icon } from 'leaflet';
 import type { Property } from '../types/api';
 import 'leaflet/dist/leaflet.css';
 
@@ -38,7 +38,7 @@ function MapBounds({ locations }: { locations: PropertyLocation[] }) {
 
   useEffect(() => {
     if (locations.length > 0) {
-      const bounds = locations.map(loc => [loc.lat, loc.lng] as LatLngExpression);
+      const bounds = locations.map((loc) => [loc.lat, loc.lng] as [number, number]);
       if (bounds.length === 1) {
         // Single property - center on it
         map.setView(bounds[0], 13);
@@ -121,7 +121,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   }, [properties]);
 
   // Default center (United States)
-  const defaultCenter: LatLngExpression = [39.8283, -98.5795];
+  const defaultCenter: [number, number] = [39.8283, -98.5795];
   const defaultZoom = 4;
 
   if (loading) {

@@ -4,7 +4,8 @@
  * Provides authentication state and methods throughout the app
  */
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { authService } from '../lib/auth';
 import type { User, UserLogin, UserCreate } from '../types/api';
 
@@ -151,4 +152,3 @@ export function useAuth() {
   }
   return context;
 }
-

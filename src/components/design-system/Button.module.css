@@ -27,8 +27,19 @@
   color: white;
 }
 
+.secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
 .success {
   background: var(--success-gradient);
+  color: white;
+}
+
+.warning {
+  background: linear-gradient(135deg, var(--warning-color) 0%, var(--warning-hover) 100%);
   color: white;
 }
 
@@ -45,6 +56,19 @@
 .info {
   background: var(--primary-gradient);
   color: white;
+}
+
+.default {
+  background: white;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.outline {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
 }
 
 /* Sizes */
@@ -84,4 +108,3 @@
     transform: rotate(360deg);
   }
 }
-

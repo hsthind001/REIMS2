@@ -15,7 +15,7 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
   const [recordsLoaded, setRecordsLoaded] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const usePollingRef = useRef(false);
 
   useEffect(() => {
@@ -23,11 +23,51 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
       return;
     }
 
+    // Fallback polling function
+    const startPolling = () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+
+      const fetchStatus = async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/v1/documents/uploads?upload_id=${uploadId}`, {
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const upload = Array.isArray(data.items) 
+              ? data.items.find((u: any) => u.id === uploadId)
+              : data;
+            
+            if (upload) {
+              setStatus(upload.extraction_status);
+              setRecordsLoaded(upload.records_loaded || 0);
+              
+              if (upload.extraction_status === 'completed' || upload.extraction_status === 'failed') {
+                if (pollingIntervalRef.current) {
+                  clearInterval(pollingIntervalRef.current);
+                  pollingIntervalRef.current = null;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch extraction status:', err);
+        }
+      };
+
+      // Poll immediately, then every 5 seconds
+      fetchStatus();
+      pollingIntervalRef.current = setInterval(fetchStatus, 5000);
+    };
+
     // Try WebSocket first
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsHost = API_BASE_URL.replace(/^https?:\/\//, '').replace(/^http:\/\//, '');
     const wsUrl = `${wsProtocol}//${wsHost}/api/v1/ws/extraction-status/${uploadId}`;
-    
+
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -76,46 +116,6 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
       startPolling();
     }
 
-    // Fallback polling function
-    const startPolling = () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-
-      const fetchStatus = async () => {
-        try {
-          const response = await fetch(`${API_BASE_URL}/api/v1/documents/uploads?upload_id=${uploadId}`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            const upload = Array.isArray(data.items) 
-              ? data.items.find((u: any) => u.id === uploadId)
-              : data;
-            
-            if (upload) {
-              setStatus(upload.extraction_status);
-              setRecordsLoaded(upload.records_loaded || 0);
-              
-              if (upload.extraction_status === 'completed' || upload.extraction_status === 'failed') {
-                if (pollingIntervalRef.current) {
-                  clearInterval(pollingIntervalRef.current);
-                  pollingIntervalRef.current = null;
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Failed to fetch extraction status:', err);
-        }
-      };
-
-      // Poll immediately, then every 5 seconds
-      fetchStatus();
-      pollingIntervalRef.current = setInterval(fetchStatus, 5000);
-    };
-
     // Cleanup
     return () => {
       if (wsRef.current) {
@@ -131,4 +131,3 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
 
   return { status, progress, recordsLoaded, error };
 }
-

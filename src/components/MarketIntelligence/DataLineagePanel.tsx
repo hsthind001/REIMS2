@@ -22,10 +22,10 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Grid,
   Card,
   CardContent,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   CheckCircle as SuccessIcon,
   Warning as WarningIcon,

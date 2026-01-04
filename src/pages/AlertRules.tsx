@@ -3,7 +3,8 @@
  * Create, edit, and manage alert rules
  */
 import { useState, useEffect } from 'react';
-import { AlertRuleService, AlertRule, AlertRuleTemplate } from '../lib/alertRules';
+import { AlertRuleService } from '../lib/alertRules';
+import type { AlertRule, AlertRuleTemplate } from '../lib/alertRules';
 import '../App.css';
 
 export default function AlertRules() {
@@ -368,4 +369,3 @@ export default function AlertRules() {
     </div>
   );
 }
-

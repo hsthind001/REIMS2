@@ -1287,15 +1287,15 @@ export default function FinancialCommand() {
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">DSCR</div>
-                    <div className="text-lg font-bold">{kpiDscr.toFixed(2)}</div>
+                    <div className="text-lg font-bold">{kpiDscr !== null ? kpiDscr.toFixed(2) : 'N/A'}</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">LTV</div>
-                    <div className="text-lg font-bold">{kpiLtv.toFixed(1)}%</div>
+                    <div className="text-lg font-bold">{kpiLtv !== null ? `${kpiLtv.toFixed(1)}%` : 'N/A'}</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">Cap Rate</div>
-                    <div className="text-lg font-bold">{kpiCapRate.toFixed(2)}%</div>
+                    <div className="text-lg font-bold">{kpiCapRate !== null ? `${kpiCapRate.toFixed(2)}%` : 'N/A'}</div>
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">Occupancy</div>
@@ -1311,7 +1311,7 @@ export default function FinancialCommand() {
                   </div>
                   <div>
                     <div className="text-sm text-text-secondary">IRR</div>
-                    <div className="text-lg font-bold">{kpiIrr.toFixed(1)}%</div>
+                    <div className="text-lg font-bold">{kpiIrr !== null ? `${kpiIrr.toFixed(1)}%` : 'N/A'}</div>
                   </div>
                 </div>
               </Card>

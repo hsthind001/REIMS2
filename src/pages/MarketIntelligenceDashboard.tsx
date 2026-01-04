@@ -8,7 +8,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Container,
-  Grid,
   Paper,
   Typography,
   Tabs,
@@ -20,6 +19,7 @@ import {
   Divider,
   IconButton,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Refresh as RefreshIcon,
   TrendingUp as TrendingUpIcon,
@@ -32,7 +32,7 @@ import {
   History as HistoryIcon,
   ArrowBack as ArrowBackIcon,
 } from '@mui/icons-material';
-import type { MarketIntelligence } from '../types/market-intelligence';
+import type { MarketIntelligence, RefreshRequest } from '../types/market-intelligence';
 import * as marketIntelligenceService from '../services/marketIntelligenceService';
 import DemographicsPanel from '../components/MarketIntelligence/DemographicsPanel';
 import EconomicIndicatorsPanel from '../components/MarketIntelligence/EconomicIndicatorsPanel';
@@ -125,7 +125,7 @@ const MarketIntelligenceDashboard: React.FC = () => {
     }
   };
 
-  const handleRefresh = async (categories?: string[]) => {
+  const handleRefresh = async (categories?: RefreshRequest['categories']) => {
     if (!propertyCode) return;
 
     try {

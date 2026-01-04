@@ -22,7 +22,7 @@ export function useAutoRefresh({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPaused, setIsPaused] = useState(!enabled);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = async () => {
     if (isRefreshing || isPaused) return;

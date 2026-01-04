@@ -2,7 +2,8 @@
  * Login Form Component
  */
 
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useAuth } from './AuthContext';
 import type { UserLogin } from '../types/api';
 
@@ -92,4 +93,3 @@ export function LoginForm() {
     </div>
   );
 }
-

@@ -6,6 +6,9 @@
 
 import { api } from './api'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_V1 = `${API_BASE_URL}/api/v1`
+
 export interface FieldCoordinatesResponse {
   has_coordinates: boolean
   coordinates?: {
@@ -36,6 +39,7 @@ export interface Anomaly {
   details?: any
   document_id?: number
   document_type?: string
+  record_id?: number
   period_id?: number
   model_used?: string
   context_suppressed?: boolean
@@ -110,18 +114,6 @@ export interface AnomalyExplanation {
   action_suggestions: string[]
   shap_values?: any
   lime_explanation?: any
-}
-
-// Re-export types for better ES module compatibility
-export type { 
-  Anomaly,
-  DetailedAnomalyResponse,
-  UncertainAnomaly,
-  AnomalyExplanation,
-  AnomalyFeedback,
-  LearnedPattern,
-  PortfolioBenchmark,
-  FieldCoordinatesResponse
 }
 
 export interface AnomalyFeedback {
@@ -382,7 +374,7 @@ export const anomaliesService = {
       if (params.include_feedback !== undefined) queryParams.append('include_feedback', params.include_feedback.toString())
       if (params.include_cross_property !== undefined) queryParams.append('include_cross_property', params.include_cross_property.toString())
 
-      const response = await fetch(`${api.baseURL}/anomalies/export/csv?${queryParams.toString()}`, {
+      const response = await fetch(`${API_V1}/anomalies/export/csv?${queryParams.toString()}`, {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -427,7 +419,7 @@ export const anomaliesService = {
       if (params.include_feedback !== undefined) queryParams.append('include_feedback', params.include_feedback.toString())
       if (params.include_cross_property !== undefined) queryParams.append('include_cross_property', params.include_cross_property.toString())
 
-      const response = await fetch(`${api.baseURL}/anomalies/export/excel?${queryParams.toString()}`, {
+      const response = await fetch(`${API_V1}/anomalies/export/excel?${queryParams.toString()}`, {
         method: 'GET',
         credentials: 'include',
         headers: {

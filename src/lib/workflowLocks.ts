@@ -7,33 +7,36 @@ const API_BASE_URL = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api/v1` 
   : 'http://localhost:8000/api/v1';
 
-// Enums
-export enum LockReason {
-  DSCR_BREACH = 'DSCR_BREACH',
-  OCCUPANCY_THRESHOLD = 'OCCUPANCY_THRESHOLD',
-  COVENANT_VIOLATION = 'COVENANT_VIOLATION',
-  COMMITTEE_REVIEW = 'COMMITTEE_REVIEW',
-  FINANCIAL_ANOMALY = 'FINANCIAL_ANOMALY',
-  VARIANCE_BREACH = 'VARIANCE_BREACH',
-  MANUAL_HOLD = 'MANUAL_HOLD',
-  DATA_QUALITY_ISSUE = 'DATA_QUALITY_ISSUE',
-}
+// Enums (erasable for TS output)
+export const LockReason = {
+  DSCR_BREACH: 'DSCR_BREACH',
+  OCCUPANCY_THRESHOLD: 'OCCUPANCY_THRESHOLD',
+  COVENANT_VIOLATION: 'COVENANT_VIOLATION',
+  COMMITTEE_REVIEW: 'COMMITTEE_REVIEW',
+  FINANCIAL_ANOMALY: 'FINANCIAL_ANOMALY',
+  VARIANCE_BREACH: 'VARIANCE_BREACH',
+  MANUAL_HOLD: 'MANUAL_HOLD',
+  DATA_QUALITY_ISSUE: 'DATA_QUALITY_ISSUE',
+} as const;
+export type LockReason = (typeof LockReason)[keyof typeof LockReason];
 
-export enum LockScope {
-  PROPERTY_ALL = 'PROPERTY_ALL',
-  FINANCIAL_UPDATES = 'FINANCIAL_UPDATES',
-  REPORTING_ONLY = 'REPORTING_ONLY',
-  TRANSACTION_APPROVAL = 'TRANSACTION_APPROVAL',
-  DATA_ENTRY = 'DATA_ENTRY',
-}
+export const LockScope = {
+  PROPERTY_ALL: 'PROPERTY_ALL',
+  FINANCIAL_UPDATES: 'FINANCIAL_UPDATES',
+  REPORTING_ONLY: 'REPORTING_ONLY',
+  TRANSACTION_APPROVAL: 'TRANSACTION_APPROVAL',
+  DATA_ENTRY: 'DATA_ENTRY',
+} as const;
+export type LockScope = (typeof LockScope)[keyof typeof LockScope];
 
-export enum LockStatus {
-  ACTIVE = 'ACTIVE',
-  PENDING_APPROVAL = 'PENDING_APPROVAL',
-  APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED',
-  RELEASED = 'RELEASED',
-}
+export const LockStatus = {
+  ACTIVE: 'ACTIVE',
+  PENDING_APPROVAL: 'PENDING_APPROVAL',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  RELEASED: 'RELEASED',
+} as const;
+export type LockStatus = (typeof LockStatus)[keyof typeof LockStatus];
 
 // Label dictionaries
 export const LockReasonLabels: Record<string, string> = {
@@ -67,6 +70,12 @@ export const LockStatusLabels: Record<string, string> = {
 export interface WorkflowLock {
   id: number;
   property_id: number;
+  property?: {
+    code?: string;
+    name?: string;
+    property_code?: string;
+    property_name?: string;
+  };
   alert_id?: number;
   lock_reason: string;
   lock_scope: string;
@@ -480,13 +489,3 @@ class WorkflowLockService {
 
 // Export service instance
 export const workflowLockService = new WorkflowLockService();
-
-// Re-export types for better ES module compatibility
-export type {
-  WorkflowLock,
-  CreateLockRequest,
-  ReleaseLockRequest,
-  ApproveLockRequest,
-  RejectLockRequest,
-  OperationCheckResult
-}

@@ -337,12 +337,11 @@ export function AnomalyPDFViewer({
                 standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
               }}
             >
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)' }}>
                 <Page
                   pageNumber={pageNumber}
                   scale={scale}
                   onLoadSuccess={onPageLoadSuccess}
-                  style={{ boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)' }}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
                 />

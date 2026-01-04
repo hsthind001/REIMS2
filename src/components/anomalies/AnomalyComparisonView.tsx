@@ -345,7 +345,7 @@ export default function AnomalyComparisonView({
                         left: `${coordinates.x0 * scale}px`,
                         top: `${coordinates.y0 * scale}px`,
                         width: `${(coordinates.x1 - coordinates.x0) * scale}px`,
-                        height: `${(coordinate - coordinates.y0) * scale}px`,
+                        height: `${(coordinates.y1 - coordinates.y0) * scale}px`,
                         border: '3px solid #dc3545',
                         backgroundColor: 'rgba(220, 53, 69, 0.2)',
                         pointerEvents: 'none',

@@ -370,7 +370,7 @@ export default function BulkAnomalyActions({
           fontWeight: 600,
           cursor: selectedAnomalies.size === 0 || !resolution.trim() || loading ? 'not-allowed' : 'pointer',
           display: 'flex',
-          aliems: 'center',
+          alignItems: 'center',
           justifyContent: 'center',
           gap: '0.5rem',
         }}

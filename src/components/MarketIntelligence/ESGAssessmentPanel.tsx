@@ -8,7 +8,6 @@
 import React from 'react';
 import {
   Box,
-  Grid,
   Card,
   CardContent,
   Typography,
@@ -23,6 +22,7 @@ import {
   Paper,
   Alert,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Nature as EcoIcon,
   People as PeopleIcon,
@@ -172,7 +172,7 @@ const ESGAssessmentPanel: React.FC<ESGAssessmentPanelProps> = ({ data }) => {
         <Grid item xs={12} md={4}>
           <ScoreCard
             title="Environmental"
-            score={environmental.composite_score}
+            score={environmental.composite_score ?? 0}
             icon={<EcoIcon />}
             description="Climate risks, energy efficiency, and environmental impact"
             color="#4caf50"
@@ -181,7 +181,7 @@ const ESGAssessmentPanel: React.FC<ESGAssessmentPanelProps> = ({ data }) => {
         <Grid item xs={12} md={4}>
           <ScoreCard
             title="Social"
-            score={social.composite_score}
+            score={social.composite_score ?? 0}
             icon={<PeopleIcon />}
             description="Community safety, schools, health, and inequality"
             color="#2196f3"
@@ -190,7 +190,7 @@ const ESGAssessmentPanel: React.FC<ESGAssessmentPanelProps> = ({ data }) => {
         <Grid item xs={12} md={4}>
           <ScoreCard
             title="Governance"
-            score={governance.composite_score}
+            score={governance.composite_score ?? 0}
             icon={<GavelIcon />}
             description="Zoning compliance, permits, taxes, and legal standing"
             color="#9c27b0"

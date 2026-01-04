@@ -388,7 +388,7 @@ export default function FraudDetectionDashboard() {
                           <div className="text-sm text-gray-600">{dup.description}</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold text-gray-900">{formatCurrency(dup.amount)}</div>
+                          <div className="font-bold text-gray-900">{formatCurrency(dup.amount ?? 0)}</div>
                           <div className="text-xs text-gray-600">{dup.date}</div>
                         </div>
                       </div>

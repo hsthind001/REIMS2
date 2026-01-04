@@ -1,26 +1,24 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { visualizer } from 'rollup-plugin-visualizer';
+import type { PluginOption } from 'vite';
 
-// https://vite.dev/config/
-export default defineConfig(async () => {
-  // Conditionally import visualizer only when needed
-  const plugins = [
-    react(),
-  ];
+const plugins: PluginOption[] = [react()];
 
-  // Only load visualizer plugin when ANALYZE mode is enabled
-  if (process.env.ANALYZE) {
-    const { visualizer } = await import('rollup-plugin-visualizer');
-    plugins.push(visualizer({
+if (process.env.ANALYZE) {
+  plugins.push(
+    visualizer({
       open: true,
       filename: 'dist/stats.html',
       gzipSize: true,
       brotliSize: true,
-    }));
-  }
+    })
+  );
+}
 
-  return {
-    plugins,
+// https://vite.dev/config/
+export default defineConfig({
+  plugins,
 
   // Optimize dependencies
   optimizeDeps: {
@@ -67,11 +65,13 @@ export default defineConfig(async () => {
     rollupOptions: {
       output: {
         // Aggressive code splitting strategy
-        manualChunks: (id) => {
+        manualChunks: (id: string) => {
           // Core React libraries (loaded on every page)
-          if (id.includes('node_modules/react/') ||
-              id.includes('node_modules/react-dom/') ||
-              id.includes('node_modules/react-router-dom/')) {
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router-dom/')
+          ) {
             return 'vendor-react';
           }
 
@@ -86,20 +86,17 @@ export default defineConfig(async () => {
           }
 
           // Charting library (only needed on dashboard/analytics pages)
-          if (id.includes('node_modules/recharts/') ||
-              id.includes('node_modules/chart.js/')) {
+          if (id.includes('node_modules/recharts/') || id.includes('node_modules/chart.js/')) {
             return 'charts';
           }
 
           // Map libraries (only needed on map pages)
-          if (id.includes('node_modules/leaflet/') ||
-              id.includes('node_modules/react-leaflet/')) {
+          if (id.includes('node_modules/leaflet/') || id.includes('node_modules/react-leaflet/')) {
             return 'maps';
           }
 
           // PDF libraries (only needed for PDF viewing/export)
-          if (id.includes('node_modules/react-pdf/') ||
-              id.includes('node_modules/jspdf')) {
+          if (id.includes('node_modules/react-pdf/') || id.includes('node_modules/jspdf')) {
             return 'pdf';
           }
 
@@ -127,22 +124,26 @@ export default defineConfig(async () => {
           if (id.includes('node_modules/')) {
             return 'vendor-misc';
           }
+
+          return undefined;
         },
 
         // Optimize chunk names
         chunkFileNames: () => {
-          return `assets/js/[name]-[hash].js`;
+          return 'assets/js/[name]-[hash].js';
         },
-        assetFileNames: (assetInfo) => {
+        assetFileNames: (assetInfo: { name?: string }) => {
           const name = assetInfo.name || 'asset';
           if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(name)) {
-            return `assets/images/[name]-[hash][extname]`;
-          } else if (/\.css$/i.test(name)) {
-            return `assets/css/[name]-[hash][extname]`;
-          } else if (/\.(woff2?|eot|ttf|otf)$/i.test(name)) {
-            return `assets/fonts/[name]-[hash][extname]`;
+            return 'assets/images/[name]-[hash][extname]';
           }
-          return `assets/[name]-[hash][extname]`;
+          if (/\.css$/i.test(name)) {
+            return 'assets/css/[name]-[hash][extname]';
+          }
+          if (/\.(woff2?|eot|ttf|otf)$/i.test(name)) {
+            return 'assets/fonts/[name]-[hash][extname]';
+          }
+          return 'assets/[name]-[hash][extname]';
         },
       },
     },
@@ -190,5 +191,4 @@ export default defineConfig(async () => {
   worker: {
     format: 'es', // Use ES modules for workers
   },
-  };
-})
+});

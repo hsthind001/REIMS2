@@ -4,7 +4,7 @@ import styles from './Card.module.css';
 
 export interface CardProps {
   children: React.ReactNode;
-  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'premium';
+  variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'premium';
   className?: string;
   onClick?: () => void;
   hover?: boolean;
@@ -39,4 +39,3 @@ export const Card: React.FC<CardProps> = ({
     </Component>
   );
 };
-

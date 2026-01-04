@@ -485,8 +485,9 @@ export function DetailedReviewModal({ item, onSave, onApprove, onClose }: Detail
               <div style={{ border: '1px solid #e5e7eb', borderRadius: '0.5rem', overflow: 'hidden' }}>
                 <AnomalyPDFViewer
                   pdfUrl={pdfUrl}
-                  highlights={pdfCoordinates ? [pdfCoordinates] : []}
-                  height={600}
+                  coordinates={pdfCoordinates?.coordinates ?? pdfCoordinates}
+                  highlightType="actual"
+                  onClose={() => {}}
                 />
               </div>
             </div>
@@ -636,4 +637,3 @@ export function DetailedReviewModal({ item, onSave, onApprove, onClose }: Detail
     </div>
   );
 }
-

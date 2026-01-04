@@ -315,10 +315,6 @@ export function PDFViewer({ pdfUrl, highlightPage, highlightCoords, onClose, inl
                     <p className="text-xs text-gray-500 mt-2">This may take a few seconds</p>
                   </div>
                 }
-                error={(error) => {
-                  console.error('react-pdf Document error:', error);
-                  onDocumentLoadError(error);
-                }}
                 options={{
                   httpHeaders: {
                     'Accept': 'application/pdf',
@@ -505,4 +501,3 @@ export function PDFViewer({ pdfUrl, highlightPage, highlightCoords, onClose, inl
     </div>
   );
 }
-

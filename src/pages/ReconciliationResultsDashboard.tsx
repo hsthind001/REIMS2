@@ -115,6 +115,10 @@ export default function ReconciliationResultsDashboard() {
     }
   };
 
+  const passRatePct = results
+    ? results.summary.pass_rate_pct ?? (results.summary.pass_rate ? results.summary.pass_rate * 100 : 0)
+    : 0;
+
   const renderReconciliationCard = (recon: ReconciliationResult, index: number) => {
     const isExpanded = expandedIndex === index;
 
@@ -304,7 +308,7 @@ export default function ReconciliationResultsDashboard() {
                   <TrafficLightIndicator status={results.overall_status} size="lg" showLabel />
                 </div>
                 <div className="text-lg font-semibold text-gray-900">
-                  Pass Rate: {results.summary.pass_rate_pct.toFixed(1)}%
+                  Pass Rate: {passRatePct.toFixed(1)}%
                 </div>
               </div>
             </div>

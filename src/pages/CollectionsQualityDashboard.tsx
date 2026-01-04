@@ -198,7 +198,6 @@ export default function CollectionsQualityDashboard() {
                 <HealthScoreGauge
                   score={results.revenue_quality.quality_score}
                   size="lg"
-                  showLabel
                 />
               </div>
 

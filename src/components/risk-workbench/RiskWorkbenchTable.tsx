@@ -28,9 +28,6 @@ export interface RiskItem {
   metadata?: Record<string, any>;
 }
 
-// Re-export as type for better ES module compatibility
-export type { RiskItem }
-
 interface RiskWorkbenchTableProps {
   items: RiskItem[];
   loading?: boolean;

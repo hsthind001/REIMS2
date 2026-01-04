@@ -7,7 +7,6 @@
 import React from 'react';
 import {
   Box,
-  Grid,
   Card,
   CardContent,
   Typography,
@@ -21,6 +20,7 @@ import {
   Paper,
   Divider,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   People as PeopleIcon,
   AttachMoney as MoneyIcon,

@@ -4,7 +4,22 @@
  */
 import { useState, useEffect } from 'react';
 import { AlertService, type AlertSummary, type AlertTrendsResponse } from '../../lib/alerts';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  type PieLabelRenderProps,
+} from 'recharts';
 
 interface AlertDashboardProps {
   propertyId?: number;
@@ -203,7 +218,13 @@ export default function AlertDashboard({ propertyId, onAlertClick }: AlertDashbo
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                label={(props: PieLabelRenderProps) => {
+                  const percent = typeof props.percent === 'number'
+                    ? props.percent
+                    : Number(props.percent ?? 0);
+                  const name = props.name ? String(props.name) : '';
+                  return name ? `${name}: ${(percent * 100).toFixed(0)}%` : '';
+                }}
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"
@@ -265,4 +286,3 @@ export default function AlertDashboard({ propertyId, onAlertClick }: AlertDashbo
     </div>
   );
 }
-

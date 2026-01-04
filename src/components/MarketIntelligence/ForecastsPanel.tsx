@@ -8,7 +8,6 @@
 import React from 'react';
 import {
   Box,
-  Grid,
   Card,
   CardContent,
   Typography,
@@ -23,6 +22,7 @@ import {
   Paper,
   Alert,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,

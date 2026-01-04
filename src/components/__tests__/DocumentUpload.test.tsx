@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import DocumentUpload from '../DocumentUpload';
+import { DocumentUpload } from '../DocumentUpload';
 
 // Mock the API module
 vi.mock('../../lib/api', () => ({
@@ -22,4 +22,3 @@ describe('DocumentUpload Component', () => {
     expect(fileInput).toBeInTheDocument();
   });
 });
-

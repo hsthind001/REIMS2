@@ -140,6 +140,8 @@ interface SystemTask {
   error?: string;
 }
 
+type ValidationRule = any;
+
 // Validation rules state will use RuleStatisticsItem from types/api
 
 export default function DataControlCenter() {
@@ -977,6 +979,11 @@ export default function DataControlCenter() {
     return true;
   });
 
+  const availableTaskProperties = Array.from(new Set([
+    ...(taskDashboard?.active_tasks || []).map(t => t.property_code),
+    ...(taskDashboard?.recent_tasks || []).map(t => t.property_code)
+  ].filter((code): code is string => Boolean(code))));
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-6 py-6">
@@ -1520,10 +1527,7 @@ export default function DataControlCenter() {
                     dateFrom: '',
                     dateTo: ''
                   })}
-                  availableProperties={Array.from(new Set([
-                    ...(taskDashboard?.active_tasks || []).map(t => t.property_code).filter(Boolean),
-                    ...(taskDashboard?.recent_tasks || []).map(t => t.property_code).filter(Boolean)
-                  ]))}
+                  availableProperties={availableTaskProperties}
                 />
 
                 {/* Phase 2: Task Charts */}
@@ -2550,4 +2554,3 @@ export default function DataControlCenter() {
     </div>
   );
 }
-

@@ -5,19 +5,21 @@
  */
 
 import { useState, useEffect } from 'react';
-import { 
-  workflowLockService, 
-  WorkflowLock, 
-  LockReasonLabels, 
-  LockScopeLabels, 
+import {
+  workflowLockService,
+  LockReasonLabels,
+  LockScopeLabels,
   LockStatusLabels,
   LockStatus,
   LockReason,
   LockScope,
+} from '../lib/workflowLocks';
+import type {
+  WorkflowLock,
   CreateLockRequest,
   ReleaseLockRequest,
   ApproveLockRequest,
-  RejectLockRequest
+  RejectLockRequest,
 } from '../lib/workflowLocks';
 import { propertyService } from '../lib/property';
 import type { Property } from '../types/api';
@@ -633,4 +635,3 @@ export default function WorkflowLocks() {
     </div>
   );
 }
-

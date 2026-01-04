@@ -309,10 +309,11 @@ export default function ForensicReconciliation() {
       try {
         await loadMatches(sessionId);
         const sessionData = await forensicReconciliationService.getSession(sessionId);
-        if (sessionData && sessionData.summary && sessionData.summary.total_matches > 0) {
+        const totalMatches = sessionData?.summary?.total_matches ?? 0;
+        if (totalMatches > 0) {
           // We have matches! Show them with a warning
           setSession(sessionData);
-          setError(`Reconciliation encountered an error, but ${sessionData.summary.total_matches} matches were found. ${errorDetail}`);
+          setError(`Reconciliation encountered an error, but ${totalMatches} matches were found. ${errorDetail}`);
         } else {
           // No matches, show full error
           setError(errorDetail);
@@ -870,4 +871,3 @@ export default function ForensicReconciliation() {
     </div>
   );
 }
-

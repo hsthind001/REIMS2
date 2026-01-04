@@ -141,6 +141,7 @@ export const ACCOUNT_CODES = {
 // Alert Severities
 export const ALERT_SEVERITIES = {
   INFO: 'INFO',
+  NORMAL: 'NORMAL',
   WARNING: 'WARNING',
   CRITICAL: 'CRITICAL',
   URGENT: 'URGENT',

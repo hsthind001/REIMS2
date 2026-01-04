@@ -7,7 +7,6 @@
 import React from 'react';
 import {
   Box,
-  Grid,
   Card,
   CardContent,
   Typography,
@@ -21,6 +20,7 @@ import {
   Divider,
   Alert,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
@@ -66,25 +66,27 @@ const IndicatorCard: React.FC<IndicatorCardProps> = ({
     );
   }
 
+  const indicatorValue = indicator.value;
+
   let formattedValue: string;
   switch (format) {
     case 'percentage':
-      formattedValue = marketIntelligenceService.formatPercentage(indicator.value, 2);
+      formattedValue = marketIntelligenceService.formatPercentage(indicatorValue, 2);
       break;
     case 'currency':
-      formattedValue = marketIntelligenceService.formatCurrency(indicator.value);
+      formattedValue = marketIntelligenceService.formatCurrency(indicatorValue);
       break;
     default:
-      formattedValue = marketIntelligenceService.formatNumber(indicator.value);
+      formattedValue = marketIntelligenceService.formatNumber(indicatorValue);
   }
 
   const getTrendIcon = () => {
     if (!goodDirection) return <ShowChartIcon />;
 
     if (goodDirection === 'up') {
-      return indicator.value > 0 ? <TrendingUpIcon /> : <TrendingDownIcon />;
+      return indicatorValue > 0 ? <TrendingUpIcon /> : <TrendingDownIcon />;
     } else {
-      return indicator.value > 0 ? <TrendingDownIcon /> : <TrendingUpIcon />;
+      return indicatorValue > 0 ? <TrendingDownIcon /> : <TrendingUpIcon />;
     }
   };
 
@@ -92,9 +94,9 @@ const IndicatorCard: React.FC<IndicatorCardProps> = ({
     if (!goodDirection) return color;
 
     if (goodDirection === 'up') {
-      return indicator.value > 0 ? 'success' : 'error';
+      return indicatorValue > 0 ? 'success' : 'error';
     } else {
-      return indicator.value > 0 ? 'error' : 'success';
+      return indicatorValue > 0 ? 'error' : 'success';
     }
   };
 

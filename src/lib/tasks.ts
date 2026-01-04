@@ -76,7 +76,7 @@ export class TaskService {
   /**
    * Trigger recovery of stuck documents
    */
-  async recoverStuckDocuments(): Promise<{ recovered: number; errors: number; total_found: number }> {
+  async recoverStuckDocuments(): Promise<{ recovered: number; errors: number; total_found: number; queued_count?: number }> {
     // This would trigger the recover_stuck_extractions task
     // For now, we'll use the existing reprocess endpoint as a proxy
     // In the future, we could add a dedicated endpoint
@@ -157,4 +157,3 @@ export class TaskService {
 
 // Export singleton
 export const taskService = new TaskService()
-

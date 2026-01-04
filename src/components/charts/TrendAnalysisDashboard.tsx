@@ -5,7 +5,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import TrendAnalysisChart, { TrendDataPoint } from './TrendAnalysisChart';
+import TrendAnalysisChart from './TrendAnalysisChart';
+import type { TrendDataPoint } from './TrendAnalysisChart';
 import { Card, Button } from '../design-system';
 import { Calendar, TrendingUp, BarChart3 } from 'lucide-react';
 
@@ -332,4 +333,3 @@ export default function TrendAnalysisDashboard({
     </div>
   );
 }
-
