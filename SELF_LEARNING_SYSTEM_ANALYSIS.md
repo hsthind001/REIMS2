@@ -187,6 +187,11 @@ def analyze_issue_patterns(days_back=7, min_occurrences=3) -> List[Dict]:
 - ✅ Tracks: severity, issue_category, resolved status
 - ⚠️ **Current Data**: 0 records (no errors captured yet)
 
+#### Multi-period Range Overrides
+- When PDF headers specify a range such as `Dec 2022 - Jan 2023`, the extractor now records a `period_range_year_override` validation issue if the user selected the later year while the detection defaults to the earlier year.
+- Each capture stores the range text, the detected year, the selected year, and the detection confidence so the self-learning engine can eventually auto-accept these overrides.
+- Related files: `backend/app/utils/extraction_engine.py` (range detection), `backend/app/services/document_service.py` (override + issue capture).
+
 #### Prevention Strategy Generation
 ```python
 def generate_prevention_strategy(issue_kb_id: int) -> Optional[PreventionRule]:

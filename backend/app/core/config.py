@@ -126,6 +126,17 @@ class Settings(BaseSettings):
     BATCH_PROCESSING_MAX_CONCURRENT: int = 3  # Maximum concurrent batch jobs
     BATCH_PROCESSING_TIMEOUT_MINUTES: int = 60  # Timeout for batch jobs
 
+    # ---------- Anomaly Threshold Overrides ----------
+    ANOMALY_Z_SCORE_THRESHOLD: float = 2.0
+    ANOMALY_PERCENTAGE_CHANGE_THRESHOLD: float = 0.15
+
+    # ---------- Alert Channel Configuration ----------
+    ALERT_EMAIL_ENABLED: bool = True
+    ALERT_SLACK_ENABLED: bool = False
+    ALERT_SLACK_WEBHOOK_URL: Optional[str] = None
+    ALERT_EMAIL_RECIPIENTS: List[str] = ["admin@reims.com"]
+    ALERT_IN_APP_ENABLED: bool = True
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -138,6 +149,15 @@ class Settings(BaseSettings):
             if field_name in ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'FRED_API_KEY', 'CENSUS_API_KEY']:
                 return raw_val
             return cls.json_loads(raw_val)
+
+    @field_validator("ALERT_EMAIL_RECIPIENTS", mode="before")
+    @classmethod
+    def _parse_alert_email_recipients(cls, v):
+        if isinstance(v, str):
+            return [email.strip() for email in v.split(",") if email.strip()]
+        if isinstance(v, list):
+            return [email.strip() for email in v if isinstance(email, str) and email.strip()]
+        return v
 
 
 settings = Settings()

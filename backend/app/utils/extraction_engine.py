@@ -627,7 +627,36 @@ class MultiEngineExtractor:
 
                 detected_month = found_months[0] if found_months else None
             
-            # Calculate confidence
+            # Prioritize explicit period ranges (Dec 2022 - Jan 2023)
+            period_range = None
+            range_match = re.search(
+                r'([A-Za-z]+)\s+(\d{4})\s*(?:[–—-]|to|through)\s*([A-Za-z]+)\s+(\d{4})',
+                sample_text,
+                re.IGNORECASE
+            )
+            if range_match:
+                start_month_name = range_match.group(1).lower()
+                start_year_val = int(range_match.group(2))
+                end_month_name = range_match.group(3).lower()
+                end_year_val = int(range_match.group(4))
+                if start_year_val and end_year_val and end_year_val >= start_year_val:
+                    start_month_val = month_names.get(start_month_name)
+                    end_month_val = month_names.get(end_month_name)
+                    range_text = range_match.group(0).strip()
+                    period_range = {
+                        "start_year": start_year_val,
+                        "end_year": end_year_val,
+                        "start_month": start_month_val,
+                        "end_month": end_month_val,
+                        "text": range_text
+                    }
+                    detected_year = (
+                        end_year_val
+                        if detected_year is None or detected_year < end_year_val
+                        else detected_year
+                    )
+                    if end_month_val and (detected_month is None or detected_month < end_month_val):
+                        detected_month = end_month_val
             confidence = 0
             period_detection_method = None
 
@@ -654,9 +683,18 @@ class MultiEngineExtractor:
                     else:
                         period_detection_method = 'fallback_month'
             
+            # Boost confidence when we detected an explicit range
+            if period_range:
+                confidence += 20
+                if not period_detection_method:
+                    period_detection_method = 'range_detect'
+                confidence = max(confidence, 60)
+            
             # Find period text for display
             period_text = ""
-            if detected_month and detected_year:
+            if period_range and period_range.get("text"):
+                period_text = period_range["text"]
+            elif detected_month and detected_year:
                 month_name = list(month_names.keys())[list(month_names.values()).index(detected_month)]
                 period_text = f"{month_name.capitalize()} {detected_year}"
             elif detected_year:
@@ -666,7 +704,8 @@ class MultiEngineExtractor:
                 "year": detected_year,
                 "month": detected_month,
                 "period_text": period_text,
-                "confidence": confidence
+                "confidence": confidence,
+                "period_range": period_range
             }
             
         except Exception as e:
@@ -1439,4 +1478,3 @@ class MultiEngineExtractor:
                     ))
         
         return results
-

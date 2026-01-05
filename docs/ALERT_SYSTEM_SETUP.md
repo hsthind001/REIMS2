@@ -204,6 +204,19 @@ If migrations fail:
 5. **Use Cooldowns**: Set appropriate cooldown periods to prevent alert spam
 6. **Property-Specific Rules**: Create property-specific rules for unique thresholds
 7. **Severity Mapping**: Use severity_mapping for dynamic severity assignment
+8. **Tune thresholds via env vars**: Use the new `ANOMALY_Z_SCORE_THRESHOLD` and `ANOMALY_PERCENTAGE_CHANGE_THRESHOLD` environment variables to adjust sensitivity without redeploying.
+9. **Configure delivery channels**: Control `ALERT_EMAIL_ENABLED`, `ALERT_EMAIL_RECIPIENTS`, `ALERT_SLACK_ENABLED`, `ALERT_SLACK_WEBHOOK_URL`, and `ALERT_IN_APP_ENABLED` to keep alerts aligned with your ops workflows.
+
+## Environment Overrides
+
+Add these variables to `.env` or your deployment to keep alerts and anomalies configurable:
+
+- `ANOMALY_Z_SCORE_THRESHOLD` (default: `2.0`) – adjust z‑score sensitivity when more historical data becomes available.
+- `ANOMALY_PERCENTAGE_CHANGE_THRESHOLD` (default: `0.15`) – change the relative jump percentage required to flag anomalies.
+- `ALERT_EMAIL_ENABLED` (default: `true`) – turn anomaly email alerts on/off independent of SMTP (`EMAIL_ENABLED`).
+- `ALERT_EMAIL_RECIPIENTS` – comma separated list (e.g. `ops@reims.com,alerts@reims.com`) of inboxes that receive anomaly emails.
+- `ALERT_SLACK_ENABLED` (default: `false`) & `ALERT_SLACK_WEBHOOK_URL` – enable Slack delivery and point to the webhook that should receive formatted alerts.
+- `ALERT_IN_APP_ENABLED` (default: `true`) – toggle persistence of alerts in the `notifications` table for the in‑app experience.
 
 ## API Documentation
 
@@ -217,4 +230,3 @@ Key endpoints:
 - `/api/v1/risk-alerts/summary` - Dashboard summary
 - `/api/v1/risk-alerts/trends` - Alert trends
 - `/api/v1/risk-alerts/analytics` - Analytics data
-

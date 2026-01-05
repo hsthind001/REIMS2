@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import logging
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Prophet will be imported lazily when needed to avoid startup failures
@@ -51,10 +53,21 @@ class StatisticalAnomalyDetector:
     Enhanced with intelligent forecasting and weighted averages.
     """
     
-    def __init__(self, db: Session):
+    def __init__(
+        self, 
+        db: Session,
+        z_score_threshold: Optional[float] = None,
+        percentage_change_threshold: Optional[float] = None
+    ):
         self.db = db
-        self.z_score_threshold = 2.0  # Lowered from 3.0 to 2.0 for more sensitive detection (2 sigma)
-        self.percentage_change_threshold = 0.15  # Lowered from 0.25 to 0.15 (15% change) for more sensitive detection
+        self.z_score_threshold = (
+            z_score_threshold if z_score_threshold is not None 
+            else settings.ANOMALY_Z_SCORE_THRESHOLD
+        )
+        self.percentage_change_threshold = (
+            percentage_change_threshold if percentage_change_threshold is not None
+            else settings.ANOMALY_PERCENTAGE_CHANGE_THRESHOLD
+        )
         
         # Initialize seasonal analyzer if available
         if SEASONAL_AVAILABLE:
@@ -825,4 +838,3 @@ class StatisticalAnomalyDetector:
             "window_results": window_results,
             "total_windows_checked": len(window_results)
         }
-

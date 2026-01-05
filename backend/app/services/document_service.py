@@ -33,6 +33,93 @@ class DocumentService:
     def __init__(self, db: Session):
         self.db = db
         self.minio_client = get_minio_client()
+
+    def _maybe_override_period_for_range(
+        self,
+        period_detection: Dict[str, Any],
+        selected_year: int,
+        selected_month: int,
+        detected_year: Optional[int],
+        detected_month: Optional[int],
+        period_confidence: float,
+        document_type: str,
+        property_id: int,
+        period_id: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Allow uploads where PDFs cover a multi-period range (e.g., Dec 2022 - Jan 2023)
+        by trusting the later year when the user intentionally selects it.
+        Captures the case for the self-learning system.
+        """
+        period_range = period_detection.get("period_range")
+        if not period_range:
+            return None
+
+        if document_type == "rent_roll":
+            return None
+
+        start_year = period_range.get("start_year")
+        end_year = period_range.get("end_year")
+        start_month = period_range.get("start_month")
+        end_month = period_range.get("end_month")
+        if not start_year or not end_year or not end_month:
+            return None
+
+        wants_end_period = selected_year == end_year and selected_month == end_month
+        if not wants_end_period:
+            return None
+
+        if (detected_year != end_year or detected_month != end_month) and period_confidence >= 40:
+            self._capture_period_range_issue(
+                period_detection=period_detection,
+                period_range=period_range,
+                selected_year=selected_year,
+                selected_month=selected_month,
+                detected_year=detected_year,
+                detected_month=detected_month,
+                period_confidence=period_confidence,
+                document_type=document_type,
+                property_id=property_id,
+                period_id=period_id
+            )
+            return {"year": end_year, "month": end_month}
+
+        return None
+
+    def _capture_period_range_issue(
+        self,
+        period_detection: Dict[str, Any],
+        period_range: Dict[str, Any],
+        selected_year: int,
+        selected_month: int,
+        detected_year: Optional[int],
+        detected_month: Optional[int],
+        period_confidence: float,
+        document_type: str,
+        property_id: int,
+        period_id: Optional[int]
+    ) -> None:
+        try:
+            from app.services.issue_capture_service import IssueCaptureService
+
+            capture_service = IssueCaptureService(self.db)
+            capture_service.capture_validation_issue(
+                validation_type="period_range_year_override",
+                expected_value=f"{detected_month or period_range.get('start_month')}/{detected_year or period_range.get('start_year')}",
+                detected_value=f"{selected_month}/{selected_year}",
+                confidence=period_confidence,
+                upload_id=None,
+                document_type=document_type,
+                property_id=property_id,
+                period_id=period_id,
+                context={
+                    "period_range": period_range,
+                    "period_text": period_detection.get("period_text"),
+                    "note": "User selected later period (year/month) for multi-period statement"
+                }
+            )
+        except Exception as e:
+            print(f"⚠️  Failed to capture period range learning issue: {e}")
     
     async def upload_document(
         self,
@@ -157,6 +244,26 @@ class DocumentService:
         detected_year = period_detection.get("year")
         detected_month = period_detection.get("month")
         period_confidence = period_detection.get("confidence", 0)
+        
+        # Check for multi-period range override before mismatches
+        range_override = self._maybe_override_period_for_range(
+            period_detection=period_detection,
+            selected_year=period_year,
+            selected_month=period_month,
+            detected_year=detected_year,
+            detected_month=detected_month,
+            period_confidence=period_confidence,
+            document_type=document_type,
+            property_id=property_obj.id,
+            period_id=period.id if period else None
+        )
+        if range_override:
+            print(f"✅ Period range override applied: Using selected period {range_override['month']}/{range_override['year']}")
+            detected_year = range_override["year"]
+            detected_month = range_override["month"]
+            period_detection["year"] = detected_year
+            period_detection["month"] = detected_month
+            period_detection["period_text"] = period_detection.get("period_text") or period_detection.get("period_range", {}).get("text", "")
         
         # Check document type mismatch
         # Only flag mismatch if confidence is high enough (>= 50%) to avoid false positives
