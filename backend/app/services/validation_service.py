@@ -323,13 +323,14 @@ class ValidationService:
         
         passed = invalid_count == 0
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(invalid_count)),
-            difference=Decimal(str(invalid_count)),
+           difference=Decimal(str(invalid_count)),
             error_message=f"{invalid_count} of {total_count} accounts have invalid format" if not passed else None,
             severity=rule.severity
         )
@@ -370,6 +371,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=accum_depr + distributions,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"Accum. Depr: {accum_depr:,.2f}, Distributions: {distributions:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -414,6 +417,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('1'),
             actual_value=Decimal('1') if passed else Decimal('0'),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=error_message,
             severity=rule.severity
         )
@@ -440,13 +445,14 @@ class ValidationService:
         total_capital = self._query_balance_sheet_total(property_id, period_id, '3999-0000') or Decimal('0')
         passed = total_capital >= 0
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=total_capital,
-            difference=abs(total_capital) if not passed else Decimal('0'),
+           difference=abs(total_capital) if not passed else Decimal('0'),
             error_message=f"Negative equity: {total_capital:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -474,13 +480,14 @@ class ValidationService:
         debt_to_equity = total_liabilities / abs(total_equity) if total_equity != 0 else Decimal('999')
         passed = debt_to_equity <= Decimal('3.0')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=Decimal('3.0'),
             actual_value=debt_to_equity,
-            difference=debt_to_equity - Decimal('3.0') if not passed else Decimal('0'),
+           difference=debt_to_equity - Decimal('3.0') if not passed else Decimal('0'),
             error_message=f"Debt-to-equity ratio {debt_to_equity:.2f} exceeds 3:1 covenant" if not passed else None,
             severity=rule.severity
         )
@@ -524,6 +531,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('1') if long_term_debt > 0 else Decimal('0'),
             actual_value=total_escrows,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"Long-term debt ${long_term_debt:,.2f} but no escrow accounts" if not passed else None,
             severity=rule.severity
         )
@@ -565,13 +574,14 @@ class ValidationService:
         depreciation_rate = abs(accum_depr) / gross_property if gross_property > 0 else Decimal('0')
         passed = depreciation_rate < Decimal('0.90')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=Decimal('0.90'),
             actual_value=depreciation_rate,
-            difference=depreciation_rate - Decimal('0.90') if not passed else Decimal('0'),
+           difference=depreciation_rate - Decimal('0.90') if not passed else Decimal('0'),
             error_message=f"Depreciation rate {depreciation_rate*100:.1f}% exceeds 90% threshold" if not passed else None,
             severity=rule.severity
         )
@@ -614,6 +624,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(deprecated_nonzero)),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"{deprecated_nonzero} deprecated accounts have non-zero balances" if not passed else None,
             severity=rule.severity
         )
@@ -660,6 +672,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(round_count)),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"{round_count} of {total_major} major accounts are round numbers (may be estimates)" if round_count > 0 else None,
             severity=rule.severity
         )
@@ -791,13 +805,15 @@ class ValidationService:
         difference = abs(income_sum - total_income)
         passed = difference <= Decimal('0.05')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=income_sum,
             actual_value=total_income,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"Total Income mismatch: Sum=${income_sum:,.2f}, Total=${total_income:,.2f}, Diff=${difference:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -841,13 +857,15 @@ class ValidationService:
         difference = abs(expenses_sum - total_operating)
         passed = difference <= Decimal('0.05')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=expenses_sum,
             actual_value=total_operating,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"Total Operating Expenses mismatch: Sum=${expenses_sum:,.2f}, Total=${total_operating:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -891,13 +909,15 @@ class ValidationService:
         difference = abs(additional_sum - total_additional)
         passed = difference <= Decimal('0.05')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=additional_sum,
             actual_value=total_additional,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"Total Additional Expenses mismatch: Sum=${additional_sum:,.2f}, Total=${total_additional:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -944,13 +964,15 @@ class ValidationService:
         difference = abs(expected - total_expenses)
         passed = difference <= Decimal('0.10')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=expected,
             actual_value=total_expenses,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"Total Expenses mismatch: Operating=${total_operating:,.2f} + Additional=${total_additional:,.2f} != Total=${total_expenses:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -997,13 +1019,15 @@ class ValidationService:
         difference = abs(expected - noi)
         passed = difference <= Decimal('0.10')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=expected,
             actual_value=noi,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"NOI mismatch: Income=${total_income:,.2f} - Expenses=${total_expenses:,.2f} != NOI=${noi:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -1050,13 +1074,15 @@ class ValidationService:
         difference = abs(expected - net_income)
         passed = difference <= Decimal('0.10')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=expected,
             actual_value=net_income,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"Net Income mismatch: NOI=${noi:,.2f} - Other=${other_expenses:,.2f} != Net Income=${net_income:,.2f}" if not passed else None,
             severity=rule.severity
         )
@@ -1094,13 +1120,15 @@ class ValidationService:
         difference = abs(pct_sum - Decimal('100.0'))
         passed = difference <= Decimal('0.5')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=Decimal('100.0'),
             actual_value=pct_sum,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=f"Percentage sum {pct_sum:.2f}% != 100.00%" if not passed else None,
             severity=rule.severity
         )
@@ -1143,6 +1171,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(mismatches)),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"{mismatches} items have YTD != Period (check if annual statement)" if mismatches > 0 else None,
             severity='info'  # Informational since we can't always determine period type
         )
@@ -1197,6 +1227,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(len(unexpected_negatives))),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"Unexpected negatives: {', '.join(unexpected_negatives)}" if unexpected_negatives else None,
             severity=rule.severity
         )
@@ -1246,6 +1278,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('1'),
             actual_value=Decimal('0') if not passed else Decimal('1'),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"Zero values in: {', '.join(zero_issues)}" if zero_issues else None,
             severity=rule.severity
         )
@@ -1281,6 +1315,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal('0'),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=None,
             severity=rule.severity
         )
@@ -1318,6 +1354,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(violations)),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"{violations} items have Period > YTD (check if monthly vs annual)" if violations > 0 else None,
             severity=rule.severity
         )
@@ -1355,6 +1393,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal(str(len(required_codes))),
             actual_value=Decimal(str(present_count)),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=f"Only {present_count}/{len(required_codes)} required accounts present" if not passed else None,
             severity=rule.severity
         )
@@ -1595,6 +1635,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('0'),
             actual_value=Decimal(str(len(issues))),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message="; ".join(issues) if issues else None,
             severity=rule.severity
         )
@@ -1771,7 +1813,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="error"
             )
         
@@ -1798,7 +1842,7 @@ class ValidationService:
             passed=passed,
             expected_value=expected_total,
             actual_value=actual_total,
-            difference=difference,
+           difference=difference,
             difference_percentage=self.safe_percentage(difference, expected_total),
             error_message=None if passed else f"Income items sum to {actual_total:,.2f} but Total Income is {expected_total:,.2f}",
             severity=rule.severity
@@ -1828,7 +1872,10 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=True,  # Skip if no data
-                severity="warning"
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message=None,
+            severity="warning"
             )
         
         percentage = (header.base_rentals / header.total_income) * 100
@@ -1868,7 +1915,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="error"
             )
         
@@ -1884,7 +1933,7 @@ class ValidationService:
             passed=passed,
             expected_value=expected_total,
             actual_value=actual_total,
-            difference=difference,
+           difference=difference,
             difference_percentage=self.safe_percentage(difference, expected_total),
             error_message=None if passed else f"Operating ({header.total_operating_expenses:,.2f}) + Additional ({header.total_additional_operating_expenses:,.2f}) != Total Expenses ({actual_total:,.2f})",
             severity=rule.severity
@@ -1946,6 +1995,8 @@ class ValidationService:
             upload_id=upload_id,
             rule_id=rule.id,
             passed=all_passed,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message="; ".join(error_messages) if error_messages else None,
             severity=rule.severity
         )
@@ -1974,7 +2025,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="error"
             )
         
@@ -1990,7 +2043,7 @@ class ValidationService:
             passed=passed,
             expected_value=expected_noi,
             actual_value=actual_noi,
-            difference=difference,
+           difference=difference,
             difference_percentage=self.safe_percentage(difference, expected_noi),
             error_message=None if passed else f"Income ({header.total_income:,.2f}) - Expenses ({header.total_expenses:,.2f}) = {expected_noi:,.2f}, but NOI is {actual_noi:,.2f}",
             severity=rule.severity
@@ -2020,7 +2073,10 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=True,
-                severity="warning"
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message=None,
+            severity="warning"
             )
         
         percentage = (header.net_operating_income / header.total_income) * 100
@@ -2032,6 +2088,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('70'),
             actual_value=Decimal(str(percentage)),
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=None if passed else f"NOI is {percentage:.2f}% of Total Income (expected 60-80%)",
             severity=rule.severity
         )
@@ -2060,7 +2118,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="warning"
             )
         
@@ -2071,6 +2131,8 @@ class ValidationService:
             rule_id=rule.id,
             passed=passed,
             actual_value=header.net_operating_income,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=None if passed else f"NOI is negative or zero: {header.net_operating_income:,.2f}",
             severity=rule.severity
         )
@@ -2099,7 +2161,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="error"
             )
         
@@ -2119,7 +2183,7 @@ class ValidationService:
             passed=passed,
             expected_value=expected_net_income,
             actual_value=actual_net_income,
-            difference=difference,
+           difference=difference,
             difference_percentage=self.safe_percentage(difference, expected_net_income),
             error_message=None if passed else f"Net Income calculation mismatch: expected {expected_net_income:,.2f}, actual {actual_net_income:,.2f}",
             severity=rule.severity
@@ -2149,7 +2213,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="error"
             )
         
@@ -2165,7 +2231,7 @@ class ValidationService:
             passed=passed,
             expected_value=expected_cash_flow,
             actual_value=actual_cash_flow,
-            difference=difference,
+           difference=difference,
             difference_percentage=self.safe_percentage(difference, expected_cash_flow),
             error_message=None if passed else f"Net Income ({header.net_income:,.2f}) + Adjustments ({header.total_adjustments:,.2f}) != Cash Flow ({actual_cash_flow:,.2f})",
             severity=rule.severity
@@ -2196,7 +2262,10 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=True,  # Skip if no data
-                severity="error"
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message=None,
+            severity="error"
             )
         
         all_passed = True
@@ -2217,6 +2286,8 @@ class ValidationService:
             upload_id=upload_id,
             rule_id=rule.id,
             passed=all_passed,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message="; ".join(error_messages) if error_messages else None,
             severity=rule.severity
         )
@@ -2246,7 +2317,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Cash Flow Header not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Cash Flow Header not found",
                 severity="error"
             )
         
@@ -2270,7 +2343,7 @@ class ValidationService:
             passed=passed,
             expected_value=expected_total,
             actual_value=actual_total,
-            difference=difference,
+           difference=difference,
             difference_percentage=self.safe_percentage(difference, expected_total),
             error_message=None if passed else f"Sum of cash accounts ({actual_total:,.2f}) != Total Cash ({expected_total:,.2f})",
             severity=rule.severity
@@ -2483,7 +2556,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Mortgage data not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Mortgage data not found",
                 severity=rule.severity
             )
         
@@ -2496,6 +2571,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('100000000'),
             actual_value=principal,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )
@@ -2525,7 +2602,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Mortgage data not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Mortgage data not found",
                 severity=rule.severity
             )
         
@@ -2551,7 +2630,7 @@ class ValidationService:
             passed=passed,
             expected_value=calculated_total,
             actual_value=actual_total,
-            difference=difference,
+           difference=difference,
             difference_percentage=(difference / actual_total * 100) if actual_total > 0 else None,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
@@ -2582,7 +2661,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Mortgage data not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Mortgage data not found",
                 severity=rule.severity
             )
         
@@ -2599,13 +2680,15 @@ class ValidationService:
         difference = abs(calculated_total - actual_total)
         passed = difference <= Decimal('1.00')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=calculated_total,
             actual_value=actual_total,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )
@@ -2635,7 +2718,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=True,  # Pass if not provided
-                error_message=None,
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message=None,
                 severity=rule.severity
             )
         
@@ -2648,6 +2733,8 @@ class ValidationService:
             passed=passed,
             expected_value=Decimal('20'),
             actual_value=rate,
+            difference=Decimal('0'),
+            difference_percentage=None,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )
@@ -2677,7 +2764,9 @@ class ValidationService:
                 upload_id=upload_id,
                 rule_id=rule.id,
                 passed=False,
-                error_message="Mortgage data not found",
+                difference=Decimal('0'),
+            difference_percentage=None,
+            error_message="Mortgage data not found",
                 severity=rule.severity
             )
         
@@ -2690,13 +2779,15 @@ class ValidationService:
         difference = abs(calculated_total - actual_total)
         passed = difference <= Decimal('1.00')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=calculated_total,
             actual_value=actual_total,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )
@@ -2739,13 +2830,15 @@ class ValidationService:
         difference = abs(total_mortgage_balance - long_term_debt)
         passed = difference <= Decimal('100.00')
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=long_term_debt,
             actual_value=total_mortgage_balance,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )
@@ -2790,13 +2883,15 @@ class ValidationService:
         difference = abs(ytd_mortgage_interest - income_statement_interest)
         passed = difference <= tolerance
         
+        difference_percentage = None  # Will be calculated if needed
         return self._create_validation_result(
             upload_id=upload_id,
             rule_id=rule.id,
             passed=passed,
             expected_value=income_statement_interest,
             actual_value=ytd_mortgage_interest,
-            difference=difference,
+           difference=difference,
+                    difference_percentage=difference_percentage,
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )

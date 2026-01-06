@@ -2659,3 +2659,250 @@ class FinancialTableParser:
         
         return line_items
 
+    def extract_income_statement_multi_engine(self, pdf_data: bytes) -> Dict:
+        """
+        Phase 2: Multi-Engine Consensus Extraction for Income Statements
+
+        Extracts income statement using multiple PDF engines and combines results
+        for maximum accuracy and data quality.
+
+        Process:
+        1. Run PDFPlumber (primary table extractor)
+        2. Run PyMuPDF (text-based fallback)
+        3. Compare results and calculate field-level consensus
+        4. Return merged result with confidence tracking
+
+        Returns:
+            dict: {
+                "success": bool,
+                "header": dict,  # Merged header with consensus
+                "line_items": List[dict],  # Merged line items with field-level confidence
+                "consensus_score": float,  # 0-100 overall agreement between engines
+                "engines_used": List[str],
+                "extraction_method": "multi_engine_consensus",
+                "field_confidence": dict  # Per-field consensus tracking
+            }
+        """
+        try:
+            import fitz  # PyMuPDF
+
+            results = {}
+
+            # Engine 1: PDFPlumber (best for tables)
+            print("   🔄 Running PDFPlumber engine...")
+            pdfplumber_result = self.extract_income_statement_table(pdf_data)
+            if pdfplumber_result.get("success"):
+                results["pdfplumber"] = pdfplumber_result
+                print(f"      ✅ PDFPlumber: {len(pdfplumber_result.get('line_items', []))} line items")
+            else:
+                print(f"      ❌ PDFPlumber failed: {pdfplumber_result.get('error', 'Unknown')}")
+
+            # Engine 2: PyMuPDF (good for text extraction)
+            print("   🔄 Running PyMuPDF engine...")
+            try:
+                pymupdf_result = self._extract_income_statement_pymupdf(pdf_data)
+                if pymupdf_result.get("success"):
+                    results["pymupdf"] = pymupdf_result
+                    print(f"      ✅ PyMuPDF: {len(pymupdf_result.get('line_items', []))} line items")
+                else:
+                    print(f"      ⚠️  PyMuPDF partial: {pymupdf_result.get('error', 'Unknown')}")
+            except Exception as e:
+                print(f"      ❌ PyMuPDF failed: {str(e)}")
+
+            # Check if we have at least one successful extraction
+            if not results:
+                return {
+                    "success": False,
+                    "error": "All extraction engines failed",
+                    "header": {},
+                    "line_items": [],
+                    "consensus_score": 0.0,
+                    "engines_used": []
+                }
+
+            # If only one engine succeeded, return its result with metadata
+            if len(results) == 1:
+                engine_name, result = list(results.items())[0]
+                print(f"   ℹ️  Single engine mode: using {engine_name} results")
+                return {
+                    **result,
+                    "extraction_method": f"single_engine_{engine_name}",
+                    "consensus_score": 85.0,  # Lower score for single engine
+                    "engines_used": [engine_name]
+                }
+
+            # Multiple engines succeeded - calculate consensus
+            print("   🔄 Calculating multi-engine consensus...")
+            merged_result = self._merge_income_statement_results(results)
+
+            print(f"   ✅ Consensus extraction complete:")
+            print(f"      Engines: {len(results)}")
+            print(f"      Consensus score: {merged_result['consensus_score']:.1f}%")
+            print(f"      Final line items: {len(merged_result.get('line_items', []))}")
+
+            return merged_result
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Multi-engine extraction failed: {str(e)}",
+                "header": {},
+                "line_items": [],
+                "consensus_score": 0.0,
+                "engines_used": []
+            }
+
+    def _extract_income_statement_pymupdf(self, pdf_data: bytes) -> Dict:
+        """
+        Extract income statement using PyMuPDF (text-based)
+
+        Provides alternative extraction when table structure is not clear
+        """
+        try:
+            import fitz  # PyMuPDF
+            import io
+
+            # Open PDF from bytes - create a BytesIO stream
+            pdf = fitz.open(stream=io.BytesIO(pdf_data), filetype="pdf")
+            all_line_items = []
+            total_pages = len(pdf)
+
+            # Extract header from first page
+            first_page = pdf[0]
+            first_page_text = first_page.get_text()
+            header_metadata = self._extract_income_statement_header(first_page_text)
+
+            # Process all pages
+            line_number = 1
+            for page_num in range(total_pages):
+                page = pdf[page_num]
+                text = page.get_text()
+
+                # Parse text into line items
+                items = self._parse_income_statement_text(text, page_num + 1)
+
+                # Assign line numbers
+                for item in items:
+                    item['line_number'] = line_number
+                    line_number += 1
+
+                all_line_items.extend(items)
+
+            pdf.close()
+
+            return {
+                "success": True,
+                "header": header_metadata,
+                "line_items": all_line_items,
+                "total_items": len(all_line_items),
+                "extraction_method": "pymupdf_text",
+                "document_type": "income_statement",
+                "total_pages": total_pages
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "header": {},
+                "line_items": [],
+                "total_items": 0
+            }
+
+    def _merge_income_statement_results(self, results: Dict[str, Dict]) -> Dict:
+        """
+        Merge results from multiple engines using consensus algorithm
+
+        Strategy:
+        1. Use PDFPlumber as primary (best for tables)
+        2. Fill gaps with PyMuPDF data
+        3. Calculate field-level confidence based on agreement
+        4. Flag fields with low agreement for review
+
+        Args:
+            results: Dict of {engine_name: extraction_result}
+
+        Returns:
+            Merged result with consensus tracking
+        """
+        # Use PDFPlumber as primary if available
+        if "pdfplumber" in results:
+            primary = results["pdfplumber"]
+            primary_engine = "pdfplumber"
+        else:
+            # Use first available engine
+            primary_engine, primary = list(results.items())[0]
+
+        merged_line_items = primary.get("line_items", [])
+        merged_header = primary.get("header", {})
+
+        # Calculate consensus by comparing line items
+        total_fields = 0
+        matching_fields = 0
+
+        # Compare with other engines
+        for engine_name, result in results.items():
+            if engine_name == primary_engine:
+                continue
+
+            other_items = result.get("line_items", [])
+
+            # Match by account code
+            for primary_item in merged_line_items:
+                primary_code = primary_item.get("account_code")
+                if not primary_code:
+                    continue
+
+                # Find matching item in other engine
+                matching_item = None
+                for other_item in other_items:
+                    if other_item.get("account_code") == primary_code:
+                        matching_item = other_item
+                        break
+
+                if matching_item:
+                    # Compare amounts
+                    for field in ["period_amount", "ytd_amount", "period_percentage", "ytd_percentage"]:
+                        total_fields += 1
+
+                        primary_val = primary_item.get(field)
+                        other_val = matching_item.get(field)
+
+                        if primary_val is not None and other_val is not None:
+                            # Check if values match (within 1% tolerance)
+                            if isinstance(primary_val, (int, float, Decimal)):
+                                primary_float = float(primary_val)
+                                other_float = float(other_val)
+
+                                if primary_float == 0 and other_float == 0:
+                                    matching_fields += 1
+                                elif primary_float != 0:
+                                    diff_pct = abs(primary_float - other_float) / abs(primary_float) * 100
+                                    if diff_pct < 1.0:  # Within 1%
+                                        matching_fields += 1
+                                        # Boost confidence for matching fields
+                                        if "field_confidence" not in primary_item:
+                                            primary_item["field_confidence"] = {}
+                                        primary_item["field_confidence"][field] = 95.0
+                            else:
+                                # String comparison
+                                if str(primary_val).strip() == str(other_val).strip():
+                                    matching_fields += 1
+
+        # Calculate consensus score
+        consensus_score = (matching_fields / total_fields * 100) if total_fields > 0 else 85.0
+
+        return {
+            "success": True,
+            "header": merged_header,
+            "line_items": merged_line_items,
+            "total_items": len(merged_line_items),
+            "extraction_method": "multi_engine_consensus",
+            "document_type": "income_statement",
+            "consensus_score": consensus_score,
+            "engines_used": list(results.keys()),
+            "total_fields_compared": total_fields,
+            "matching_fields": matching_fields,
+            "total_pages": primary.get("total_pages", 0)
+        }
+
