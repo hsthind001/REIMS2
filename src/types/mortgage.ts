@@ -166,3 +166,21 @@ export interface MaturityCalendar {
   due_within_12_months: number;
   due_within_24_months: number;
 }
+
+export interface LatestCompleteDSCR {
+  property_id: number;
+  property_code: string;
+  period: {
+    period_id: number;
+    period_year: number;
+    period_month: number;
+    period_label: string;
+    period_start_date: string | null;
+    period_end_date: string | null;
+  } | null;
+  dscr: number | null;
+  noi: number | null;
+  debt_service: number | null;
+  status: 'healthy' | 'warning' | 'critical' | 'unknown' | 'no_data';
+  error?: string;
+}

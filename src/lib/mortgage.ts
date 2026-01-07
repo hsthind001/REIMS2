@@ -11,7 +11,8 @@ import type {
   LTVHistory,
   DebtSummary,
   CovenantMonitoring,
-  MaturityCalendar
+  MaturityCalendar,
+  LatestCompleteDSCR
 } from '../types/mortgage';
 
 export const mortgageService = {
@@ -145,6 +146,27 @@ export const mortgageService = {
     } catch (error: any) {
       console.error('Failed to fetch maturity calendar:', error);
       throw new Error(error.message || 'Failed to fetch maturity calendar');
+    }
+  },
+
+  /**
+   * Get DSCR for the latest COMPLETE period (has both income and mortgage data)
+   *
+   * This method ensures DSCR is calculated only when complete data is available,
+   * preventing N/A or NULL values when the latest period by date is incomplete.
+   */
+  async getLatestCompleteDSCR(
+    propertyId: number,
+    year?: number
+  ): Promise<LatestCompleteDSCR> {
+    try {
+      const url = year
+        ? `/mortgage/properties/${propertyId}/dscr/latest-complete?year=${year}`
+        : `/mortgage/properties/${propertyId}/dscr/latest-complete`;
+      return await api.get<LatestCompleteDSCR>(url);
+    } catch (error: any) {
+      console.error('Failed to fetch latest complete DSCR:', error);
+      throw new Error(error.message || 'Failed to fetch latest complete DSCR');
     }
   }
 };

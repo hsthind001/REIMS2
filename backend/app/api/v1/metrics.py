@@ -470,6 +470,7 @@ async def recalculate_metrics(
 async def get_metrics_summary(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    year: Optional[int] = Query(None, description="Filter by specific year (e.g., 2023, 2024, 2025)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -482,13 +483,18 @@ async def get_metrics_summary(
     - skip: Number of records to skip
     - limit: Maximum records to return (max 500)
 
+    Year Filter:
+    - year: Optional year filter (e.g., 2023, 2024, 2025)
+    - When specified, returns latest complete period within that year
+    - When omitted, returns overall latest complete period
+
     Performance:
     - Redis caching with 5-minute TTL (distributed across instances)
     - Optimized SQL query using window functions (single query vs loading all records)
     """
     try:
-        # Check Redis cache first
-        cache_key = f"metrics:summary:{skip}:{limit}"
+        # Check Redis cache first (include year in cache key)
+        cache_key = f"metrics:summary:{skip}:{limit}:{year if year else 'all'}"
         cached_data = cache_get(cache_key)
 
         if cached_data is not None:
@@ -508,7 +514,7 @@ async def get_metrics_summary(
 
             # Use ROW_NUMBER() to get only the most recent COMPLETE period per property
             # IMPORTANT: Only includes periods where is_complete = true (all 5 documents uploaded)
-            latest_complete_query = db.query(
+            complete_query_base = db.query(
                 FinancialMetrics.property_id,
                 Property.property_code,
                 Property.property_name,
@@ -544,10 +550,16 @@ async def get_metrics_summary(
                     PeriodDocumentCompleteness.period_id == FinancialMetrics.period_id,
                     PeriodDocumentCompleteness.is_complete == True  # Only complete periods
                 )
-            ).subquery()
+            )
+
+            # Add year filter if specified
+            if year:
+                complete_query_base = complete_query_base.filter(FinancialPeriod.period_year == year)
+
+            latest_complete_query = complete_query_base.subquery()
 
             # Fallback: latest metrics per property regardless of completeness
-            latest_fallback_query = db.query(
+            fallback_query_base = db.query(
                 FinancialMetrics.property_id,
                 Property.property_code,
                 Property.property_name,
@@ -577,10 +589,16 @@ async def get_metrics_summary(
                 )
             ).join(
                 FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
-            ).subquery()
+            )
+
+            # Add year filter if specified
+            if year:
+                fallback_query_base = fallback_query_base.filter(FinancialPeriod.period_year == year)
+
+            latest_fallback_query = fallback_query_base.subquery()
         else:
             logger.warning("period_document_completeness table missing; falling back to metrics-only summary")
-            latest_fallback_query = db.query(
+            fallback_query_base = db.query(
                 FinancialMetrics.property_id,
                 Property.property_code,
                 Property.property_name,
@@ -610,7 +628,13 @@ async def get_metrics_summary(
                 )
             ).join(
                 FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
-            ).subquery()
+            )
+
+            # Add year filter if specified
+            if year:
+                fallback_query_base = fallback_query_base.filter(FinancialPeriod.period_year == year)
+
+            latest_fallback_query = fallback_query_base.subquery()
 
         # Select only row_num = 1 (latest period per property)
         if has_completeness:

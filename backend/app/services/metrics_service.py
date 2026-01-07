@@ -16,6 +16,7 @@ from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.financial_metrics import FinancialMetrics
+from app.models.financial_period import FinancialPeriod
 from app.core.constants import financial_thresholds, account_codes
 
 
@@ -32,7 +33,59 @@ class MetricsService:
     
     def __init__(self, db: Session):
         self.db = db
-    
+
+    def get_latest_complete_period(
+        self,
+        property_id: int,
+        year: Optional[int] = None
+    ) -> Optional[FinancialPeriod]:
+        """
+        Get the latest period that has COMPLETE financial data for DSCR calculation.
+
+        A complete period must have BOTH:
+        - Income statement data (for NOI)
+        - Mortgage statement data (for debt service)
+
+        This ensures DSCR can be calculated accurately.
+
+        Args:
+            property_id: Property ID
+            year: Optional year filter (e.g., 2025). If None, searches all years.
+
+        Returns:
+            FinancialPeriod with complete data, or None if no complete periods found
+        """
+        from sqlalchemy import and_, func, distinct
+
+        # Build base query
+        query = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id
+        )
+
+        # Apply year filter if specified
+        if year:
+            query = query.filter(FinancialPeriod.period_year == year)
+
+        # Get periods that have BOTH income statement AND mortgage data
+        # Use EXISTS subqueries for better performance
+        query = query.filter(
+            # Must have income statement data
+            self.db.query(IncomeStatementData.id).filter(
+                IncomeStatementData.property_id == FinancialPeriod.property_id,
+                IncomeStatementData.period_id == FinancialPeriod.id
+            ).exists(),
+            # Must have mortgage statement data
+            self.db.query(MortgageStatementData.id).filter(
+                MortgageStatementData.property_id == FinancialPeriod.property_id,
+                MortgageStatementData.period_id == FinancialPeriod.id
+            ).exists()
+        ).order_by(
+            FinancialPeriod.period_year.desc(),
+            FinancialPeriod.period_month.desc()
+        ).first()
+
+        return query
+
     def calculate_all_metrics(
         self, 
         property_id: int, 
@@ -453,12 +506,35 @@ class MetricsService:
         - Net income
         - Operating margin, profit margin
         """
+        # CRITICAL: Determine if data is monthly or annual
+        # This is essential for correct NOI and DSCR calculations
+        from app.models.income_statement_header import IncomeStatementHeader
+        period_type = None
+        try:
+            header = self.db.query(IncomeStatementHeader).filter(
+                IncomeStatementHeader.property_id == property_id,
+                IncomeStatementHeader.period_id == period_id
+            ).first()
+            if header:
+                period_type = header.period_type
+        except Exception as e:
+            # If headers table doesn't exist or query fails, check period dates
+            from app.models.financial_period import FinancialPeriod
+            period = self.db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id
+            ).first()
+            if period and period.period_start_date and period.period_end_date:
+                days_diff = (period.period_end_date - period.period_start_date).days
+                period_type = "Monthly" if days_diff <= 35 else "Annual"
+
+        is_monthly = period_type and period_type.upper() in ["MONTHLY", "MONTH"]
+
         # Get totals - try specific accounts first
         total_revenue = self._get_income_statement_total(property_id, period_id, '4999-0000')
         total_expenses = self._get_income_statement_total(property_id, period_id, '8999-0000')
         stored_noi = self._get_income_statement_total(property_id, period_id, '6299-0000')
         net_income = self._get_income_statement_total(property_id, period_id, '9090-0000')
-        
+
         # If totals not found, sum categories
         if not total_revenue:
             total_revenue = self._sum_income_statement_accounts(
@@ -513,7 +589,15 @@ class MetricsService:
             noi = stored_noi
         else:
             noi = None
-        
+
+        # CRITICAL: Annualize NOI if monthly data
+        # Financial metrics should store ANNUAL values for consistent DSCR calculation
+        if is_monthly and noi is not None:
+            noi_original = noi
+            noi = noi * Decimal('12')
+            # Note: total_revenue and total_expenses remain monthly for accurate per-period tracking
+            # Only NOI is annualized for DSCR calculations
+
         # Calculate operating margin using gross revenue (before large adjustments)
         # This gives a more accurate picture of operating performance
         revenue_for_margin = gross_revenue_for_margin if gross_revenue_for_margin else total_revenue

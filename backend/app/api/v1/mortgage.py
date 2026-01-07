@@ -309,6 +309,91 @@ def get_dscr_history(
     }
 
 
+@router.get("/properties/{property_id}/dscr/latest-complete")
+def get_latest_complete_dscr(
+    property_id: int = Path(..., description="Property ID"),
+    year: Optional[int] = Query(None, description="Optional year filter (e.g., 2025)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get DSCR for the latest COMPLETE period (has both income and mortgage data).
+
+    This endpoint ensures DSCR is calculated only when complete data is available,
+    preventing N/A or NULL values when the latest period by date is incomplete.
+
+    Returns:
+        - period: The latest complete period information
+        - dscr: The DSCR value for that period
+        - noi: Net Operating Income
+        - debt_service: Annual debt service
+        - status: DSCR health status (healthy/warning/critical)
+    """
+    property_obj = db.query(Property).filter(Property.id == property_id).first()
+    if not property_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property {property_id} not found"
+        )
+
+    # Get latest complete period using MetricsService
+    metrics_service = MetricsService(db)
+    latest_complete_period = metrics_service.get_latest_complete_period(property_id, year)
+
+    if not latest_complete_period:
+        return {
+            "property_id": property_id,
+            "property_code": property_obj.property_code,
+            "period": None,
+            "dscr": None,
+            "noi": None,
+            "debt_service": None,
+            "status": "no_data",
+            "error": "No complete financial data available" + (f" for year {year}" if year else "")
+        }
+
+    # Get financial metrics for this period
+    metrics = db.query(FinancialMetrics).filter(
+        FinancialMetrics.property_id == property_id,
+        FinancialMetrics.period_id == latest_complete_period.id
+    ).first()
+
+    if not metrics:
+        # Calculate metrics if they don't exist
+        metrics = metrics_service.calculate_all_metrics(property_id, latest_complete_period.id)
+
+    # Extract DSCR and related values
+    dscr = float(metrics.dscr) if metrics.dscr else None
+    noi = float(metrics.net_operating_income) if metrics.net_operating_income else None
+    debt_service = float(metrics.total_annual_debt_service) if metrics.total_annual_debt_service else None
+
+    # Determine status
+    if dscr is None:
+        status = "unknown"
+    elif dscr >= 1.25:
+        status = "healthy"
+    elif dscr >= 1.10:
+        status = "warning"
+    else:
+        status = "critical"
+
+    return {
+        "property_id": property_id,
+        "property_code": property_obj.property_code,
+        "period": {
+            "period_id": latest_complete_period.id,
+            "period_year": latest_complete_period.period_year,
+            "period_month": latest_complete_period.period_month,
+            "period_label": f"{latest_complete_period.period_year}-{latest_complete_period.period_month:02d}",
+            "period_start_date": latest_complete_period.period_start_date.isoformat() if latest_complete_period.period_start_date else None,
+            "period_end_date": latest_complete_period.period_end_date.isoformat() if latest_complete_period.period_end_date else None
+        },
+        "dscr": dscr,
+        "noi": noi,
+        "debt_service": debt_service,
+        "status": status
+    }
+
+
 @router.get("/properties/{property_id}/ltv-history", response_model=LTVHistoryResponse)
 def get_ltv_history(
     property_id: int = Path(..., description="Property ID"),

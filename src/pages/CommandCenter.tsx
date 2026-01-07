@@ -16,6 +16,7 @@ import {
 import { MetricCard, Card, Button, ProgressBar } from '../components/design-system';
 import { PDFViewer } from '../components/PDFViewer';
 import { propertyService } from '../lib/property';
+import { mortgageService } from '../lib/mortgage';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
@@ -153,14 +154,16 @@ export default function CommandCenter() {
   const loadPortfolioHealth = async (_properties: Property[]) => {
     try {
       // Calculate portfolio health from properties and metrics
-      let metricsSummary = await fetch(`${API_BASE_URL}/metrics/summary`, {
+      // Include year parameter to filter metrics by selected year
+      const summaryUrl = `${API_BASE_URL}/metrics/summary?year=${selectedYear}`;
+      let metricsSummary = await fetch(summaryUrl, {
         credentials: 'include'
       }).then(r => r.ok ? r.json() : []);
 
-      // Filter by selected property and year if not "all"
+      // Filter by selected property if not "all"
       if (selectedPropertyFilter !== 'all') {
         metricsSummary = metricsSummary.filter((m: any) =>
-          m.property_code === selectedPropertyFilter && m.period_year === selectedYear
+          m.property_code === selectedPropertyFilter
         );
       }
 
@@ -270,9 +273,11 @@ export default function CommandCenter() {
           const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
           const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
           
-          // Fetch previous period metrics
+          // Fetch previous period metrics (for calculating changes)
+          // Note: This should fetch previous year's data for year-over-year comparison
           try {
-            const prevMetricsResponse = await fetch(`${API_BASE_URL}/metrics/summary`, {
+            const prevYear = selectedYear - 1;
+            const prevMetricsResponse = await fetch(`${API_BASE_URL}/metrics/summary?year=${prevYear}`, {
               credentials: 'include'
             });
             if (prevMetricsResponse.ok) {
@@ -335,7 +340,9 @@ export default function CommandCenter() {
 
   const loadCriticalAlerts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-alerts?priority=critical&status=ACTIVE`, {
+      // Fetch critical alerts for the selected year
+      // Use severity=CRITICAL (not priority) and optionally filter by year
+      const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts?severity=CRITICAL&status=ACTIVE&limit=50`, {
         credentials: 'include'
       });
       if (response.ok) {
@@ -369,14 +376,15 @@ export default function CommandCenter() {
           }
         });
         
-        // Convert map back to array and take top 5
+        // Convert map back to array and show more alerts (increased from 5 to 20)
+        // This allows users to see all critical issues requiring attention
         alerts = Array.from(alertsByProperty.values())
           .sort((a: any, b: any) => {
             const dateA = new Date(a.triggered_at || a.created_at || 0).getTime();
             const dateB = new Date(b.triggered_at || b.created_at || 0).getTime();
             return dateB - dateA; // Most recent first
           })
-          .slice(0, 5);
+          .slice(0, 20);
         
         setCriticalAlerts(alerts.map((a: any) => ({
           id: a.id,
@@ -416,20 +424,17 @@ export default function CommandCenter() {
   const loadPropertyPerformance = async (properties: Property[]) => {
     try {
       const performance: PropertyPerformance[] = [];
-      
+
       // Fetch all metrics once with a high limit to get all properties
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+      // IMPORTANT: Include year parameter to filter metrics by selected year
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100&year=${selectedYear}`, {
         credentials: 'include'
       });
       const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
-      
-      // Create a map of property_code -> metric (filtered by year if specific property selected)
+
+      // Create a map of property_code -> metric
       const metricsMap = new Map<string, any>();
       allMetrics.forEach((m: any) => {
-        // If a specific property is selected, filter by year
-        if (selectedPropertyFilter !== 'all' && m.period_year !== selectedYear) {
-          return; // Skip metrics from other years
-        }
 
         const existing = metricsMap.get(m.property_code);
         const hasData = (m.total_assets !== null && m.total_assets !== undefined) ||
@@ -503,32 +508,28 @@ export default function CommandCenter() {
             let status: 'critical' | 'warning' | 'good' = 'good';
 
             try {
-              const dscrResponse = await fetch(
-                `${API_BASE_URL}/dscr/latest-complete/${property.id}?year=${selectedYear}`,
-                { credentials: 'include' }
-              );
+              // Use the new mortgageService method to get latest complete DSCR
+              const dscrData = await mortgageService.getLatestCompleteDSCR(property.id, selectedYear);
 
-              if (dscrResponse.ok) {
-                const dscrData = await dscrResponse.json();
-                if (dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                  dscr = dscrData.dscr;
-                }
-                // Also get LTV from the same latest complete period
-                if (dscrData.period && dscrData.period.id) {
-                  try {
-                    const ltvResponse = await fetch(
-                      `${API_BASE_URL}/metrics/${property.property_code}/${dscrData.period.year}/${dscrData.period.month}`,
-                      { credentials: 'include' }
-                    );
-                    if (ltvResponse.ok) {
-                      const ltvData = await ltvResponse.json();
-                      if (ltvData.ltv_ratio !== null && ltvData.ltv_ratio !== undefined) {
-                        ltv = ltvData.ltv_ratio;
-                      }
+              if (dscrData && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+                dscr = dscrData.dscr;
+              }
+
+              // Also get LTV from the same latest complete period
+              if (dscrData.period && dscrData.period.period_id) {
+                try {
+                  const ltvResponse = await fetch(
+                    `${API_BASE_URL}/metrics/${property.property_code}/${dscrData.period.period_year}/${dscrData.period.period_month}`,
+                    { credentials: 'include' }
+                  );
+                  if (ltvResponse.ok) {
+                    const ltvData = await ltvResponse.json();
+                    if (ltvData.ltv_ratio !== null && ltvData.ltv_ratio !== undefined) {
+                      ltv = ltvData.ltv_ratio;
                     }
-                  } catch (ltvErr) {
-                    console.warn(`Failed to fetch LTV for ${property.property_code}`, ltvErr);
                   }
+                } catch (ltvErr) {
+                  console.warn(`Failed to fetch LTV for ${property.property_code}`, ltvErr);
                 }
               }
             } catch (dscrErr) {
@@ -639,8 +640,8 @@ export default function CommandCenter() {
 
     setLoadingPDFSource(true);
     try {
-      // Get the latest period for this property
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary`, {
+      // Get the latest period for this property (filtered by selected year)
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?year=${selectedYear}`, {
         credentials: 'include'
       });
       const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
@@ -817,14 +818,12 @@ export default function CommandCenter() {
 
         // If there's a latest complete period, fetch DSCR for it
         if (matrixData.latest_complete_period) {
-          const dscrResponse = await fetch(
-            `${API_BASE_URL}/dscr/latest-complete/${propertyId}?year=${year}`,
-            { credentials: 'include' }
-          );
-
-          if (dscrResponse.ok) {
-            const dscrData = await dscrResponse.json();
+          try {
+            const dscrData = await mortgageService.getLatestCompleteDSCR(propertyId, year);
             setLatestCompleteDSCR(dscrData);
+          } catch (err) {
+            console.warn('Failed to fetch latest complete DSCR:', err);
+            setLatestCompleteDSCR(null);
           }
         } else {
           setLatestCompleteDSCR(null);

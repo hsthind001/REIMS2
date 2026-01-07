@@ -16,6 +16,7 @@ import {
 import { Card, Button, ProgressBar } from '../components/design-system';
 import { PropertyMap } from '../components/PropertyMap';
 import { propertyService } from '../lib/property';
+import { mortgageService } from '../lib/mortgage';
 import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
@@ -232,7 +233,7 @@ export default function PortfolioHub() {
 
   const loadAllPropertyMetrics = async (props: Property[]) => {
     try {
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100&year=${selectedYear}`, {
         credentials: 'include'
       });
       if (metricsRes.ok) {
@@ -344,7 +345,7 @@ export default function PortfolioHub() {
       
       // Fall back to summary if period-specific not available
       if (!propertyMetric) {
-        const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+        const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100&year=${selectedYear}`, {
           credentials: 'include'
         });
         const metricsData = metricsRes.ok ? await metricsRes.json() : [];
@@ -359,17 +360,10 @@ export default function PortfolioHub() {
         let capRate: number | null = null;
 
         try {
-          // Fetch DSCR from latest complete period (all documents available)
-          const dscrResponse = await fetch(
-            `${API_BASE_URL}/dscr/latest-complete/${propertyId}?year=${selectedYear}`,
-            { credentials: 'include' }
-          );
-
-          if (dscrResponse.ok) {
-            const dscrData = await dscrResponse.json();
-            if (dscrData.dscr !== null && dscrData.dscr !== undefined) {
-              dscr = dscrData.dscr;
-            }
+          // Fetch DSCR from latest complete period using mortgageService
+          const dscrData = await mortgageService.getLatestCompleteDSCR(propertyId, selectedYear);
+          if (dscrData && dscrData.dscr !== null && dscrData.dscr !== undefined) {
+            dscr = dscrData.dscr;
           }
         } catch (dscrErr) {
           console.error('Failed to fetch DSCR from latest complete period:', dscrErr);
@@ -665,8 +659,8 @@ export default function PortfolioHub() {
       // Get property for property_code
       const currentProperty = properties.find(p => p.id === propertyId);
       
-      // Get property metrics for comparison
-      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100`, {
+      // Get property metrics for comparison (filtered by selected year)
+      const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100&year=${selectedYear}`, {
         credentials: 'include'
       });
       const metricsData = metricsRes.ok ? await metricsRes.json() : [];
