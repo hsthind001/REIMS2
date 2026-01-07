@@ -417,7 +417,7 @@ export function DetailedReviewModal({ item, onSave, onApprove, onClose }: Detail
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                       <label style={{ fontWeight: '600', textTransform: 'capitalize' }}>
                         {field.field_name.replace(/_/g, ' ')}
-                        {field.confidence !== undefined && (
+                        {field.confidence !== undefined && field.confidence !== null && (
                           <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem', color: field.confidence < 85 ? '#dc2626' : field.confidence < 95 ? '#f59e0b' : '#10b981' }}>
                             ({field.confidence.toFixed(1)}% confidence)
                           </span>

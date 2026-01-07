@@ -467,13 +467,21 @@ class MetricsService:
         
         if not total_expenses:
             total_expenses = self._sum_income_statement_accounts(
-                property_id, period_id, account_pattern='[5-8]%', is_calculated=False
+                property_id,
+                period_id,
+                account_pattern='[5-8]%',
+                is_calculated=False,
+                exclude_account_codes=['6299-0000']
             )
         
         # Calculate operating expenses (5xxx and 6xxx accounts only)
         # Operating expenses exclude 7xxx (mortgage interest) and 8xxx (depreciation/amortization)
         operating_expenses = self._sum_income_statement_accounts(
-            property_id, period_id, account_pattern='[5-6]%', is_calculated=False
+            property_id,
+            period_id,
+            account_pattern='[5-6]%',
+            is_calculated=False,
+            exclude_account_codes=['6299-0000']
         ) or Decimal('0')
         
         # Get gross revenue (excluding Other Income adjustments for margin calculation)
@@ -979,13 +987,22 @@ class MetricsService:
         property_id: int, 
         period_id: int, 
         account_pattern: str,
-        is_calculated: bool = False
+        is_calculated: bool = False,
+        exclude_account_codes: Optional[list[str]] = None
     ) -> Optional[Decimal]:
         """Sum income statement accounts matching pattern
         
         Supports both SQL LIKE patterns (e.g., '4%') and regex patterns (e.g., '[5-8]%')
         """
         from sqlalchemy import or_
+
+        filters = [
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == period_id,
+            IncomeStatementData.is_calculated == is_calculated
+        ]
+        if exclude_account_codes:
+            filters.append(~IncomeStatementData.account_code.in_(exclude_account_codes))
         
         # Handle regex patterns like [5-8]% by converting to multiple LIKE conditions
         if account_pattern.startswith('[') and ']' in account_pattern:
@@ -1012,20 +1029,16 @@ class MetricsService:
             result = self.db.query(
                 func.sum(IncomeStatementData.period_amount)
             ).filter(
-                IncomeStatementData.property_id == property_id,
-                IncomeStatementData.period_id == period_id,
-                or_(*conditions),
-                IncomeStatementData.is_calculated == is_calculated
+                *filters,
+                or_(*conditions)
             ).scalar()
         else:
             # Standard LIKE pattern
             result = self.db.query(
                 func.sum(IncomeStatementData.period_amount)
             ).filter(
-                IncomeStatementData.property_id == property_id,
-                IncomeStatementData.period_id == period_id,
-                IncomeStatementData.account_code.like(account_pattern),
-                IncomeStatementData.is_calculated == is_calculated
+                *filters,
+                IncomeStatementData.account_code.like(account_pattern)
             ).scalar()
         
         return result if result else None
@@ -1215,4 +1228,3 @@ class MetricsService:
             self.db.commit()
             self.db.refresh(metrics)
             return metrics
-

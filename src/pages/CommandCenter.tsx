@@ -111,8 +111,8 @@ export default function CommandCenter() {
   const [analysisDetails, setAnalysisDetails] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
-  // Default to 2025 (most recent year with actual data) instead of current year
-  const [selectedYear, setSelectedYear] = useState<number>(2025);
+  // Default to 2023 (year with actual data)
+  const [selectedYear, setSelectedYear] = useState<number>(2023);
   const [documentMatrix, setDocumentMatrix] = useState<any>(null);
   const [loadingDocMatrix, setLoadingDocMatrix] = useState(false);
   const [latestCompleteDSCR, setLatestCompleteDSCR] = useState<any>(null);
@@ -157,9 +157,11 @@ export default function CommandCenter() {
         credentials: 'include'
       }).then(r => r.ok ? r.json() : []);
 
-      // Filter by selected property if not "all"
+      // Filter by selected property and year if not "all"
       if (selectedPropertyFilter !== 'all') {
-        metricsSummary = metricsSummary.filter((m: any) => m.property_code === selectedPropertyFilter);
+        metricsSummary = metricsSummary.filter((m: any) =>
+          m.property_code === selectedPropertyFilter && m.period_year === selectedYear
+        );
       }
 
       let totalValue = 0;
@@ -421,16 +423,21 @@ export default function CommandCenter() {
       });
       const allMetrics = metricsRes.ok ? await metricsRes.json() : [];
       
-      // Create a map of property_code -> latest metric with actual data for quick lookup
+      // Create a map of property_code -> metric (filtered by year if specific property selected)
       const metricsMap = new Map<string, any>();
       allMetrics.forEach((m: any) => {
+        // If a specific property is selected, filter by year
+        if (selectedPropertyFilter !== 'all' && m.period_year !== selectedYear) {
+          return; // Skip metrics from other years
+        }
+
         const existing = metricsMap.get(m.property_code);
-        const hasData = (m.total_assets !== null && m.total_assets !== undefined) || 
+        const hasData = (m.total_assets !== null && m.total_assets !== undefined) ||
                         (m.net_income !== null && m.net_income !== undefined);
-        const existingHasData = existing && 
-                                ((existing.total_assets !== null && existing.total_assets !== undefined) || 
+        const existingHasData = existing &&
+                                ((existing.total_assets !== null && existing.total_assets !== undefined) ||
                                  (existing.net_income !== null && existing.net_income !== undefined));
-        
+
         // Prefer metrics with actual data over null values
         // If both have data, prefer the latest period
         // If neither has data, prefer the latest period anyway
@@ -446,8 +453,8 @@ export default function CommandCenter() {
           // Both have same data status - prefer latest period
           if (m.period_year && existing.period_year && m.period_year > existing.period_year) {
             metricsMap.set(m.property_code, m);
-          } else if (m.period_year === existing.period_year && 
-                     m.period_month && existing.period_month && 
+          } else if (m.period_year === existing.period_year &&
+                     m.period_month && existing.period_month &&
                      m.period_month > existing.period_month) {
             metricsMap.set(m.property_code, m);
           }
@@ -497,7 +504,7 @@ export default function CommandCenter() {
 
             try {
               const dscrResponse = await fetch(
-                `${API_BASE_URL}/dscr/latest-complete/${property.id}?year=2025`,
+                `${API_BASE_URL}/dscr/latest-complete/${property.id}?year=${selectedYear}`,
                 { credentials: 'include' }
               );
 
@@ -526,7 +533,10 @@ export default function CommandCenter() {
               }
             } catch (dscrErr) {
               console.warn(`Failed to fetch DSCR for ${property.property_code}, falling back to metrics summary`, dscrErr);
-              // Fallback to metrics summary DSCR if available
+            }
+
+            // Always fall back to metrics summary if DSCR wasn't fetched from latest complete period
+            if (dscr === null) {
               dscr = metric.dscr !== null && metric.dscr !== undefined ? metric.dscr : null;
             }
 
@@ -866,13 +876,14 @@ export default function CommandCenter() {
   }, []);
 
   useEffect(() => {
-    // Reload portfolio health and sparklines when property filter changes
+    // Reload portfolio health, property performance, and sparklines when property or year filter changes
     if (properties.length > 0) {
       loadPortfolioHealth(properties);
+      loadPropertyPerformance(properties);
       loadSparklineData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPropertyFilter]);
+  }, [selectedPropertyFilter, selectedYear]);
 
   useEffect(() => {
     // Load document matrix and DSCR when property filter or year changes

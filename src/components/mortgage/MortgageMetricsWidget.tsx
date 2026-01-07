@@ -21,6 +21,7 @@ export function MortgageMetricsWidget({
 }: MortgageMetricsWidgetProps) {
   const [periodId, setPeriodId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPeriodId();
@@ -28,28 +29,52 @@ export function MortgageMetricsWidget({
 
   const loadPeriodId = async () => {
     setLoading(true);
+    setError(null);
+    setPeriodId(null);
     try {
-      // Get periods for this property
-      const periods = await api.get<{ periods: FinancialPeriod[] }>(
+      // Get periods for this property - API returns array directly, not wrapped
+      const periods = await api.get<FinancialPeriod[]>(
         `/financial-periods?property_id=${propertyId}`
       );
-      const period = periods.periods?.find(
+      console.log('Loaded periods:', periods);
+      const period = periods.find(
         (p: FinancialPeriod) => p.period_year === periodYear && p.period_month === periodMonth
       );
+      console.log('Found period for', periodYear, periodMonth, ':', period);
       if (period) {
         setPeriodId(period.id);
+      } else {
+        console.warn('No period found for:', { propertyId, periodYear, periodMonth });
+        setError(`No financial period found for ${periodYear}/${periodMonth}. Please ensure data has been uploaded for this period.`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load period ID:', err);
+      setError(err?.message || 'Failed to load financial period');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || !periodId) {
+  if (loading) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded p-4 text-center">
         <p className="text-gray-600 text-sm">Loading mortgage metrics...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-yellow-50 border border-yellow-200 rounded p-4 text-center">
+        <p className="text-yellow-800 text-sm">⚠️ {error}</p>
+      </div>
+    );
+  }
+
+  if (!periodId) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded p-4 text-center">
+        <p className="text-gray-600 text-sm">No financial period found for this property and date.</p>
       </div>
     );
   }

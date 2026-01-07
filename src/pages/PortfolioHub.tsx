@@ -19,6 +19,7 @@ import { propertyService } from '../lib/property';
 import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
+import { financialPeriodsService } from '../lib/financial_periods';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { MortgageMetricsWidget } from '../components/mortgage/MortgageMetricsWidget';
 import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/exportUtils';
@@ -164,11 +165,11 @@ export default function PortfolioHub() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [financialStatements, setFinancialStatements] = useState<any>(null);
-  const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow'>('income');
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow' | 'mortgage'>('income');
+  const [selectedYear, setSelectedYear] = useState(2023); // Default to 2023 where data exists
   const [propertyMetricsMap, setPropertyMetricsMap] = useState<Map<number, any>>(new Map());
   const [propertyDscrMap, setPropertyDscrMap] = useState<Map<number, number | null>>(new Map());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedMonth, setSelectedMonth] = useState(12); // Default to December 2023
   const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingDocumentData, setLoadingDocumentData] = useState(false);
@@ -180,7 +181,27 @@ export default function PortfolioHub() {
 
   useEffect(() => {
     loadProperties();
+    // Initialize to most recent period with data
+    initializeToLatestPeriod();
   }, []);
+
+  const initializeToLatestPeriod = async () => {
+    try {
+      const periods = await financialPeriodsService.listPeriods();
+      if (periods && periods.length > 0) {
+        // Sort by year and month descending to get most recent
+        const sorted = periods.sort((a, b) =>
+          (b.period_year - a.period_year) || (b.period_month - a.period_month)
+        );
+        const latest = sorted[0];
+        setSelectedYear(latest.period_year);
+        setSelectedMonth(latest.period_month);
+      }
+    } catch (error) {
+      console.error('Failed to load latest period:', error);
+      // Keep defaults (2023-11) if fetch fails
+    }
+  };
 
   useEffect(() => {
     if (selectedProperty) {
@@ -340,7 +361,7 @@ export default function PortfolioHub() {
         try {
           // Fetch DSCR from latest complete period (all documents available)
           const dscrResponse = await fetch(
-            `${API_BASE_URL}/dscr/latest-complete/${propertyId}?year=${new Date().getFullYear()}`,
+            `${API_BASE_URL}/dscr/latest-complete/${propertyId}?year=${selectedYear}`,
             { credentials: 'include' }
           );
 
@@ -352,7 +373,10 @@ export default function PortfolioHub() {
           }
         } catch (dscrErr) {
           console.error('Failed to fetch DSCR from latest complete period:', dscrErr);
-          // Fallback to metrics summary DSCR if latest complete period fetch fails
+        }
+
+        // Always fall back to metrics summary if DSCR wasn't fetched from latest complete period
+        if (dscr === null) {
           dscr = propertyMetric.dscr !== null && propertyMetric.dscr !== undefined ? propertyMetric.dscr : null;
         }
 
@@ -803,8 +827,8 @@ export default function PortfolioHub() {
   };
 
   const loadAvailableDocuments = async (propertyCode: string) => {
-    if (!propertyCode) return;
-    
+    if (!propertyCode) return [];
+
     try {
       const docs = await documentService.getDocuments({
         property_code: propertyCode,
@@ -812,40 +836,49 @@ export default function PortfolioHub() {
         period_month: selectedMonth,
         limit: 50
       });
-      setAvailableDocuments(docs.items || []);
+      const items = docs.items || [];
+      setAvailableDocuments(items);
+      return items;
     } catch (err) {
       console.error('Failed to load documents:', err);
+      return [];
     }
   };
 
-  const loadFinancialDocumentData = async (documentType: 'income_statement' | 'balance_sheet' | 'cash_flow') => {
+  const loadFinancialDocumentData = async (
+    documentType: 'income_statement' | 'balance_sheet' | 'cash_flow' | 'mortgage_statement',
+    docsToUse?: DocumentUploadType[]
+  ) => {
     if (!selectedProperty) return;
-    
+
     setLoadingDocumentData(true);
     setFinancialData(null); // Clear previous data
-    
+
     try {
+      // Use provided documents or fall back to state
+      const documentsToSearch = docsToUse || availableDocuments;
+
       console.log('Loading financial data for:', {
         documentType,
         propertyCode: selectedProperty.property_code,
         period: `${selectedYear}/${selectedMonth}`,
-        availableDocuments: availableDocuments.length
+        availableDocuments: documentsToSearch.length
       });
 
       // Find the document for this type and period - try completed first, then any status
-      let doc = availableDocuments.find(d => 
+      let doc = documentsToSearch.find(d =>
         d.document_type === documentType &&
         d.extraction_status === 'completed'
       );
 
       // If no completed document, try any document with this type
       if (!doc) {
-        doc = availableDocuments.find(d => d.document_type === documentType);
+        doc = documentsToSearch.find(d => d.document_type === documentType);
         console.log('No completed document found, trying any document:', doc);
       }
 
       // Log all available documents for debugging
-      console.log('All available documents:', availableDocuments.map(d => ({
+      console.log('All available documents:', documentsToSearch.map(d => ({
         id: d.id,
         type: d.document_type,
         status: d.extraction_status,
@@ -859,10 +892,11 @@ export default function PortfolioHub() {
           // First get summary to know total count
           const summary = await financialDataService.getSummary(doc.id);
           console.log('Financial data summary:', summary);
-          
-          // Load ALL items - use a high limit to get everything
+
+          // Load items in batches (API max limit is 1000)
+          const firstBatchSize = Math.min(summary.total_items || 1000, 1000);
           const data = await financialDataService.getFinancialData(doc.id, {
-            limit: Math.max(summary.total_items || 10000, 10000), // Load all items, minimum 10k
+            limit: firstBatchSize,
             skip: 0
           });
           
@@ -936,6 +970,10 @@ export default function PortfolioHub() {
 
   useEffect(() => {
     if (selectedProperty) {
+      // Clear financial data when period changes
+      setFinancialData(null);
+      setFinancialStatements(null);
+      // Load available documents for new period
       loadAvailableDocuments(selectedProperty.property_code);
     }
   }, [selectedProperty, selectedYear, selectedMonth]);
@@ -945,11 +983,15 @@ export default function PortfolioHub() {
       const docTypeMap = {
         'income': 'income_statement' as const,
         'balance': 'balance_sheet' as const,
-        'cashflow': 'cash_flow' as const
+        'cashflow': 'cash_flow' as const,
+        'mortgage': 'mortgage_statement' as const
       };
+      console.log('Loading financial data for statement:', selectedStatement, 'docs available:', availableDocuments.length, 'period:', `${selectedYear}/${selectedMonth}`);
       loadFinancialDocumentData(docTypeMap[selectedStatement]);
+    } else {
+      console.log('Skipping financial data load:', { selectedProperty: !!selectedProperty, availableDocuments: availableDocuments.length, period: `${selectedYear}/${selectedMonth}` });
     }
-  }, [selectedStatement, availableDocuments, selectedProperty]);
+  }, [selectedStatement, availableDocuments, selectedProperty, selectedYear, selectedMonth]);
 
   const getStatusVariant = (status: string) => {
     switch (status) {
@@ -1090,8 +1132,8 @@ export default function PortfolioHub() {
                 // Use net_operating_income (NOI) instead of net_income for consistency with Command Center
                 const displayNoi = displayMetrics?.noi || propertyMetric?.net_operating_income || propertyMetric?.net_income || 0;
                 const displayOccupancy = displayMetrics?.occupancy || propertyMetric?.occupancy_rate || 0;
-                // Use DSCR from API (propertyDscrMap) if available, otherwise use selected property's detailed metrics
-                const displayDscr = displayMetrics?.dscr || propertyDscrMap.get(property.id) || null;
+                // Use DSCR from API (propertyDscrMap) if available, otherwise fall back to propertyMetric.dscr from summary
+                const displayDscr = displayMetrics?.dscr || propertyDscrMap.get(property.id) || propertyMetric?.dscr || null;
                 // Determine status: use selected property's status if selected, otherwise default to 'good'
                 const status = displayMetrics?.status || (displayOccupancy > 90 ? 'good' : displayOccupancy > 70 ? 'warning' : 'critical');
                 const variant = getStatusVariant(status) as any;
@@ -1442,11 +1484,19 @@ export default function PortfolioHub() {
                       </div>
 
                       {/* Statement Type Cards */}
-                      <div className="grid grid-cols-3 gap-4 mb-6">
+                      <div className="grid grid-cols-4 gap-4 mb-6">
                         <Card
                           variant={selectedStatement === 'income' ? 'info' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'income' ? 'ring-2 ring-info' : ''}`}
-                          onClick={() => setSelectedStatement('income')}
+                          onClick={async () => {
+                            setSelectedStatement('income');
+                            if (availableDocuments.length > 0) {
+                              loadFinancialDocumentData('income_statement', availableDocuments);
+                            } else if (selectedProperty) {
+                              const docs = await loadAvailableDocuments(selectedProperty.property_code);
+                              loadFinancialDocumentData('income_statement', docs);
+                            }
+                          }}
                           hover
                         >
                           <div className="text-center">
@@ -1460,7 +1510,15 @@ export default function PortfolioHub() {
                         <Card
                           variant={selectedStatement === 'balance' ? 'info' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'balance' ? 'ring-2 ring-info' : ''}`}
-                          onClick={() => setSelectedStatement('balance')}
+                          onClick={async () => {
+                            setSelectedStatement('balance');
+                            if (availableDocuments.length > 0) {
+                              loadFinancialDocumentData('balance_sheet', availableDocuments);
+                            } else if (selectedProperty) {
+                              const docs = await loadAvailableDocuments(selectedProperty.property_code);
+                              loadFinancialDocumentData('balance_sheet', docs);
+                            }
+                          }}
                           hover
                         >
                           <div className="text-center">
@@ -1474,12 +1532,42 @@ export default function PortfolioHub() {
                         <Card
                           variant={selectedStatement === 'cashflow' ? 'info' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'cashflow' ? 'ring-2 ring-info' : ''}`}
-                          onClick={() => setSelectedStatement('cashflow')}
+                          onClick={async () => {
+                            setSelectedStatement('cashflow');
+                            if (availableDocuments.length > 0) {
+                              loadFinancialDocumentData('cash_flow', availableDocuments);
+                            } else if (selectedProperty) {
+                              const docs = await loadAvailableDocuments(selectedProperty.property_code);
+                              loadFinancialDocumentData('cash_flow', docs);
+                            }
+                          }}
                           hover
                         >
                           <div className="text-center">
                             <div className="text-2xl mb-2">💸</div>
                             <div className="font-semibold">Cash Flow</div>
+                            <div className="text-sm text-text-secondary mt-1">
+                              {selectedYear} - {new Date(2000, selectedMonth - 1).toLocaleString('default', { month: 'short' })}
+                            </div>
+                          </div>
+                        </Card>
+                        <Card
+                          variant={selectedStatement === 'mortgage' ? 'info' : 'default'}
+                          className={`p-4 cursor-pointer transition-all ${selectedStatement === 'mortgage' ? 'ring-2 ring-info' : ''}`}
+                          onClick={async () => {
+                            setSelectedStatement('mortgage');
+                            if (availableDocuments.length > 0) {
+                              loadFinancialDocumentData('mortgage_statement', availableDocuments);
+                            } else if (selectedProperty) {
+                              const docs = await loadAvailableDocuments(selectedProperty.property_code);
+                              loadFinancialDocumentData('mortgage_statement', docs);
+                            }
+                          }}
+                          hover
+                        >
+                          <div className="text-center">
+                            <div className="text-2xl mb-2">🏦</div>
+                            <div className="font-semibold">Mortgage Statement</div>
                             <div className="text-sm text-text-secondary mt-1">
                               {selectedYear} - {new Date(2000, selectedMonth - 1).toLocaleString('default', { month: 'short' })}
                             </div>
@@ -1500,12 +1588,20 @@ export default function PortfolioHub() {
                       )}
 
                       {/* Financial Data Display */}
-                      {loadingDocumentData ? (
+                      {selectedStatement === 'mortgage' ? (
+                        /* Mortgage statement view - show detailed mortgage data */
+                        <MortgageStatementDetails
+                          propertyId={selectedProperty?.id || 0}
+                          periodYear={selectedYear}
+                          periodMonth={selectedMonth}
+                        />
+                      ) : loadingDocumentData ? (
                         <div className="text-center py-8">
                           <div className="text-text-secondary mb-2">Loading complete financial document data...</div>
                           <div className="text-xs text-text-tertiary">Fetching all line items with zero data loss</div>
                         </div>
                       ) : financialData && financialData.items && financialData.items.length > 0 ? (
+                        /* Show detailed line items table */
                         <Card className="p-6">
                           <div className="flex items-center justify-between mb-4">
                             <div>
@@ -1600,6 +1696,50 @@ export default function PortfolioHub() {
                         </Card>
                       ) : financialStatements ? (
                         <div className="space-y-4">
+                          {/* Summary view - Click button to load detailed data */}
+                          <Card className="p-4 bg-info-light/10 border-info">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-info text-xl">ℹ️</span>
+                                <div>
+                                  <div className="font-semibold">Summary View</div>
+                                  <div className="text-sm text-text-secondary">
+                                    Click below to view all {financialStatements.balance_sheet?.total_line_items || 'detailed'} line items
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (!selectedProperty) return;
+
+                                  const docTypeMap = {
+                                    'income': 'income_statement' as const,
+                                    'balance': 'balance_sheet' as const,
+                                    'cashflow': 'cash_flow' as const,
+                                    'mortgage': 'mortgage_statement' as const
+                                  };
+
+                                  console.log('Button clicked - loading detailed data for:', selectedStatement);
+
+                                  // Ensure documents are loaded first
+                                  let docs = availableDocuments;
+                                  if (docs.length === 0) {
+                                    console.log('Loading available documents first...');
+                                    docs = await loadAvailableDocuments(selectedProperty.property_code);
+                                  }
+
+                                  console.log('Documents available:', docs.length);
+                                  // Load detailed data with the documents
+                                  await loadFinancialDocumentData(docTypeMap[selectedStatement], docs);
+                                }}
+                                disabled={loadingDocumentData}
+                                className="px-4 py-2 bg-info text-white rounded-lg hover:bg-info/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {loadingDocumentData ? 'Loading...' : 'Load Detailed View'}
+                              </button>
+                            </div>
+                          </Card>
+
                           {selectedStatement === 'income' && financialStatements.income_statement && (
                             <Card className="p-6">
                               <h4 className="text-lg font-semibold mb-4">Income Statement Summary</h4>

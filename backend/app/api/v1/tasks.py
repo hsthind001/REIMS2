@@ -369,12 +369,21 @@ async def get_task_dashboard(db: Session = Depends(get_db)):
             # Get active task count for this worker
             worker_active_tasks = active_tasks_raw.get(worker_id, [])
             active_count = len(worker_active_tasks)
-            
+
+            # Handle both dict and list stats formats
+            cpu_percent = 0
+            if isinstance(stats, dict):
+                pool_data = stats.get('pool', {})
+                if isinstance(pool_data, dict):
+                    processes = pool_data.get('processes', {})
+                    if isinstance(processes, dict):
+                        cpu_percent = processes.get('cpu', 0)
+
             workers.append({
                 "worker_id": worker_id,
                 "status": "online",
                 "active_tasks": active_count,
-                "cpu_percent": stats.get('pool', {}).get('processes', {}).get('cpu', 0) if isinstance(stats.get('pool'), dict) else 0,
+                "cpu_percent": cpu_percent,
                 "memory_mb": 0  # Celery stats don't always include memory
             })
         

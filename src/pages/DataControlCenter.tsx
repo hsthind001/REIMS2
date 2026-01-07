@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Target,
   CheckCircle,
@@ -24,7 +24,10 @@ import {
   ArrowLeft,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react'
 import { anomaliesService } from '../lib/anomalies';
 import { Card, Button, ProgressBar } from '../components/design-system';
@@ -155,8 +158,13 @@ export default function DataControlCenter() {
     documentType: 'all',
     severity: 'all',
     status: 'active',
-    search: ''
+    search: '',
+    showOnlyFailing: false
   });
+  const [ruleSortConfig, setRuleSortConfig] = useState<{
+    key: string;
+    direction: 'asc' | 'desc';
+  } | null>(null);
   const [selectedRule, setSelectedRule] = useState<RuleStatisticsItem | null>(null);
   const [ruleResults, setRuleResults] = useState<RuleResultItem[]>([]);
   const [loadingRules, setLoadingRules] = useState(false);
@@ -959,25 +967,99 @@ export default function DataControlCenter() {
     }
   };
 
-  // Filter rules based on current filters
-  const filteredRules = ruleStatistics.filter(rule => {
-    if (ruleFilters.documentType !== 'all' && rule.document_type !== ruleFilters.documentType) {
-      return false;
+  // Filter and sort rules
+  const filteredRules = useMemo(() => {
+    let filtered = ruleStatistics.filter(rule => {
+      if (ruleFilters.documentType !== 'all' && rule.document_type !== ruleFilters.documentType) {
+        return false;
+      }
+      if (ruleFilters.severity !== 'all' && rule.severity !== ruleFilters.severity) {
+        return false;
+      }
+      if (ruleFilters.status === 'active' && !rule.is_active) {
+        return false;
+      }
+      if (ruleFilters.status === 'inactive' && rule.is_active) {
+        return false;
+      }
+      // Show only failing rules filter
+      if (ruleFilters.showOnlyFailing && rule.failed_count === 0) {
+        return false;
+      }
+      if (ruleFilters.search && !rule.rule_name.toLowerCase().includes(ruleFilters.search.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+
+    // Apply sorting
+    if (ruleSortConfig) {
+      filtered.sort((a, b) => {
+        let aValue: any = a[ruleSortConfig.key as keyof typeof a];
+        let bValue: any = b[ruleSortConfig.key as keyof typeof b];
+
+        // Handle numeric values
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return ruleSortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+        }
+
+        // Handle string values
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return ruleSortConfig.direction === 'asc'
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+
+        return 0;
+      });
     }
-    if (ruleFilters.severity !== 'all' && rule.severity !== ruleFilters.severity) {
-      return false;
-    }
-    if (ruleFilters.status === 'active' && !rule.is_active) {
-      return false;
-    }
-    if (ruleFilters.status === 'inactive' && rule.is_active) {
-      return false;
-    }
-    if (ruleFilters.search && !rule.rule_name.toLowerCase().includes(ruleFilters.search.toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
+
+    return filtered;
+  }, [ruleStatistics, ruleFilters, ruleSortConfig]);
+
+  // Handle column sorting
+  const handleSort = (key: string) => {
+    setRuleSortConfig(current => {
+      if (current?.key === key) {
+        // Toggle direction
+        return current.direction === 'asc'
+          ? { key, direction: 'desc' }
+          : null; // Remove sort on third click
+      }
+      // Default to descending for numeric columns, ascending for text
+      const numericColumns = ['total_tests', 'passed_count', 'failed_count', 'pass_rate'];
+      return {
+        key,
+        direction: numericColumns.includes(key) ? 'desc' : 'asc'
+      };
+    });
+  };
+
+  // Render sortable column header
+  const SortableHeader = ({ column, label, align = 'left' }: { column: string; label: string; align?: 'left' | 'right' | 'center' }) => {
+    const isSorted = ruleSortConfig?.key === column;
+    const direction = isSorted ? ruleSortConfig.direction : null;
+
+    return (
+      <th
+        className={`py-2 px-4 cursor-pointer hover:bg-surface-secondary transition-colors select-none text-${align}`}
+        onClick={() => handleSort(column)}
+      >
+        <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
+          <span>{label}</span>
+          {isSorted ? (
+            direction === 'asc' ? (
+              <ArrowUp className="w-4 h-4 text-primary-500" />
+            ) : (
+              <ArrowDown className="w-4 h-4 text-primary-500" />
+            )
+          ) : (
+            <ArrowUpDown className="w-4 h-4 text-text-tertiary opacity-0 group-hover:opacity-100" />
+          )}
+        </div>
+      </th>
+    );
+  };
 
   const availableTaskProperties = Array.from(new Set([
     ...(taskDashboard?.active_tasks || []).map(t => t.property_code),
@@ -1846,7 +1928,7 @@ export default function DataControlCenter() {
 
             {/* Filters */}
             <Card className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label htmlFor="docTypeFilter" className="block text-sm font-medium text-text-secondary mb-1">Document Type</label>
                   <select
@@ -1906,6 +1988,23 @@ export default function DataControlCenter() {
                   </div>
                 </div>
               </div>
+              <div className="flex items-center gap-2 pt-3 border-t border-border">
+                <input
+                  type="checkbox"
+                  id="showOnlyFailingFilter"
+                  checked={ruleFilters.showOnlyFailing}
+                  onChange={(e) => setRuleFilters({ ...ruleFilters, showOnlyFailing: e.target.checked })}
+                  className="w-4 h-4 text-primary-600 bg-surface border-border rounded focus:ring-primary-500"
+                />
+                <label htmlFor="showOnlyFailingFilter" className="text-sm font-medium text-text-primary cursor-pointer select-none">
+                  Show only failing rules
+                </label>
+                {ruleFilters.showOnlyFailing && (
+                  <span className="ml-2 px-2 py-0.5 text-xs bg-danger-light text-danger rounded">
+                    {filteredRules.length} failing
+                  </span>
+                )}
+              </div>
             </Card>
 
             {/* Analytics Charts Toggle */}
@@ -1939,13 +2038,13 @@ export default function DataControlCenter() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-2 px-4">Rule Name</th>
-                        <th className="text-left py-2 px-4">Type</th>
-                        <th className="text-left py-2 px-4">Severity</th>
-                        <th className="text-right py-2 px-4">Passed</th>
-                        <th className="text-right py-2 px-4">Failed</th>
-                        <th className="text-right py-2 px-4">Pass Rate</th>
+                      <tr className="border-b border-border group">
+                        <SortableHeader column="rule_name" label="Rule Name" align="left" />
+                        <SortableHeader column="document_type" label="Type" align="left" />
+                        <SortableHeader column="severity" label="Severity" align="left" />
+                        <SortableHeader column="passed_count" label="Passed" align="right" />
+                        <SortableHeader column="failed_count" label="Failed" align="right" />
+                        <SortableHeader column="pass_rate" label="Pass Rate" align="right" />
                         <th className="text-center py-2 px-4">Health</th>
                         <th className="text-center py-2 px-4">Status</th>
                       </tr>

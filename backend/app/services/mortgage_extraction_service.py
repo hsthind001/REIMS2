@@ -226,8 +226,6 @@ class MortgageExtractionService:
             else:
                 # Return failure with partial data for debugging
                 missing_fields = [f for f in required_fields if extracted_fields.get(f) is None]
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.warning(f"Mortgage extraction missing required fields: {missing_fields}. Extracted: {list(extracted_fields.keys())}")
                 return {
                     "success": False,
@@ -423,26 +421,41 @@ class MortgageExtractionService:
     
     def _match_lender(self, text: str) -> Optional[int]:
         """Match lender name from text to lenders table"""
-        lenders = self.db.query(Lender).filter(Lender.is_active == True).all()
-        
+        try:
+            lenders = self.db.query(Lender).filter(Lender.is_active == True).all()
+        except Exception as e:
+            # Handle schema mismatch or missing lenders table gracefully
+            logger.warning(f"Could not query lenders table: {e}")
+            # Roll back the transaction to prevent "aborted transaction" errors
+            self.db.rollback()
+            return None
+
+        if not lenders:
+            # No lenders in database, skip matching
+            return None
+
         best_match = None
         best_score = 0
-        
+
         for lender in lenders:
             # Try exact match first
             if lender.lender_name.lower() in text.lower():
                 return lender.id
-            
-            # Try short name
-            if lender.lender_short_name and lender.lender_short_name.lower() in text.lower():
-                return lender.id
-            
+
+            # Try short name if it exists (handle schema differences)
+            if hasattr(lender, 'lender_short_name') and lender.lender_short_name:
+                if lender.lender_short_name.lower() in text.lower():
+                    return lender.id
+            elif hasattr(lender, 'lender_code') and lender.lender_code:
+                if lender.lender_code.lower() in text.lower():
+                    return lender.id
+
             # Try fuzzy matching
             score = fuzz.partial_ratio(lender.lender_name.lower(), text.lower())
             if score > best_score and score > 80:
                 best_score = score
                 best_match = lender.id
-        
+
         return best_match
     
     def _calculate_derived_fields(self, fields: Dict) -> Dict:

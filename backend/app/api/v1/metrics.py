@@ -41,13 +41,65 @@ class FinancialMetricsResponse(BaseModel):
     period_year: int
     period_month: int
     
-    # Balance Sheet Metrics
+    # Balance Sheet Totals
     total_assets: Optional[float] = None
+    total_current_assets: Optional[float] = None
+    total_property_equipment: Optional[float] = None
+    total_other_assets: Optional[float] = None
     total_liabilities: Optional[float] = None
+    total_current_liabilities: Optional[float] = None
+    total_long_term_liabilities: Optional[float] = None
     total_equity: Optional[float] = None
+
+    # Liquidity Ratios
     current_ratio: Optional[float] = None
+    quick_ratio: Optional[float] = None
+    cash_ratio: Optional[float] = None
+    working_capital: Optional[float] = None
+
+    # Leverage Ratios
+    debt_to_assets_ratio: Optional[float] = None
     debt_to_equity_ratio: Optional[float] = None
+    equity_ratio: Optional[float] = None
     ltv_ratio: Optional[float] = None
+
+    # Property Metrics
+    gross_property_value: Optional[float] = None
+    accumulated_depreciation: Optional[float] = None
+    net_property_value: Optional[float] = None
+    depreciation_rate: Optional[float] = None
+    land_value: Optional[float] = None
+    building_value_net: Optional[float] = None
+    improvements_value_net: Optional[float] = None
+
+    # Cash Position Analysis
+    operating_cash: Optional[float] = None
+    restricted_cash: Optional[float] = None
+    total_cash_position: Optional[float] = None
+
+    # Receivables Analysis
+    tenant_receivables: Optional[float] = None
+    intercompany_receivables: Optional[float] = None
+    other_receivables: Optional[float] = None
+    total_receivables: Optional[float] = None
+    ar_percentage_of_assets: Optional[float] = None
+
+    # Debt Analysis
+    short_term_debt: Optional[float] = None
+    institutional_debt: Optional[float] = None
+    mezzanine_debt: Optional[float] = None
+    shareholder_loans: Optional[float] = None
+    long_term_debt: Optional[float] = None
+    total_debt: Optional[float] = None
+
+    # Equity Analysis
+    partners_contribution: Optional[float] = None
+    beginning_equity: Optional[float] = None
+    partners_draw: Optional[float] = None
+    distributions: Optional[float] = None
+    current_period_earnings: Optional[float] = None
+    ending_equity: Optional[float] = None
+    equity_change: Optional[float] = None
 
     # Income Statement Metrics
     total_revenue: Optional[float] = None
@@ -80,7 +132,17 @@ class FinancialMetricsResponse(BaseModel):
     noi_per_sqft: Optional[float] = None
     revenue_per_sqft: Optional[float] = None
     expense_ratio: Optional[float] = None
-    
+
+    # Mortgage Metrics
+    total_mortgage_debt: Optional[float] = None
+    weighted_avg_interest_rate: Optional[float] = None
+    total_monthly_debt_service: Optional[float] = None
+    total_annual_debt_service: Optional[float] = None
+    dscr: Optional[float] = None
+    interest_coverage_ratio: Optional[float] = None
+    debt_yield: Optional[float] = None
+    break_even_occupancy: Optional[float] = None
+
     # Metadata
     calculated_at: Optional[datetime] = None
     
@@ -221,24 +283,73 @@ async def get_financial_metrics(
             period_id=period.id,
             period_year=year,
             period_month=month,
+            # Balance Sheet Totals
             total_assets=float(property_value) if property_value else None,
+            total_current_assets=float(metrics.total_current_assets) if metrics.total_current_assets else None,
+            total_property_equipment=float(metrics.total_property_equipment) if metrics.total_property_equipment else None,
+            total_other_assets=float(metrics.total_other_assets) if metrics.total_other_assets else None,
             total_liabilities=float(metrics.total_liabilities) if metrics.total_liabilities else None,
+            total_current_liabilities=float(metrics.total_current_liabilities) if metrics.total_current_liabilities else None,
+            total_long_term_liabilities=float(metrics.total_long_term_liabilities) if metrics.total_long_term_liabilities else None,
             total_equity=float(metrics.total_equity) if metrics.total_equity else None,
+            # Liquidity Ratios
             current_ratio=float(metrics.current_ratio) if metrics.current_ratio else None,
+            quick_ratio=float(metrics.quick_ratio) if metrics.quick_ratio else None,
+            cash_ratio=float(metrics.cash_ratio) if metrics.cash_ratio else None,
+            working_capital=float(metrics.working_capital) if metrics.working_capital else None,
+            # Leverage Ratios
+            debt_to_assets_ratio=float(metrics.debt_to_assets_ratio) if metrics.debt_to_assets_ratio else None,
             debt_to_equity_ratio=float(metrics.debt_to_equity_ratio) if metrics.debt_to_equity_ratio else None,
+            equity_ratio=float(metrics.equity_ratio) if metrics.equity_ratio else None,
             ltv_ratio=float(metrics.ltv_ratio) if metrics.ltv_ratio else None,
+            # Property Metrics
+            gross_property_value=float(metrics.gross_property_value) if metrics.gross_property_value else None,
+            accumulated_depreciation=float(metrics.accumulated_depreciation) if metrics.accumulated_depreciation else None,
+            net_property_value=float(metrics.net_property_value) if metrics.net_property_value else None,
+            depreciation_rate=float(metrics.depreciation_rate) if metrics.depreciation_rate else None,
+            land_value=float(metrics.land_value) if metrics.land_value else None,
+            building_value_net=float(metrics.building_value_net) if metrics.building_value_net else None,
+            improvements_value_net=float(metrics.improvements_value_net) if metrics.improvements_value_net else None,
+            # Cash Position
+            operating_cash=float(metrics.operating_cash) if metrics.operating_cash else None,
+            restricted_cash=float(metrics.restricted_cash) if metrics.restricted_cash else None,
+            total_cash_position=float(metrics.total_cash_position) if metrics.total_cash_position else None,
+            # Receivables
+            tenant_receivables=float(metrics.tenant_receivables) if metrics.tenant_receivables else None,
+            intercompany_receivables=float(metrics.intercompany_receivables) if metrics.intercompany_receivables else None,
+            other_receivables=float(metrics.other_receivables) if metrics.other_receivables else None,
+            total_receivables=float(metrics.total_receivables) if metrics.total_receivables else None,
+            ar_percentage_of_assets=float(metrics.ar_percentage_of_assets) if metrics.ar_percentage_of_assets else None,
+            # Debt Analysis
+            short_term_debt=float(metrics.short_term_debt) if metrics.short_term_debt else None,
+            institutional_debt=float(metrics.institutional_debt) if metrics.institutional_debt else None,
+            mezzanine_debt=float(metrics.mezzanine_debt) if metrics.mezzanine_debt else None,
+            shareholder_loans=float(metrics.shareholder_loans) if metrics.shareholder_loans else None,
+            long_term_debt=float(metrics.long_term_debt) if metrics.long_term_debt else None,
+            total_debt=float(metrics.total_debt) if metrics.total_debt else None,
+            # Equity Analysis
+            partners_contribution=float(metrics.partners_contribution) if metrics.partners_contribution else None,
+            beginning_equity=float(metrics.beginning_equity) if metrics.beginning_equity else None,
+            partners_draw=float(metrics.partners_draw) if metrics.partners_draw else None,
+            distributions=float(metrics.distributions) if metrics.distributions else None,
+            current_period_earnings=float(metrics.current_period_earnings) if metrics.current_period_earnings else None,
+            ending_equity=float(metrics.ending_equity) if metrics.ending_equity else None,
+            equity_change=float(metrics.equity_change) if metrics.equity_change else None,
+            # Income Statement
             total_revenue=float(metrics.total_revenue) if metrics.total_revenue else None,
             total_expenses=float(metrics.total_expenses) if metrics.total_expenses else None,
             net_operating_income=float(metrics.net_operating_income) if metrics.net_operating_income else None,
             net_income=float(metrics.net_income) if metrics.net_income else None,
             operating_margin=float(metrics.operating_margin) if metrics.operating_margin else None,
             profit_margin=float(metrics.profit_margin) if metrics.profit_margin else None,
+            # Cash Flow
             operating_cash_flow=float(metrics.operating_cash_flow) if metrics.operating_cash_flow else None,
             investing_cash_flow=float(metrics.investing_cash_flow) if metrics.investing_cash_flow else None,
             financing_cash_flow=float(metrics.financing_cash_flow) if metrics.financing_cash_flow else None,
             net_cash_flow=float(metrics.net_cash_flow) if metrics.net_cash_flow else None,
             beginning_cash_balance=float(metrics.beginning_cash_balance) if metrics.beginning_cash_balance else None,
             ending_cash_balance=float(metrics.ending_cash_balance) if metrics.ending_cash_balance else None,
+            # Rent Roll
             total_units=metrics.total_units,
             occupied_units=metrics.occupied_units,
             vacant_units=metrics.vacant_units,
@@ -248,9 +359,20 @@ async def get_financial_metrics(
             total_monthly_rent=float(metrics.total_monthly_rent) if metrics.total_monthly_rent else None,
             total_annual_rent=float(metrics.total_annual_rent) if metrics.total_annual_rent else None,
             avg_rent_per_sqft=float(metrics.avg_rent_per_sqft) if metrics.avg_rent_per_sqft else None,
+            # Performance
             noi_per_sqft=float(metrics.noi_per_sqft) if metrics.noi_per_sqft else None,
             revenue_per_sqft=float(metrics.revenue_per_sqft) if metrics.revenue_per_sqft else None,
             expense_ratio=float(metrics.expense_ratio) if metrics.expense_ratio else None,
+            # Mortgage Metrics
+            total_mortgage_debt=float(metrics.total_mortgage_debt) if metrics.total_mortgage_debt else None,
+            weighted_avg_interest_rate=float(metrics.weighted_avg_interest_rate) if metrics.weighted_avg_interest_rate else None,
+            total_monthly_debt_service=float(metrics.total_monthly_debt_service) if metrics.total_monthly_debt_service else None,
+            total_annual_debt_service=float(metrics.total_annual_debt_service) if metrics.total_annual_debt_service else None,
+            dscr=float(metrics.dscr) if metrics.dscr else None,
+            interest_coverage_ratio=float(metrics.interest_coverage_ratio) if metrics.interest_coverage_ratio else None,
+            debt_yield=float(metrics.debt_yield) if metrics.debt_yield else None,
+            break_even_occupancy=float(metrics.break_even_occupancy) if metrics.break_even_occupancy else None,
+            # Metadata
             calculated_at=metrics.calculated_at
         )
         
@@ -377,7 +499,7 @@ async def get_metrics_summary(
         logger.info(f"Redis cache MISS: {cache_key} - querying database")
 
         # OPTIMIZED: Use SQL window function to get latest COMPLETE period per property (single query)
-        from sqlalchemy import func, and_, inspect
+        from sqlalchemy import func, and_, inspect, literal
         from sqlalchemy.sql import text
 
         has_completeness = inspect(db.bind).has_table("period_document_completeness")
@@ -386,7 +508,7 @@ async def get_metrics_summary(
 
             # Use ROW_NUMBER() to get only the most recent COMPLETE period per property
             # IMPORTANT: Only includes periods where is_complete = true (all 5 documents uploaded)
-            latest_metrics_query = db.query(
+            latest_complete_query = db.query(
                 FinancialMetrics.property_id,
                 Property.property_code,
                 Property.property_name,
@@ -423,9 +545,9 @@ async def get_metrics_summary(
                     PeriodDocumentCompleteness.is_complete == True  # Only complete periods
                 )
             ).subquery()
-        else:
-            logger.warning("period_document_completeness table missing; falling back to metrics-only summary")
-            latest_metrics_query = db.query(
+
+            # Fallback: latest metrics per property regardless of completeness
+            latest_fallback_query = db.query(
                 FinancialMetrics.property_id,
                 Property.property_code,
                 Property.property_name,
@@ -440,6 +562,40 @@ async def get_metrics_summary(
                 FinancialMetrics.occupancy_rate,
                 FinancialMetrics.dscr,
                 FinancialMetrics.ltv_ratio,
+                literal(False).label('is_complete'),
+                func.row_number().over(
+                    partition_by=FinancialMetrics.property_id,
+                    order_by=[
+                        FinancialPeriod.period_year.desc(),
+                        FinancialPeriod.period_month.desc()
+                    ]
+                ).label('row_num')
+            ).join(
+                Property, and_(
+                    FinancialMetrics.property_id == Property.id,
+                    Property.status == 'active'
+                )
+            ).join(
+                FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
+            ).subquery()
+        else:
+            logger.warning("period_document_completeness table missing; falling back to metrics-only summary")
+            latest_fallback_query = db.query(
+                FinancialMetrics.property_id,
+                Property.property_code,
+                Property.property_name,
+                FinancialPeriod.id.label('period_id'),
+                FinancialPeriod.period_year,
+                FinancialPeriod.period_month,
+                FinancialMetrics.total_assets,
+                FinancialMetrics.net_property_value,
+                FinancialMetrics.total_revenue,
+                FinancialMetrics.net_income,
+                FinancialMetrics.net_operating_income,
+                FinancialMetrics.occupancy_rate,
+                FinancialMetrics.dscr,
+                FinancialMetrics.ltv_ratio,
+                literal(False).label('is_complete'),
                 func.row_number().over(
                     partition_by=FinancialMetrics.property_id,
                     order_by=[
@@ -457,11 +613,27 @@ async def get_metrics_summary(
             ).subquery()
 
         # Select only row_num = 1 (latest period per property)
-        results = db.query(latest_metrics_query).filter(
-            latest_metrics_query.c.row_num == 1
-        ).order_by(
-            latest_metrics_query.c.property_code
-        ).all()
+        if has_completeness:
+            complete_rows = db.query(latest_complete_query).filter(
+                latest_complete_query.c.row_num == 1
+            ).all()
+            fallback_rows = db.query(latest_fallback_query).filter(
+                latest_fallback_query.c.row_num == 1
+            ).all()
+
+            complete_map = {row.property_code: row for row in complete_rows}
+            merged_rows = list(complete_map.values())
+            for row in fallback_rows:
+                if row.property_code not in complete_map:
+                    merged_rows.append(row)
+
+            results = sorted(merged_rows, key=lambda r: r.property_code)
+        else:
+            results = db.query(latest_fallback_query).filter(
+                latest_fallback_query.c.row_num == 1
+            ).order_by(
+                latest_fallback_query.c.property_code
+            ).all()
 
         # Build summary items from results (window function already selected latest period)
         summary_items = []
