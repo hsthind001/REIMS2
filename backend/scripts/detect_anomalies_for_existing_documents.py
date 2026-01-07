@@ -22,6 +22,15 @@ from datetime import timedelta
 import statistics
 from sqlalchemy import text
 
+
+def _coerce_numeric(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 def detect_anomalies_for_document(db: Session, upload: DocumentUpload, detector: StatisticalAnomalyDetector):
     """Detect anomalies for a single document upload"""
     # Get the period for this upload
@@ -230,13 +239,17 @@ def create_anomaly_detection(
         AND field_name = :field_name
         AND anomaly_type = :anomaly_type
     """)
-    result = db.execute(check_sql, {
-        'document_id': upload.id,
-        'field_name': field_name,
-        'anomaly_type': anomaly_type
-    })
-    if result.scalar() > 0:
-        return  # Already exists
+    try:
+        result = db.execute(check_sql, {
+            'document_id': upload.id,
+            'field_name': field_name,
+            'anomaly_type': anomaly_type
+        })
+        if result.scalar() > 0:
+            return  # Already exists
+    except Exception:
+        db.rollback()
+        raise
     
     # Insert anomaly detection record
     sql = text("""
@@ -245,18 +258,22 @@ def create_anomaly_detection(
         VALUES (:document_id, :field_name, :field_value, :expected_value, :anomaly_type, :severity, :confidence, :z_score, :percentage_change, NOW())
     """)
     
-    db.execute(sql, {
-        'document_id': upload.id,
-        'field_name': field_name,
-        'field_value': field_value[:500],
-        'expected_value': expected_value[:500],
-        'anomaly_type': anomaly_type,
-        'severity': db_severity,
-        'confidence': confidence,
-        'z_score': z_score,
-        'percentage_change': percentage_change
-    })
-    db.commit()
+    try:
+        db.execute(sql, {
+            'document_id': upload.id,
+            'field_name': field_name,
+            'field_value': field_value[:500],
+            'expected_value': expected_value[:500],
+            'anomaly_type': anomaly_type,
+            'severity': db_severity,
+            'confidence': _coerce_numeric(confidence),
+            'z_score': _coerce_numeric(z_score),
+            'percentage_change': _coerce_numeric(percentage_change)
+        })
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 def main():
     """Main function to process all documents"""
@@ -294,4 +311,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
