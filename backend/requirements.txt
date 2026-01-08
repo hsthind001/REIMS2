@@ -155,3 +155,63 @@ prophet==1.1.5  # Facebook's time series forecasting
 statsmodels==0.14.2  # ARIMA, seasonal decomposition, statistical models
 ruptures==1.1.9  # Change point detection (PELT algorithm)
 layoutparser==0.3.4  # LayoutLM v3 for PDF coordinate prediction (Phase 5)
+
+# ============================================================================
+# BEST-IN-CLASS NLQ SYSTEM - MULTI-AGENT RAG WITH TEMPORAL SUPPORT
+# ============================================================================
+# Vector Database & Hybrid Search
+qdrant-client==1.11.3  # Fastest vector DB with hybrid search support
+rank-bm25==0.2.2  # BM25 sparse retrieval for keyword matching
+
+# Advanced LLM Frameworks
+langchain==0.3.16  # Core LangChain framework (NumPy 2.x compatible version)
+langchain-community==0.3.16  # Community integrations
+langchain-openai==0.2.14  # OpenAI integration
+langchain-anthropic==0.2.7  # Anthropic integration
+langchain-groq==0.2.7  # Groq integration (ultra-fast Llama 3.3 70B)
+langgraph==0.2.60  # Multi-agent orchestration with state machines
+llama-index-core==0.11.34  # Advanced RAG framework (updated version)
+llama-index-vector-stores-qdrant==0.4.3  # Qdrant integration for LlamaIndex
+llama-index-embeddings-huggingface==0.5.4  # HuggingFace embeddings
+
+# Embeddings & Reranking
+jina-embeddings-v3==2.4.0  # SOTA embeddings with 8192 context
+FlagEmbedding==1.2.11  # BGE embeddings and reranker
+cohere==5.14.0  # Cohere Rerank v3 (optional, has free tier)
+
+# Knowledge Graph
+neo4j==5.28.1  # Neo4j Python driver for graph DB
+py2neo==2021.2.4  # Higher-level Neo4j interface
+
+# Text-to-SQL
+vanna==0.8.9  # AI-powered text-to-SQL with self-learning
+sqlglot==26.8.0  # SQL parsing and optimization
+
+# Temporal Query Processing
+dateparser==1.2.0  # Natural language date parsing
+parsedatetime==2.6  # Additional date/time parsing
+python-dateutil==2.9.0.post0  # Already present, ensure version
+
+# LLM Observability & Monitoring
+phoenix-ai==4.51.0  # LLM tracing and observability (open-source alternative to LangSmith)
+loguru==0.7.3  # Better structured logging
+
+# Retrieval & Search Utilities
+faiss-cpu==1.9.0.post1  # Facebook AI Similarity Search (fallback vector store)
+pypdf==5.1.0  # Already present for PDF processing
+
+# Prompt Engineering & Optimization
+langchain-core==0.3.29  # Core abstractions
+langfuse==2.56.1  # LLM engineering platform (optional)
+
+# Caching & Performance
+gptcache==0.1.44  # Semantic caching for LLM responses
+redis==5.2.1  # Already present for caching
+
+# Multi-modal & Document Understanding
+unstructured==0.16.13  # Document parsing and chunking
+markdown==3.7  # Already present for markdown processing
+
+# Additional NLP Utilities
+spacy==3.8.4  # NLP for entity extraction and linguistic analysis
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl  # English model for spaCy

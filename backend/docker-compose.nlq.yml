@@ -1,0 +1,159 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # VECTOR STORE - Qdrant
+  # ============================================================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: reims_qdrant
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT_LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - nlq_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # KNOWLEDGE GRAPH - Neo4j
+  # ============================================================================
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: reims_neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    environment:
+      - NEO4J_AUTH=neo4j/reims_nlq_password_2025
+      - NEO4J_dbms_memory_heap_initial__size=512m
+      - NEO4J_dbms_memory_heap_max__size=2G
+      - NEO4J_dbms_memory_pagecache_size=1G
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    restart: unless-stopped
+    networks:
+      - nlq_network
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "reims_nlq_password_2025", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================================
+  # CACHE - Redis (for LLM response caching)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: reims_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    networks:
+      - nlq_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ============================================================================
+  # OPTIONAL: LLM Observability - Phoenix
+  # ============================================================================
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: reims_phoenix
+    ports:
+      - "6006:6006"  # Phoenix UI
+    environment:
+      - PHOENIX_PORT=6006
+      - PHOENIX_HOST=0.0.0.0
+    volumes:
+      - phoenix_data:/phoenix
+    restart: unless-stopped
+    networks:
+      - nlq_network
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # OPTIONAL: Prometheus (metrics)
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: reims_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    networks:
+      - nlq_network
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # OPTIONAL: Grafana (dashboards)
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: reims_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - nlq_network
+    profiles:
+      - monitoring
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  qdrant_storage:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_plugins:
+    driver: local
+  redis_data:
+    driver: local
+  phoenix_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  nlq_network:
+    driver: bridge
