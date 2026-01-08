@@ -443,7 +443,7 @@ export default function FinancialCommand() {
 
   const handleStartReconciliation = async () => {
     if (!selectedProperty) return;
-    
+
     try {
       setReconciliationLoading(true);
       const comparisonData = await reconciliationService.getComparison(
@@ -455,10 +455,11 @@ export default function FinancialCommand() {
       setActiveReconciliation(comparisonData);
     } catch (err: any) {
       console.error('Failed to start reconciliation:', err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Unable to start reconciliation';
-      
+      // ApiClient error structure: { message, status, detail, category, retryable }
+      const errorMessage = err.message || err.detail?.detail || 'Unable to start reconciliation';
+
       // Check if it's a document not found error
-      if (errorMessage.toLowerCase().includes('not found') || 
+      if (errorMessage.toLowerCase().includes('not found') ||
           errorMessage.toLowerCase().includes('document') ||
           errorMessage.toLowerCase().includes('period not found')) {
         alert(`📄 Document Not Available\n\nThe document for ${selectedProperty?.property_name} (${reconciliationDocType.replace('_', ' ').toUpperCase()}) for ${new Date(2000, reconciliationMonth - 1).toLocaleString('default', { month: 'long' })} ${reconciliationYear} has not been uploaded yet.\n\nPlease upload the document first to proceed with reconciliation.`);

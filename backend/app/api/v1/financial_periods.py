@@ -118,11 +118,21 @@ def create_financial_period(
     if existing:
         return existing
 
-    # Create new period
+    # Create new period with calculated dates
+    from datetime import date
+    import calendar
+
+    # Calculate period start and end dates
+    period_start_date = date(period_year, period_month, 1)
+    last_day = calendar.monthrange(period_year, period_month)[1]
+    period_end_date = date(period_year, period_month, last_day)
+
     period = FinancialPeriod(
         property_id=property_id,
         period_year=period_year,
         period_month=period_month,
+        period_start_date=period_start_date,
+        period_end_date=period_end_date,
         is_closed=False
     )
 

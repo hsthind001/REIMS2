@@ -120,37 +120,30 @@ export default function ForensicAuditDashboard() {
         period_id: selectedPeriodId,
       });
 
-      // Poll for task completion
+      // Task status polling not yet implemented (Phase 8)
+      // Instead, wait a reasonable time and reload the scorecard
       const taskId = response.task_id;
-      const pollInterval = setInterval(async () => {
+      console.log('Audit task started with ID:', taskId);
+
+      // Wait for estimated duration (from response) or default to 30 seconds
+      const waitTime = response.estimated_duration_seconds
+        ? response.estimated_duration_seconds * 1000
+        : 30000;
+
+      setTimeout(async () => {
         try {
-          const status = await forensicAuditService.getAuditTaskStatus(taskId);
-
-          if (status.status === 'SUCCESS') {
-            clearInterval(pollInterval);
-            setRunningAudit(false);
-            loadScorecard(); // Reload the scorecard
-          } else if (status.status === 'FAILURE') {
-            clearInterval(pollInterval);
-            setRunningAudit(false);
-            setError('Audit failed: ' + status.message);
-          }
-        } catch (err) {
-          console.error('Error checking task status:', err);
-        }
-      }, 2000);
-
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        if (runningAudit) {
           setRunningAudit(false);
-          setError('Audit timed out');
+          await loadScorecard(); // Reload the scorecard
+        } catch (err) {
+          console.error('Error reloading scorecard after audit:', err);
+          setRunningAudit(false);
         }
-      }, 300000);
+      }, waitTime);
+
     } catch (err: any) {
       console.error('Error running audit:', err);
-      setError(err.response?.data?.detail || 'Failed to start audit');
+      // ApiClient error structure: { message, status, detail, category, retryable }
+      setError(err.message || err.detail?.detail || 'Failed to start audit');
       setRunningAudit(false);
     }
   };
@@ -369,10 +362,10 @@ export default function ForensicAuditDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <MetricCard
                 title="DSCR"
-                value={`${scorecard.covenant_summary.dscr.toFixed(2)}x`}
+                value={scorecard.covenant_summary.dscr != null ? `${scorecard.covenant_summary.dscr.toFixed(2)}x` : 'N/A'}
                 subtitle="Debt Service Coverage"
                 status={scorecard.covenant_summary.dscr_status as any}
-                target={`${scorecard.covenant_summary.dscr_covenant.toFixed(2)}x`}
+                target={scorecard.covenant_summary.dscr_covenant != null ? `${scorecard.covenant_summary.dscr_covenant.toFixed(2)}x` : 'N/A'}
                 targetLabel="Covenant"
                 icon={TrendingUp}
                 iconColor="text-blue-600"
@@ -380,10 +373,10 @@ export default function ForensicAuditDashboard() {
 
               <MetricCard
                 title="LTV Ratio"
-                value={`${scorecard.covenant_summary.ltv.toFixed(1)}%`}
+                value={scorecard.covenant_summary.ltv != null ? `${scorecard.covenant_summary.ltv.toFixed(1)}%` : 'N/A'}
                 subtitle="Loan-to-Value"
                 status={scorecard.covenant_summary.ltv_status as any}
-                target={`${scorecard.covenant_summary.ltv_covenant.toFixed(0)}%`}
+                target={scorecard.covenant_summary.ltv_covenant != null ? `${scorecard.covenant_summary.ltv_covenant.toFixed(0)}%` : 'N/A'}
                 targetLabel="Covenant"
                 icon={DollarSign}
                 iconColor="text-green-600"

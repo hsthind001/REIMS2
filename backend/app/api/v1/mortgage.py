@@ -164,21 +164,54 @@ class MaturityCalendarResponse(BaseModel):
 
 # ==================== ENDPOINTS ====================
 
-@router.get("/properties/{property_id}/periods/{period_id}", response_model=List[MortgageStatementResponse])
+@router.get("/properties/{property_id}/periods/{period_id}", response_model=List[MortgageStatementDetailResponse])
 def get_mortgages_by_property_period(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Financial Period ID"),
     db: Session = Depends(get_db)
 ):
     """
-    Get all mortgage statements for a property and period
+    Get all mortgage statements for a property and period with full details
     """
     mortgages = db.query(MortgageStatementData).filter(
         MortgageStatementData.property_id == property_id,
         MortgageStatementData.period_id == period_id
     ).all()
-    
-    return mortgages
+
+    # Convert to detailed response with payment history for each mortgage
+    result = []
+    for mortgage in mortgages:
+        # Get payment history for this mortgage
+        payment_history = db.query(MortgagePaymentHistory).filter(
+            MortgagePaymentHistory.mortgage_id == mortgage.id
+        ).order_by(MortgagePaymentHistory.payment_date.desc()).all()
+
+        # Convert payment history to dicts
+        payment_history_dicts = [
+            {
+                "id": p.id,
+                "payment_date": p.payment_date.isoformat() if p.payment_date else None,
+                "payment_number": p.payment_number,
+                "principal_paid": float(p.principal_paid) if p.principal_paid else None,
+                "interest_paid": float(p.interest_paid) if p.interest_paid else None,
+                "escrow_paid": float(p.escrow_paid) if p.escrow_paid else None,
+                "fees_paid": float(p.fees_paid) if p.fees_paid else None,
+                "total_payment": float(p.total_payment) if p.total_payment else None,
+                "principal_balance_after": float(p.principal_balance_after) if p.principal_balance_after else None,
+                "payment_status": p.payment_status,
+                "days_late": p.days_late
+            }
+            for p in payment_history
+        ]
+
+        # Convert mortgage to dict and add payment history
+        mortgage_dict = {
+            **mortgage.__dict__,
+            "payment_history": payment_history_dicts
+        }
+        result.append(mortgage_dict)
+
+    return result
 
 
 @router.get("/{mortgage_id}", response_model=MortgageStatementDetailResponse)

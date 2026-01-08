@@ -1000,10 +1000,19 @@ class ReconciliationService:
         
         # Prioritize differences
         prioritized_differences = prioritize_differences(all_differences)
-        
-        # Get PDF URL
-        pdf_url = self.get_pdf_url(property_code, period_year, period_month, document_type)
-        
+
+        # Get PDF URL (skip to prevent timeout - frontend can request separately)
+        # The PDF URL generation tries to connect to host.docker.internal which times out
+        # Frontend can request PDF URL separately via /reconciliation/pdf-url endpoint
+        pdf_url = None
+        try:
+            # Skip PDF URL generation to prevent blocking - causes MinIO timeout
+            # pdf_url = self.get_pdf_url(property_code, period_year, period_month, document_type)
+            pass
+        except Exception as e:
+            print(f"Warning: Could not generate PDF URL: {e}")
+            pdf_url = None
+
         return {
             'session_id': session.id,
             'property': {

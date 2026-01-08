@@ -23,6 +23,7 @@ import { financialDataService } from '../lib/financial_data';
 import { financialPeriodsService } from '../lib/financial_periods';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { MortgageMetricsWidget } from '../components/mortgage/MortgageMetricsWidget';
+import { MortgageStatementDetails } from '../components/mortgage/MortgageStatementDetails';
 import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/exportUtils';
 import type { Property, PropertyCreate, DocumentUpload as DocumentUploadType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
@@ -849,6 +850,14 @@ export default function PortfolioHub() {
     setFinancialData(null); // Clear previous data
 
     try {
+      // Mortgage statements are handled by the MortgageStatementDetails component
+      // Skip loading financial data for mortgage statements
+      if (documentType === 'mortgage_statement') {
+        console.log('Skipping financial data load for mortgage_statement - handled by dedicated component');
+        setLoadingDocumentData(false);
+        return;
+      }
+
       // Use provided documents or fall back to state
       const documentsToSearch = docsToUse || availableDocuments;
 
@@ -881,7 +890,7 @@ export default function PortfolioHub() {
 
       if (doc && doc.id) {
         console.log('Found document, loading financial data:', doc.id);
-        
+
         try {
           // First get summary to know total count
           const summary = await financialDataService.getSummary(doc.id);
