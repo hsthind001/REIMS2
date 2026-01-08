@@ -50,6 +50,27 @@ class AuditScorecardGeneratorService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    @staticmethod
+    def _status_from_thresholds(
+        value: Optional[float],
+        green_threshold: float,
+        yellow_threshold: float,
+        higher_is_better: bool = True
+    ) -> TrafficLightStatus:
+        if value is None:
+            return TrafficLightStatus.YELLOW
+        if higher_is_better:
+            if value >= green_threshold:
+                return TrafficLightStatus.GREEN
+            if value >= yellow_threshold:
+                return TrafficLightStatus.YELLOW
+            return TrafficLightStatus.RED
+        if value <= green_threshold:
+            return TrafficLightStatus.GREEN
+        if value <= yellow_threshold:
+            return TrafficLightStatus.YELLOW
+        return TrafficLightStatus.RED
+
     async def generate_complete_scorecard(
         self,
         property_id: UUID,
@@ -150,7 +171,28 @@ class AuditScorecardGeneratorService:
 
         # 1. Mathematical Integrity (20 points)
         # All balance sheet equations, IS calculations, CF integrity must pass
-        math_integrity_score = 20  # Assume pass for now (implement full check)
+        validation_query = text("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN vr.passed THEN 1 ELSE 0 END) as passed
+            FROM validation_results vr
+            JOIN document_uploads du ON du.id = vr.upload_id
+            WHERE du.property_id = :property_id
+            AND du.period_id = :period_id
+            AND du.is_active = true
+        """)
+
+        validation_result = await self.db.execute(
+            validation_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        validation_row = validation_result.fetchone()
+
+        if validation_row and validation_row[0] > 0:
+            pass_rate = (validation_row[1] or 0) / validation_row[0]
+            math_integrity_score = int(round(pass_rate * 20))
+        else:
+            math_integrity_score = 20  # No data, assume pass
         total_score += math_integrity_score
 
         # 2. Cross-Document Reconciliation (25 points)
@@ -432,12 +474,47 @@ class AuditScorecardGeneratorService:
             List of priority risks
         """
 
-        risks = []
-        risk_id = 1
+        risks: List[Dict[str, Any]] = []
+        severity_rank = {
+            RiskSeverity.HIGH.value: 3,
+            RiskSeverity.MODERATE.value: 2,
+            RiskSeverity.LOW.value: 1
+        }
 
-        # 1. Check DSCR covenant
-        dscr_query = text("""
-            SELECT dscr, dscr_status, dscr_cushion
+        def add_risk(
+            severity: str,
+            category: str,
+            description: str,
+            action_required: str,
+            owner: str,
+            due_days: Optional[int],
+            related_metric: Optional[str],
+            financial_impact: Optional[float] = None,
+            sort_order: int = 0
+        ) -> None:
+            risks.append({
+                "severity": severity,
+                "category": category,
+                "description": description,
+                "financial_impact": financial_impact,
+                "action_required": action_required,
+                "owner": owner,
+                "due_date": (datetime.now() + timedelta(days=due_days)).strftime("%Y-%m-%d") if due_days else None,
+                "related_metric": related_metric,
+                "_rank": severity_rank.get(severity, 1),
+                "_sort": sort_order
+            })
+
+        covenant_query = text("""
+            SELECT
+                dscr,
+                dscr_status,
+                dscr_covenant_threshold,
+                dscr_cushion,
+                ltv_ratio,
+                ltv_status,
+                ltv_covenant_threshold,
+                ltv_cushion
             FROM covenant_compliance_tracking
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -445,44 +522,107 @@ class AuditScorecardGeneratorService:
             LIMIT 1
         """)
 
-        dscr_result = await self.db.execute(
-            dscr_query,
+        covenant_result = await self.db.execute(
+            covenant_query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
-        dscr_row = dscr_result.fetchone()
+        covenant_row = covenant_result.fetchone()
 
-        if dscr_row and dscr_row[1] in ['YELLOW', 'RED']:
-            dscr = float(dscr_row[0])
-            cushion = float(dscr_row[2])
-            risks.append({
-                "risk_id": risk_id,
-                "severity": RiskSeverity.HIGH.value if dscr_row[1] == 'RED' else RiskSeverity.MODERATE.value,
-                "category": "DSCR Trending Down" if dscr_row[1] == 'YELLOW' else "DSCR Covenant Breach",
-                "description": f"Current DSCR: {dscr:.2f}x (covenant minimum: 1.25x)",
-                "financial_impact": abs(cushion) if cushion < 0 else None,
-                "action_required": "Focus on expense control; evaluate rent increases" if dscr_row[1] == 'YELLOW' else "Notify lender immediately; develop remediation plan",
-                "owner": "CFO",
-                "due_date": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d"),
-                "related_metric": "DSCR"
-            })
-            risk_id += 1
+        if covenant_row:
+            dscr_value = float(covenant_row[0]) if covenant_row[0] is not None else None
+            dscr_status = covenant_row[1]
+            dscr_covenant = float(covenant_row[2]) if covenant_row[2] is not None else 1.25
 
-        # 2. Check tenant concentration risk (placeholder - would query tenant_risk_analysis table)
-        # For now, add example risk
-        risks.append({
-            "risk_id": risk_id,
-            "severity": RiskSeverity.MODERATE.value,
-            "category": "Tenant Concentration",
-            "description": "Top 5 tenants represent 54% of total rent",
-            "financial_impact": None,
-            "action_required": "Monitor credit quality; diversify tenant mix",
-            "owner": "Asset Management",
-            "due_date": None,
-            "related_metric": "Tenant Concentration"
-        })
-        risk_id += 1
+            if dscr_value is not None and dscr_status in ['YELLOW', 'RED']:
+                add_risk(
+                    RiskSeverity.HIGH.value if dscr_status == 'RED' else RiskSeverity.MODERATE.value,
+                    "DSCR Covenant Breach" if dscr_status == 'RED' else "DSCR Trending Down",
+                    f"Current DSCR: {dscr_value:.2f}x (covenant minimum: {dscr_covenant:.2f}x)",
+                    "Notify lender immediately; develop remediation plan" if dscr_status == 'RED'
+                    else "Focus on expense control; evaluate rent increases",
+                    "CFO",
+                    30 if dscr_status == 'RED' else 90,
+                    "DSCR",
+                    sort_order=10
+                )
 
-        # 3. Check for reconciliation failures
+            ltv_value = float(covenant_row[4]) if covenant_row[4] is not None else None
+            ltv_status = covenant_row[5]
+            ltv_covenant = float(covenant_row[6]) if covenant_row[6] is not None else 75.0
+
+            if ltv_value is not None and ltv_status in ['YELLOW', 'RED']:
+                add_risk(
+                    RiskSeverity.HIGH.value if ltv_status == 'RED' else RiskSeverity.MODERATE.value,
+                    "LTV Covenant Breach" if ltv_status == 'RED' else "LTV Approaching Covenant",
+                    f"Current LTV: {ltv_value:.1f}% (covenant maximum: {ltv_covenant:.0f}%)",
+                    "Review refinancing or paydown options" if ltv_status == 'RED'
+                    else "Monitor leverage; evaluate valuation updates",
+                    "Treasury",
+                    45 if ltv_status == 'RED' else 90,
+                    "LTV",
+                    sort_order=20
+                )
+
+        tenant_query = text("""
+            SELECT
+                top_1_tenant_pct,
+                top_3_tenant_pct,
+                top_5_tenant_pct,
+                lease_rollover_12mo_pct,
+                occupancy_rate
+            FROM tenant_risk_analysis
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        tenant_result = await self.db.execute(
+            tenant_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        tenant_row = tenant_result.fetchone()
+
+        if tenant_row:
+            top_1 = float(tenant_row[0]) if tenant_row[0] is not None else None
+            top_3 = float(tenant_row[1]) if tenant_row[1] is not None else None
+            top_5 = float(tenant_row[2]) if tenant_row[2] is not None else None
+            rollover_12 = float(tenant_row[3]) if tenant_row[3] is not None else None
+
+            if rollover_12 is not None and rollover_12 >= 15.0:
+                severity = RiskSeverity.HIGH.value if rollover_12 >= 25.0 else RiskSeverity.MODERATE.value
+                add_risk(
+                    severity,
+                    "Lease Rollover Risk",
+                    f"{rollover_12:.0f}% of annual rent expires in next 12 months",
+                    "Begin renewal negotiations; build TI reserve",
+                    "Leasing Director",
+                    60,
+                    "Lease Rollover (12mo)",
+                    sort_order=30
+                )
+
+            if top_1 is not None or top_3 is not None or top_5 is not None:
+                concentration_pct = top_1 if top_1 is not None else (top_3 or top_5 or 0)
+                severity = None
+                if top_1 is not None and top_1 >= 20.0:
+                    severity = RiskSeverity.HIGH.value
+                elif (top_3 is not None and top_3 >= 50.0) or (top_5 is not None and top_5 >= 60.0):
+                    severity = RiskSeverity.MODERATE.value
+
+                if severity:
+                    label_pct = top_5 if top_5 is not None else concentration_pct
+                    add_risk(
+                        severity,
+                        "Tenant Concentration",
+                        f"Top tenants represent {label_pct:.0f}% of total rent",
+                        "Monitor credit quality; diversify tenant mix",
+                        "Asset Management",
+                        None,
+                        "Tenant Concentration",
+                        sort_order=40
+                    )
+
         recon_query = text("""
             SELECT reconciliation_type, difference, explanation
             FROM cross_document_reconciliations
@@ -500,20 +640,137 @@ class AuditScorecardGeneratorService:
         recon_row = recon_result.fetchone()
 
         if recon_row:
-            risks.append({
-                "risk_id": risk_id,
-                "severity": RiskSeverity.HIGH.value,
-                "category": "Reconciliation Failure",
-                "description": recon_row[2],
-                "financial_impact": abs(float(recon_row[1])),
-                "action_required": "Investigate and correct discrepancy",
-                "owner": "Controller",
-                "due_date": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
-                "related_metric": recon_row[0]
-            })
-            risk_id += 1
+            add_risk(
+                RiskSeverity.HIGH.value,
+                "Reconciliation Failure",
+                recon_row[2] or "Material reconciliation failure detected",
+                "Investigate and correct discrepancy",
+                "Controller",
+                7,
+                recon_row[0],
+                financial_impact=abs(float(recon_row[1])) if recon_row[1] is not None else None,
+                sort_order=15
+            )
 
-        return risks[:limit]
+        fraud_query = text("""
+            SELECT overall_fraud_risk_level, red_flags_found
+            FROM fraud_detection_results
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        fraud_result = await self.db.execute(
+            fraud_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        fraud_row = fraud_result.fetchone()
+
+        if fraud_row and fraud_row[0] in ['YELLOW', 'RED']:
+            severity = RiskSeverity.HIGH.value if fraud_row[0] == 'RED' else RiskSeverity.MODERATE.value
+            red_flags = int(fraud_row[1]) if fraud_row[1] is not None else 0
+            add_risk(
+                severity,
+                "Fraud Risk Indicators",
+                f"{red_flags} red flags detected in forensic tests",
+                "Review flagged transactions; expand testing scope",
+                "Internal Audit",
+                30,
+                "Fraud Detection",
+                sort_order=25
+            )
+
+        collections_query = text("""
+            SELECT days_sales_outstanding, revenue_quality_score
+            FROM collections_revenue_quality
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        collections_result = await self.db.execute(
+            collections_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        collections_row = collections_result.fetchone()
+
+        if collections_row:
+            dso = float(collections_row[0]) if collections_row[0] is not None else None
+            quality_score = float(collections_row[1]) if collections_row[1] is not None else None
+
+            if dso is not None and dso >= 45.0:
+                severity = RiskSeverity.HIGH.value if dso >= 60.0 else RiskSeverity.MODERATE.value
+                add_risk(
+                    severity,
+                    "Collections Timing",
+                    f"DSO at {dso:.0f} days exceeds target",
+                    "Tighten collections; review tenant payment terms",
+                    "Controller",
+                    45,
+                    "DSO",
+                    sort_order=50
+                )
+            elif quality_score is not None and quality_score < 70.0:
+                add_risk(
+                    RiskSeverity.MODERATE.value,
+                    "Revenue Quality",
+                    f"Revenue quality score at {quality_score:.0f} is below target",
+                    "Review collection procedures; monitor bad debt risk",
+                    "Asset Management",
+                    60,
+                    "Revenue Quality",
+                    sort_order=55
+                )
+
+        completeness_query = text("""
+            SELECT completeness_percentage
+            FROM document_completeness_matrix
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        completeness_result = await self.db.execute(
+            completeness_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        completeness_row = completeness_result.fetchone()
+
+        if completeness_row and completeness_row[0] is not None:
+            completeness_pct = float(completeness_row[0])
+            if completeness_pct < 95.0:
+                severity = RiskSeverity.HIGH.value if completeness_pct < 80.0 else RiskSeverity.MODERATE.value
+                add_risk(
+                    severity,
+                    "Document Completeness",
+                    f"Completeness at {completeness_pct:.0f}% - missing audit inputs",
+                    "Request missing documents; validate data sources",
+                    "Controller",
+                    14,
+                    "Document Completeness",
+                    sort_order=60
+                )
+
+        risks.sort(key=lambda r: (-r["_rank"], r["_sort"]))
+        trimmed = risks[:limit]
+        formatted = []
+        for idx, risk in enumerate(trimmed, start=1):
+            formatted.append({
+                "risk_id": idx,
+                "severity": risk["severity"],
+                "category": risk["category"],
+                "description": risk["description"],
+                "financial_impact": risk["financial_impact"],
+                "action_required": risk["action_required"],
+                "owner": risk["owner"],
+                "due_date": risk["due_date"],
+                "related_metric": risk["related_metric"]
+            })
+
+        return formatted
 
     async def create_action_items(
         self,
@@ -602,17 +859,200 @@ class AuditScorecardGeneratorService:
     ) -> List[Dict[str, Any]]:
         """Get all traffic light metrics."""
 
-        # Placeholder - would aggregate from all tables
-        return [
-            {
-                "metric_name": "Mathematical Integrity",
-                "current_value": 100.0,
-                "target_value": 100.0,
-                "status": "GREEN",
-                "trend": "STABLE",
-                "variance_pct": 0.0
-            }
-        ]
+        metrics: List[Dict[str, Any]] = []
+
+        def add_metric(
+            name: str,
+            current_value: Optional[float],
+            target_value: Optional[float],
+            status: TrafficLightStatus,
+            trend: str = "STABLE"
+        ) -> None:
+            variance_pct = None
+            if current_value is not None and target_value not in (None, 0):
+                variance_pct = round(((current_value - target_value) / target_value) * 100, 2)
+            metrics.append({
+                "metric_name": name,
+                "current_value": current_value,
+                "target_value": target_value,
+                "status": status.value if isinstance(status, TrafficLightStatus) else status,
+                "trend": trend,
+                "variance_pct": variance_pct
+            })
+
+        validation_query = text("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN vr.passed THEN 1 ELSE 0 END) as passed
+            FROM validation_results vr
+            JOIN document_uploads du ON du.id = vr.upload_id
+            WHERE du.property_id = :property_id
+            AND du.period_id = :period_id
+            AND du.is_active = true
+        """)
+
+        validation_result = await self.db.execute(
+            validation_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        validation_row = validation_result.fetchone()
+
+        if validation_row and validation_row[0] > 0:
+            pass_rate_pct = round(((validation_row[1] or 0) / validation_row[0]) * 100, 1)
+            status = self._status_from_thresholds(pass_rate_pct, 100.0, 95.0, higher_is_better=True)
+            add_metric("Mathematical Integrity", pass_rate_pct, 100.0, status)
+
+        completeness_query = text("""
+            SELECT completeness_percentage
+            FROM document_completeness_matrix
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        completeness_result = await self.db.execute(
+            completeness_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        completeness_row = completeness_result.fetchone()
+
+        if completeness_row and completeness_row[0] is not None:
+            completeness_pct = float(completeness_row[0])
+            status = self._status_from_thresholds(completeness_pct, 100.0, 95.0, higher_is_better=True)
+            add_metric("Document Completeness", completeness_pct, 100.0, status)
+
+        recon_summary = await self._get_reconciliation_summary(property_id, period_id)
+        if recon_summary.get("total_reconciliations", 0) > 0:
+            pass_rate = recon_summary.get("pass_rate_pct", recon_summary.get("pass_rate", 0))
+            status = self._status_from_thresholds(pass_rate, 100.0, 90.0, higher_is_better=True)
+            add_metric("Cross-Doc Reconciliation", pass_rate, 100.0, status)
+
+        covenant_summary = await self._get_covenant_summary(property_id, period_id)
+        dscr_value = covenant_summary.get("dscr")
+        if dscr_value is not None:
+            dscr_status = covenant_summary.get("dscr_status") or TrafficLightStatus.YELLOW.value
+            if dscr_status not in ["GREEN", "YELLOW", "RED"]:
+                dscr_status = TrafficLightStatus.YELLOW.value
+            add_metric(
+                "DSCR",
+                dscr_value,
+                covenant_summary.get("dscr_covenant", 1.25),
+                dscr_status
+            )
+
+        ltv_value = covenant_summary.get("ltv_ratio") or covenant_summary.get("ltv")
+        if ltv_value is not None:
+            ltv_status = covenant_summary.get("ltv_status") or TrafficLightStatus.YELLOW.value
+            if ltv_status not in ["GREEN", "YELLOW", "RED"]:
+                ltv_status = TrafficLightStatus.YELLOW.value
+            add_metric(
+                "LTV Ratio",
+                ltv_value,
+                covenant_summary.get("ltv_covenant", 75.0),
+                ltv_status
+            )
+
+        metrics_query = text("""
+            SELECT
+                total_revenue,
+                net_operating_income,
+                operating_margin,
+                occupancy_rate
+            FROM financial_metrics
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY updated_at DESC NULLS LAST, calculated_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+        """)
+
+        metrics_result = await self.db.execute(
+            metrics_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        metrics_row = metrics_result.fetchone()
+
+        occupancy_rate = None
+        noi_margin_pct = None
+        if metrics_row:
+            if metrics_row[3] is not None:
+                occupancy_rate = float(metrics_row[3])
+            if metrics_row[2] is not None:
+                noi_margin_pct = float(metrics_row[2]) * 100
+            elif metrics_row[0] and metrics_row[1]:
+                noi_margin_pct = float(metrics_row[1]) / float(metrics_row[0]) * 100
+
+        tenant_query = text("""
+            SELECT lease_rollover_12mo_pct, occupancy_rate
+            FROM tenant_risk_analysis
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        tenant_result = await self.db.execute(
+            tenant_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        tenant_row = tenant_result.fetchone()
+
+        if tenant_row:
+            lease_rollover_pct = float(tenant_row[0]) if tenant_row[0] is not None else None
+            if occupancy_rate is None and tenant_row[1] is not None:
+                occupancy_rate = float(tenant_row[1])
+            if lease_rollover_pct is not None:
+                status = self._status_from_thresholds(lease_rollover_pct, 15.0, 25.0, higher_is_better=False)
+                add_metric("Lease Rollover (12mo)", lease_rollover_pct, 25.0, status)
+
+        if occupancy_rate is not None:
+            status = self._status_from_thresholds(occupancy_rate, 90.0, 85.0, higher_is_better=True)
+            add_metric("Occupancy Rate", occupancy_rate, 90.0, status)
+
+        if noi_margin_pct is not None:
+            status = self._status_from_thresholds(noi_margin_pct, 55.0, 50.0, higher_is_better=True)
+            add_metric("NOI Margin", noi_margin_pct, 55.0, status)
+
+        collections_query = text("""
+            SELECT
+                days_sales_outstanding,
+                revenue_quality_score,
+                cash_conversion_ratio,
+                dso_status
+            FROM collections_revenue_quality
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        collections_result = await self.db.execute(
+            collections_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        collections_row = collections_result.fetchone()
+
+        if collections_row:
+            dso = float(collections_row[0]) if collections_row[0] is not None else None
+            quality_score = float(collections_row[1]) if collections_row[1] is not None else None
+            cash_conversion = float(collections_row[2]) if collections_row[2] is not None else None
+            dso_status = collections_row[3] if collections_row[3] else None
+
+            if dso is not None:
+                status = self._status_from_thresholds(dso, 30.0, 45.0, higher_is_better=False)
+                if dso_status in ['GREEN', 'YELLOW', 'RED']:
+                    status = TrafficLightStatus(dso_status)
+                add_metric("DSO (Days)", dso, 30.0, status)
+
+            if quality_score is not None:
+                status = self._status_from_thresholds(quality_score, 80.0, 70.0, higher_is_better=True)
+                add_metric("Revenue Quality Score", quality_score, 80.0, status)
+
+            if cash_conversion is not None:
+                status = self._status_from_thresholds(cash_conversion, 0.9, 0.8, higher_is_better=True)
+                add_metric("Cash Conversion Ratio", cash_conversion, 0.9, status)
+
+        return metrics
 
     async def _get_financial_summary(
         self,
@@ -621,17 +1061,104 @@ class AuditScorecardGeneratorService:
     ) -> Dict[str, Any]:
         """Get financial performance summary."""
 
-        # Placeholder - would query income statement for YTD figures
+        metrics_query = text("""
+            SELECT
+                total_revenue,
+                total_expenses,
+                net_operating_income,
+                net_income,
+                ending_cash_balance,
+                total_cash_position,
+                operating_margin,
+                occupancy_rate
+            FROM financial_metrics
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY updated_at DESC NULLS LAST, calculated_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+        """)
+
+        metrics_result = await self.db.execute(
+            metrics_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        metrics_row = metrics_result.fetchone()
+
+        total_revenue = float(metrics_row[0]) if metrics_row and metrics_row[0] is not None else 0.0
+        total_expenses = float(metrics_row[1]) if metrics_row and metrics_row[1] is not None else 0.0
+        noi = float(metrics_row[2]) if metrics_row and metrics_row[2] is not None else 0.0
+        net_income = float(metrics_row[3]) if metrics_row and metrics_row[3] is not None else 0.0
+        cash_balance = 0.0
+        if metrics_row and metrics_row[4] is not None:
+            cash_balance = float(metrics_row[4])
+        elif metrics_row and metrics_row[5] is not None:
+            cash_balance = float(metrics_row[5])
+
+        noi_margin_pct = 0.0
+        if metrics_row and metrics_row[6] is not None:
+            noi_margin_pct = float(metrics_row[6]) * 100
+        elif total_revenue:
+            noi_margin_pct = (noi / total_revenue) * 100
+
+        occupancy_rate = float(metrics_row[7]) if metrics_row and metrics_row[7] is not None else None
+        if occupancy_rate is None:
+            occupancy_query = text("""
+                SELECT occupancy_rate
+                FROM tenant_risk_analysis
+                WHERE property_id = :property_id
+                AND period_id = :period_id
+                ORDER BY created_at DESC
+                LIMIT 1
+            """)
+            occupancy_result = await self.db.execute(
+                occupancy_query,
+                {"property_id": str(property_id), "period_id": str(period_id)}
+            )
+            occupancy_row = occupancy_result.fetchone()
+            if occupancy_row and occupancy_row[0] is not None:
+                occupancy_rate = float(occupancy_row[0])
+
+        dscr_query = text("""
+            SELECT dscr
+            FROM covenant_compliance_tracking
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        dscr_result = await self.db.execute(
+            dscr_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        dscr_row = dscr_result.fetchone()
+        dscr = float(dscr_row[0]) if dscr_row and dscr_row[0] is not None else None
+
+        dso_query = text("""
+            SELECT days_sales_outstanding
+            FROM collections_revenue_quality
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        dso_result = await self.db.execute(
+            dso_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
+        )
+        dso_row = dso_result.fetchone()
+        dso = float(dso_row[0]) if dso_row and dso_row[0] is not None else None
+
         return {
-            "ytd_revenue": 0,
-            "ytd_expenses": 0,
-            "ytd_noi": 0,
-            "ytd_net_income": 0,
-            "noi_margin_pct": 0,
+            "total_revenue": total_revenue,
+            "total_expenses": total_expenses,
+            "noi": noi,
+            "net_income": net_income,
+            "cash_balance": cash_balance,
+            "noi_margin_pct": round(noi_margin_pct, 2),
             "key_ratios": {
-                "dscr": 0,
-                "occupancy_rate": 0,
-                "dso_days": 0
+                "dscr": dscr,
+                "occupancy_rate": occupancy_rate,
+                "dso_days": dso
             }
         }
 
@@ -647,7 +1174,8 @@ class AuditScorecardGeneratorService:
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) as passed,
                 SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) as failed,
-                SUM(CASE WHEN status = 'WARNING' THEN 1 ELSE 0 END) as warnings
+                SUM(CASE WHEN status = 'WARNING' THEN 1 ELSE 0 END) as warnings,
+                SUM(CASE WHEN status = 'FAIL' AND is_material = true THEN 1 ELSE 0 END) as critical_failures
             FROM cross_document_reconciliations
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -660,13 +1188,15 @@ class AuditScorecardGeneratorService:
         row = result.fetchone()
 
         if row and row[0] > 0:
+            pass_rate = round((row[1] / row[0]) * 100, 2)
             return {
                 "total_reconciliations": row[0],
                 "passed": row[1],
                 "failed": row[2],
                 "warnings": row[3],
-                "pass_rate": round((row[1] / row[0]) * 100, 2),
-                "critical_failures": []
+                "pass_rate": pass_rate,
+                "pass_rate_pct": pass_rate,
+                "critical_failures": row[4] or 0
             }
         else:
             return {
@@ -675,7 +1205,8 @@ class AuditScorecardGeneratorService:
                 "failed": 0,
                 "warnings": 0,
                 "pass_rate": 0,
-                "critical_failures": []
+                "pass_rate_pct": 0,
+                "critical_failures": 0
             }
 
     async def _get_fraud_detection_summary(
@@ -756,10 +1287,11 @@ class AuditScorecardGeneratorService:
         if row:
             return {
                 "dscr": float(row[0]) if row[0] else None,
-                "dscr_status": row[1],
+                "dscr_status": row[1] or "UNKNOWN",
                 "dscr_covenant": float(row[2]) if row[2] else 1.25,
                 "ltv_ratio": float(row[3]) if row[3] else None,
-                "ltv_status": row[4],
+                "ltv": float(row[3]) if row[3] else None,
+                "ltv_status": row[4] or "UNKNOWN",
                 "ltv_covenant": float(row[5]) if row[5] else 75.0,
                 "current_ratio": float(row[6]) if row[6] else None,
                 "quick_ratio": float(row[7]) if row[7] else None
@@ -770,6 +1302,7 @@ class AuditScorecardGeneratorService:
                 "dscr_status": "UNKNOWN",
                 "dscr_covenant": 1.25,
                 "ltv_ratio": None,
+                "ltv": None,
                 "ltv_status": "UNKNOWN",
                 "ltv_covenant": 75.0,
                 "current_ratio": None,

@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   DollarSign,
   FileText,
+  Download,
+  History,
   RefreshCw,
   Play,
 } from 'lucide-react';
@@ -23,6 +25,9 @@ import {
   type CollectionsQualityResults,
   type CovenantComplianceResults,
   type CrossDocumentReconciliationResults,
+  type DocumentCompletenessResults,
+  type PerformanceBenchmarkResults,
+  type MathIntegrityResults,
   type FraudDetectionResults,
   type TenantRiskResults,
 } from '../lib/forensic_audit';
@@ -52,6 +57,7 @@ export default function ForensicAuditDashboard() {
   const [auditPhase, setAuditPhase] = useState<string | null>(null);
   const [auditProgress, setAuditProgress] = useState<number | null>(null);
   const [auditStatusMessage, setAuditStatusMessage] = useState<string | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | null>(null);
   const auditPollerRef = useRef<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reconciliationResults, setReconciliationResults] =
@@ -60,6 +66,9 @@ export default function ForensicAuditDashboard() {
   const [covenantResults, setCovenantResults] = useState<CovenantComplianceResults | null>(null);
   const [tenantRiskResults, setTenantRiskResults] = useState<TenantRiskResults | null>(null);
   const [collectionsResults, setCollectionsResults] = useState<CollectionsQualityResults | null>(null);
+  const [documentCompleteness, setDocumentCompleteness] = useState<DocumentCompletenessResults | null>(null);
+  const [mathIntegrityResults, setMathIntegrityResults] = useState<MathIntegrityResults | null>(null);
+  const [performanceResults, setPerformanceResults] = useState<PerformanceBenchmarkResults | null>(null);
 
   useEffect(() => {
     loadProperties();
@@ -84,6 +93,9 @@ export default function ForensicAuditDashboard() {
       setCovenantResults(null);
       setTenantRiskResults(null);
       setCollectionsResults(null);
+      setDocumentCompleteness(null);
+      setMathIntegrityResults(null);
+      setPerformanceResults(null);
     }
   }, [selectedPropertyId, selectedPeriodId]);
 
@@ -214,9 +226,21 @@ export default function ForensicAuditDashboard() {
       forensicAuditService.getCovenantCompliance(selectedPropertyId, selectedPeriodId),
       forensicAuditService.getTenantRisk(selectedPropertyId, selectedPeriodId),
       forensicAuditService.getCollectionsQuality(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getDocumentCompleteness(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getMathIntegrity(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getPerformanceBenchmark(selectedPropertyId, selectedPeriodId),
     ]);
 
-    const [reconResult, fraudResult, covenantResult, tenantResult, collectionsResult] = requests;
+    const [
+      reconResult,
+      fraudResult,
+      covenantResult,
+      tenantResult,
+      collectionsResult,
+      completenessResult,
+      mathIntegrityResult,
+      performanceResult,
+    ] = requests;
 
     if (reconResult.status === 'fulfilled') {
       setReconciliationResults(reconResult.value);
@@ -253,6 +277,27 @@ export default function ForensicAuditDashboard() {
       console.error('Error loading collections quality results:', collectionsResult.reason);
     }
 
+    if (completenessResult.status === 'fulfilled') {
+      setDocumentCompleteness(completenessResult.value);
+    } else {
+      setDocumentCompleteness(null);
+      console.error('Error loading document completeness results:', completenessResult.reason);
+    }
+
+    if (mathIntegrityResult.status === 'fulfilled') {
+      setMathIntegrityResults(mathIntegrityResult.value);
+    } else {
+      setMathIntegrityResults(null);
+      console.error('Error loading math integrity results:', mathIntegrityResult.reason);
+    }
+
+    if (performanceResult.status === 'fulfilled') {
+      setPerformanceResults(performanceResult.value);
+    } else {
+      setPerformanceResults(null);
+      console.error('Error loading performance benchmarks:', performanceResult.reason);
+    }
+
     setDetailLoading(false);
   };
 
@@ -280,6 +325,38 @@ export default function ForensicAuditDashboard() {
       // ApiClient error structure: { message, status, detail, category, retryable }
       setError(err.message || err.detail?.detail || 'Failed to start audit');
       setRunningAudit(false);
+    }
+  };
+
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    if (!selectedPropertyId || !selectedPeriodId) return;
+    setExportingFormat(format);
+    setError(null);
+
+    try {
+      const blob = await forensicAuditService.exportAuditReport(
+        selectedPropertyId,
+        selectedPeriodId,
+        format
+      );
+      const periodLabel = periods.find((period) => String(period.id) === selectedPeriodId);
+      const propertyLabel = properties.find((property) => String(property.id) === selectedPropertyId);
+      const fileBase = `forensic_audit_report_${propertyLabel?.property_code || propertyLabel?.property_name || selectedPropertyId}_${periodLabel ? formatPeriodLabel(periodLabel) : selectedPeriodId}`;
+      const fileName = `${fileBase}.${format === 'excel' ? 'xlsx' : 'pdf'}`.replace(/\s+/g, '_');
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Error exporting audit report:', err);
+      setError(err.message || 'Failed to export audit report.');
+    } finally {
+      setExportingFormat(null);
     }
   };
 
@@ -357,6 +434,12 @@ export default function ForensicAuditDashboard() {
     scorecard?.covenant_summary.ltv_ratio ??
     null;
 
+  const getPerformanceMetric = (key: string) =>
+    performanceResults?.metrics.find((metric) => metric.metric_key === key) ?? null;
+
+  const noiMarginMetric = getPerformanceMetric('noi_margin');
+  const sameStoreMetric = getPerformanceMetric('same_store_growth');
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -403,6 +486,33 @@ export default function ForensicAuditDashboard() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
+          </Button>
+
+          <Button
+            onClick={() => handleExport('pdf')}
+            disabled={exportingFormat !== null || !selectedPropertyId || !selectedPeriodId}
+            variant="secondary"
+          >
+            <Download className={`w-4 h-4 ${exportingFormat === 'pdf' ? 'animate-pulse' : ''}`} />
+            {exportingFormat === 'pdf' ? 'Exporting PDF...' : 'Export PDF'}
+          </Button>
+
+          <Button
+            onClick={() => handleExport('excel')}
+            disabled={exportingFormat !== null || !selectedPropertyId || !selectedPeriodId}
+            variant="secondary"
+          >
+            <Download className={`w-4 h-4 ${exportingFormat === 'excel' ? 'animate-pulse' : ''}`} />
+            {exportingFormat === 'excel' ? 'Exporting Excel...' : 'Export Excel'}
+          </Button>
+
+          <Button
+            onClick={() => goToRoute('audit-history')}
+            disabled={!selectedPropertyId}
+            variant="outline"
+          >
+            <History className="w-4 h-4" />
+            Audit History
           </Button>
 
           <Button
@@ -717,6 +827,69 @@ export default function ForensicAuditDashboard() {
                 </div>
                 <Button onClick={() => goToRoute('collections-quality')} variant="secondary">
                   View Collections Quality
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Math Integrity</div>
+                    <div className="text-xs text-gray-500">Internal calculation checks</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(mathIntegrityResults?.overall_status || scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {mathIntegrityResults
+                    ? `${mathIntegrityResults.passed}/${mathIntegrityResults.total_checks} passed`
+                    : 'Run audit to evaluate math integrity.'}
+                </div>
+                <Button onClick={() => goToRoute('math-integrity')} variant="secondary">
+                  View Math Integrity
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Document Completeness</div>
+                    <div className="text-xs text-gray-500">Required audit inputs</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(documentCompleteness?.status || scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {documentCompleteness
+                    ? `${documentCompleteness.completeness_percentage.toFixed(0)}% complete • ${documentCompleteness.missing_documents.length} missing`
+                    : 'Run audit to verify completeness.'}
+                </div>
+                <Button onClick={() => goToRoute('document-completeness')} variant="secondary">
+                  View Document Completeness
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Performance Benchmarking</div>
+                    <div className="text-xs text-gray-500">NOI margin, OpEx, CapEx</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(performanceResults?.overall_status || scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {performanceResults
+                    ? `NOI ${noiMarginMetric?.current_value?.toFixed(1) ?? 'N/A'}% • Same-store ${sameStoreMetric?.current_value?.toFixed(1) ?? 'N/A'}%`
+                    : 'Run audit to benchmark performance metrics.'}
+                </div>
+                <Button onClick={() => goToRoute('performance-benchmarking')} variant="secondary">
+                  View Performance Benchmarks
                 </Button>
               </Card>
             </div>

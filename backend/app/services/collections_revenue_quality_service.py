@@ -14,16 +14,12 @@ Author: Claude AI Forensic Audit Framework
 Date: December 28, 2025
 """
 
-from decimal import Decimal
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import logging
 
-from backend.app.models.anomaly_detection import AnomalyDetection
-from backend.app.models.financial_metrics import FinancialMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +92,10 @@ class CollectionsRevenueQualityService:
         # Get A/R balance from Balance Sheet (asset account)
         ar_balance_query = text("""
             SELECT SUM(amount) as total_ar
-            FROM balance_sheet_line_items
+            FROM balance_sheet_data
             WHERE property_id = :property_id
                 AND period_id = :period_id
                 AND account_code LIKE '1200%'  -- Accounts Receivable
-                AND is_deleted = false
         """)
 
         ar_result = await self.db.execute(
@@ -113,11 +108,11 @@ class CollectionsRevenueQualityService:
         # Get monthly rent from Rent Roll
         rent_query = text("""
             SELECT SUM(monthly_rent) as total_monthly_rent
-            FROM rent_roll_tenants
+            FROM rent_roll_data
             WHERE property_id = :property_id
                 AND period_id = :period_id
-                AND lease_status IN ('Active', 'ACTIVE')
-                AND is_deleted = false
+                AND is_gross_rent_row IS NOT TRUE
+                AND (LOWER(lease_status) = 'active' OR LOWER(occupancy_status) = 'occupied')
         """)
 
         rent_result = await self.db.execute(
@@ -185,14 +180,15 @@ class CollectionsRevenueQualityService:
         """
         logger.info(f"Calculating cash conversion ratio for property {property_id}")
 
-        # Get cash collections from Cash Flow Statement (operating activities)
+        # Get cash collections from Cash Flow Statement (income section)
         cash_query = text("""
-            SELECT SUM(amount) as total_cash_collections
-            FROM cash_flow_line_items
+            SELECT SUM(period_amount) as total_cash_collections
+            FROM cash_flow_data
             WHERE property_id = :property_id
                 AND period_id = :period_id
-                AND account_code LIKE '4%'  -- Revenue accounts
-                AND is_deleted = false
+                AND (line_section = 'INCOME' OR account_code LIKE '4%')
+                AND is_total IS NOT TRUE
+                AND is_subtotal IS NOT TRUE
         """)
 
         cash_result = await self.db.execute(
@@ -204,12 +200,23 @@ class CollectionsRevenueQualityService:
 
         # Get billed revenue from Income Statement
         revenue_query = text("""
-            SELECT SUM(amount) as total_revenue
-            FROM income_statement_line_items
-            WHERE property_id = :property_id
-                AND period_id = :period_id
-                AND account_code LIKE '4%'  -- Revenue accounts
-                AND is_deleted = false
+            SELECT COALESCE(
+                (SELECT period_amount
+                 FROM income_statement_data
+                 WHERE property_id = :property_id
+                   AND period_id = :period_id
+                   AND line_category = 'INCOME'
+                   AND is_total = true
+                 ORDER BY line_number DESC
+                 LIMIT 1),
+                (SELECT SUM(period_amount)
+                 FROM income_statement_data
+                 WHERE property_id = :property_id
+                   AND period_id = :period_id
+                   AND line_category = 'INCOME'
+                   AND is_total IS NOT TRUE
+                   AND is_subtotal IS NOT TRUE)
+            ) as total_revenue
         """)
 
         revenue_result = await self.db.execute(
@@ -277,8 +284,8 @@ class CollectionsRevenueQualityService:
 
         # Get period end date
         period_query = text("""
-            SELECT end_date
-            FROM accounting_periods
+            SELECT period_end_date
+            FROM financial_periods
             WHERE id = :period_id
         """)
 
@@ -289,62 +296,27 @@ class CollectionsRevenueQualityService:
             logger.error(f"Period {period_id} not found")
             return {"error": "Period not found"}
 
-        period_end_date = period_row.end_date
-
-        # Get A/R aging details (this would typically come from a detailed A/R aging report)
-        # For now, we'll use a simplified approach based on transaction dates
-        aging_query = text("""
-            WITH ar_transactions AS (
-                SELECT
-                    tenant_id,
-                    transaction_date,
-                    amount,
-                    :period_end_date::date - transaction_date::date as days_outstanding
-                FROM tenant_transactions
-                WHERE property_id = :property_id
-                    AND transaction_type = 'CHARGE'
-                    AND is_paid = false
-                    AND is_deleted = false
-            )
-            SELECT
-                SUM(CASE WHEN days_outstanding <= 30 THEN amount ELSE 0 END) as current_0_30,
-                SUM(CASE WHEN days_outstanding BETWEEN 31 AND 60 THEN amount ELSE 0 END) as days_31_60,
-                SUM(CASE WHEN days_outstanding BETWEEN 61 AND 90 THEN amount ELSE 0 END) as days_61_90,
-                SUM(CASE WHEN days_outstanding > 90 THEN amount ELSE 0 END) as days_91_plus,
-                SUM(amount) as total_ar,
-                COUNT(*) as total_transactions
-            FROM ar_transactions
+        # A/R aging detail is not available without tenant ledger data.
+        # Use total A/R balance as current and flag limited visibility.
+        ar_balance_query = text("""
+            SELECT SUM(amount) as total_ar
+            FROM balance_sheet_data
+            WHERE property_id = :property_id
+              AND period_id = :period_id
+              AND account_code LIKE '1200%'
         """)
 
-        aging_result = await self.db.execute(
-            aging_query,
-            {
-                "property_id": str(property_id),
-                "period_end_date": period_end_date
-            }
+        ar_result = await self.db.execute(
+            ar_balance_query,
+            {"property_id": str(property_id), "period_id": str(period_id)}
         )
-        aging_row = aging_result.fetchone()
+        ar_row = ar_result.fetchone()
 
-        if not aging_row or aging_row.total_ar is None:
-            # No outstanding A/R
-            return {
-                "rule_code": "A-5.4",
-                "rule_name": "A/R Aging Analysis",
-                "total_ar": 0.0,
-                "current_0_30": 0.0,
-                "days_31_60": 0.0,
-                "days_61_90": 0.0,
-                "days_91_plus": 0.0,
-                "current_pct": 100.0,
-                "status": "GREEN",
-                "explanation": "No outstanding accounts receivable."
-            }
-
-        total_ar = float(aging_row.total_ar)
-        current_0_30 = float(aging_row.current_0_30 or 0)
-        days_31_60 = float(aging_row.days_31_60 or 0)
-        days_61_90 = float(aging_row.days_61_90 or 0)
-        days_91_plus = float(aging_row.days_91_plus or 0)
+        total_ar = float(ar_row.total_ar) if ar_row and ar_row.total_ar else 0.0
+        current_0_30 = total_ar
+        days_31_60 = 0.0
+        days_61_90 = 0.0
+        days_91_plus = 0.0
 
         # Calculate percentages
         current_pct = (current_0_30 / total_ar * 100) if total_ar > 0 else 0
@@ -352,16 +324,12 @@ class CollectionsRevenueQualityService:
         pct_61_90 = (days_61_90 / total_ar * 100) if total_ar > 0 else 0
         pct_91_plus = (days_91_plus / total_ar * 100) if total_ar > 0 else 0
 
-        # Determine status based on current % and 91+ days %
-        if current_pct >= 80.0 and pct_91_plus < 5.0:
+        if total_ar == 0:
             status = "GREEN"
-            explanation = f"Healthy A/R aging. {current_pct:.1f}% current, minimal old balances."
-        elif current_pct >= 60.0 and pct_91_plus < 15.0:
-            status = "YELLOW"
-            explanation = f"A/R aging needs attention. {current_pct:.1f}% current, {pct_91_plus:.1f}% over 90 days."
+            explanation = "No outstanding accounts receivable."
         else:
-            status = "RED"
-            explanation = f"Poor A/R aging. Only {current_pct:.1f}% current, {pct_91_plus:.1f}% over 90 days."
+            status = "YELLOW"
+            explanation = "A/R aging detail unavailable; treating total balance as current."
 
         return {
             "rule_code": "A-5.4",
@@ -418,12 +386,13 @@ class CollectionsRevenueQualityService:
         # Get occupancy rate from rent roll
         occupancy_query = text("""
             SELECT
-                SUM(CASE WHEN lease_status IN ('Active', 'ACTIVE') THEN square_feet ELSE 0 END) as occupied_sf,
-                SUM(square_feet) as total_sf
-            FROM rent_roll_tenants
+                SUM(CASE WHEN LOWER(occupancy_status) = 'occupied' OR LOWER(lease_status) = 'active'
+                         THEN unit_area_sqft ELSE 0 END) as occupied_sf,
+                SUM(unit_area_sqft) as total_sf
+            FROM rent_roll_data
             WHERE property_id = :property_id
                 AND period_id = :period_id
-                AND is_deleted = false
+                AND is_gross_rent_row IS NOT TRUE
         """)
 
         occ_result = await self.db.execute(
@@ -600,42 +569,39 @@ class CollectionsRevenueQualityService:
         """
         logger.info(f"Saving collections results for property {property_id}, period {period_id}")
 
-        # Save to collections_quality_analysis table (UPSERT)
+        # Save to collections_revenue_quality table (UPSERT)
         upsert_query = text("""
-            INSERT INTO collections_quality_analysis (
+            INSERT INTO collections_revenue_quality (
                 property_id,
                 period_id,
-                dso_days,
+                days_sales_outstanding,
+                dso_status,
                 cash_conversion_ratio,
                 revenue_quality_score,
-                current_ar_percentage,
-                ar_91_plus_percentage,
+                ar_aging_details,
                 overall_status,
-                test_results_json,
                 created_at,
                 updated_at
             ) VALUES (
                 :property_id,
                 :period_id,
                 :dso_days,
+                :dso_status,
                 :cash_conversion_ratio,
                 :revenue_quality_score,
-                :current_ar_pct,
-                :ar_91_plus_pct,
+                :ar_aging_details::jsonb,
                 :overall_status,
-                :test_results_json::jsonb,
                 NOW(),
                 NOW()
             )
             ON CONFLICT (property_id, period_id)
             DO UPDATE SET
-                dso_days = EXCLUDED.dso_days,
+                days_sales_outstanding = EXCLUDED.days_sales_outstanding,
+                dso_status = EXCLUDED.dso_status,
                 cash_conversion_ratio = EXCLUDED.cash_conversion_ratio,
                 revenue_quality_score = EXCLUDED.revenue_quality_score,
-                current_ar_percentage = EXCLUDED.current_ar_percentage,
-                ar_91_plus_percentage = EXCLUDED.ar_91_plus_percentage,
+                ar_aging_details = EXCLUDED.ar_aging_details,
                 overall_status = EXCLUDED.overall_status,
-                test_results_json = EXCLUDED.test_results_json,
                 updated_at = NOW()
         """)
 
@@ -647,12 +613,11 @@ class CollectionsRevenueQualityService:
                 "property_id": str(property_id),
                 "period_id": str(period_id),
                 "dso_days": results["summary"]["dso_days"],
+                "dso_status": results["tests"]["days_sales_outstanding"]["status"],
                 "cash_conversion_ratio": results["summary"]["cash_conversion_pct"] / 100,
                 "revenue_quality_score": results["summary"]["quality_score"],
-                "current_ar_pct": results["summary"]["current_ar_pct"],
-                "ar_91_plus_pct": results["tests"]["ar_aging_analysis"]["pct_91_plus"],
-                "overall_status": results["overall_status"],
-                "test_results_json": json.dumps(results)
+                "ar_aging_details": json.dumps(results["tests"]["ar_aging_analysis"]),
+                "overall_status": results["overall_status"]
             }
         )
 

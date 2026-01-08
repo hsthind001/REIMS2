@@ -23,11 +23,15 @@ const AnomalyDetailPage = lazy(() => import('./pages/AnomalyDetailPage'))
 
 // Forensic Audit Framework Pages
 const ForensicAuditDashboard = lazy(() => import('./pages/ForensicAuditDashboard'))
+const MathIntegrityDashboard = lazy(() => import('./pages/MathIntegrityDashboard'))
+const PerformanceBenchmarkDashboard = lazy(() => import('./pages/PerformanceBenchmarkDashboard'))
 const FraudDetectionDashboard = lazy(() => import('./pages/FraudDetectionDashboard'))
 const CovenantComplianceDashboard = lazy(() => import('./pages/CovenantComplianceDashboard'))
 const ReconciliationResultsDashboard = lazy(() => import('./pages/ReconciliationResultsDashboard'))
 const TenantRiskDashboard = lazy(() => import('./pages/TenantRiskDashboard'))
 const CollectionsQualityDashboard = lazy(() => import('./pages/CollectionsQualityDashboard'))
+const DocumentCompletenessDashboard = lazy(() => import('./pages/DocumentCompletenessDashboard'))
+const AuditHistoryDashboard = lazy(() => import('./pages/AuditHistoryDashboard'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -296,6 +300,14 @@ function AppContent() {
             <Suspense fallback={<PageLoader />}>
               <ForensicAuditDashboard />
             </Suspense>
+          ) : hashRoute === 'math-integrity' ? (
+            <Suspense fallback={<PageLoader />}>
+              <MathIntegrityDashboard />
+            </Suspense>
+          ) : hashRoute === 'performance-benchmarking' ? (
+            <Suspense fallback={<PageLoader />}>
+              <PerformanceBenchmarkDashboard />
+            </Suspense>
           ) : hashRoute === 'fraud-detection' ? (
             <Suspense fallback={<PageLoader />}>
               <FraudDetectionDashboard />
@@ -315,6 +327,14 @@ function AppContent() {
           ) : hashRoute === 'collections-quality' ? (
             <Suspense fallback={<PageLoader />}>
               <CollectionsQualityDashboard />
+            </Suspense>
+          ) : hashRoute === 'document-completeness' ? (
+            <Suspense fallback={<PageLoader />}>
+              <DocumentCompletenessDashboard />
+            </Suspense>
+          ) : hashRoute === 'audit-history' ? (
+            <Suspense fallback={<PageLoader />}>
+              <AuditHistoryDashboard />
             </Suspense>
           ) : (
             renderPage()

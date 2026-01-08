@@ -91,6 +91,17 @@ export default function TenantRiskDashboard() {
     }
   };
 
+  const formatPeriodLabel = (period: any): string => {
+    if (period.period_year && period.period_month) {
+      return `${period.period_year}-${String(period.period_month).padStart(2, '0')}`;
+    }
+    return period.name || `Period ${period.id}`;
+  };
+
+  const getPropertyLabel = (property: Property): string => {
+    return property.property_name || property.property_code || property.name || `Property ${property.id}`;
+  };
+
   const formatCurrency = (value: number): string => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -118,7 +129,7 @@ export default function TenantRiskDashboard() {
             <option value="">Select Property</option>
             {properties.map((property) => (
               <option key={property.id} value={property.id}>
-                {property.name}
+                {getPropertyLabel(property)}
               </option>
             ))}
           </select>
@@ -132,7 +143,7 @@ export default function TenantRiskDashboard() {
             <option value="">Select Period</option>
             {periods.map((period) => (
               <option key={period.id} value={period.id}>
-                {period.name}
+                {formatPeriodLabel(period)}
               </option>
             ))}
           </select>

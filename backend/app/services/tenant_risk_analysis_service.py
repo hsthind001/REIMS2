@@ -11,7 +11,6 @@ Analyzes tenant-related risks including:
 
 from typing import Dict, List, Optional, Any, Tuple
 from uuid import UUID
-from decimal import Decimal
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -126,14 +125,15 @@ class TenantRiskAnalysisService:
             SELECT
                 tenant_name,
                 monthly_rent,
-                square_feet,
-                lease_end_date,
-                credit_rating
+                annual_rent,
+                unit_area_sqft,
+                lease_end_date
             FROM rent_roll_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND lease_status = 'ACTIVE'
-            ORDER BY monthly_rent DESC
+            AND is_gross_rent_row IS NOT TRUE
+            AND (LOWER(lease_status) = 'active' OR LOWER(occupancy_status) = 'occupied')
+            ORDER BY monthly_rent DESC NULLS LAST
         """)
 
         result = await self.db.execute(
@@ -153,14 +153,20 @@ class TenantRiskAnalysisService:
                 'top_tenants': []
             }
 
-        # Calculate total rent
-        total_rent = sum(float(t[1]) for t in tenants)
+        # Calculate total rent (prefer annual, fall back to monthly * 12)
+        total_rent = 0.0
+        tenant_rents = []
+        for tenant in tenants:
+            monthly_rent = float(tenant[1]) if tenant[1] else 0.0
+            annual_rent = float(tenant[2]) if tenant[2] else monthly_rent * 12
+            tenant_rents.append(annual_rent)
+            total_rent += annual_rent
 
         # Calculate top tenant concentrations
-        top_1_rent = float(tenants[0][1]) if len(tenants) >= 1 else 0
-        top_3_rent = sum(float(t[1]) for t in tenants[:3]) if len(tenants) >= 3 else sum(float(t[1]) for t in tenants)
-        top_5_rent = sum(float(t[1]) for t in tenants[:5]) if len(tenants) >= 5 else sum(float(t[1]) for t in tenants)
-        top_10_rent = sum(float(t[1]) for t in tenants[:10]) if len(tenants) >= 10 else sum(float(t[1]) for t in tenants)
+        top_1_rent = tenant_rents[0] if len(tenant_rents) >= 1 else 0
+        top_3_rent = sum(tenant_rents[:3]) if len(tenant_rents) >= 3 else sum(tenant_rents)
+        top_5_rent = sum(tenant_rents[:5]) if len(tenant_rents) >= 5 else sum(tenant_rents)
+        top_10_rent = sum(tenant_rents[:10]) if len(tenant_rents) >= 10 else sum(tenant_rents)
 
         top_1_pct = (top_1_rent / total_rent * 100) if total_rent > 0 else 0
         top_3_pct = (top_3_rent / total_rent * 100) if total_rent > 0 else 0
@@ -170,17 +176,18 @@ class TenantRiskAnalysisService:
         # Get top 10 tenant details
         top_tenants = []
         for i, tenant in enumerate(tenants[:10], 1):
-            tenant_rent = float(tenant[1])
-            tenant_pct = (tenant_rent / total_rent * 100) if total_rent > 0 else 0
+            monthly_rent = float(tenant[1]) if tenant[1] else 0.0
+            annual_rent = float(tenant[2]) if tenant[2] else monthly_rent * 12
+            tenant_pct = (annual_rent / total_rent * 100) if total_rent > 0 else 0
 
             top_tenants.append({
                 'rank': i,
                 'tenant_name': tenant[0],
-                'monthly_rent': round(tenant_rent, 2),
+                'monthly_rent': round(monthly_rent, 2),
+                'annual_rent': round(annual_rent, 2),
                 'percent_of_total_rent': round(tenant_pct, 2),
-                'square_feet': int(tenant[2]) if tenant[2] else 0,
-                'lease_end_date': tenant[3].isoformat() if tenant[3] else None,
-                'credit_rating': tenant[4]
+                'square_feet': int(tenant[3]) if tenant[3] else 0,
+                'lease_end_date': tenant[4].isoformat() if tenant[4] else None
             })
 
         return {
@@ -239,12 +246,14 @@ class TenantRiskAnalysisService:
             SELECT
                 tenant_name,
                 monthly_rent,
+                annual_rent,
                 lease_end_date,
-                square_feet
+                unit_area_sqft
             FROM rent_roll_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND lease_status = 'ACTIVE'
+            AND is_gross_rent_row IS NOT TRUE
+            AND (LOWER(lease_status) = 'active' OR LOWER(occupancy_status) = 'occupied')
             AND lease_end_date IS NOT NULL
         """)
 
@@ -265,7 +274,11 @@ class TenantRiskAnalysisService:
                 'expiring_36mo': []
             }
 
-        total_rent = sum(float(l[1]) for l in leases)
+        total_rent = 0.0
+        for lease in leases:
+            monthly_rent = float(lease[1]) if lease[1] else 0.0
+            annual_rent = float(lease[2]) if lease[2] else monthly_rent * 12
+            total_rent += annual_rent
 
         # Calculate rollover by period
         expiring_12mo = []
@@ -277,14 +290,15 @@ class TenantRiskAnalysisService:
 
         for lease in leases:
             tenant_name = lease[0]
-            monthly_rent = float(lease[1])
-            lease_end_date = lease[2]
-            square_feet = int(lease[3]) if lease[3] else 0
+            monthly_rent = float(lease[1]) if lease[1] else 0.0
+            annual_rent = float(lease[2]) if lease[2] else monthly_rent * 12
+            lease_end_date = lease[3]
+            square_feet = int(lease[4]) if lease[4] else 0
 
             lease_info = {
                 'tenant_name': tenant_name,
                 'monthly_rent': round(monthly_rent, 2),
-                'annual_rent': round(monthly_rent * 12, 2),
+                'annual_rent': round(annual_rent, 2),
                 'lease_end_date': lease_end_date.isoformat() if lease_end_date else None,
                 'square_feet': square_feet,
                 'months_until_expiry': (lease_end_date - current_date).days // 30 if lease_end_date else 0
@@ -292,13 +306,13 @@ class TenantRiskAnalysisService:
 
             if lease_end_date <= date_12mo:
                 expiring_12mo.append(lease_info)
-                rent_12mo += monthly_rent
+                rent_12mo += annual_rent
             elif lease_end_date <= date_24mo:
                 expiring_24mo.append(lease_info)
-                rent_24mo += monthly_rent
+                rent_24mo += annual_rent
             elif lease_end_date <= date_36mo:
                 expiring_36mo.append(lease_info)
-                rent_36mo += monthly_rent
+                rent_36mo += annual_rent
 
         rollover_12mo_pct = (rent_12mo / total_rent * 100) if total_rent > 0 else 0
         rollover_24mo_pct = ((rent_12mo + rent_24mo) / total_rent * 100) if total_rent > 0 else 0
@@ -351,13 +365,16 @@ class TenantRiskAnalysisService:
         # Get total building SF and occupancy
         query = text("""
             SELECT
-                SUM(CASE WHEN lease_status = 'ACTIVE' THEN square_feet ELSE 0 END) as occupied_sf,
-                SUM(square_feet) as total_sf,
-                SUM(CASE WHEN lease_status = 'ACTIVE' THEN monthly_rent ELSE 0 END) as actual_rent,
-                COUNT(CASE WHEN lease_status = 'VACANT' THEN 1 END) as vacant_units
+                SUM(CASE WHEN LOWER(occupancy_status) = 'occupied' OR LOWER(lease_status) = 'active'
+                         THEN unit_area_sqft ELSE 0 END) as occupied_sf,
+                SUM(unit_area_sqft) as total_sf,
+                SUM(CASE WHEN LOWER(occupancy_status) = 'occupied' OR LOWER(lease_status) = 'active'
+                         THEN COALESCE(annual_rent, monthly_rent * 12) ELSE 0 END) as actual_rent,
+                COUNT(CASE WHEN LOWER(occupancy_status) = 'vacant' OR LOWER(lease_status) = 'vacant' THEN 1 END) as vacant_units
             FROM rent_roll_data
             WHERE property_id = :property_id
             AND period_id = :period_id
+            AND is_gross_rent_row IS NOT TRUE
         """)
 
         result = await self.db.execute(
@@ -374,6 +391,9 @@ class TenantRiskAnalysisService:
         # Calculate occupancy rate
         occupancy_rate = (occupied_sf / total_sf * 100) if total_sf > 0 else 0
         vacancy_rate = 100 - occupancy_rate
+
+        # Economic occupancy (fallback to physical occupancy when market rent unavailable)
+        economic_occupancy = occupancy_rate
 
         # Determine status
         if occupancy_rate >= self.OCCUPANCY_EXCELLENT:
@@ -399,6 +419,7 @@ class TenantRiskAnalysisService:
             'vacant_sf': round(total_sf - occupied_sf, 0),
             'total_sf': round(total_sf, 0),
             'vacant_units': vacant_units,
+            'economic_occupancy': round(economic_occupancy, 2),
             'status': status,
             'interpretation': interpretation
         }
@@ -426,48 +447,38 @@ class TenantRiskAnalysisService:
 
         query = text("""
             SELECT
-                credit_rating,
-                SUM(monthly_rent) as total_rent,
-                COUNT(*) as tenant_count
+                COUNT(*) as tenant_count,
+                SUM(COALESCE(annual_rent, monthly_rent * 12)) as total_rent
             FROM rent_roll_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND lease_status = 'ACTIVE'
-            GROUP BY credit_rating
+            AND is_gross_rent_row IS NOT TRUE
+            AND (LOWER(lease_status) = 'active' OR LOWER(occupancy_status) = 'occupied')
         """)
 
         result = await self.db.execute(
             query,
             {"property_id": str(property_id), "period_id": str(period_id)}
         )
-        ratings = result.fetchall()
+        row = result.fetchone()
 
-        total_rent = sum(float(r[1]) for r in ratings if r[1])
+        total_rent = float(row[1]) if row and row[1] else 0.0
 
-        investment_grade_rent = 0
-        non_investment_grade_rent = 0
-        not_rated_rent = 0
-
-        for row in ratings:
-            rating = row[0] or 'NOT_RATED'
-            rent = float(row[1]) if row[1] else 0
-
-            if rating in ['AAA', 'AA', 'A']:
-                investment_grade_rent += rent
-            elif rating in ['BBB', 'BB', 'B', 'C', 'D']:
-                non_investment_grade_rent += rent
-            else:
-                not_rated_rent += rent
-
-        investment_grade_pct = (investment_grade_rent / total_rent * 100) if total_rent > 0 else 0
-        non_investment_pct = (non_investment_grade_rent / total_rent * 100) if total_rent > 0 else 0
-        not_rated_pct = (not_rated_rent / total_rent * 100) if total_rent > 0 else 0
+        if total_rent > 0:
+            investment_grade_pct = 0.0
+            non_investment_pct = 0.0
+            not_rated_pct = 100.0
+        else:
+            investment_grade_pct = 0.0
+            non_investment_pct = 0.0
+            not_rated_pct = 0.0
 
         return {
             'investment_grade_pct': round(investment_grade_pct, 2),
             'non_investment_grade_pct': round(non_investment_pct, 2),
             'not_rated_pct': round(not_rated_pct, 2),
-            'total_rent': round(total_rent, 2)
+            'total_rent': round(total_rent, 2),
+            'tenant_count': int(row[0]) if row and row[0] else 0
         }
 
     async def analyze_rent_per_sf(
@@ -492,13 +503,15 @@ class TenantRiskAnalysisService:
             SELECT
                 tenant_name,
                 monthly_rent,
-                square_feet,
-                (monthly_rent / square_feet) as rent_per_sf
+                annual_rent,
+                unit_area_sqft,
+                (COALESCE(annual_rent, monthly_rent * 12) / unit_area_sqft) as rent_per_sf
             FROM rent_roll_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND lease_status = 'ACTIVE'
-            AND square_feet > 0
+            AND is_gross_rent_row IS NOT TRUE
+            AND (LOWER(lease_status) = 'active' OR LOWER(occupancy_status) = 'occupied')
+            AND unit_area_sqft > 0
             ORDER BY rent_per_sf
         """)
 
@@ -513,7 +526,9 @@ class TenantRiskAnalysisService:
                 'average_rent_per_sf': 0,
                 'median_rent_per_sf': 0,
                 'min_rent_per_sf': 0,
-                'max_rent_per_sf': 0
+                'max_rent_per_sf': 0,
+                'std_dev_rent_per_sf': 0,
+                'sample_size': 0
             }
 
         rent_per_sf_values = [float(l[3]) for l in leases]
@@ -522,12 +537,15 @@ class TenantRiskAnalysisService:
         median = rent_per_sf_values[len(rent_per_sf_values) // 2]
         min_val = rent_per_sf_values[0]
         max_val = rent_per_sf_values[-1]
+        variance = sum((value - average) ** 2 for value in rent_per_sf_values) / len(rent_per_sf_values)
+        std_dev = variance ** 0.5
 
         return {
             'average_rent_per_sf': round(average, 2),
             'median_rent_per_sf': round(median, 2),
             'min_rent_per_sf': round(min_val, 2),
             'max_rent_per_sf': round(max_val, 2),
+            'std_dev_rent_per_sf': round(std_dev, 2),
             'sample_size': len(leases)
         }
 

@@ -2354,17 +2354,22 @@ class ValidationService:
     def _validate_rent_roll(self, upload: DocumentUpload) -> List[Dict]:
         """Run all rent roll validations"""
         results = []
-        
+
         # 1. No duplicate units
         results.append(self.validate_no_duplicate_units(
             upload.id, upload.property_id, upload.period_id
         ))
-        
-        # 2. Valid lease dates
+
+        # 2. Annual rent calculation
+        results.append(self.validate_rent_roll_annual_rent(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 3. Valid lease dates
         results.append(self.validate_lease_dates(
             upload.id, upload.property_id, upload.period_id
         ))
-        
+
         return results
     
     def validate_no_duplicate_units(
@@ -2465,6 +2470,89 @@ class ValidationService:
         )
         
         return result
+
+    def validate_rent_roll_annual_rent(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """Validate annual rent equals monthly rent times 12 (with rounding tolerance)."""
+        rule = self._get_or_create_rule(
+            "rent_roll_annual_rent_calculation",
+            "Annual Rent Calculation",
+            "Annual rent should equal monthly rent times 12",
+            "rent_roll",
+            "calculation_check",
+            "annual_rent = monthly_rent * 12",
+            "error"
+        )
+
+        rows = self.db.query(
+            RentRollData.monthly_rent,
+            RentRollData.annual_rent
+        ).filter(
+            RentRollData.property_id == property_id,
+            RentRollData.period_id == period_id,
+            RentRollData.is_gross_rent_row == False
+        ).all()
+
+        if not rows:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                expected_value=Decimal('0'),
+                actual_value=Decimal('0'),
+                difference=Decimal('0'),
+                difference_percentage=None,
+                error_message="No rent roll data found for annual rent validation",
+                severity=rule.severity
+            )
+
+        total_expected = Decimal('0')
+        total_actual = Decimal('0')
+        mismatch_count = 0
+        missing_count = 0
+
+        for monthly_rent, annual_rent in rows:
+            if monthly_rent is None or annual_rent is None:
+                missing_count += 1
+                continue
+
+            expected = Decimal(monthly_rent) * Decimal('12')
+            actual = Decimal(annual_rent)
+            if abs(expected - actual) > Decimal('1.00'):
+                mismatch_count += 1
+
+            total_expected += expected
+            total_actual += actual
+
+        difference = abs(total_expected - total_actual)
+        passed = mismatch_count == 0 and missing_count == 0 and difference <= Decimal('1.00')
+
+        error_message = None
+        if not passed:
+            details = []
+            if mismatch_count > 0:
+                details.append(f"{mismatch_count} tenant(s) with annual rent mismatch")
+            if missing_count > 0:
+                details.append(f"{missing_count} tenant(s) missing rent values")
+            if difference > Decimal('1.00'):
+                details.append(f"Total variance ${difference:,.2f}")
+            error_message = " | ".join(details)
+
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=total_expected,
+            actual_value=total_actual,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, total_expected),
+            error_message=error_message,
+            severity=rule.severity
+        )
     
     # ==================== MORTGAGE STATEMENT VALIDATIONS ====================
     
@@ -2498,33 +2586,38 @@ class ValidationService:
         results.append(self.validate_mortgage_principal_reasonable(
             upload.id, mortgage_data.id
         ))
-        
-        # 2. Payment Calculation
+
+        # 2. Principal Balance Reduction
+        results.append(self.validate_mortgage_principal_reduction(
+            upload.id, mortgage_data.id
+        ))
+
+        # 3. Payment Calculation
         results.append(self.validate_mortgage_payment_calculation(
             upload.id, mortgage_data.id
         ))
-        
-        # 3. Escrow Balance Total
+
+        # 4. Escrow Balance Total
         results.append(self.validate_mortgage_escrow_total(
             upload.id, mortgage_data.id
         ))
-        
-        # 4. Interest Rate Range
+
+        # 5. Interest Rate Range
         results.append(self.validate_mortgage_interest_rate_range(
             upload.id, mortgage_data.id
         ))
-        
-        # 5. YTD Totals
+
+        # 6. YTD Totals
         results.append(self.validate_mortgage_ytd_total(
             upload.id, mortgage_data.id
         ))
-        
-        # 6. Cross-Document: Balance Sheet Reconciliation
+
+        # 7. Cross-Document: Balance Sheet Reconciliation
         results.append(self.validate_mortgage_balance_sheet_reconciliation(
             upload.id, upload.property_id, upload.period_id
         ))
-        
-        # 7. Cross-Document: Income Statement Interest Reconciliation
+
+        # 8. Cross-Document: Income Statement Interest Reconciliation
         results.append(self.validate_mortgage_interest_income_statement_reconciliation(
             upload.id, upload.property_id, upload.period_id
         ))
@@ -2573,6 +2666,77 @@ class ValidationService:
             actual_value=principal,
             difference=Decimal('0'),
             difference_percentage=None,
+            error_message=rule.error_message if not passed else None,
+            severity=rule.severity
+        )
+
+    def validate_mortgage_principal_reduction(
+        self,
+        upload_id: int,
+        mortgage_id: int
+    ) -> Dict:
+        """Validate prior balance minus principal due equals current balance."""
+        rule = self._get_or_create_rule(
+            rule_name="mortgage_principal_reduction",
+            rule_description="Prior principal balance - principal due should equal current balance",
+            error_msg="Principal balance reduction does not reconcile with prior statement",
+            document_type="mortgage_statement",
+            rule_type="calculation_check",
+            rule_formula="prior_principal_balance - principal_due = current_principal_balance",
+            severity="warning"
+        )
+
+        mortgage = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.id == mortgage_id
+        ).first()
+
+        if not mortgage or mortgage.statement_date is None:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                expected_value=Decimal('0'),
+                actual_value=Decimal('0'),
+                difference=Decimal('0'),
+                difference_percentage=None,
+                error_message="Current mortgage statement data missing for principal reduction check",
+                severity=rule.severity
+            )
+
+        prior_statement = self.db.query(MortgageStatementData).filter(
+            MortgageStatementData.property_id == mortgage.property_id,
+            MortgageStatementData.loan_number == mortgage.loan_number,
+            MortgageStatementData.statement_date < mortgage.statement_date
+        ).order_by(MortgageStatementData.statement_date.desc()).first()
+
+        if not prior_statement or prior_statement.principal_balance is None:
+            return self._create_validation_result(
+                upload_id=upload_id,
+                rule_id=rule.id,
+                passed=False,
+                expected_value=Decimal('0'),
+                actual_value=Decimal('0'),
+                difference=Decimal('0'),
+                difference_percentage=None,
+                error_message="Prior mortgage statement not found for principal reduction check",
+                severity=rule.severity
+            )
+
+        prior_balance = prior_statement.principal_balance or Decimal('0')
+        principal_due = mortgage.principal_due or Decimal('0')
+        expected_balance = prior_balance - principal_due
+        actual_balance = mortgage.principal_balance or Decimal('0')
+        difference = abs(expected_balance - actual_balance)
+        passed = difference <= Decimal('1.00')
+
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=expected_balance,
+            actual_value=actual_balance,
+            difference=difference,
+            difference_percentage=self.safe_percentage(difference, expected_balance),
             error_message=rule.error_message if not passed else None,
             severity=rule.severity
         )
@@ -2991,3 +3155,8 @@ class ValidationService:
             "severity": severity
         }
 
+    def safe_percentage(self, numerator: Decimal, denominator: Decimal) -> Optional[Decimal]:
+        """Return percentage safely without divide-by-zero."""
+        if denominator is None or denominator == 0:
+            return None
+        return (numerator / abs(denominator)) * Decimal('100')

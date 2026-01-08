@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, Union
 from datetime import datetime
 from celery import Task
 from sqlalchemy.orm import Session
+import logging
 
 # Import Celery app
 from app.core.celery_config import celery_app
@@ -19,6 +20,12 @@ from app.services.fraud_detection_service import FraudDetectionService
 from app.services.covenant_compliance_service import CovenantComplianceService
 from app.services.audit_scorecard_generator_service import AuditScorecardGeneratorService
 from app.services.forensic_audit_anomaly_integration_service import ForensicAuditAnomalyIntegrationService
+from app.services.tenant_risk_analysis_service import TenantRiskAnalysisService
+from app.services.collections_revenue_quality_service import CollectionsRevenueQualityService
+from app.models.document_upload import DocumentUpload
+from app.models.validation_result import ValidationResult
+from app.models.validation_rule import ValidationRule
+from app.services.validation_service import ValidationService
 
 
 class AsyncSessionWrapper:
@@ -59,6 +66,9 @@ class AsyncSessionWrapper:
 
     def rollback(self):
         return self._session.rollback()
+
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_id(value: Union[str, int]) -> Union[str, int]:
@@ -152,12 +162,34 @@ def run_complete_forensic_audit_task(
             }
         )
 
-        # TODO: Implement document completeness service
-        # For now, assume all documents present
+        required_documents = {
+            'balance_sheet': 'Balance Sheet',
+            'income_statement': 'Income Statement',
+            'cash_flow': 'Cash Flow Statement',
+            'rent_roll': 'Rent Roll',
+            'mortgage_statement': 'Mortgage Statement'
+        }
+        missing_documents = []
+        present_count = 0
+
+        for document_type, label in required_documents.items():
+            exists = sync_db.query(DocumentUpload.id).filter(
+                DocumentUpload.property_id == property_ref,
+                DocumentUpload.period_id == period_ref,
+                DocumentUpload.document_type == document_type,
+                DocumentUpload.is_active.is_(True)
+            ).first()
+            if exists:
+                present_count += 1
+            else:
+                missing_documents.append(label)
+
+        completeness_pct = round((present_count / len(required_documents)) * 100, 2)
+
         audit_results['phases']['document_completeness'] = {
-            'status': 'COMPLETE',
-            'completeness_pct': 100.0,
-            'missing_documents': []
+            'status': 'COMPLETE' if completeness_pct == 100.0 else 'INCOMPLETE',
+            'completeness_pct': completeness_pct,
+            'missing_documents': missing_documents
         }
 
         # =====================================================================
@@ -173,12 +205,70 @@ def run_complete_forensic_audit_task(
             }
         )
 
-        # TODO: Implement mathematical integrity service
-        # For now, assume all pass
+        validation_service = ValidationService(sync_db)
+        rule_types = ['balance_check', 'calculation_check']
+        document_types = [
+            'balance_sheet',
+            'income_statement',
+            'cash_flow',
+            'rent_roll',
+            'mortgage_statement'
+        ]
+
+        math_total = 0
+        math_passed = 0
+        math_failed = 0
+        math_warnings = 0
+        math_errors = 0
+
+        for document_type in document_types:
+            upload = sync_db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == property_ref,
+                DocumentUpload.period_id == period_ref,
+                DocumentUpload.document_type == document_type,
+                DocumentUpload.is_active.is_(True)
+            ).order_by(
+                DocumentUpload.upload_date.desc().nullslast(),
+                DocumentUpload.id.desc()
+            ).first()
+
+            if not upload:
+                continue
+
+            base_query = sync_db.query(ValidationResult, ValidationRule).join(
+                ValidationRule, ValidationRule.id == ValidationResult.rule_id
+            ).filter(
+                ValidationResult.upload_id == upload.id,
+                ValidationRule.document_type == document_type,
+                ValidationRule.rule_type.in_(rule_types)
+            ).order_by(ValidationResult.created_at.desc())
+
+            results = base_query.all()
+            if not results:
+                validation_service.validate_upload(upload.id)
+                results = base_query.all()
+
+            seen_rules = set()
+            for result, rule in results:
+                if rule.id in seen_rules:
+                    continue
+                seen_rules.add(rule.id)
+                math_total += 1
+                if result.passed:
+                    math_passed += 1
+                else:
+                    math_failed += 1
+                    if result.severity == 'warning':
+                        math_warnings += 1
+                    elif result.severity == 'error':
+                        math_errors += 1
+
         audit_results['phases']['mathematical_integrity'] = {
-            'status': 'COMPLETE',
-            'tests_passed': 5,
-            'tests_total': 5
+            'status': 'COMPLETE' if math_total > 0 else 'SKIPPED',
+            'tests_passed': math_passed,
+            'tests_total': math_total,
+            'warnings': math_warnings,
+            'errors': math_errors
         }
 
         # =====================================================================
@@ -239,11 +329,22 @@ def run_complete_forensic_audit_task(
             }
         )
 
-        # TODO: Implement tenant risk service
+        tenant_service = TenantRiskAnalysisService(db)
+        tenant_results = await_async(
+            tenant_service.run_all_tenant_risk_tests(property_ref, period_ref)
+        )
+
+        try:
+            await_async(
+                tenant_service.save_tenant_risk_results(property_ref, period_ref, tenant_results)
+            )
+        except Exception as tenant_save_error:
+            logger.warning(f"Tenant risk results not saved: {tenant_save_error}")
+
         audit_results['phases']['tenant_risk_analysis'] = {
             'status': 'COMPLETE',
-            'concentration_risk': 'MODERATE',
-            'rollover_risk': 'MODERATE'
+            'concentration_risk': tenant_results['concentration_risk_status'],
+            'rollover_risk': tenant_results['rollover_risk_status']
         }
 
         # =====================================================================
@@ -259,11 +360,23 @@ def run_complete_forensic_audit_task(
             }
         )
 
-        # TODO: Implement collections quality service
+        collections_service = CollectionsRevenueQualityService(db)
+        collections_results = await_async(
+            collections_service.run_all_collections_tests(property_ref, period_ref)
+        )
+
+        try:
+            await_async(
+                collections_service.save_collections_results(property_ref, period_ref, collections_results)
+            )
+        except Exception as collections_save_error:
+            logger.warning(f"Collections results not saved: {collections_save_error}")
+
         audit_results['phases']['collections_quality'] = {
             'status': 'COMPLETE',
-            'dso': 26.0,
-            'revenue_quality_score': 87
+            'dso': collections_results['summary']['dso_days'],
+            'revenue_quality_score': collections_results['summary']['quality_score'],
+            'overall_status': collections_results['overall_status']
         }
 
         # =====================================================================
