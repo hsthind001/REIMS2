@@ -5,7 +5,7 @@
  * priority risks, and action items.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   TrendingUp,
@@ -17,7 +17,15 @@ import {
   Play,
 } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
-import { forensicAuditService, type AuditScorecard } from '../lib/forensic_audit';
+import {
+  forensicAuditService,
+  type AuditScorecard,
+  type CollectionsQualityResults,
+  type CovenantComplianceResults,
+  type CrossDocumentReconciliationResults,
+  type FraudDetectionResults,
+  type TenantRiskResults,
+} from '../lib/forensic_audit';
 import { propertyService } from '../lib/property';
 import { financialPeriodsService, type FinancialPeriod } from '../lib/financial_periods';
 import type { Property } from '../types/api';
@@ -40,6 +48,18 @@ export default function ForensicAuditDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runningAudit, setRunningAudit] = useState(false);
+  const [auditTaskId, setAuditTaskId] = useState<string | null>(null);
+  const [auditPhase, setAuditPhase] = useState<string | null>(null);
+  const [auditProgress, setAuditProgress] = useState<number | null>(null);
+  const [auditStatusMessage, setAuditStatusMessage] = useState<string | null>(null);
+  const auditPollerRef = useRef<number | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [reconciliationResults, setReconciliationResults] =
+    useState<CrossDocumentReconciliationResults | null>(null);
+  const [fraudResults, setFraudResults] = useState<FraudDetectionResults | null>(null);
+  const [covenantResults, setCovenantResults] = useState<CovenantComplianceResults | null>(null);
+  const [tenantRiskResults, setTenantRiskResults] = useState<TenantRiskResults | null>(null);
+  const [collectionsResults, setCollectionsResults] = useState<CollectionsQualityResults | null>(null);
 
   useEffect(() => {
     loadProperties();
@@ -57,8 +77,83 @@ export default function ForensicAuditDashboard() {
   useEffect(() => {
     if (selectedPropertyId && selectedPeriodId) {
       loadScorecard();
+      loadDetailPanels();
+    } else {
+      setReconciliationResults(null);
+      setFraudResults(null);
+      setCovenantResults(null);
+      setTenantRiskResults(null);
+      setCollectionsResults(null);
     }
   }, [selectedPropertyId, selectedPeriodId]);
+
+  useEffect(() => {
+    if (!runningAudit || !auditTaskId) return;
+
+    let cancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const status = await forensicAuditService.getAuditStatus(auditTaskId);
+        if (cancelled) return;
+
+        const state = status.state || status.status;
+        if (state === 'PENDING') {
+          setAuditPhase('Queued');
+          setAuditProgress(0);
+          setAuditStatusMessage(status.message || 'Audit is queued and waiting to start.');
+          return;
+        }
+
+        if (state === 'PROGRESS') {
+          setAuditPhase(status.current_phase || 'In Progress');
+          setAuditProgress(Number.isFinite(status.progress) ? status.progress : null);
+          setAuditStatusMessage(status.message || 'Audit running.');
+          return;
+        }
+
+        if (state === 'SUCCESS' || state === 'COMPLETED') {
+          setRunningAudit(false);
+          setAuditTaskId(null);
+          setAuditPhase(null);
+          setAuditProgress(null);
+          setAuditStatusMessage(null);
+          await loadScorecard();
+          await loadDetailPanels();
+          return;
+        }
+
+        if (state === 'FAILURE' || state === 'FAILED') {
+          setRunningAudit(false);
+          setAuditTaskId(null);
+          setAuditPhase(null);
+          setAuditProgress(null);
+          setAuditStatusMessage(null);
+          setError(status.message || 'Forensic audit failed. Check server logs for details.');
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        console.error('Error checking audit status:', err);
+        setRunningAudit(false);
+        setAuditTaskId(null);
+        setAuditPhase(null);
+        setAuditProgress(null);
+        setAuditStatusMessage(null);
+        setError(err.message || 'Failed to check audit status');
+      }
+    };
+
+    pollStatus();
+    auditPollerRef.current = window.setInterval(pollStatus, 5000);
+
+    return () => {
+      cancelled = true;
+      if (auditPollerRef.current !== null) {
+        window.clearInterval(auditPollerRef.current);
+        auditPollerRef.current = null;
+      }
+    };
+  }, [runningAudit, auditTaskId]);
 
   const loadProperties = async () => {
     try {
@@ -108,11 +203,67 @@ export default function ForensicAuditDashboard() {
     }
   };
 
+  const loadDetailPanels = async () => {
+    if (!selectedPropertyId || !selectedPeriodId) return;
+
+    setDetailLoading(true);
+
+    const requests = await Promise.allSettled([
+      forensicAuditService.getReconciliations(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getFraudDetection(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getCovenantCompliance(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getTenantRisk(selectedPropertyId, selectedPeriodId),
+      forensicAuditService.getCollectionsQuality(selectedPropertyId, selectedPeriodId),
+    ]);
+
+    const [reconResult, fraudResult, covenantResult, tenantResult, collectionsResult] = requests;
+
+    if (reconResult.status === 'fulfilled') {
+      setReconciliationResults(reconResult.value);
+    } else {
+      setReconciliationResults(null);
+      console.error('Error loading reconciliation results:', reconResult.reason);
+    }
+
+    if (fraudResult.status === 'fulfilled') {
+      setFraudResults(fraudResult.value);
+    } else {
+      setFraudResults(null);
+      console.error('Error loading fraud detection results:', fraudResult.reason);
+    }
+
+    if (covenantResult.status === 'fulfilled') {
+      setCovenantResults(covenantResult.value);
+    } else {
+      setCovenantResults(null);
+      console.error('Error loading covenant compliance results:', covenantResult.reason);
+    }
+
+    if (tenantResult.status === 'fulfilled') {
+      setTenantRiskResults(tenantResult.value);
+    } else {
+      setTenantRiskResults(null);
+      console.error('Error loading tenant risk results:', tenantResult.reason);
+    }
+
+    if (collectionsResult.status === 'fulfilled') {
+      setCollectionsResults(collectionsResult.value);
+    } else {
+      setCollectionsResults(null);
+      console.error('Error loading collections quality results:', collectionsResult.reason);
+    }
+
+    setDetailLoading(false);
+  };
+
   const handleRunAudit = async () => {
     if (!selectedPropertyId || !selectedPeriodId) return;
 
     setRunningAudit(true);
     setError(null);
+    setAuditPhase('Queued');
+    setAuditProgress(0);
+    setAuditStatusMessage('Audit queued. Tracking progress...');
 
     try {
       const response = await forensicAuditService.runAudit({
@@ -120,25 +271,9 @@ export default function ForensicAuditDashboard() {
         period_id: selectedPeriodId,
       });
 
-      // Task status polling not yet implemented (Phase 8)
-      // Instead, wait a reasonable time and reload the scorecard
       const taskId = response.task_id;
       console.log('Audit task started with ID:', taskId);
-
-      // Wait for estimated duration (from response) or default to 30 seconds
-      const waitTime = response.estimated_duration_seconds
-        ? response.estimated_duration_seconds * 1000
-        : 30000;
-
-      setTimeout(async () => {
-        try {
-          setRunningAudit(false);
-          await loadScorecard(); // Reload the scorecard
-        } catch (err) {
-          console.error('Error reloading scorecard after audit:', err);
-          setRunningAudit(false);
-        }
-      }, waitTime);
+      setAuditTaskId(taskId);
 
     } catch (err: any) {
       console.error('Error running audit:', err);
@@ -176,6 +311,21 @@ export default function ForensicAuditDashboard() {
     return property.property_name || property.property_code || `Property ${property.id}`;
   };
 
+  const handleRefresh = () => {
+    loadScorecard();
+    loadDetailPanels();
+  };
+
+  const goToRoute = (route: string) => {
+    window.location.hash = route;
+  };
+
+  const getStatusFromCounts = (failed?: number, warnings?: number) => {
+    if (failed && failed > 0) return 'RED';
+    if (warnings && warnings > 0) return 'YELLOW';
+    return 'GREEN';
+  };
+
   const reconciliationPassRate = scorecard
     ? scorecard.reconciliation_summary.pass_rate_pct ?? scorecard.reconciliation_summary.pass_rate ?? 0
     : 0;
@@ -201,6 +351,11 @@ export default function ForensicAuditDashboard() {
         cashBalance: scorecard.financial_summary.cash_balance ?? 0,
       }
     : null;
+
+  const ltvValue =
+    scorecard?.covenant_summary.ltv ??
+    scorecard?.covenant_summary.ltv_ratio ??
+    null;
 
   return (
     <div className="p-6 space-y-6">
@@ -243,7 +398,7 @@ export default function ForensicAuditDashboard() {
 
           {/* Actions */}
           <Button
-            onClick={loadScorecard}
+            onClick={handleRefresh}
             disabled={loading || !selectedPropertyId || !selectedPeriodId}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -271,6 +426,27 @@ export default function ForensicAuditDashboard() {
       {!loading && properties.length > 0 && periods.length === 0 && !error && (
         <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg">
           Select a period to view forensic audit results. If no periods exist for this property, create one or run an audit to generate the first scorecard.
+        </div>
+      )}
+
+      {(runningAudit || auditTaskId) && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg">
+          <div className="flex items-center gap-3">
+            <RefreshCw className={`w-5 h-5 ${runningAudit ? 'animate-spin' : ''}`} />
+            <div className="flex-1">
+              <div className="font-medium">
+                Audit status{auditPhase ? `: ${auditPhase}` : ''}
+              </div>
+              <div className="text-sm text-blue-700">
+                {auditStatusMessage || 'Tracking audit progress...'}
+              </div>
+            </div>
+            {auditProgress != null && (
+              <div className="text-sm font-semibold text-blue-700">
+                {auditProgress}%
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -373,7 +549,7 @@ export default function ForensicAuditDashboard() {
 
               <MetricCard
                 title="LTV Ratio"
-                value={scorecard.covenant_summary.ltv != null ? `${scorecard.covenant_summary.ltv.toFixed(1)}%` : 'N/A'}
+                value={ltvValue != null ? `${ltvValue.toFixed(1)}%` : 'N/A'}
                 subtitle="Loan-to-Value"
                 status={scorecard.covenant_summary.ltv_status as any}
                 target={scorecard.covenant_summary.ltv_covenant != null ? `${scorecard.covenant_summary.ltv_covenant.toFixed(0)}%` : 'N/A'}
@@ -399,6 +575,150 @@ export default function ForensicAuditDashboard() {
                 icon={CheckCircle2}
                 iconColor="text-teal-600"
               />
+            </div>
+          </div>
+
+          {/* Traffic Light Metrics */}
+          {scorecard.metrics.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900">Traffic Light Metrics</h2>
+                {detailLoading && (
+                  <span className="text-sm text-gray-500">Refreshing detail panels...</span>
+                )}
+              </div>
+              <Card className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {scorecard.metrics.map((metric) => (
+                    <div key={metric.metric_name} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{metric.metric_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {metric.current_value != null ? metric.current_value.toFixed(2) : 'N/A'}
+                          {metric.target_value != null ? ` / Target ${metric.target_value.toFixed(2)}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <TrendIndicator trend={metric.trend as any} size="sm" />
+                        <TrafficLightIndicator status={metric.status} size="sm" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {/* Audit Drilldowns */}
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Audit Drilldowns</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Reconciliations</div>
+                    <div className="text-xs text-gray-500">9 cross-document tie-outs</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(reconciliationResults
+                      ? getStatusFromCounts(reconciliationResults.failed, reconciliationResults.warnings)
+                      : scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {reconciliationResults
+                    ? `${reconciliationResults.passed}/${reconciliationResults.total_reconciliations} passed`
+                    : 'Run audit to generate reconciliation results.'}
+                </div>
+                <Button onClick={() => goToRoute('reconciliation-results')} variant="secondary">
+                  View Reconciliation Results
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Fraud Detection</div>
+                    <div className="text-xs text-gray-500">Benford, round numbers, duplicates</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(fraudResults?.overall_status || fraudSummary?.overall_status || scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {fraudResults
+                    ? `Risk: ${fraudResults.fraud_risk_level}`
+                    : `Risk: ${fraudSummary?.fraud_risk_level ?? 'Unknown'}`}
+                </div>
+                <Button onClick={() => goToRoute('fraud-detection')} variant="secondary">
+                  View Fraud Detection
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Covenant Compliance</div>
+                    <div className="text-xs text-gray-500">DSCR, LTV, liquidity</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(covenantResults?.overall_status || scorecard.covenant_summary.dscr_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {covenantResults
+                    ? `DSCR ${covenantResults.tests.dscr.dscr.toFixed(2)}x • LTV ${covenantResults.tests.ltv.ltv.toFixed(1)}%`
+                    : `DSCR ${scorecard.covenant_summary.dscr.toFixed(2)}x`}
+                </div>
+                <Button onClick={() => goToRoute('covenant-compliance')} variant="secondary">
+                  View Covenant Compliance
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Tenant Risk</div>
+                    <div className="text-xs text-gray-500">Concentration and rollover</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(tenantRiskResults?.overall_status || scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {tenantRiskResults
+                    ? `Top 5 tenants ${tenantRiskResults.concentration.top_5_pct.toFixed(0)}% • 12mo rollover ${tenantRiskResults.rollover.rollover_12mo_pct.toFixed(0)}%`
+                    : 'Run audit to generate tenant risk results.'}
+                </div>
+                <Button onClick={() => goToRoute('tenant-risk')} variant="secondary">
+                  View Tenant Risk
+                </Button>
+              </Card>
+
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Collections Quality</div>
+                    <div className="text-xs text-gray-500">DSO and revenue quality</div>
+                  </div>
+                  <TrafficLightIndicator
+                    status={(collectionsResults?.overall_status || scorecard.traffic_light_status) as any}
+                    size="sm"
+                  />
+                </div>
+                <div className="text-sm text-gray-700">
+                  {collectionsResults
+                    ? `Quality ${collectionsResults.revenue_quality.quality_score}% • DSO ${collectionsResults.dso.current_dso.toFixed(0)}`
+                    : 'Run audit to generate collections results.'}
+                </div>
+                <Button onClick={() => goToRoute('collections-quality')} variant="secondary">
+                  View Collections Quality
+                </Button>
+              </Card>
             </div>
           </div>
 

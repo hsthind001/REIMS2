@@ -13,7 +13,8 @@ celery_app = Celery(
         "app.tasks.anomaly_detection_tasks",  # BR-008: Nightly anomaly detection
         "app.tasks.batch_reprocessing_tasks",  # Phase 1: Batch reprocessing for anomaly detection
         "app.tasks.alert_backfill_tasks",  # Alert backfill batch jobs
-        "app.tasks.learning_tasks"  # Self-learning system tasks
+        "app.tasks.learning_tasks",  # Self-learning system tasks
+        "app.tasks.forensic_audit_tasks"  # Forensic audit pipeline
     ]
 )
 

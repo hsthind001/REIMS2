@@ -11,9 +11,13 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
+from celery.result import AsyncResult
 
 from app.db.database import get_db
 from app.core.config import settings
+from app.core.celery_config import celery_app
+from app.models.document_upload import DocumentUpload
+from app.tasks.forensic_audit_tasks import run_complete_forensic_audit_task
 
 router = APIRouter(prefix="/forensic-audit", tags=["forensic-audit"])
 
@@ -60,6 +64,7 @@ class AuditOpinion(str, Enum):
 class RunAuditRequest(BaseModel):
     property_id: int
     period_id: int
+    document_id: Optional[int] = Field(default=None, description="Document upload ID for anomaly linkage")
     refresh_views: bool = Field(default=True, description="Refresh materialized views before audit")
     run_fraud_detection: bool = Field(default=True, description="Include fraud detection tests")
     run_covenant_analysis: bool = Field(default=True, description="Include covenant compliance checks")
@@ -322,25 +327,38 @@ def run_complete_forensic_audit(
     """
 
     try:
-        # Generate unique task ID
-        import uuid
-        task_id = str(uuid.uuid4())
+        document_id = request.document_id
+        if document_id is None:
+            document = db.query(DocumentUpload).filter(
+                DocumentUpload.property_id == request.property_id,
+                DocumentUpload.period_id == request.period_id,
+                DocumentUpload.is_active.is_(True)
+            ).order_by(DocumentUpload.upload_date.desc()).first()
+            if document:
+                document_id = document.id
 
-        # Queue background task
-        # background_tasks.add_task(
-        #     run_forensic_audit_background,
-        #     task_id=task_id,
-        #     property_id=request.property_id,
-        #     period_id=request.period_id,
-        #     refresh_views=request.refresh_views,
-        #     run_fraud_detection=request.run_fraud_detection,
-        #     run_covenant_analysis=request.run_covenant_analysis
-        # )
+        options = {
+            "refresh_views": request.refresh_views,
+            "run_fraud_detection": request.run_fraud_detection,
+            "run_covenant_analysis": request.run_covenant_analysis,
+            "create_anomalies": document_id is not None
+        }
+
+        task_result = run_complete_forensic_audit_task.delay(
+            request.property_id,
+            request.period_id,
+            document_id,
+            options
+        )
+
+        message = "Forensic audit queued successfully. Use /audit-status/{task_id} to monitor progress."
+        if document_id is None:
+            message += " Anomaly integration skipped (no document upload found)."
 
         return AuditTaskResponse(
-            task_id=task_id,
+            task_id=task_result.id,
             status="QUEUED",
-            message="Forensic audit queued successfully. Use /audit-status/{task_id} to monitor progress.",
+            message=message,
             estimated_duration_seconds=180
         )
 
@@ -533,6 +551,7 @@ def get_audit_scorecard(
                 "dscr": 1.22,
                 "dscr_status": "YELLOW",
                 "dscr_covenant": 1.25,
+                "ltv": 68.5,
                 "ltv_ratio": 68.5,
                 "ltv_status": "GREEN",
                 "ltv_covenant": 75.0,
@@ -1272,9 +1291,51 @@ def get_audit_task_status(
 
     Use this endpoint to poll for completion after calling `/run-audit`.
     """
+    task = AsyncResult(task_id, app=celery_app)
 
-    # TODO: Implement Celery task status checking
-    raise HTTPException(
-        status_code=501,
-        detail="Task status tracking not yet implemented. Coming in Phase 8."
-    )
+    if task.state == 'PENDING':
+        return {
+            "task_id": task_id,
+            "state": task.state,
+            "current_phase": "Waiting",
+            "progress": 0,
+            "message": "Task is queued and waiting to start"
+        }
+    if task.state == 'PROGRESS':
+        info = task.info or {}
+        return {
+            "task_id": task_id,
+            "state": task.state,
+            "current_phase": info.get("current_phase", "Unknown"),
+            "phase_number": info.get("phase_number", 0),
+            "progress": info.get("progress", 0),
+            "message": info.get("message", "Processing...")
+        }
+    if task.state == 'SUCCESS':
+        info = task.info or {}
+        return {
+            "task_id": task_id,
+            "state": task.state,
+            "current_phase": "Complete",
+            "progress": 100,
+            "message": "Audit completed successfully",
+            "results": info.get("results", {})
+        }
+    if task.state == 'FAILURE':
+        info = task.info or {}
+        return {
+            "task_id": task_id,
+            "state": task.state,
+            "current_phase": "Error",
+            "progress": 0,
+            "message": info.get("message", "Audit failed"),
+            "error": str(info) if info else "Unknown error"
+        }
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "current_phase": "Unknown",
+        "progress": 0,
+        "message": f"Task in state: {task.state}"
+    }

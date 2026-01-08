@@ -5,19 +5,13 @@ Celery tasks for running complete 7-phase forensic audits in the background.
 Prevents UI blocking during long-running audits (2-5 minutes).
 """
 
-from typing import Dict, Any
-from uuid import UUID
+from typing import Dict, Any, Optional, Union
 from datetime import datetime
 from celery import Task
 from sqlalchemy.orm import Session
 
-# Import Celery app (assuming it's configured in app/core/celery.py)
-try:
-    from app.core.celery_app import celery_app
-except ImportError:
-    # Fallback if Celery not configured yet
-    from celery import Celery
-    celery_app = Celery('reims')
+# Import Celery app
+from app.core.celery_config import celery_app
 
 from app.db.database import SessionLocal
 from app.services.cross_document_reconciliation_service import CrossDocumentReconciliationService
@@ -27,13 +21,62 @@ from app.services.audit_scorecard_generator_service import AuditScorecardGenerat
 from app.services.forensic_audit_anomaly_integration_service import ForensicAuditAnomalyIntegrationService
 
 
+class AsyncSessionWrapper:
+    """
+    Async-style wrapper for sync SQLAlchemy sessions.
+
+    Forensic audit services expect AsyncSession methods, but the app uses
+    sync sessions. This wrapper provides async-compatible methods while
+    delegating to the underlying sync session.
+    """
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    def __getattr__(self, name: str):
+        return getattr(self._session, name)
+
+    async def execute(self, *args, **kwargs):
+        return self._session.execute(*args, **kwargs)
+
+    async def commit(self):
+        return self._session.commit()
+
+    async def flush(self):
+        return self._session.flush()
+
+    async def refresh(self, *args, **kwargs):
+        return self._session.refresh(*args, **kwargs)
+
+    async def close(self):
+        return self._session.close()
+
+    def add(self, *args, **kwargs):
+        return self._session.add(*args, **kwargs)
+
+    def add_all(self, *args, **kwargs):
+        return self._session.add_all(*args, **kwargs)
+
+    def rollback(self):
+        return self._session.rollback()
+
+
+def normalize_id(value: Union[str, int]) -> Union[str, int]:
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 @celery_app.task(bind=True, name="forensic_audit.run_complete_audit")
 def run_complete_forensic_audit_task(
     self: Task,
-    property_id: str,
-    period_id: str,
-    document_id: int,
-    options: Dict[str, bool] = None
+    property_id: Union[str, int],
+    period_id: Union[str, int],
+    document_id: Optional[int] = None,
+    options: Optional[Dict[str, bool]] = None
 ) -> Dict[str, Any]:
     """
     Run complete 7-phase forensic audit in background.
@@ -65,15 +108,17 @@ def run_complete_forensic_audit_task(
             'refresh_views': True,
             'run_fraud_detection': True,
             'run_covenant_analysis': True,
-            'create_anomalies': True
+            'create_anomalies': document_id is not None
         }
+    elif document_id is None:
+        options['create_anomalies'] = False
 
-    # Convert UUIDs
-    property_uuid = UUID(property_id)
-    period_uuid = UUID(period_id)
+    property_ref = normalize_id(property_id)
+    period_ref = normalize_id(period_id)
 
     # Create database session
-    db = SessionLocal()
+    sync_db = SessionLocal()
+    db = AsyncSessionWrapper(sync_db)
 
     try:
         # Update state: STARTED
@@ -88,8 +133,8 @@ def run_complete_forensic_audit_task(
         )
 
         audit_results = {
-            'property_id': property_id,
-            'period_id': period_id,
+            'property_id': property_ref,
+            'period_id': period_ref,
             'started_at': datetime.now().isoformat(),
             'phases': {}
         }
@@ -152,13 +197,13 @@ def run_complete_forensic_audit_task(
         # Run reconciliation service
         recon_service = CrossDocumentReconciliationService(db)
         recon_results = await_async(
-            recon_service.run_all_reconciliations(property_uuid, period_uuid)
+            recon_service.run_all_reconciliations(property_ref, period_ref)
         )
 
         # Save to database
         await_async(
             recon_service.save_reconciliation_results(
-                property_uuid, period_uuid, recon_results
+                property_ref, period_ref, recon_results
             )
         )
 
@@ -238,15 +283,15 @@ def run_complete_forensic_audit_task(
             # Run fraud detection service
             fraud_service = FraudDetectionService(db)
             fraud_results = await_async(
-                fraud_service.run_all_fraud_tests(property_uuid, period_uuid)
-            )
+            fraud_service.run_all_fraud_tests(property_ref, period_ref)
+        )
 
             # Save to database
             await_async(
-                fraud_service.save_fraud_detection_results(
-                    property_uuid, period_uuid, fraud_results
-                )
+            fraud_service.save_fraud_detection_results(
+                property_ref, period_ref, fraud_results
             )
+        )
 
             audit_results['phases']['fraud_detection'] = {
                 'status': 'COMPLETE',
@@ -275,15 +320,15 @@ def run_complete_forensic_audit_task(
             # Run covenant compliance service
             covenant_service = CovenantComplianceService(db)
             covenant_results = await_async(
-                covenant_service.calculate_all_covenants(property_uuid, period_uuid)
-            )
+            covenant_service.calculate_all_covenants(property_ref, period_ref)
+        )
 
             # Save to database
             await_async(
-                covenant_service.save_covenant_compliance_results(
-                    property_uuid, period_uuid, covenant_results
-                )
+            covenant_service.save_covenant_compliance_results(
+                property_ref, period_ref, covenant_results
             )
+        )
 
             audit_results['phases']['covenant_compliance'] = {
                 'status': 'COMPLETE',
@@ -311,7 +356,7 @@ def run_complete_forensic_audit_task(
         # Generate scorecard
         scorecard_service = AuditScorecardGeneratorService(db)
         scorecard = await_async(
-            scorecard_service.generate_complete_scorecard(property_uuid, period_uuid)
+            scorecard_service.generate_complete_scorecard(property_ref, period_ref)
         )
 
         audit_results['scorecard'] = scorecard
@@ -319,7 +364,7 @@ def run_complete_forensic_audit_task(
         # =====================================================================
         # PHASE 9: Create Anomaly Records (if enabled)
         # =====================================================================
-        if options.get('create_anomalies', True):
+        if options.get('create_anomalies', True) and document_id is not None:
             self.update_state(
                 state='PROGRESS',
                 meta={
@@ -334,11 +379,16 @@ def run_complete_forensic_audit_task(
             integration_service = ForensicAuditAnomalyIntegrationService(db)
             anomaly_results = await_async(
                 integration_service.run_complete_integration(
-                    property_uuid, period_uuid, document_id
+                    property_ref, period_ref, document_id
                 )
             )
 
             audit_results['anomaly_integration'] = anomaly_results
+        elif options.get('create_anomalies', True):
+            audit_results['anomaly_integration'] = {
+                'status': 'SKIPPED',
+                'reason': 'No document_id provided for anomaly linkage'
+            }
 
         # =====================================================================
         # COMPLETE
@@ -376,7 +426,7 @@ def run_complete_forensic_audit_task(
         raise
 
     finally:
-        db.close()
+        sync_db.close()
 
 
 # Helper function to run async functions in sync context
