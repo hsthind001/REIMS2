@@ -136,7 +136,8 @@
       "Bash(/home/hsthind/Documents/GitHub/REIMS2/create_admin_user.sh)",
       "Bash(psql:*)",
       "Bash(while read -r id)",
-      "Bash(./verify_all_fixes.sh:*)"
+      "Bash(./verify_all_fixes.sh:*)",
+      "Bash(docker-compose down:*)"
     ]
   }
 }
