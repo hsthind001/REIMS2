@@ -33,6 +33,7 @@ const CollectionsQualityDashboard = lazy(() => import('./pages/CollectionsQualit
 const DocumentCompletenessDashboard = lazy(() => import('./pages/DocumentCompletenessDashboard'))
 const AuditHistoryDashboard = lazy(() => import('./pages/AuditHistoryDashboard'))
 const NaturalLanguageQueryNew = lazy(() => import('./pages/NaturalLanguageQueryNew'))
+const AnomalyDashboard = lazy(() => import('./pages/AnomalyDashboard'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -264,6 +265,13 @@ function AppContent() {
               <span className="nav-icon">🛡️</span>
               {sidebarOpen && <span className="nav-text">Risk Management</span>}
             </button>
+            <button
+              className={`nav-item ${hashRoute === 'nlq-search' ? 'active' : ''}`}
+              onClick={() => window.location.hash = 'nlq-search'}
+            >
+              <span className="nav-icon">💬</span>
+              {sidebarOpen && <span className="nav-text">Ask AI</span>}
+            </button>
           </nav>
         </aside>
 
@@ -340,6 +348,10 @@ function AppContent() {
           ) : hashRoute === 'nlq-search' ? (
             <Suspense fallback={<PageLoader />}>
               <NaturalLanguageQueryNew />
+            </Suspense>
+          ) : hashRoute === 'anomaly-dashboard' ? (
+            <Suspense fallback={<PageLoader />}>
+              <AnomalyDashboard />
             </Suspense>
           ) : (
             renderPage()

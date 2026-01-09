@@ -725,10 +725,80 @@ export default function RiskManagement() {
         </select>
       </div>
 
+      {/* Quick Access Links */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gap: '1rem',
+        marginBottom: '1.5rem'
+      }}>
+        <button
+          onClick={() => window.location.hash = 'anomaly-dashboard'}
+          style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '1rem',
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)'
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)'
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🔍</div>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>
+            All Anomalies
+          </h3>
+          <p style={{ margin: 0, opacity: 0.9, fontSize: '0.875rem' }}>
+            Browse and filter all detected anomalies in grid view
+          </p>
+        </button>
+
+        <button
+          onClick={() => window.location.hash = 'forensic-audit-dashboard'}
+          style={{
+            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '1rem',
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)'
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(240, 147, 251, 0.4)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)'
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🔬</div>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>
+            Forensic Audit Suite
+          </h3>
+          <p style={{ margin: 0, opacity: 0.9, fontSize: '0.875rem' }}>
+            Access 10 specialized audit dashboards
+          </p>
+        </button>
+      </div>
+
       {/* View Mode Tabs */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '0.5rem', 
+      <div style={{
+        display: 'flex',
+        gap: '0.5rem',
         marginBottom: '1.5rem',
         borderBottom: '2px solid #e5e7eb',
         paddingBottom: '0.5rem'

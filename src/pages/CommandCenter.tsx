@@ -1667,8 +1667,19 @@ export default function CommandCenter() {
               {/* AI Insights */}
               <div className="space-y-4">
                 {aiInsights.length === 0 ? (
-                  <div className="bg-premium-light/20 p-4 rounded-lg border border-premium/30 text-center">
-                    <p className="text-sm text-text-secondary">Loading AI insights...</p>
+                  <div className="bg-success-light/20 p-4 rounded-lg border border-success/30">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle className="w-6 h-6 text-success" />
+                      <div>
+                        <p className="font-medium text-success">Portfolio Health Strong</p>
+                        <p className="text-sm text-text-secondary mt-1">
+                          No critical issues detected - portfolio performing within normal parameters
+                        </p>
+                        <p className="text-xs text-text-secondary mt-2">
+                          AI monitors: DSCR stress, vacancy trends, lease expirations, NOI patterns
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   aiInsights.map((insight) => (

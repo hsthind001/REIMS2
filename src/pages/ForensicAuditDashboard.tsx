@@ -463,6 +463,22 @@ export default function ForensicAuditDashboard() {
   const noiMarginMetric = getPerformanceMetric('noi_margin');
   const sameStoreMetric = getPerformanceMetric('same_store_growth');
 
+  // Get current route for active tab highlighting
+  const currentHash = typeof window !== 'undefined' ? window.location.hash.slice(1) : '';
+
+  const auditTabs = [
+    { id: 'forensic-audit-dashboard', label: 'Overview', icon: '📊', route: 'forensic-audit-dashboard' },
+    { id: 'math-integrity', label: 'Math Integrity', icon: '🔢', route: 'math-integrity' },
+    { id: 'performance-benchmarking', label: 'Performance', icon: '📈', route: 'performance-benchmarking' },
+    { id: 'fraud-detection', label: 'Fraud Detection', icon: '🚨', route: 'fraud-detection' },
+    { id: 'covenant-compliance', label: 'Covenants', icon: '📋', route: 'covenant-compliance' },
+    { id: 'tenant-risk', label: 'Tenant Risk', icon: '🏢', route: 'tenant-risk' },
+    { id: 'collections-quality', label: 'Collections', icon: '💰', route: 'collections-quality' },
+    { id: 'document-completeness', label: 'Documents', icon: '📄', route: 'document-completeness' },
+    { id: 'reconciliation-results', label: 'Reconciliation', icon: '🔄', route: 'reconciliation-results' },
+    { id: 'audit-history', label: 'History', icon: '📜', route: 'audit-history' },
+  ];
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -547,6 +563,55 @@ export default function ForensicAuditDashboard() {
             {runningAudit ? 'Running Audit...' : 'Run Audit'}
           </Button>
         </div>
+      </div>
+
+      {/* Forensic Audit Suite Navigation Tabs */}
+      <div style={{
+        display: 'flex',
+        gap: '0.5rem',
+        overflowX: 'auto',
+        borderBottom: '2px solid #e5e7eb',
+        paddingBottom: '0.5rem',
+        marginTop: '1.5rem'
+      }}>
+        {auditTabs.map(tab => {
+          const isActive = currentHash === tab.route;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => window.location.hash = tab.route}
+              style={{
+                padding: '0.75rem 1rem',
+                border: 'none',
+                background: isActive ? '#3b82f6' : 'transparent',
+                color: isActive ? 'white' : '#6b7280',
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                borderRadius: '8px 8px 0 0',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s',
+                borderBottom: isActive ? '2px solid #3b82f6' : 'none',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = '#f3f4f6';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = 'transparent';
+                }
+              }}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Empty data guidance */}

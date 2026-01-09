@@ -137,7 +137,11 @@
       "Bash(psql:*)",
       "Bash(while read -r id)",
       "Bash(./verify_all_fixes.sh:*)",
-      "Bash(docker-compose down:*)"
+      "Bash(docker-compose down:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(rm:*)",
+      "Bash(lsof:*)",
+      "Bash(netstat:*)"
     ]
   }
 }

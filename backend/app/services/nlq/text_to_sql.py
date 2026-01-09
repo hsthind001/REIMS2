@@ -159,15 +159,15 @@ class VannaTextToSQL:
             # Basic financial queries
             {
                 "question": "What was the cash position in November 2025?",
-                "sql": "SELECT b.amount as cash_position FROM balance_sheet_data b WHERE b.account_code = '1010' AND b.year = 2025 AND b.month = 11"
+                "sql": "SELECT b.amount as cash_position FROM balance_sheet_data b JOIN financial_periods fp ON b.period_id = fp.id WHERE b.account_code = '1010' AND fp.period_year = 2025 AND fp.period_month = 11"
             },
             {
                 "question": "Show me total revenue for Q4 2025",
-                "sql": "SELECT SUM(i.amount) as total_revenue FROM income_statement_data i WHERE i.category = 'Revenue' AND i.year = 2025 AND i.month IN (10, 11, 12)"
+                "sql": "SELECT SUM(i.amount) as total_revenue FROM income_statement_data i JOIN financial_periods fp ON i.period_id = fp.id WHERE i.account_category = 'Revenue' AND fp.period_year = 2025 AND fp.period_month IN (10, 11, 12)"
             },
             {
                 "question": "What are total assets for property ESP?",
-                "sql": "SELECT p.property_code, SUM(b.amount) as total_assets FROM balance_sheet_data b JOIN properties p ON b.property_id = p.id WHERE p.property_code = 'ESP' AND b.category = 'Assets' GROUP BY p.property_code"
+                "sql": "SELECT p.property_code, SUM(b.amount) as total_assets FROM balance_sheet_data b JOIN properties p ON b.property_id = p.id WHERE p.property_code = 'ESP' AND b.account_category = 'ASSETS' GROUP BY p.property_code"
             },
 
             # Audit trail queries
@@ -378,11 +378,12 @@ class VannaTextToSQL:
         sql = """
             SELECT
                 p.property_code,
-                b.year,
-                b.month,
+                fp.period_year as year,
+                fp.period_month as month,
                 b.amount as cash_position
             FROM balance_sheet_data b
             JOIN properties p ON b.property_id = p.id
+            JOIN financial_periods fp ON b.period_id = fp.id
             WHERE b.account_code = '1010'
         """
 
@@ -390,15 +391,15 @@ class VannaTextToSQL:
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND b.year = {filters['year']} AND b.month = {filters['month']}"
+                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
             elif "year" in filters:
-                sql += f" AND b.year = {filters['year']}"
+                sql += f" AND fp.period_year = {filters['year']}"
 
         # Add property filter
         if context and context.get("property_code"):
             sql += f" AND p.property_code = '{context['property_code']}'"
 
-        sql += " ORDER BY b.year DESC, b.month DESC LIMIT 1"
+        sql += " ORDER BY fp.period_year DESC, fp.period_month DESC LIMIT 1"
 
         return sql
 
@@ -407,27 +408,28 @@ class VannaTextToSQL:
         sql = """
             SELECT
                 p.property_code,
-                i.year,
-                i.month,
+                fp.period_year as year,
+                fp.period_month as month,
                 SUM(i.amount) as total_revenue
             FROM income_statement_data i
             JOIN properties p ON i.property_id = p.id
-            WHERE i.category = 'Revenue'
+            JOIN financial_periods fp ON i.period_id = fp.id
+            WHERE i.account_category = 'Revenue'
         """
 
         # Add temporal filters
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND i.year = {filters['year']} AND i.month = {filters['month']}"
+                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
             elif "year" in filters:
-                sql += f" AND i.year = {filters['year']}"
+                sql += f" AND fp.period_year = {filters['year']}"
 
         # Add property filter
         if context and context.get("property_code"):
             sql += f" AND p.property_code = '{context['property_code']}'"
 
-        sql += " GROUP BY p.property_code, i.year, i.month ORDER BY i.year DESC, i.month DESC"
+        sql += " GROUP BY p.property_code, fp.period_year, fp.period_month ORDER BY fp.period_year DESC, fp.period_month DESC"
 
         return sql
 
@@ -436,27 +438,28 @@ class VannaTextToSQL:
         sql = """
             SELECT
                 p.property_code,
-                i.year,
-                i.month,
+                fp.period_year as year,
+                fp.period_month as month,
                 SUM(i.amount) as total_expenses
             FROM income_statement_data i
             JOIN properties p ON i.property_id = p.id
-            WHERE i.category = 'Operating Expenses'
+            JOIN financial_periods fp ON i.period_id = fp.id
+            WHERE i.account_category = 'Operating Expenses'
         """
 
         # Add temporal filters
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND i.year = {filters['year']} AND i.month = {filters['month']}"
+                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
             elif "year" in filters:
-                sql += f" AND i.year = {filters['year']}"
+                sql += f" AND fp.period_year = {filters['year']}"
 
         # Add property filter
         if context and context.get("property_code"):
             sql += f" AND p.property_code = '{context['property_code']}'"
 
-        sql += " GROUP BY p.property_code, i.year, i.month ORDER BY i.year DESC, i.month DESC"
+        sql += " GROUP BY p.property_code, fp.period_year, fp.period_month ORDER BY fp.period_year DESC, fp.period_month DESC"
 
         return sql
 
@@ -465,12 +468,13 @@ class VannaTextToSQL:
         sql = """
             SELECT
                 p.property_code,
-                b.category,
+                b.account_category as category,
                 b.account_code,
                 b.account_name,
                 b.amount
             FROM balance_sheet_data b
             JOIN properties p ON b.property_id = p.id
+            JOIN financial_periods fp ON b.period_id = fp.id
             WHERE 1=1
         """
 
@@ -478,15 +482,15 @@ class VannaTextToSQL:
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND b.year = {filters['year']} AND b.month = {filters['month']}"
+                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
             elif "year" in filters:
-                sql += f" AND b.year = {filters['year']}"
+                sql += f" AND fp.period_year = {filters['year']}"
 
         # Add property filter
         if context and context.get("property_code"):
             sql += f" AND p.property_code = '{context['property_code']}'"
 
-        sql += " ORDER BY b.category, b.account_code"
+        sql += " ORDER BY b.account_category, b.account_code"
 
         return sql
 
@@ -495,12 +499,13 @@ class VannaTextToSQL:
         sql = """
             SELECT
                 p.property_code,
-                i.category,
+                i.account_category as category,
                 i.account_code,
                 i.account_name,
                 i.amount
             FROM income_statement_data i
             JOIN properties p ON i.property_id = p.id
+            JOIN financial_periods fp ON i.period_id = fp.id
             WHERE 1=1
         """
 
@@ -508,15 +513,15 @@ class VannaTextToSQL:
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND i.year = {filters['year']} AND i.month = {filters['month']}"
+                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
             elif "year" in filters:
-                sql += f" AND i.year = {filters['year']}"
+                sql += f" AND fp.period_year = {filters['year']}"
 
         # Add property filter
         if context and context.get("property_code"):
             sql += f" AND p.property_code = '{context['property_code']}'"
 
-        sql += " ORDER BY i.category, i.account_code"
+        sql += " ORDER BY i.account_category, i.account_code"
 
         return sql
 

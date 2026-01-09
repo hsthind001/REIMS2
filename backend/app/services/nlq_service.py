@@ -700,22 +700,170 @@ Respond in JSON format:
         return metrics
 
     def _extract_time_period(self, question: str) -> Optional[Dict]:
-        """Extract time period from question"""
-        question_lower = question.lower()
+        """
+        Extract time period from question using comprehensive temporal parsing
 
-        # Simple patterns
-        if 'last quarter' in question_lower or 'q4' in question_lower:
-            return {'period': 'last_quarter'}
-        elif 'last year' in question_lower or 'last 12 months' in question_lower:
-            return {'period': 'last_year'}
-        elif 'last month' in question_lower:
-            return {'period': 'last_month'}
-        elif re.search(r'20\d{2}', question):
-            # Extract year
-            year_match = re.search(r'20\d{2}', question)
-            return {'year': int(year_match.group())}
+        Supports:
+        - Quarters: Q1, Q2, Q3, Q4 (with optional year)
+        - Months: "January", "last month", "this month"
+        - Years: "2025", "2024"
+        - Periods: "YTD", "year to date"
+        - Half-yearly: H1, H2
+        """
+        question_lower = question.lower()
+        current_date = datetime.now()
+        current_year = current_date.year
+        current_month = current_date.month
+
+        # Q1-Q4 patterns with optional year
+        q_match = re.search(r'q([1-4])\s*(\d{4})?', question_lower)
+        if q_match:
+            quarter = int(q_match.group(1))
+            year = int(q_match.group(2)) if q_match.group(2) else current_year
+            start_month = (quarter - 1) * 3 + 1
+            end_month = quarter * 3
+            return {
+                'temporal_type': 'quarter',
+                'year': year,
+                'start_month': start_month,
+                'end_month': end_month,
+                'quarter': quarter
+            }
+
+        # H1/H2 (Half-yearly) patterns with optional year
+        h_match = re.search(r'h([1-2])\s*(\d{4})?', question_lower)
+        if h_match:
+            half = int(h_match.group(1))
+            year = int(h_match.group(2)) if h_match.group(2) else current_year
+            start_month = 1 if half == 1 else 7
+            end_month = 6 if half == 1 else 12
+            return {
+                'temporal_type': 'half_year',
+                'year': year,
+                'start_month': start_month,
+                'end_month': end_month,
+                'half': half
+            }
+
+        # "last quarter"
+        if 'last quarter' in question_lower:
+            current_quarter = (current_month - 1) // 3 + 1
+            if current_quarter == 1:
+                last_quarter = 4
+                year = current_year - 1
+            else:
+                last_quarter = current_quarter - 1
+                year = current_year
+            start_month = (last_quarter - 1) * 3 + 1
+            end_month = last_quarter * 3
+            return {
+                'temporal_type': 'quarter',
+                'year': year,
+                'start_month': start_month,
+                'end_month': end_month,
+                'quarter': last_quarter
+            }
+
+        # "last month"
+        if 'last month' in question_lower:
+            prev_month = current_month - 1 if current_month > 1 else 12
+            prev_year = current_year if current_month > 1 else current_year - 1
+            return {
+                'temporal_type': 'month',
+                'year': prev_year,
+                'month': prev_month
+            }
+
+        # "this month" or "current month"
+        if 'this month' in question_lower or 'current month' in question_lower:
+            return {
+                'temporal_type': 'month',
+                'year': current_year,
+                'month': current_month
+            }
+
+        # "last year"
+        if 'last year' in question_lower:
+            return {
+                'temporal_type': 'year',
+                'year': current_year - 1
+            }
+
+        # YTD (Year to Date)
+        if 'ytd' in question_lower or 'year to date' in question_lower:
+            return {
+                'temporal_type': 'ytd',
+                'year': current_year,
+                'start_month': 1,
+                'end_month': current_month
+            }
+
+        # Month names with optional year
+        month_names = {
+            'january': 1, 'february': 2, 'march': 3, 'april': 4,
+            'may': 5, 'june': 6, 'july': 7, 'august': 8,
+            'september': 9, 'october': 10, 'november': 11, 'december': 12
+        }
+        for month_name, month_num in month_names.items():
+            if month_name in question_lower:
+                year_match = re.search(r'\b(20\d{2})\b', question_lower)
+                year = int(year_match.group(1)) if year_match else current_year
+                return {
+                    'temporal_type': 'month',
+                    'year': year,
+                    'month': month_num
+                }
+
+        # Specific year (only if no month found)
+        year_match = re.search(r'\b(20\d{2})\b', question_lower)
+        if year_match:
+            year = int(year_match.group(1))
+            return {
+                'temporal_type': 'year',
+                'year': year
+            }
 
         return None
+
+    def _build_temporal_filter(self, time_period: Dict) -> tuple:
+        """
+        Build SQL WHERE clause and params for temporal filtering
+
+        Returns: (sql_fragment, params_dict)
+        """
+        if not time_period:
+            return "", {}
+
+        temporal_type = time_period.get('temporal_type')
+        sql_parts = []
+        params = {}
+
+        if temporal_type == 'quarter' or temporal_type == 'half_year' or temporal_type == 'ytd':
+            # Range query (start_month to end_month)
+            year = time_period.get('year')
+            start_month = time_period.get('start_month')
+            end_month = time_period.get('end_month')
+            sql_parts.append(" AND fp.period_year = :year")
+            sql_parts.append(" AND fp.period_month >= :start_month")
+            sql_parts.append(" AND fp.period_month <= :end_month")
+            params['year'] = year
+            params['start_month'] = start_month
+            params['end_month'] = end_month
+        elif temporal_type == 'month':
+            # Single month
+            year = time_period.get('year')
+            month = time_period.get('month')
+            sql_parts.append(" AND fp.period_year = :year")
+            sql_parts.append(" AND fp.period_month = :month")
+            params['year'] = year
+            params['month'] = month
+        elif temporal_type == 'year':
+            # Full year
+            year = time_period.get('year')
+            sql_parts.append(" AND fp.period_year = :year")
+            params['year'] = year
+
+        return "".join(sql_parts), params
 
     def _retrieve_data(self, intent: Dict) -> tuple:
         """
@@ -1079,6 +1227,7 @@ Answer:"""
         """Query for specific metric value"""
         properties = entities.get('properties', [])
         metrics = entities.get('metrics', [])
+        time_period = entities.get('time_period', {})
 
         if not metrics:
             return [], None
@@ -1104,6 +1253,12 @@ Answer:"""
                     sql += " AND p.property_name IN :properties"
                     params['properties'] = tuple(properties)
 
+                # Apply temporal filters if specified
+                if time_period:
+                    temporal_sql, temporal_params = self._build_temporal_filter(time_period)
+                    sql += temporal_sql
+                    params.update(temporal_params)
+
                 sql += " ORDER BY fp.period_year DESC, fp.period_month DESC LIMIT 10"
                 params['metric'] = f'%{mapping["field"]}%'
 
@@ -1116,29 +1271,43 @@ Answer:"""
         """Query for comparison between properties"""
         properties = entities.get('properties', [])
         metrics = entities.get('metrics', ['revenue'])  # Default to revenue
+        time_period = entities.get('time_period', {})
 
+        # Fixed: Sum all revenue accounts (4xxx series) instead of searching by account_name
         if len(properties) < 2:
             # Get all properties for comparison
             sql = """
             SELECT p.property_name, SUM(isd.period_amount) as total
             FROM income_statement_data isd
             JOIN properties p ON isd.property_id = p.id
-            WHERE isd.account_name LIKE '%revenue%'
-            GROUP BY p.property_name
-            ORDER BY total DESC
+            JOIN financial_periods fp ON isd.period_id = fp.id
+            WHERE isd.account_code LIKE '4%'
+              AND isd.account_code NOT IN ('4990-0000', '4991-0000')
             """
         else:
             sql = """
             SELECT p.property_name, SUM(isd.period_amount) as total
             FROM income_statement_data isd
             JOIN properties p ON isd.property_id = p.id
-            WHERE isd.account_name LIKE '%revenue%'
-            AND p.property_name IN :properties
+            JOIN financial_periods fp ON isd.period_id = fp.id
+            WHERE isd.account_code LIKE '4%'
+              AND isd.account_code NOT IN ('4990-0000', '4991-0000')
+              AND p.property_name IN :properties
+            """
+
+        params = {'properties': tuple(properties)} if properties and len(properties) >= 2 else {}
+
+        # Apply temporal filters if specified
+        if time_period:
+            temporal_sql, temporal_params = self._build_temporal_filter(time_period)
+            sql += temporal_sql
+            params.update(temporal_params)
+
+        sql += """
             GROUP BY p.property_name
             ORDER BY total DESC
             """
 
-        params = {'properties': tuple(properties)} if properties and len(properties) >= 2 else {}
         result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
 
@@ -1146,17 +1315,18 @@ Answer:"""
         """Query for trends over time"""
         properties = entities.get('properties', [])
         metrics = entities.get('metrics', [])
-        
+        time_period = entities.get('time_period', {})
+
         # Determine what metric to query
         query_metric = 'revenue'  # default
         if 'noi' in [m.lower() for m in metrics] or 'net operating income' in [m.lower() for m in metrics]:
             # Query NOI from financial_metrics table
             sql = """
-            SELECT 
-                p.property_name, 
+            SELECT
+                p.property_name,
                 p.property_code,
-                fp.period_year as year, 
-                fp.period_month as month, 
+                fp.period_year as year,
+                fp.period_month as month,
                 CONCAT(fp.period_year, '-', LPAD(fp.period_month::text, 2, '0')) as period_name,
                 fm.net_operating_income as value
             FROM financial_metrics fm
@@ -1164,39 +1334,56 @@ Answer:"""
             JOIN financial_periods fp ON fm.period_id = fp.id
             WHERE fm.net_operating_income IS NOT NULL
             """
-            
+
             params = {}
             if properties:
                 sql += " AND p.property_name IN :properties"
                 params['properties'] = tuple(properties)
-            
-            # Get last 12 months
-            sql += " AND fp.period_end_date >= CURRENT_DATE - INTERVAL '12 months'"
+
+            # Apply temporal filters
+            if time_period:
+                temporal_sql, temporal_params = self._build_temporal_filter(time_period)
+                sql += temporal_sql
+                params.update(temporal_params)
+            else:
+                # Default: Get last 12 months
+                sql += " AND fp.period_end_date >= CURRENT_DATE - INTERVAL '12 months'"
+
             sql += " ORDER BY p.property_name, fp.period_year DESC, fp.period_month DESC LIMIT 24"
-            
+
             result = self.db.execute(text(sql), params).fetchall()
             return [dict(r._mapping) for r in result], sql
-        
+
         # Default: revenue query (existing logic)
+        # Fixed: Sum all revenue accounts (4xxx series) since 4990-0000 TOTAL INCOME is not populated
         sql = """
-        SELECT p.property_name, fp.period_year as year, fp.period_month as month, 
-               CONCAT(fp.period_year, '-', LPAD(fp.period_month::text, 2, '0')) as period_name, 
+        SELECT p.property_name, fp.period_year as year, fp.period_month as month,
+               CONCAT(fp.period_year, '-', LPAD(fp.period_month::text, 2, '0')) as period_name,
                SUM(isd.period_amount) as value
         FROM income_statement_data isd
         JOIN properties p ON isd.property_id = p.id
         JOIN financial_periods fp ON isd.period_id = fp.id
-        WHERE isd.account_code = '4990-0000'  -- Total Revenue account code
+        WHERE isd.account_code LIKE '4%'  -- All revenue accounts (4xxx series)
+          AND isd.account_code NOT IN ('4990-0000', '4991-0000')  -- Exclude total/summary rows
         """
-        
+
         params = {}
         if properties:
             sql += " AND p.property_name IN :properties"
             params['properties'] = tuple(properties)
-        
-        sql += " AND fp.period_end_date >= CURRENT_DATE - INTERVAL '12 months'"
+
+        # Apply temporal filters
+        if time_period:
+            temporal_sql, temporal_params = self._build_temporal_filter(time_period)
+            sql += temporal_sql
+            params.update(temporal_params)
+        else:
+            # Default: Get last 12 months
+            sql += " AND fp.period_end_date >= CURRENT_DATE - INTERVAL '12 months'"
+
         sql += " GROUP BY p.property_name, fp.period_year, fp.period_month"
         sql += " ORDER BY p.property_name, fp.period_year DESC, fp.period_month DESC LIMIT 24"
-        
+
         result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
 
@@ -1204,7 +1391,8 @@ Answer:"""
         """Query for aggregated data"""
         metrics = entities.get('metrics', [])
         question_lower = entities.get('original_question', '').lower()
-        
+        time_period = entities.get('time_period', {})
+
         # Check if this is a portfolio value query
         if 'portfolio value' in question_lower or 'total portfolio' in question_lower or ('total' in question_lower and 'value' in question_lower and 'portfolio' in question_lower):
             # Query total assets from financial_metrics (portfolio value)
@@ -1232,11 +1420,12 @@ Answer:"""
             JOIN financial_metrics fm ON fp.id = fm.period_id
             WHERE fm.total_assets IS NOT NULL
             """
-            
+
             result = self.db.execute(text(sql)).fetchall()
             return [dict(r._mapping) for r in result], sql
-        
+
         # Default: revenue aggregation
+        # Fixed: Sum all revenue accounts (4xxx series) since 4990-0000 TOTAL INCOME is not populated
         sql = """
         SELECT
             COUNT(DISTINCT p.id) as property_count,
@@ -1245,7 +1434,20 @@ Answer:"""
         FROM income_statement_data isd
         JOIN properties p ON isd.property_id = p.id
         JOIN financial_periods fp ON isd.period_id = fp.id
-        WHERE isd.account_code = '4990-0000'
+        WHERE isd.account_code LIKE '4%'  -- All revenue accounts (4xxx series)
+          AND isd.account_code NOT IN ('4990-0000', '4991-0000')  -- Exclude total/summary rows
+        """
+
+        params = {}
+
+        # Apply temporal filters if specified
+        if time_period:
+            temporal_sql, temporal_params = self._build_temporal_filter(time_period)
+            sql += temporal_sql
+            params.update(temporal_params)
+        else:
+            # Default: latest period for each property
+            sql += """
           AND fp.id IN (
               SELECT MAX(fp2.id)
               FROM financial_periods fp2
@@ -1253,7 +1455,7 @@ Answer:"""
           )
         """
 
-        result = self.db.execute(text(sql)).fetchall()
+        result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
 
     def _query_ranking(self, entities: Dict) -> tuple:
@@ -1262,23 +1464,43 @@ Answer:"""
         if any(word in entities.get('original_question', '').lower() for word in ['lowest', 'bottom', 'worst']):
             direction = 'ASC'
 
-        sql = f"""
+        time_period = entities.get('time_period', {})
+
+        # Fixed: Sum all revenue accounts (4xxx series) since 4990-0000 TOTAL INCOME is not populated
+        # Build base SQL
+        sql = """
         SELECT p.property_name, SUM(isd.period_amount) as total
         FROM income_statement_data isd
         JOIN properties p ON isd.property_id = p.id
         JOIN financial_periods fp ON isd.period_id = fp.id
-        WHERE isd.account_code = '4990-0000'
+        WHERE isd.account_code LIKE '4%'  -- All revenue accounts (4xxx series)
+          AND isd.account_code NOT IN ('4990-0000', '4991-0000')  -- Exclude total/summary rows
+        """
+
+        params = {}
+
+        # Apply temporal filters if specified, otherwise use latest period
+        if time_period:
+            temporal_sql, temporal_params = self._build_temporal_filter(time_period)
+            sql += temporal_sql
+            params.update(temporal_params)
+        else:
+            # Use latest period for each property
+            sql += """
           AND fp.id IN (
               SELECT MAX(fp2.id)
               FROM financial_periods fp2
               WHERE fp2.property_id = p.id
           )
+            """
+
+        sql += f"""
         GROUP BY p.property_name
         ORDER BY total {direction}
         LIMIT 5
         """
 
-        result = self.db.execute(text(sql)).fetchall()
+        result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
     
     def _query_rent_roll_metrics(self, entities: Dict, question: str) -> tuple:
