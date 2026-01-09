@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, AlertTriangle, TrendingUp } from 'lucide-react';
+import { RefreshCw, AlertTriangle, TrendingUp, ArrowLeft } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
 import TrendAnalysisChart from '../components/charts/TrendAnalysisChart';
 import { forensicAuditService, type AuditHistoryItem } from '../lib/forensic_audit';
@@ -115,9 +115,25 @@ export default function AuditHistoryDashboard() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Audit History</h1>
-          <p className="text-gray-600 mt-1">Trend analysis of forensic audit scorecards</p>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<ArrowLeft className="w-4 h-4" />}
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+                return;
+              }
+              window.location.hash = 'forensic-audit-dashboard';
+            }}
+          >
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Audit History</h1>
+            <p className="text-gray-600 mt-1">Trend analysis of forensic audit scorecards</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

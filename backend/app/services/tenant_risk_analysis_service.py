@@ -610,6 +610,8 @@ class TenantRiskAnalysisService:
                 updated_at = NOW()
         """)
 
+        import json
+
         await self.db.execute(
             insert_query,
             {
@@ -625,7 +627,7 @@ class TenantRiskAnalysisService:
                 "rollover_36mo": rollover['rollover_36mo_pct'],
                 "occupancy": occupancy['occupancy_rate'],
                 "investment_grade": credit['investment_grade_pct'],
-                "tenant_profiles": concentration['top_tenants']
+                "tenant_profiles": json.dumps(concentration['top_tenants'])
             }
         )
 

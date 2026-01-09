@@ -108,12 +108,7 @@ celery_app.conf.beat_schedule = {
 }
 
 # Task routing (optional - for multiple queues)
-# DISABLED: Worker only listens to default "celery" queue
-# All tasks now use default queue for immediate processing
-# celery_app.conf.task_routes = {
-#     "app.tasks.example_tasks.send_email": {"queue": "email"},
-#     "app.tasks.example_tasks.process_data": {"queue": "default"},
-#     "app.tasks.extraction_tasks.extract_document": {"queue": "extraction"},
-#     "app.tasks.extraction_tasks.retry_failed_extraction": {"queue": "extraction"},
-#     "app.tasks.extraction_tasks.batch_extract_documents": {"queue": "extraction"},
-# }
+# Route forensic audit jobs to a dedicated queue to avoid backlog from other tasks.
+celery_app.conf.task_routes = {
+    "forensic_audit.run_complete_audit": {"queue": "forensic_audit"},
+}

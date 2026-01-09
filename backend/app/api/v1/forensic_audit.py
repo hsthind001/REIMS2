@@ -27,6 +27,7 @@ from app.models.property import Property
 from app.models.validation_result import ValidationResult
 from app.models.validation_rule import ValidationRule
 from app.services.metrics_service import MetricsService
+from app.services.fraud_detection_service import FraudDetectionService
 from app.services.validation_service import ValidationService
 from app.services.tenant_risk_analysis_service import TenantRiskAnalysisService
 from app.services.collections_revenue_quality_service import CollectionsRevenueQualityService
@@ -70,6 +71,26 @@ class AuditOpinion(str, Enum):
     UNQUALIFIED = "UNQUALIFIED"  # Clean opinion - all tests passed
     QUALIFIED = "QUALIFIED"  # Some issues but manageable
     ADVERSE = "ADVERSE"  # Significant issues requiring immediate attention
+
+
+def normalize_traffic_status(
+    value: Optional[str],
+    default: TrafficLightStatus = TrafficLightStatus.YELLOW
+) -> TrafficLightStatus:
+    if isinstance(value, TrafficLightStatus):
+        return value
+    if value is None:
+        return default
+    normalized = str(value).strip().upper()
+    if normalized in {TrafficLightStatus.GREEN.value, TrafficLightStatus.YELLOW.value, TrafficLightStatus.RED.value}:
+        return TrafficLightStatus(normalized)
+    if normalized in {"PASS", "PASSED", "OK", "SUCCESS", "COMPLIANT"}:
+        return TrafficLightStatus.GREEN
+    if normalized in {"FAIL", "FAILED", "ERROR", "CRITICAL"}:
+        return TrafficLightStatus.RED
+    if normalized in {"WARNING", "WARN"}:
+        return TrafficLightStatus.YELLOW
+    return default
 
 
 # ============================================================================
@@ -471,6 +492,21 @@ class AuditHistoryItem(BaseModel):
 # API Endpoints
 # ============================================================================
 
+def get_period_label(db: Session, property_id: int, period_id: int) -> str:
+    period_query = text("""
+        SELECT period_year, period_month
+        FROM financial_periods
+        WHERE id = :period_id AND property_id = :property_id
+    """)
+    result = db.execute(
+        period_query,
+        {"period_id": period_id, "property_id": property_id}
+    )
+    row = result.fetchone()
+    if row and row[0] is not None and row[1] is not None:
+        return f"{row[0]}-{int(row[1]):02d}"
+    return f"Period {period_id}"
+
 @router.post("/run-audit", response_model=AuditTaskResponse, summary="Trigger Complete Forensic Audit")
 def run_complete_forensic_audit(
     request: RunAuditRequest,
@@ -673,6 +709,8 @@ def get_audit_scorecard(
                     "dscr": None,
                     "dscr_status": "UNKNOWN",
                     "dscr_covenant": 1.25,
+                    "dscr_period_id": None,
+                    "dscr_period_label": None,
                     "ltv_ratio": None,
                     "ltv": None,
                     "ltv_status": "UNKNOWN",
@@ -680,6 +718,13 @@ def get_audit_scorecard(
                     "current_ratio": None,
                     "quick_ratio": None
                 }
+            )
+
+            # Always refresh covenant summary so DSCR reflects latest complete period
+            async_db = AsyncSessionWrapper(db)
+            scorecard_service = AuditScorecardGeneratorService(async_db)
+            scorecard_data["covenant_summary"] = await_async(
+                scorecard_service._get_covenant_summary(property_id, period_id)
             )
 
             if not scorecard_data.get("generated_at"):
@@ -799,7 +844,7 @@ def get_cross_document_reconciliations(
         return CrossDocReconciliationResponse(
             property_id=property_id,
             period_id=period_id,
-            period_label="2025-12",  # TODO: Get from period
+            period_label=get_period_label(db, property_id, period_id),
             total_reconciliations=total,
             passed=passed,
             failed=failed,
@@ -836,6 +881,70 @@ def get_fraud_detection_results(
     """
 
     try:
+        def build_response(
+            *,
+            benfords_chi: Optional[float],
+            benfords_status_raw: Optional[str],
+            round_pct: Optional[float],
+            round_status_raw: Optional[str],
+            duplicate_count: Optional[int],
+            cash_ratio: Optional[float],
+            cash_status_raw: Optional[str],
+            overall_status_raw: Optional[str],
+            red_flags_found: Optional[int]
+        ) -> FraudDetectionResponse:
+            benfords_status = normalize_traffic_status(benfords_status_raw)
+            round_status = normalize_traffic_status(round_status_raw)
+            cash_status = normalize_traffic_status(cash_status_raw)
+            duplicates = int(duplicate_count or 0)
+            duplicate_status = TrafficLightStatus.GREEN if duplicates == 0 else TrafficLightStatus.RED
+            duplicate_severity = "GREEN" if duplicates == 0 else "RED"
+
+            test_results = {
+                "benfords_law": FraudIndicator(
+                    test_name="Benford's Law Analysis",
+                    status=benfords_status,
+                    test_statistic=float(benfords_chi) if benfords_chi is not None else None,
+                    benchmark_value=15.51,  # Chi-square critical value at α=0.05
+                    description="First digit distribution analysis. Chi-square > 20.09 indicates manipulation.",
+                    severity=str(benfords_status_raw or benfords_status.value)
+                ),
+                "round_numbers": FraudIndicator(
+                    test_name="Round Number Analysis",
+                    status=round_status,
+                    test_statistic=float(round_pct) if round_pct is not None else None,
+                    benchmark_value=10.0,
+                    description="Percentage of round numbers. >10% suggests fabrication.",
+                    severity=str(round_status_raw or round_status.value)
+                ),
+                "duplicate_payments": FraudIndicator(
+                    test_name="Duplicate Payment Detection",
+                    status=duplicate_status,
+                    test_statistic=float(duplicates),
+                    benchmark_value=0.0,
+                    description="Number of duplicate payments found.",
+                    severity=duplicate_severity
+                ),
+                "cash_conversion": FraudIndicator(
+                    test_name="Cash Conversion Ratio",
+                    status=cash_status,
+                    test_statistic=float(cash_ratio) if cash_ratio is not None else None,
+                    benchmark_value=0.9,
+                    description="Ratio of cash flow to net income. <0.7 requires investigation.",
+                    severity=str(cash_status_raw or cash_status.value)
+                )
+            }
+
+            return FraudDetectionResponse(
+                property_id=property_id,
+                period_id=period_id,
+                period_label=get_period_label(db, property_id, period_id),
+                overall_risk_level=normalize_traffic_status(overall_status_raw),
+                tests_conducted=4,
+                red_flags_found=red_flags_found or 0,
+                test_results=test_results
+            )
+
         query = text("""
             SELECT
                 benfords_law_chi_square,
@@ -860,54 +969,46 @@ def get_fraud_detection_results(
         row = result.fetchone()
 
         if not row:
-            raise HTTPException(
-                status_code=404,
-                detail="No fraud detection results found for this period"
+            async_db = AsyncSessionWrapper(db)
+            fraud_service = FraudDetectionService(async_db)
+            fraud_results = await_async(
+                fraud_service.run_all_fraud_tests(property_id, period_id)
             )
 
-        test_results = {
-            "benfords_law": FraudIndicator(
-                test_name="Benford's Law Analysis",
-                status=TrafficLightStatus(row[1]),
-                test_statistic=float(row[0]) if row[0] else None,
-                benchmark_value=15.51,  # Chi-square critical value at α=0.05
-                description="First digit distribution analysis. Chi-square > 20.09 indicates manipulation.",
-                severity=row[1]
-            ),
-            "round_numbers": FraudIndicator(
-                test_name="Round Number Analysis",
-                status=TrafficLightStatus(row[3]),
-                test_statistic=float(row[2]) if row[2] else None,
-                benchmark_value=10.0,
-                description="Percentage of round numbers. >10% suggests fabrication.",
-                severity=row[3]
-            ),
-            "duplicate_payments": FraudIndicator(
-                test_name="Duplicate Payment Detection",
-                status=TrafficLightStatus.GREEN if row[4] == 0 else TrafficLightStatus.RED,
-                test_statistic=float(row[4]) if row[4] else 0,
-                benchmark_value=0.0,
-                description="Number of duplicate payments found.",
-                severity="GREEN" if row[4] == 0 else "RED"
-            ),
-            "cash_conversion": FraudIndicator(
-                test_name="Cash Conversion Ratio",
-                status=TrafficLightStatus(row[6]),
-                test_statistic=float(row[5]) if row[5] else None,
-                benchmark_value=0.9,
-                description="Ratio of cash flow to net income. <0.7 requires investigation.",
-                severity=row[6]
-            )
-        }
+            try:
+                await_async(
+                    fraud_service.save_fraud_detection_results(property_id, period_id, fraud_results)
+                )
+            except Exception:
+                pass
 
-        return FraudDetectionResponse(
-            property_id=property_id,
-            period_id=period_id,
-            period_label="2025-12",  # TODO: Get from period
-            overall_risk_level=TrafficLightStatus(row[7]),
-            tests_conducted=4,
-            red_flags_found=row[8],
-            test_results=test_results
+            benfords = fraud_results.get("benfords_law", {})
+            round_numbers = fraud_results.get("round_numbers", {})
+            duplicate_payments = fraud_results.get("duplicate_payments", {})
+            cash_conversion = fraud_results.get("cash_conversion", {})
+
+            return build_response(
+                benfords_chi=benfords.get("chi_square"),
+                benfords_status_raw=benfords.get("status"),
+                round_pct=round_numbers.get("round_number_pct"),
+                round_status_raw=round_numbers.get("status"),
+                duplicate_count=duplicate_payments.get("duplicate_count"),
+                cash_ratio=cash_conversion.get("cash_conversion_ratio"),
+                cash_status_raw=cash_conversion.get("status"),
+                overall_status_raw=fraud_results.get("overall_fraud_risk_level"),
+                red_flags_found=fraud_results.get("red_flags_found")
+            )
+
+        return build_response(
+            benfords_chi=row[0],
+            benfords_status_raw=row[1],
+            round_pct=row[2],
+            round_status_raw=row[3],
+            duplicate_count=row[4],
+            cash_ratio=row[5],
+            cash_status_raw=row[6],
+            overall_status_raw=row[7],
+            red_flags_found=row[8]
         )
 
     except HTTPException:
@@ -1284,9 +1385,72 @@ def get_document_completeness(
         row = result.fetchone()
 
         if not row:
-            raise HTTPException(
-                status_code=404,
-                detail="No document completeness data found"
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.id == period_id,
+                FinancialPeriod.property_id == property_id
+            ).first()
+
+            if not period:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Property or period not found"
+                )
+
+            doc_rows = db.query(
+                DocumentUpload.document_type,
+                func.count(DocumentUpload.id)
+            ).filter(
+                DocumentUpload.property_id == property_id,
+                DocumentUpload.period_id == period_id,
+                DocumentUpload.is_active.is_(True)
+            ).group_by(DocumentUpload.document_type).all()
+
+            present_types = {row_type for row_type, row_count in doc_rows if row_count}
+
+            has_balance_sheet = "balance_sheet" in present_types
+            has_income_statement = "income_statement" in present_types
+            has_cash_flow_statement = "cash_flow" in present_types
+            has_rent_roll = "rent_roll" in present_types
+            has_mortgage_statement = "mortgage_statement" in present_types
+
+            completeness_count = sum([
+                has_balance_sheet,
+                has_income_statement,
+                has_cash_flow_statement,
+                has_rent_roll,
+                has_mortgage_statement
+            ])
+            completeness_pct = (completeness_count / 5) * 100
+
+            missing_documents = []
+            if not has_balance_sheet:
+                missing_documents.append("Balance Sheet")
+            if not has_income_statement:
+                missing_documents.append("Income Statement")
+            if not has_cash_flow_statement:
+                missing_documents.append("Cash Flow Statement")
+            if not has_rent_roll:
+                missing_documents.append("Rent Roll")
+            if not has_mortgage_statement:
+                missing_documents.append("Mortgage Statement")
+
+            status = TrafficLightStatus.GREEN if completeness_pct == 100.0 else (
+                TrafficLightStatus.YELLOW if completeness_pct >= 80.0 else TrafficLightStatus.RED
+            )
+
+            return DocumentCompletenessResponse(
+                property_id=property_id,
+                period_id=period_id,
+                period_year=period.period_year,
+                period_month=period.period_month,
+                has_balance_sheet=has_balance_sheet,
+                has_income_statement=has_income_statement,
+                has_cash_flow_statement=has_cash_flow_statement,
+                has_rent_roll=has_rent_roll,
+                has_mortgage_statement=has_mortgage_statement,
+                completeness_percentage=completeness_pct,
+                missing_documents=missing_documents,
+                status=status
             )
 
         missing_documents = []

@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import {
+  ArrowLeft,
   GitCompare,
   CheckCircle,
   XCircle,
@@ -115,9 +116,63 @@ export default function ReconciliationResultsDashboard() {
     }
   };
 
-  const passRatePct = results
-    ? results.summary.pass_rate_pct ?? (results.summary.pass_rate ? results.summary.pass_rate * 100 : 0)
-    : 0;
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.hash = 'forensic-audit-dashboard';
+  };
+
+  const buildSummary = (data: CrossDocumentReconciliationResults | null) => {
+    if (!data) return null;
+    const total =
+      data.summary?.total_reconciliations ??
+      data.total_reconciliations ??
+      data.reconciliations?.length ??
+      0;
+    const passed = data.summary?.passed ?? data.passed ?? 0;
+    const failed = data.summary?.failed ?? data.failed ?? 0;
+    const warnings = data.summary?.warnings ?? data.warnings ?? 0;
+    const passRate = data.summary?.pass_rate ?? data.pass_rate;
+    const passRatePct =
+      data.summary?.pass_rate_pct ??
+      (passRate != null
+        ? passRate > 1
+          ? passRate
+          : passRate * 100
+        : total > 0
+          ? (passed / total) * 100
+          : 0);
+    const criticalFailures =
+      data.summary?.critical_failures ??
+      (data.reconciliations
+        ? data.reconciliations.filter(
+            (recon) => recon.status === 'FAIL' && recon.is_material
+          ).length
+        : 0);
+    return {
+      total_reconciliations: total,
+      passed,
+      failed,
+      warnings,
+      pass_rate: passRate,
+      pass_rate_pct: passRatePct,
+      critical_failures: criticalFailures,
+    };
+  };
+
+  const summary = buildSummary(results);
+  const passRatePct = summary?.pass_rate_pct ?? 0;
+  const overallStatus =
+    results?.overall_status ||
+    (summary
+      ? summary.failed > 0
+        ? 'RED'
+        : summary.warnings > 0
+          ? 'YELLOW'
+          : 'GREEN'
+      : 'GREEN');
 
   const renderReconciliationCard = (recon: ReconciliationResult, index: number) => {
     const isExpanded = expandedIndex === index;
@@ -230,9 +285,14 @@ export default function ReconciliationResultsDashboard() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Cross-Document Reconciliations</h1>
-          <p className="text-gray-600 mt-1">9 reconciliation rules across 5 financial statements</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Cross-Document Reconciliations</h1>
+            <p className="text-gray-600 mt-1">9 reconciliation rules across 5 financial statements</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
@@ -305,7 +365,7 @@ export default function ReconciliationResultsDashboard() {
               </div>
               <div className="text-right">
                 <div className="mb-2">
-                  <TrafficLightIndicator status={results.overall_status} size="lg" showLabel />
+                  <TrafficLightIndicator status={overallStatus as any} size="lg" showLabel />
                 </div>
                 <div className="text-lg font-semibold text-gray-900">
                   Pass Rate: {passRatePct.toFixed(1)}%
@@ -315,29 +375,29 @@ export default function ReconciliationResultsDashboard() {
 
             <div className="grid grid-cols-4 gap-4 mt-6">
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">{results.summary.passed}</div>
+                <div className="text-3xl font-bold text-green-600">{summary?.passed ?? 0}</div>
                 <div className="text-sm text-gray-600">Passed</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-yellow-600">{results.summary.warnings}</div>
+                <div className="text-3xl font-bold text-yellow-600">{summary?.warnings ?? 0}</div>
                 <div className="text-sm text-gray-600">Warnings</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-red-600">{results.summary.failed}</div>
+                <div className="text-3xl font-bold text-red-600">{summary?.failed ?? 0}</div>
                 <div className="text-sm text-gray-600">Failed</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{results.summary.total_reconciliations}</div>
+                <div className="text-3xl font-bold text-gray-900">{summary?.total_reconciliations ?? 0}</div>
                 <div className="text-sm text-gray-600">Total</div>
               </div>
             </div>
 
-            {results.summary.critical_failures > 0 && (
+            {(summary?.critical_failures ?? 0) > 0 && (
               <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
                   <span className="font-semibold">
-                    {results.summary.critical_failures} critical failure(s) detected
+                    {summary?.critical_failures ?? 0} critical failure(s) detected
                   </span>
                 </div>
               </div>

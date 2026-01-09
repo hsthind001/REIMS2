@@ -21,6 +21,7 @@ Reconciliation Rules (Crown Jewel of Forensic Audit):
 """
 
 from typing import Dict, List, Optional, Any, Tuple
+import json
 from uuid import UUID
 from decimal import Decimal
 from datetime import datetime
@@ -156,7 +157,7 @@ class CrossDocumentReconciliationService:
 
         # Get IS net income
         is_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -292,12 +293,12 @@ class CrossDocumentReconciliationService:
 
         # Get IS depreciation expense
         is_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
             AND (account_code LIKE '%DEPRECIATION%' OR account_code LIKE '%DEPR%')
-            AND amount < 0  -- Expense is negative
+            AND period_amount < 0  -- Expense is negative
             LIMIT 1
         """)
 
@@ -367,12 +368,12 @@ class CrossDocumentReconciliationService:
 
         # Get CF depreciation add-back
         cf_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM cash_flow_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND line_item LIKE '%DEPRECIATION%'
-            AND category = 'Operating Activities'
+            AND account_name ILIKE '%DEPRECIATION%'
+            AND cash_flow_category ILIKE 'operating'
             LIMIT 1
         """)
 
@@ -449,12 +450,12 @@ class CrossDocumentReconciliationService:
         # Similar logic to depreciation reconciliation
         # Get IS amortization
         is_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
             AND account_code LIKE '%AMORT%'
-            AND amount < 0
+            AND period_amount < 0
             LIMIT 1
         """)
 
@@ -569,11 +570,11 @@ class CrossDocumentReconciliationService:
 
         # Get CF net change in cash
         cf_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM cash_flow_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND line_item LIKE '%NET CHANGE%CASH%'
+            AND account_name ILIKE '%NET%CHANGE%CASH%'
             LIMIT 1
         """)
 
@@ -847,7 +848,7 @@ class CrossDocumentReconciliationService:
 
         # Get IS base rentals
         is_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -979,7 +980,7 @@ class CrossDocumentReconciliationService:
                     "is_material": result.is_material,
                     "explanation": result.explanation,
                     "recommendation": result.recommendation,
-                    "intermediate": result.intermediate_values
+                    "intermediate": json.dumps(result.intermediate_values) if result.intermediate_values is not None else None
                 }
             )
 

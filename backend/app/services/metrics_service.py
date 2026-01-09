@@ -1300,7 +1300,11 @@ class MetricsService:
         else:
             # Create new metrics
             # Filter out 'PRESERVE' markers (they only apply to updates)
-            clean_metrics_data = {k: v for k, v in metrics_data.items() if v != 'PRESERVE'}
+            valid_columns = {column.key for column in FinancialMetrics.__table__.columns}
+            clean_metrics_data = {
+                k: v for k, v in metrics_data.items()
+                if v != 'PRESERVE' and k in valid_columns
+            }
 
             metrics = FinancialMetrics(
                 property_id=property_id,

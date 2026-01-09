@@ -760,7 +760,7 @@ class DocumentCompletenessService:
                 :docs_complete,
                 :overall_status,
                 :can_proceed,
-                :results_json::jsonb,
+                CAST(:results_json AS jsonb),
                 NOW(),
                 NOW()
             )

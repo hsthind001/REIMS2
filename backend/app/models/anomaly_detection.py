@@ -96,19 +96,37 @@ class AnomalyDetection(Base):
     # World-class enhancement fields (from migration 20251222_0000)
     anomaly_score = Column(Numeric(5, 2), nullable=True, index=True)  # Unified risk score 0-100
     impact_amount = Column(Numeric(15, 2), nullable=True)  # Absolute $ variance/exposure
-    direction = Column(SQLEnum(AnomalyDirection), nullable=True)  # Change direction: up/down
+    direction = Column(
+        SQLEnum(AnomalyDirection, values_callable=lambda x: [e.value for e in x]),
+        nullable=True
+    )  # Change direction: up/down
     root_cause_candidates = Column(JSONB, nullable=True)  # Top suspected drivers (JSONB)
-    baseline_type = Column(SQLEnum(BaselineType), nullable=True, index=True)  # Baseline method used
+    baseline_type = Column(
+        SQLEnum(BaselineType, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )  # Baseline method used
     correlation_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # Group related anomalies into incidents
     suppressed_until = Column(DateTime(timezone=True), nullable=True, index=True)  # Suppression expiration
-    anomaly_category = Column(SQLEnum(AnomalyCategory), nullable=True, index=True)  # Taxonomy classification
-    pattern_type = Column(SQLEnum(PatternType), nullable=True, index=True)  # Pattern classification
+    anomaly_category = Column(
+        SQLEnum(AnomalyCategory, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )  # Taxonomy classification
+    pattern_type = Column(
+        SQLEnum(PatternType, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )  # Pattern classification
     is_one_off = Column(Boolean, default=False, nullable=True)  # One-time anomaly flag
     is_recurrent = Column(Boolean, default=False, nullable=True)  # Recurring pattern flag
     cross_property_pattern = Column(Boolean, default=False, nullable=True)
     
     # Root cause tracking (Task 57)
-    resolution_type = Column(SQLEnum(ResolutionType), nullable=True)  # Resolution type enum
+    resolution_type = Column(
+        SQLEnum(ResolutionType, values_callable=lambda x: [e.value for e in x]),
+        nullable=True
+    )  # Resolution type enum
     root_cause = Column(Text, nullable=True)  # Detailed root cause explanation
     
     # Timestamps
@@ -123,4 +141,3 @@ class AnomalyDetection(Base):
     
     def __repr__(self):
         return f"<AnomalyDetection(id={self.id}, field_name='{self.field_name}', severity='{self.severity}', anomaly_type='{self.anomaly_type}')>"
-

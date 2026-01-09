@@ -589,7 +589,7 @@ class CollectionsRevenueQualityService:
                 :dso_status,
                 :cash_conversion_ratio,
                 :revenue_quality_score,
-                :ar_aging_details::jsonb,
+                CAST(:ar_aging_details AS jsonb),
                 :overall_status,
                 NOW(),
                 NOW()

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileText, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, FileText, RefreshCw, XCircle } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
 import { forensicAuditService, type DocumentCompletenessResults } from '../lib/forensic_audit';
 import { propertyService } from '../lib/property';
@@ -110,13 +110,26 @@ export default function DocumentCompletenessDashboard() {
       ]
     : [];
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.hash = 'forensic-audit-dashboard';
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Document Completeness</h1>
-          <p className="text-gray-600 mt-1">Required forensic audit source documents</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Document Completeness</h1>
+            <p className="text-gray-600 mt-1">Required forensic audit source documents</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

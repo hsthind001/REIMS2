@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from enum import Enum
+from app.services.covenant_compliance_service import CovenantComplianceService
 
 
 class TrafficLightStatus(str, Enum):
@@ -49,6 +50,29 @@ class AuditScorecardGeneratorService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _get_latest_complete_period(self, property_id: UUID) -> Optional[Dict[str, Any]]:
+        query = text("""
+            SELECT period_id, period_year, period_month
+            FROM document_completeness_matrix
+            WHERE property_id = :property_id
+            AND completeness_percentage = 100
+            ORDER BY period_year DESC, period_month DESC
+            LIMIT 1
+        """)
+
+        result = await self.db.execute(query, {"property_id": str(property_id)})
+        row = result.fetchone()
+
+        if not row:
+            return None
+
+        period_year = int(row[1])
+        period_month = int(row[2])
+        return {
+            "period_id": int(row[0]),
+            "period_label": f"{period_year}-{period_month:02d}",
+        }
 
     @staticmethod
     def _status_from_thresholds(
@@ -293,7 +317,7 @@ class AuditScorecardGeneratorService:
 
         if collections_row:
             # Revenue quality score is 0-100, convert to 0-15
-            collections_score = int(collections_row[0] * 0.15)
+            collections_score = int(float(collections_row[0]) * 0.15)
         else:
             collections_score = 15  # No data, assume pass
 
@@ -1260,12 +1284,54 @@ class AuditScorecardGeneratorService:
         period_id: UUID
     ) -> Dict[str, Any]:
         """Get covenant compliance summary."""
+        latest_complete = await self._get_latest_complete_period(property_id)
+        dscr_period_id = latest_complete["period_id"] if latest_complete else period_id
+        dscr_period_label = latest_complete["period_label"] if latest_complete else None
 
-        query = text("""
+        if dscr_period_label is None:
+            label_query = text("""
+                SELECT period_year, period_month
+                FROM financial_periods
+                WHERE id = :period_id
+            """)
+            label_result = await self.db.execute(label_query, {"period_id": str(dscr_period_id)})
+            label_row = label_result.fetchone()
+            if label_row:
+                dscr_period_label = f"{int(label_row[0])}-{int(label_row[1]):02d}"
+
+        dscr_query = text("""
             SELECT
                 dscr,
                 dscr_status,
-                dscr_covenant_threshold,
+                dscr_covenant_threshold
+            FROM covenant_compliance_tracking
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        dscr_result = await self.db.execute(
+            dscr_query,
+            {"property_id": str(property_id), "period_id": str(dscr_period_id)}
+        )
+        dscr_row = dscr_result.fetchone()
+
+        dscr_value = float(dscr_row[0]) if dscr_row and dscr_row[0] is not None else None
+        dscr_status = dscr_row[1] if dscr_row and dscr_row[1] else "UNKNOWN"
+        dscr_covenant = float(dscr_row[2]) if dscr_row and dscr_row[2] else 1.25
+
+        if dscr_value is None:
+            try:
+                covenant_service = CovenantComplianceService(self.db)
+                dscr_calc = await covenant_service.calculate_dscr(property_id, dscr_period_id)
+                dscr_value = dscr_calc.get("dscr")
+                dscr_status = dscr_calc.get("status", dscr_status)
+                dscr_covenant = dscr_calc.get("covenant_threshold", dscr_covenant)
+            except Exception:
+                pass
+
+        query = text("""
+            SELECT
                 ltv_ratio,
                 ltv_status,
                 ltv_covenant_threshold,
@@ -1284,30 +1350,19 @@ class AuditScorecardGeneratorService:
         )
         row = result.fetchone()
 
-        if row:
-            return {
-                "dscr": float(row[0]) if row[0] else None,
-                "dscr_status": row[1] or "UNKNOWN",
-                "dscr_covenant": float(row[2]) if row[2] else 1.25,
-                "ltv_ratio": float(row[3]) if row[3] else None,
-                "ltv": float(row[3]) if row[3] else None,
-                "ltv_status": row[4] or "UNKNOWN",
-                "ltv_covenant": float(row[5]) if row[5] else 75.0,
-                "current_ratio": float(row[6]) if row[6] else None,
-                "quick_ratio": float(row[7]) if row[7] else None
-            }
-        else:
-            return {
-                "dscr": None,
-                "dscr_status": "UNKNOWN",
-                "dscr_covenant": 1.25,
-                "ltv_ratio": None,
-                "ltv": None,
-                "ltv_status": "UNKNOWN",
-                "ltv_covenant": 75.0,
-                "current_ratio": None,
-                "quick_ratio": None
-            }
+        return {
+            "dscr": dscr_value,
+            "dscr_status": dscr_status,
+            "dscr_covenant": dscr_covenant,
+            "dscr_period_id": dscr_period_id,
+            "dscr_period_label": dscr_period_label,
+            "ltv_ratio": float(row[0]) if row and row[0] is not None else None,
+            "ltv": float(row[0]) if row and row[0] is not None else None,
+            "ltv_status": row[1] if row and row[1] else "UNKNOWN",
+            "ltv_covenant": float(row[2]) if row and row[2] else 75.0,
+            "current_ratio": float(row[3]) if row and row[3] is not None else None,
+            "quick_ratio": float(row[4]) if row and row[4] is not None else None
+        }
 
     async def save_scorecard(
         self,
@@ -1361,6 +1416,8 @@ class AuditScorecardGeneratorService:
 
         critical_issues = len([r for r in scorecard['priority_risks'] if r['severity'] == 'HIGH'])
 
+        import json
+
         await self.db.execute(
             insert_query,
             {
@@ -1369,10 +1426,10 @@ class AuditScorecardGeneratorService:
                 "health_score": scorecard['overall_health_score'],
                 "traffic_light": scorecard['traffic_light_status'],
                 "audit_opinion": scorecard['audit_opinion'],
-                "priority_risks": scorecard['priority_risks'],
-                "action_items": scorecard['action_items'],
+                "priority_risks": json.dumps(scorecard['priority_risks']),
+                "action_items": json.dumps(scorecard['action_items']),
                 "critical_count": critical_issues,
-                "scorecard_data": scorecard
+                "scorecard_data": json.dumps(scorecard)
             }
         )
 

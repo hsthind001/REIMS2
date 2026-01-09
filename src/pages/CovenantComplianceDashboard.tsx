@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import {
+  ArrowLeft,
   TrendingUp,
   DollarSign,
   AlertTriangle,
@@ -105,6 +106,14 @@ export default function CovenantComplianceDashboard() {
     }).format(value);
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.hash = 'forensic-audit-dashboard';
+  };
+
   const renderGauge = (
     value: number,
     covenant: number,
@@ -161,9 +170,14 @@ export default function CovenantComplianceDashboard() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Covenant Compliance</h1>
-          <p className="text-gray-600 mt-1">Lender covenant monitoring and breach alerts</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Covenant Compliance</h1>
+            <p className="text-gray-600 mt-1">Lender covenant monitoring and breach alerts</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

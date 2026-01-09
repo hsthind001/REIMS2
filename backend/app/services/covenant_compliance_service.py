@@ -145,14 +145,11 @@ class CovenantComplianceService:
 
         # Get NOI from income statement
         noi_query = text("""
-            SELECT
-                total_income,
-                total_operating_expenses,
-                net_operating_income
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND account_code = 'NOI_SUMMARY'  -- Special summary line
+            AND account_code = 'NOI_SUMMARY'
             LIMIT 1
         """)
 
@@ -166,8 +163,8 @@ class CovenantComplianceService:
             # Calculate NOI from detailed accounts
             noi_calc_query = text("""
                 SELECT
-                    SUM(CASE WHEN account_code LIKE '4%' THEN amount ELSE 0 END) as total_income,
-                    SUM(CASE WHEN account_code LIKE '5%' THEN amount ELSE 0 END) as total_expenses
+                    SUM(CASE WHEN account_code LIKE '4%' THEN period_amount ELSE 0 END) as total_income,
+                    SUM(CASE WHEN account_code LIKE '5%' THEN period_amount ELSE 0 END) as total_expenses
                 FROM income_statement_data
                 WHERE property_id = :property_id
                 AND period_id = :period_id
@@ -183,17 +180,22 @@ class CovenantComplianceService:
             total_expenses = float(calc_row[1]) if calc_row and calc_row[1] else 0
             noi = total_income - total_expenses
         else:
-            noi = float(noi_row[2]) if noi_row[2] else 0
+            noi = float(noi_row[0]) if noi_row[0] else 0
 
         # Annualize NOI if this is a monthly period
         period_query = text("""
-            SELECT period_type
+            SELECT period_start_date, period_end_date
             FROM financial_periods
             WHERE id = :period_id
         """)
         period_result = await self.db.execute(period_query, {"period_id": str(period_id)})
         period_row = period_result.fetchone()
-        period_type = period_row[0] if period_row else 'monthly'
+
+        if period_row and period_row[0] and period_row[1]:
+            period_days = (period_row[1] - period_row[0]).days + 1
+            period_type = 'annual' if period_days >= 330 else 'monthly'
+        else:
+            period_type = 'monthly'
 
         if period_type == 'monthly':
             annual_noi = noi * 12
@@ -203,8 +205,9 @@ class CovenantComplianceService:
         # Get annual debt service from mortgage statement
         debt_service_query = text("""
             SELECT
-                SUM(principal_paid) as annual_principal,
-                SUM(interest_paid) as annual_interest
+                SUM(annual_debt_service) as annual_debt_service,
+                SUM(monthly_debt_service) as monthly_debt_service,
+                SUM(COALESCE(principal_due, 0) + COALESCE(interest_due, 0)) as period_debt_service
             FROM mortgage_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -216,13 +219,13 @@ class CovenantComplianceService:
         )
         debt_row = debt_result.fetchone()
 
-        annual_principal = float(debt_row[0]) if debt_row and debt_row[0] else 0
-        annual_interest = float(debt_row[1]) if debt_row and debt_row[1] else 0
-        annual_debt_service = annual_principal + annual_interest
+        annual_debt_service = float(debt_row[0]) if debt_row and debt_row[0] else 0
+        monthly_debt_service = float(debt_row[1]) if debt_row and debt_row[1] else 0
+        period_debt_service = float(debt_row[2]) if debt_row and debt_row[2] else 0
 
-        # Annualize if monthly
-        if period_type == 'monthly':
-            annual_debt_service = annual_debt_service * 12
+        if annual_debt_service <= 0:
+            base_debt_service = monthly_debt_service or period_debt_service
+            annual_debt_service = base_debt_service * 12 if period_type == 'monthly' else base_debt_service
 
         # Calculate DSCR
         if annual_debt_service > 0:
@@ -322,9 +325,8 @@ class CovenantComplianceService:
         # Get property value (from property table or latest appraisal)
         property_query = text("""
             SELECT
-                current_market_value,
-                last_appraisal_value,
-                last_appraisal_date
+                purchase_price,
+                acquisition_costs
             FROM properties
             WHERE id = :property_id
         """)
@@ -337,8 +339,8 @@ class CovenantComplianceService:
 
         if property_row and property_row[0]:
             property_value = float(property_row[0])
-        elif property_row and property_row[1]:
-            property_value = float(property_row[1])
+            if property_row[1]:
+                property_value += float(property_row[1])
         else:
             property_value = 0
 
@@ -418,8 +420,8 @@ class CovenantComplianceService:
         # Get NOI (already calculated in DSCR method, reuse logic)
         noi_query = text("""
             SELECT
-                SUM(CASE WHEN account_code LIKE '4%' THEN amount ELSE 0 END) as total_income,
-                SUM(CASE WHEN account_code LIKE '5%' THEN amount ELSE 0 END) as total_expenses
+                SUM(CASE WHEN account_code LIKE '4%' THEN period_amount ELSE 0 END) as total_income,
+                SUM(CASE WHEN account_code LIKE '5%' THEN period_amount ELSE 0 END) as total_expenses
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -437,11 +439,11 @@ class CovenantComplianceService:
 
         # Get interest expense
         interest_query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND account_code LIKE '%INTEREST%'
+            AND account_name ILIKE '%INTEREST%'
             LIMIT 1
         """)
 
@@ -496,9 +498,9 @@ class CovenantComplianceService:
         # Get current assets and liabilities from balance sheet
         liquidity_query = text("""
             SELECT
-                SUM(CASE WHEN account_type = 'Current Assets' THEN amount ELSE 0 END) as current_assets,
-                SUM(CASE WHEN account_type = 'Current Liabilities' THEN amount ELSE 0 END) as current_liabilities,
-                SUM(CASE WHEN account_code LIKE '%INVENTORY%' THEN amount ELSE 0 END) as inventory
+                SUM(CASE WHEN account_category = 'ASSETS' AND account_subcategory ILIKE '%Current%' THEN amount ELSE 0 END) as current_assets,
+                SUM(CASE WHEN account_category = 'LIABILITIES' AND account_subcategory ILIKE '%Current%' THEN amount ELSE 0 END) as current_liabilities,
+                SUM(CASE WHEN account_name ILIKE '%INVENTORY%' THEN amount ELSE 0 END) as inventory
             FROM balance_sheet_data
             WHERE property_id = :property_id
             AND period_id = :period_id

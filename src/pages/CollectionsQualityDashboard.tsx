@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import {
+  ArrowLeft,
   DollarSign,
   TrendingUp,
   Clock,
@@ -119,13 +120,26 @@ export default function CollectionsQualityDashboard() {
     return 'bg-red-500';
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.hash = 'forensic-audit-dashboard';
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Collections Quality Analysis</h1>
-          <p className="text-gray-600 mt-1">Revenue quality, DSO, and A/R aging assessment</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Collections Quality Analysis</h1>
+            <p className="text-gray-600 mt-1">Revenue quality, DSO, and A/R aging assessment</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

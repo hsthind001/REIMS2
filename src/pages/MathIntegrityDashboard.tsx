@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
 import {
   forensicAuditService,
@@ -103,13 +103,26 @@ export default function MathIntegrityDashboard() {
     return property.property_name || property.property_code || `Property ${property.id}`;
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.hash = 'forensic-audit-dashboard';
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Mathematical Integrity</h1>
-          <p className="text-gray-600 mt-1">Internal calculation checks across statements</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Mathematical Integrity</h1>
+            <p className="text-gray-600 mt-1">Internal calculation checks across statements</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

@@ -3114,12 +3114,12 @@ class ValidationService:
         upload_id: int,
         rule_id: int,
         passed: bool,
-        expected_value: Optional[Decimal],
-        actual_value: Optional[Decimal],
-        difference: Optional[Decimal],
-        difference_percentage: Optional[Decimal],
-        error_message: Optional[str],
-        severity: str
+        expected_value: Optional[Decimal] = None,
+        actual_value: Optional[Decimal] = None,
+        difference: Optional[Decimal] = None,
+        difference_percentage: Optional[Decimal] = None,
+        error_message: Optional[str] = None,
+        severity: str = "warning"
     ) -> Dict:
         """
         Create and store validation result

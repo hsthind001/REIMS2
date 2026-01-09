@@ -477,7 +477,100 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: celery -A celery_worker.celery_app worker --loglevel=${LOG_LEVEL:-info}
+    command: celery -A celery_worker.celery_app worker --loglevel=${LOG_LEVEL:-info} -Q celery
+
+  # Celery Worker - Dedicated forensic audit queue
+  celery-audit-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reims-celery-audit-worker
+    restart: unless-stopped
+    entrypoint: ["/celery-entrypoint.sh"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: reims
+      POSTGRES_PASSWORD: reims
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: reims
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+
+      # Financial Thresholds (NEW - Configurable via .env)
+      REIMS_THRESHOLD_NOI_LARGE_NEGATIVE_ADJUSTMENT_THRESHOLD: ${REIMS_THRESHOLD_NOI_LARGE_NEGATIVE_ADJUSTMENT_THRESHOLD:-10000}
+      REIMS_THRESHOLD_NOI_LARGE_NEGATIVE_ADJUSTMENT_PERCENTAGE: ${REIMS_THRESHOLD_NOI_LARGE_NEGATIVE_ADJUSTMENT_PERCENTAGE:-0.10}
+      REIMS_THRESHOLD_DSCR_WARNING_THRESHOLD: ${REIMS_THRESHOLD_DSCR_WARNING_THRESHOLD:-1.25}
+      REIMS_THRESHOLD_DSCR_CRITICAL_THRESHOLD: ${REIMS_THRESHOLD_DSCR_CRITICAL_THRESHOLD:-1.10}
+      REIMS_THRESHOLD_VARIANCE_WARNING_THRESHOLD_PCT: ${REIMS_THRESHOLD_VARIANCE_WARNING_THRESHOLD_PCT:-10.0}
+      REIMS_THRESHOLD_VARIANCE_CRITICAL_THRESHOLD_PCT: ${REIMS_THRESHOLD_VARIANCE_CRITICAL_THRESHOLD_PCT:-25.0}
+      REIMS_THRESHOLD_VARIANCE_URGENT_THRESHOLD_PCT: ${REIMS_THRESHOLD_VARIANCE_URGENT_THRESHOLD_PCT:-50.0}
+
+      # Email Configuration (for Alert Notifications)
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-localhost}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-1025}
+      EMAIL_SMTP_USE_TLS: ${EMAIL_SMTP_USE_TLS:-false}
+      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_SMTP_FROM_EMAIL: ${EMAIL_SMTP_FROM_EMAIL:-noreply@reims.com}
+      EMAIL_SMTP_FROM_NAME: ${EMAIL_SMTP_FROM_NAME:-REIMS 2.0}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      EMAIL_DEBUG: ${EMAIL_DEBUG:-false}
+      EMAIL_SEND_ALERT_EMAILS: ${EMAIL_SEND_ALERT_EMAILS:-true}
+      EMAIL_SEND_DIGEST_EMAILS: ${EMAIL_SEND_DIGEST_EMAILS:-true}
+      EMAIL_SEND_ESCALATION_EMAILS: ${EMAIL_SEND_ESCALATION_EMAILS:-true}
+
+      # Anomaly Detection Configuration (same as backend)
+      PYOD_ENABLED: ${PYOD_ENABLED:-true}
+      MODEL_CACHE_ENABLED: ${MODEL_CACHE_ENABLED:-true}
+      INCREMENTAL_LEARNING_ENABLED: ${INCREMENTAL_LEARNING_ENABLED:-true}
+      ANOMALY_USE_GPU: ${ANOMALY_USE_GPU:-false}
+      BATCH_PROCESSING_CHUNK_SIZE: ${BATCH_PROCESSING_CHUNK_SIZE:-10}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
+      - ai-models-cache:/app/.cache/huggingface  # Share model cache
+      - model-cache:/app/.cache/reims/models  # Share PyOD model cache
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - reims-network
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_worker.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: celery -A celery_worker.celery_app worker --loglevel=${LOG_LEVEL:-info} -Q forensic_audit -n forensic-audit@%h
 
   # Celery Beat - Scheduled task scheduler
   celery-beat:

@@ -148,11 +148,11 @@ class FraudDetectionService:
 
         # Get all expense transactions for the period
         query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND amount > 0
+            AND period_amount > 0
             AND account_code LIKE '5%'  -- Expense accounts
         """)
 
@@ -266,11 +266,11 @@ class FraudDetectionService:
 
         # Get all transactions
         query = text("""
-            SELECT amount
+            SELECT period_amount
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND amount > 0
+            AND period_amount > 0
         """)
 
         result = await self.db.execute(
@@ -353,16 +353,16 @@ class FraudDetectionService:
         query = text("""
             SELECT
                 account_code,
-                description,
-                amount,
+                account_name,
+                period_amount,
                 COUNT(*) as duplicate_count
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND amount > 100  -- Only flag amounts > $100
-            GROUP BY account_code, description, amount
+            AND period_amount > 100  -- Only flag amounts > $100
+            GROUP BY account_code, account_name, period_amount
             HAVING COUNT(*) > 1
-            ORDER BY COUNT(*) DESC, amount DESC
+            ORDER BY COUNT(*) DESC, period_amount DESC
         """)
 
         result = await self.db.execute(
@@ -426,7 +426,7 @@ class FraudDetectionService:
 
         # Get net income from income statement
         is_query = text("""
-            SELECT SUM(amount) as net_income
+            SELECT SUM(period_amount) as net_income
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -442,11 +442,11 @@ class FraudDetectionService:
 
         # Get cash flow from operations from cash flow statement
         cf_query = text("""
-            SELECT SUM(amount) as cash_from_operations
+            SELECT SUM(period_amount) as cash_from_operations
             FROM cash_flow_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND category = 'Operating Activities'
+            AND cash_flow_category ILIKE 'operating'
         """)
 
         cf_result = await self.db.execute(
@@ -553,6 +553,8 @@ class FraudDetectionService:
                 updated_at = NOW()
         """)
 
+        import json
+
         await self.db.execute(
             insert_query,
             {
@@ -563,12 +565,12 @@ class FraudDetectionService:
                 "round_pct": round_nums.get('round_number_pct'),
                 "round_status": round_nums['status'],
                 "dup_count": duplicates['duplicate_count'],
-                "dup_details": duplicates['duplicate_details'],
+                "dup_details": json.dumps(duplicates['duplicate_details']),
                 "cash_ratio": cash_ratio.get('cash_conversion_ratio'),
                 "cash_status": cash_ratio['status'],
                 "overall_risk": results['overall_fraud_risk_level'],
                 "red_flags": results['red_flags_found'],
-                "test_details": results
+                "test_details": json.dumps(results)
             }
         )
 

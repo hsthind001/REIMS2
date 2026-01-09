@@ -167,7 +167,7 @@ rank-bm25==0.2.2  # BM25 sparse retrieval for keyword matching
 langchain==0.3.16  # Core LangChain framework (NumPy 2.x compatible version)
 langchain-community==0.3.16  # Community integrations
 langchain-openai==0.2.14  # OpenAI integration
-langchain-anthropic==0.2.7  # Anthropic integration
+langchain-anthropic==0.2.4  # Anthropic integration
 langchain-groq==0.2.7  # Groq integration (ultra-fast Llama 3.3 70B)
 langgraph==0.2.60  # Multi-agent orchestration with state machines
 llama-index-core==0.11.34  # Advanced RAG framework (updated version)

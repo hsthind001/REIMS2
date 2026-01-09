@@ -369,6 +369,17 @@ export default function ForensicAuditDashboard() {
     }).format(value);
   };
 
+  const formatNumberWithUnit = (
+    value: number | null | undefined,
+    digits: number,
+    unit: string
+  ): string => {
+    if (value == null || Number.isNaN(value)) {
+      return 'N/A';
+    }
+    return `${value.toFixed(digits)}${unit}`;
+  };
+
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -432,6 +443,18 @@ export default function ForensicAuditDashboard() {
   const ltvValue =
     scorecard?.covenant_summary.ltv ??
     scorecard?.covenant_summary.ltv_ratio ??
+    null;
+
+  const dscrPeriodLabel = scorecard?.covenant_summary.dscr_period_label ?? null;
+  const scorecardDscrValue = scorecard?.covenant_summary.dscr ?? null;
+
+  const covenantDscrValue =
+    scorecardDscrValue ??
+    covenantResults?.tests?.dscr?.dscr ??
+    null;
+  const covenantLtvValue =
+    covenantResults?.tests?.ltv?.ltv ??
+    ltvValue ??
     null;
 
   const getPerformanceMetric = (key: string) =>
@@ -648,8 +671,12 @@ export default function ForensicAuditDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <MetricCard
                 title="DSCR"
-                value={scorecard.covenant_summary.dscr != null ? `${scorecard.covenant_summary.dscr.toFixed(2)}x` : 'N/A'}
-                subtitle="Debt Service Coverage"
+                value={covenantDscrValue != null ? `${covenantDscrValue.toFixed(2)}x` : 'N/A'}
+                subtitle={
+                  dscrPeriodLabel
+                    ? `Debt Service Coverage • Latest ${dscrPeriodLabel}`
+                    : 'Debt Service Coverage'
+                }
                 status={scorecard.covenant_summary.dscr_status as any}
                 target={scorecard.covenant_summary.dscr_covenant != null ? `${scorecard.covenant_summary.dscr_covenant.toFixed(2)}x` : 'N/A'}
                 targetLabel="Covenant"
@@ -780,8 +807,8 @@ export default function ForensicAuditDashboard() {
                 </div>
                 <div className="text-sm text-gray-700">
                   {covenantResults
-                    ? `DSCR ${covenantResults.tests.dscr.dscr.toFixed(2)}x • LTV ${covenantResults.tests.ltv.ltv.toFixed(1)}%`
-                    : `DSCR ${scorecard.covenant_summary.dscr.toFixed(2)}x`}
+                    ? `DSCR ${formatNumberWithUnit(covenantDscrValue, 2, 'x')}${dscrPeriodLabel ? ` (${dscrPeriodLabel})` : ''} • LTV ${formatNumberWithUnit(covenantLtvValue, 1, '%')}`
+                    : `DSCR ${formatNumberWithUnit(covenantDscrValue, 2, 'x')}${dscrPeriodLabel ? ` (${dscrPeriodLabel})` : ''}`}
                 </div>
                 <Button onClick={() => goToRoute('covenant-compliance')} variant="secondary">
                   View Covenant Compliance

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, BarChart3, DollarSign, RefreshCw, TrendingUp, Percent } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BarChart3, DollarSign, RefreshCw, TrendingUp, Percent } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
 import {
@@ -133,12 +133,25 @@ export default function PerformanceBenchmarkDashboard() {
     return undefined;
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.hash = 'forensic-audit-dashboard';
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Performance & Benchmarking</h1>
-          <p className="text-gray-600 mt-1">Phase 8 metrics vs market benchmarks</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Performance & Benchmarking</h1>
+            <p className="text-gray-600 mt-1">Phase 8 metrics vs market benchmarks</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
