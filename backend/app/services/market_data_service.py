@@ -27,10 +27,19 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 try:
+    from pgvector.sqlalchemy import Vector  # type: ignore
+    HAS_PGVECTOR = True
+except Exception:
+    Vector = None  # type: ignore
+    HAS_PGVECTOR = False
+
+try:
     import faiss  # type: ignore
     HAS_FAISS = True
 except Exception:
     HAS_FAISS = False
+
+from app.models.ai_insights_embedding import AIInsightsEmbedding
 
 logger = logging.getLogger(__name__)
 
@@ -2099,37 +2108,71 @@ class MarketDataService:
             vectors = model.encode(texts, normalize_embeddings=True)
             norms = [float(np.linalg.norm(v)) for v in vectors]
             centroid = np.mean(vectors, axis=0)
+            property_code = insights.get('property_code') or insights.get('property') or 'unknown'
             meta = {
                 'model': model_name,
                 'count': len(texts),
                 'avg_norm': float(np.mean(norms)),
                 'centroid': centroid.tolist(),
-                'created_at': datetime.utcnow().isoformat()
+                'created_at': datetime.utcnow().isoformat(),
+                'property_code': property_code,
             }
-            # Attempt to persist centroid to pgvector table if available
+            # Attempt to persist centroid using pgvector table with JSON fallback
+            vector_available = False
             try:
-                self.db.execute(text("""
+                if HAS_PGVECTOR:
+                    # Ensure extension exists; ignore if permission denied
+                    self.db.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    chk = self.db.execute(
+                        text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+                    ).scalar()
+                    vector_available = bool(chk)
+            except Exception as ext_err:
+                logger.debug(f"pgvector not available, using JSONB fallback: {ext_err}")
+                vector_available = False
+            meta['storage'] = 'pgvector+json' if vector_available else 'jsonb'
+
+            # Ensure table exists (vector column optional)
+            try:
+                ddl = """
                     CREATE TABLE IF NOT EXISTS ai_insights_embeddings (
                         id serial primary key,
-                        property_code text,
-                        model text,
-                        dim int,
-                        embedding vector,
+                        property_code text not null,
+                        model text not null,
+                        dim int not null,
+                        embedding_json jsonb not null,
                         created_at timestamptz default now()
                     );
-                """))
-                self.db.execute(text("""
-                    INSERT INTO ai_insights_embeddings (property_code, model, dim, embedding)
-                    VALUES (:property_code, :model, :dim, :embedding)
-                """), {
-                    'property_code': insights.get('property_code') or insights.get('property', 'unknown'),
-                    'model': model_name,
-                    'dim': len(centroid),
-                    'embedding': centroid.tolist()
-                })
+                """
+                if vector_available:
+                    ddl = ddl.replace(
+                        "embedding_json jsonb not null,",
+                        "embedding_vector vector null,\n                        embedding_json jsonb not null,"
+                    )
+                self.db.execute(text(ddl))
+                # Add property_code index if missing
+                self.db.execute(text("CREATE INDEX IF NOT EXISTS ix_ai_insights_embeddings_property_code ON ai_insights_embeddings(property_code);"))
+                self.db.commit()
+            except Exception as table_err:
+                self.db.rollback()
+                logger.debug(f"Failed to ensure ai_insights_embeddings table: {table_err}")
+
+            try:
+                # Persist embedding
+                emb_row = AIInsightsEmbedding(
+                    property_code=property_code,
+                    model=model_name,
+                    dim=len(centroid),
+                    embedding_json=centroid.tolist()
+                )
+                if vector_available and hasattr(emb_row, "embedding_vector"):
+                    setattr(emb_row, "embedding_vector", centroid.tolist())
+                self.db.add(emb_row)
                 self.db.commit()
             except Exception as db_err:
-                logger.debug(f"pgvector persist skipped or failed: {db_err}")
+                self.db.rollback()
+                logger.debug(f"Embedding persist skipped or failed: {db_err}")
+
             # Optional Faiss index on disk
             if HAS_FAISS:
                 try:

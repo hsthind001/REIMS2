@@ -35,6 +35,9 @@ import {
   Park as ParkIcon,
   Info as InfoIcon,
 } from '@mui/icons-material';
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import type { LocationIntelligence } from '../../types/market-intelligence';
 
 interface LocationIntelligencePanelProps {
@@ -260,6 +263,43 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
           </Grid>
         ))}
       </Grid>
+
+      {/* Map */}
+      {lineage?.extra_metadata?.latitude && lineage?.extra_metadata?.longitude && (
+        <Box mb={4} height={360} sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid #e0e0e0' }}>
+          <MapContainer
+            center={[lineage.extra_metadata.latitude, lineage.extra_metadata.longitude]}
+            zoom={14}
+            style={{ height: '100%', width: '100%' }}
+            scrollWheelZoom={false}
+          >
+            <TileLayer
+              attribution="&copy; OpenStreetMap contributors"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <Marker
+              position={[lineage.extra_metadata.latitude, lineage.extra_metadata.longitude]}
+              icon={L.icon({
+                iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+                iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+                shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+              })}
+            >
+              <Popup>Property</Popup>
+            </Marker>
+            {Array.isArray(loc.isochrones) &&
+              loc.isochrones.map((iso: any, idx: number) =>
+                iso.geometry ? (
+                  <GeoJSON
+                    key={idx}
+                    data={iso.geometry}
+                    style={{ color: '#1976d2', weight: 1, fillOpacity: 0.1 }}
+                  />
+                ) : null
+              )}
+          </MapContainer>
+        </Box>
+      )}
 
       {/* Transit Access */}
       <Typography variant="h5" gutterBottom fontWeight="bold">

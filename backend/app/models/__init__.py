@@ -110,6 +110,7 @@ from app.models.filename_period_pattern import FilenamePeriodPattern
 # Market intelligence models
 from app.models.market_intelligence import MarketIntelligence
 from app.models.market_data_lineage import MarketDataLineage, ForecastModel
+from app.models.ai_insights_embedding import AIInsightsEmbedding
 
 __all__ = [
     "User",
@@ -221,4 +222,5 @@ __all__ = [
     "MarketIntelligence",
     "MarketDataLineage",
     "ForecastModel",
+    "AIInsightsEmbedding",
 ]

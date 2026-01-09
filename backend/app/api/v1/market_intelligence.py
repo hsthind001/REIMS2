@@ -833,6 +833,13 @@ async def get_ai_insights(
             ai_insights = market_data_service.generate_ai_insights(property_data, market_intelligence)
 
             if ai_insights:
+                ai_insights['property_code'] = property_code
+                try:
+                    embeddings_meta = market_data_service.generate_ai_embeddings(ai_insights)
+                    if embeddings_meta:
+                        ai_insights['embeddings'] = embeddings_meta
+                except Exception as emb_err:
+                    logger.debug(f"AI embedding generation skipped: {emb_err}")
                 mi.ai_insights = ai_insights
                 mi.last_refreshed_at = datetime.utcnow()
                 mi.refresh_status = 'success'
@@ -1159,6 +1166,13 @@ async def refresh_market_intelligence(
                 ai_insights = service.generate_ai_insights(property_data, market_intelligence_data)
                 if not ai_insights:
                     ai_insights = service.generate_sample_ai_insights()
+                ai_insights['property_code'] = property_code
+                try:
+                    embeddings_meta = service.generate_ai_embeddings(ai_insights)
+                    if embeddings_meta:
+                        ai_insights['embeddings'] = embeddings_meta
+                except Exception as emb_err:
+                    logger.debug(f"AI embedding generation skipped: {emb_err}")
                 mi.ai_insights = ai_insights
                 refreshed.append('insights')
             except Exception as e:
