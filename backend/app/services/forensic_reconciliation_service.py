@@ -33,6 +33,7 @@ from app.services.matching_engines import (
     InferredMatchEngine,
     MatchResult
 )
+from app.services.calculated_rules_engine import CalculatedRulesEngine
 from app.services.forensic_matching_rules import ForensicMatchingRules
 from app.services.adaptive_matching_service import AdaptiveMatchingService
 from app.services.match_learning_service import MatchLearningService
@@ -583,6 +584,47 @@ class ForensicReconciliationService:
                 discrepancies.append(discrepancy)
                 self.db.add(discrepancy)
         
+        # ==================== CALCULATED RULE VALIDATION ====================
+        rule_results = []
+        failed_rule_count = 0
+        try:
+            engine = CalculatedRulesEngine(self.db)
+            rule_results = engine.evaluate_rules(
+                property_id=session.property_id,
+                period_id=session.period_id
+            )
+
+            for result in rule_results:
+                if result.get('status') == 'FAIL':
+                    failed_rule_count += 1
+                    severity_map = {
+                        'critical': 'critical',
+                        'high': 'high',
+                        'warning': 'medium',
+                        'info': 'low',
+                        'low': 'low',
+                        'medium': 'medium'
+                    }
+                    severity = severity_map.get(result.get('severity', '').lower(), 'medium')
+                    discrepancy = ForensicDiscrepancy(
+                        session_id=session_id,
+                        match_id=None,
+                        discrepancy_type='rule_failure',
+                        severity=severity,
+                        source_value=Decimal(str(result.get('expected_value'))) if result.get('expected_value') is not None else None,
+                        target_value=Decimal(str(result.get('actual_value'))) if result.get('actual_value') is not None else None,
+                        expected_value=Decimal(str(result.get('expected_value'))) if result.get('expected_value') is not None else None,
+                        actual_value=Decimal(str(result.get('actual_value'))) if result.get('actual_value') is not None else None,
+                        difference=Decimal(str(result.get('difference'))) if result.get('difference') is not None else None,
+                        difference_percent=result.get('difference_percent'),
+                        description=result.get('message') or f"Rule {result.get('rule_id')} failed",
+                        status='open'
+                    )
+                    discrepancies.append(discrepancy)
+                    self.db.add(discrepancy)
+        except Exception as rule_error:
+            logger.warning(f"Calculated rule evaluation failed: {rule_error}")
+        
         self.db.commit()
         
         # Calculate health score
@@ -602,10 +644,11 @@ class ForensicReconciliationService:
             # Confidence score
             confidence_score = (high_confidence_matches / total_matches) * 40 if total_matches > 0 else 0
             
-            # Discrepancy penalty
+            # Discrepancy penalty (matches + rule failures)
             discrepancy_penalty = min(20, (critical_discrepancies * 10) + (high_discrepancies * 5))
+            rule_penalty = min(30, failed_rule_count * 5)
             
-            health_score = approval_score + confidence_score - discrepancy_penalty
+            health_score = approval_score + confidence_score - discrepancy_penalty - rule_penalty
             health_score = max(0.0, min(100.0, health_score))
         
         # Update session summary with health score
@@ -613,11 +656,15 @@ class ForensicReconciliationService:
             session.summary['health_score'] = health_score
             session.summary['discrepancies'] = len(discrepancies)
             session.summary['critical_discrepancies'] = len([d for d in discrepancies if d.severity == 'critical'])
+            session.summary['rules_total'] = len(rule_results)
+            session.summary['rules_failed'] = failed_rule_count
         else:
             session.summary = {
                 'health_score': health_score,
                 'discrepancies': len(discrepancies),
-                'critical_discrepancies': len([d for d in discrepancies if d.severity == 'critical'])
+                'critical_discrepancies': len([d for d in discrepancies if d.severity == 'critical']),
+                'rules_total': len(rule_results),
+                'rules_failed': failed_rule_count
             }
         
         self.db.commit()
@@ -627,7 +674,9 @@ class ForensicReconciliationService:
             'health_score': health_score,
             'total_matches': total_matches,
             'discrepancies': len(discrepancies),
-            'discrepancy_details': [self._discrepancy_to_dict(d) for d in discrepancies]
+            'discrepancy_details': [self._discrepancy_to_dict(d) for d in discrepancies],
+            'rule_results': rule_results,
+            'rules_failed': failed_rule_count
         }
     
     def get_reconciliation_dashboard(
@@ -1386,4 +1435,3 @@ class ForensicReconciliationService:
             'resolved_at': discrepancy.resolved_at.isoformat() if discrepancy.resolved_at else None,
             'resolution_notes': discrepancy.resolution_notes
         }
-

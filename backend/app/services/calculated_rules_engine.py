@@ -19,6 +19,7 @@ from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.property import Property
+from app.models.financial_period import FinancialPeriod
 from app.models.financial_metrics import FinancialMetrics
 
 logger = logging.getLogger(__name__)
@@ -114,12 +115,69 @@ class CalculatedRulesEngine:
         """
         try:
             formula = rule.formula.strip()
+            cache: Dict[str, Any] = {}
+
+            # Handle inequality formulas (>=, <=, >, <) for range-style rules
+            for op in ("<=", ">=", "<", ">"):
+                if op in formula:
+                    left_expr, right_expr = [part.strip() for part in formula.split(op, 1)]
+                    left_value = self._evaluate_expression(left_expr, property_id, period_id, cache)
+                    right_value = self._evaluate_expression(right_expr, property_id, period_id, cache)
+
+                    if left_value is None or right_value is None:
+                        return self._build_skipped_result(rule, "Missing data for rule inputs")
+
+                    tol_abs = rule.tolerance_absolute if rule.tolerance_absolute is not None else Decimal('0.00')
+                    tol_pct = rule.tolerance_percent if rule.tolerance_percent is not None else Decimal('0.00')
+
+                    margin = left_value - right_value
+                    pct_margin = (
+                        float(abs(margin) / max(abs(right_value), Decimal('1'))) * 100
+                        if right_value is not None else 0.0
+                    )
+
+                    if op == ">=":
+                        within = margin >= -tol_abs or (tol_pct and margin >= -abs(right_value) * (tol_pct / Decimal('100')))
+                    elif op == "<=":
+                        within = margin <= tol_abs or (tol_pct and margin <= abs(right_value) * (tol_pct / Decimal('100')))
+                    elif op == ">":
+                        within = margin > -tol_abs
+                    else:  # "<"
+                        within = margin < tol_abs
+
+                    status = 'PASS' if within else 'FAIL'
+                    message = None
+                    if status == 'FAIL':
+                        message = self.explain_failure(
+                            rule=rule,
+                            property_id=property_id,
+                            period_id=period_id,
+                            inputs={'left': left_value, 'right': right_value},
+                            computed=left_value,
+                            expected=right_value
+                        )
+
+                    return {
+                        'rule_id': rule.rule_id,
+                        'rule_name': rule.rule_name,
+                        'description': rule.description,
+                        'formula': rule.formula,
+                        'severity': rule.severity,
+                        'status': status,
+                        'expected_value': float(right_value),
+                        'actual_value': float(left_value),
+                        'difference': float(margin),
+                        'difference_percent': pct_margin,
+                        'tolerance_absolute': float(tol_abs) if tol_abs is not None else None,
+                        'tolerance_percent': float(tol_pct) if tol_pct is not None else None,
+                        'message': message
+                    }
+
             if '=' not in formula:
-                return self._build_skipped_result(rule, "Unsupported formula (missing '=')")
+                return self._build_skipped_result(rule, "Unsupported formula (missing comparison operator)")
 
             left_expr, right_expr = [part.strip() for part in formula.split('=', 1)]
 
-            cache: Dict[str, Any] = {}
             left_value = self._evaluate_expression(left_expr, property_id, period_id, cache)
             right_value = self._evaluate_expression(right_expr, property_id, period_id, cache)
 
@@ -310,6 +368,19 @@ class CalculatedRulesEngine:
         """Resolve a token value for evaluation."""
         prefix = prefix.lower()
 
+        # Prior period resolution
+        if prefix in ('prev', 'prior'):
+            prior_period_id = self._get_prior_period_id(property_id, period_id, cache)
+            if not prior_period_id:
+                return None
+            # token here is actually full "prefix2.token" -> split once more if provided
+            if '.' in token:
+                nested_prefix, nested_token = token.split('.', 1)
+            else:
+                # If no nested prefix, cannot resolve
+                return None
+            return self._get_token_value(nested_prefix, nested_token, property_id, prior_period_id, cache)
+
         if prefix in ('bs', 'balance_sheet'):
             return self._get_account_value(property_id, period_id, 'balance_sheet', token)
 
@@ -330,6 +401,9 @@ class CalculatedRulesEngine:
 
         if prefix in ('view', 'recon'):
             return self._get_view_value(property_id, period_id, token, cache)
+
+        if prefix in ('tenant', 'tenant_risk', 'trisk'):
+            return self._get_tenant_risk_value(property_id, period_id, token, cache)
 
         return None
 
@@ -468,6 +542,46 @@ class CalculatedRulesEngine:
         value = view_row.get(token)
         return Decimal(str(value)) if value is not None else None
 
+    def _get_tenant_risk_value(
+        self,
+        property_id: int,
+        period_id: int,
+        token: str,
+        cache: Dict[str, Any]
+    ) -> Optional[Decimal]:
+        """Fetch tenant concentration/rollover metrics from tenant_risk_analysis table."""
+        cache_key = f"tenant_risk:{property_id}:{period_id}"
+        if cache_key not in cache:
+            try:
+                result = self.db.execute(
+                    text(
+                        """
+                        SELECT top_1_tenant_pct,
+                               top_3_tenant_pct,
+                               top_5_tenant_pct,
+                               top_10_tenant_pct,
+                               lease_rollover_12mo_pct,
+                               lease_rollover_24mo_pct,
+                               lease_rollover_36mo_pct,
+                               occupancy_rate
+                        FROM tenant_risk_analysis
+                        WHERE property_id = :property_id AND period_id = :period_id
+                        """
+                    ),
+                    {"property_id": property_id, "period_id": period_id}
+                ).fetchone()
+                cache[cache_key] = result._mapping if result else None
+            except Exception as exc:
+                logger.warning(f"Failed to query tenant_risk_analysis: {exc}")
+                cache[cache_key] = None
+
+        risk_row = cache.get(cache_key)
+        if not risk_row:
+            return None
+
+        value = risk_row.get(token)
+        return Decimal(str(value)) if value is not None else None
+
     def _rule_applies_to_property(self, rule: CalculatedRule, property_id: int) -> bool:
         if not rule.property_scope:
             return True
@@ -476,6 +590,65 @@ class CalculatedRulesEngine:
         if isinstance(scope, dict):
             if scope.get('all') is True:
                 return True
+
+            if 'property_ids' in scope:
+                return property_id in scope.get('property_ids', [])
+
+            if 'property_codes' in scope:
+                codes = scope.get('property_codes', [])
+                if not codes:
+                    return False
+                count = self.db.query(Property).filter(
+                    Property.id == property_id,
+                    Property.property_code.in_(codes)
+                ).count()
+                return count > 0
+
+        if isinstance(scope, list):
+            return property_id in scope
+
+        return False
+
+    def _get_prior_period_id(
+        self,
+        property_id: int,
+        period_id: int,
+        cache: Dict[str, Any]
+    ) -> Optional[int]:
+        """Get prior period id for a property (cached)."""
+        key = f"prior_period:{property_id}:{period_id}"
+        if key in cache:
+            return cache[key]
+
+        current_period = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.id == period_id,
+            FinancialPeriod.property_id == property_id
+        ).first()
+
+        if not current_period:
+            cache[key] = None
+            return None
+
+        # Find previous month for the same property
+        prior_period = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id
+        ).filter(
+            or_(
+                and_(
+                    FinancialPeriod.period_year == current_period.period_year,
+                    FinancialPeriod.period_month == current_period.period_month - 1
+                ),
+                and_(
+                    FinancialPeriod.period_year == current_period.period_year - 1,
+                    FinancialPeriod.period_month == 12,
+                    current_period.period_month == 1
+                )
+            )
+        ).order_by(FinancialPeriod.period_year.desc(), FinancialPeriod.period_month.desc()).first()
+
+        prior_id = prior_period.id if prior_period else None
+        cache[key] = prior_id
+        return prior_id
 
             if 'property_ids' in scope:
                 return property_id in scope.get('property_ids', [])

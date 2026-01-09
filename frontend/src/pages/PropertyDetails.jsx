@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Row, Col, Card, Descriptions, Tabs, Table, Tag, Alert } from 'antd';
+import { Row, Col, Card, Descriptions, Tabs, Table, Tag, Alert, InputNumber, Button, Space, Typography } from 'antd';
 import {
   HomeOutlined,
   DollarOutlined,
@@ -14,6 +14,7 @@ import {
   FileTextOutlined
 } from '@ant-design/icons';
 import NLQSearchBar from '../components/NLQSearchBar';
+import rulesService from '../services/rulesService';
 import './PropertyDetails.css';
 
 const { TabPane } = Tabs;
@@ -21,6 +22,13 @@ const { TabPane } = Tabs;
 const PropertyDetails = () => {
   const { propertyCode } = useParams();
   const [property, setProperty] = useState(null);
+  const [rules, setRules] = useState([]);
+  const [ruleResults, setRuleResults] = useState([]);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [resultsLoading, setResultsLoading] = useState(false);
+  const [periodId, setPeriodId] = useState(1);
+  const [ruleSummary, setRuleSummary] = useState({ total: 0, failed: 0, passed: 0, skipped: 0 });
+  const { Text } = Typography;
 
   useEffect(() => {
     // Mock data - replace with real API call
@@ -74,6 +82,41 @@ const PropertyDetails = () => {
 
     setProperty(mockProperties[propertyCode] || mockProperties.ESP);
   }, [propertyCode]);
+
+  useEffect(() => {
+    const loadRules = async () => {
+      if (!property) return;
+      setRulesLoading(true);
+      try {
+        const data = await rulesService.listCalculatedRules(property.id);
+        setRules(data || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setRulesLoading(false);
+      }
+    };
+    loadRules();
+  }, [property]);
+
+  const evaluateRules = async () => {
+    if (!property || !periodId) return;
+    setResultsLoading(true);
+    try {
+      const data = await rulesService.evaluateCalculatedRules(property.id, periodId);
+      setRuleResults(data?.rules || []);
+      setRuleSummary({
+        total: data?.total || 0,
+        failed: data?.failed || 0,
+        passed: data?.passed || 0,
+        skipped: data?.skipped || 0
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setResultsLoading(false);
+    }
+  };
 
   const financialData = [
     {
@@ -134,6 +177,43 @@ const PropertyDetails = () => {
   if (!property) {
     return <div>Loading...</div>;
   }
+
+  const ruleColumns = [
+    { title: 'Rule ID', dataIndex: 'rule_id', key: 'rule_id' },
+    { title: 'Name', dataIndex: 'rule_name', key: 'rule_name' },
+    { title: 'Severity', dataIndex: 'severity', key: 'severity',
+      render: (sev) => <Tag color={sev === 'critical' ? 'red' : sev === 'warning' ? 'orange' : 'blue'}>{sev}</Tag>
+    },
+    { title: 'Formula', dataIndex: 'formula', key: 'formula' },
+    { title: 'Tolerance', key: 'tolerance',
+      render: (_, record) => (
+        <span>
+          {record.tolerance_absolute !== null && record.tolerance_absolute !== undefined ? `±${record.tolerance_absolute}` : '-'}
+          {record.tolerance_percent ? ` / ${record.tolerance_percent}%` : ''}
+        </span>
+      )
+    }
+  ];
+
+  const ruleResultColumns = [
+    { title: 'Rule ID', dataIndex: 'rule_id', key: 'rule_id' },
+    { title: 'Name', dataIndex: 'rule_name', key: 'rule_name' },
+    { title: 'Status', dataIndex: 'status', key: 'status',
+      render: (status) => {
+        const color = status === 'PASS' ? 'green' : status === 'FAIL' ? 'red' : 'default';
+        return <Tag color={color}>{status}</Tag>;
+      }
+    },
+    { title: 'Severity', dataIndex: 'severity', key: 'severity',
+      render: (sev) => <Tag color={sev === 'critical' ? 'red' : sev === 'warning' ? 'orange' : 'blue'}>{sev}</Tag>
+    },
+    { title: 'Difference', dataIndex: 'difference', key: 'difference',
+      render: (diff) => {
+        if (diff === null || diff === undefined) return '-';
+        return typeof diff === 'number' ? diff.toFixed(2) : diff;
+      } },
+    { title: 'Message', dataIndex: 'message', key: 'message', render: (msg) => msg || '-' }
+  ];
 
   return (
     <div className="property-details-container page-content">
@@ -222,6 +302,42 @@ const PropertyDetails = () => {
               </TabPane>
               <TabPane tab="Documents" key="4">
                 <p>Leases, Contracts, Reports</p>
+              </TabPane>
+              <TabPane tab="Rules" key="5">
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space align="center">
+                    <Text strong>Period ID:</Text>
+                    <InputNumber min={1} value={periodId} onChange={setPeriodId} />
+                    <Button type="primary" onClick={evaluateRules} loading={resultsLoading}>
+                      Evaluate Rules
+                    </Button>
+                    <Text type="secondary">
+                      Summary: {ruleSummary.passed} pass / {ruleSummary.failed} fail / {ruleSummary.skipped} skipped
+                    </Text>
+                  </Space>
+
+                  <Card title="Active Calculated Rules" size="small">
+                    <Table
+                      dataSource={rules.map((r) => ({ key: r.id || r.rule_id, ...r }))}
+                      columns={ruleColumns}
+                      loading={rulesLoading}
+                      pagination={{ pageSize: 10 }}
+                      size="small"
+                      scroll={{ x: true }}
+                    />
+                  </Card>
+
+                  <Card title="Rule Evaluation Results" size="small">
+                    <Table
+                      dataSource={ruleResults.map((r, idx) => ({ key: `${r.rule_id}-${idx}`, ...r }))}
+                      columns={ruleResultColumns}
+                      loading={resultsLoading}
+                      pagination={{ pageSize: 10 }}
+                      size="small"
+                      scroll={{ x: true }}
+                    />
+                  </Card>
+                </Space>
               </TabPane>
             </Tabs>
           </Card>
