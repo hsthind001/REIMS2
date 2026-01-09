@@ -34,10 +34,10 @@ Levenshtein==0.27.3
 Mako==1.3.10
 MarkupSafe==3.0.3
 minio==7.2.18
-numpy==2.2.6  # Note: Prophet may fail with NumPy 2.0+, but it's handled gracefully with lazy loading
-opencv-python-headless==4.12.0.88
+numpy>=1.23.5,<2.0  # Compatible with langchain and other ML libraries  # Note: Prophet may fail with NumPy 2.0+, but it's handled gracefully with lazy loading
+opencv-python-headless>=4.9,<4.10  # Compatible with numpy<2
 openpyxl==3.1.5
-packaging==25.0
+packaging>=23.2,<25.0  # Required by langfuse
 pandas==2.3.3
 pdf2image==1.17.0
 pdfminer.six==20250506
@@ -52,7 +52,7 @@ pydantic==2.12.3
 pydantic-settings==2.11.0
 pydantic_core==2.41.4
 PyMuPDF==1.26.5
-pypdf>=4.0,<6.0  # Compatible with camelot-py for Python 3.13
+pypdf>=3.17,<4.0  # Compatible with camelot-py for Python 3.11
 pypdfium2==5.0.0
 reportlab==4.2.5
 pytesseract==0.3.13
@@ -115,7 +115,7 @@ lime==0.2.0.1  # LIME explanations for fast local interpretability
 # Next-Level Features Dependencies (November 2025)
 
 # AI/LLM for Multi-Agent System & NLQ
-openai==1.54.0
+openai>=1.58.1,<2.0.0  # Required by langchain-openai 0.2.14
 anthropic==0.39.0
 
 # Vector Database for RAG
@@ -123,7 +123,7 @@ chromadb==0.4.22
 # Alternative: pinecone-client==3.0.0
 
 # NLP & Embeddings
-sentence-transformers==2.5.1
+sentence-transformers>=2.6.1  # Required by llama-index-embeddings-huggingface
 # langchain==0.1.9  # Commented out - conflicts with numpy 2.x, install separately if needed
 # langchain-openai==0.0.5
 # langchain-anthropic==0.1.1
@@ -168,14 +168,14 @@ langchain==0.3.16  # Core LangChain framework (NumPy 2.x compatible version)
 langchain-community==0.3.16  # Community integrations
 langchain-openai==0.2.14  # OpenAI integration
 langchain-anthropic==0.2.4  # Anthropic integration
-langchain-groq==0.2.7  # Groq integration (ultra-fast Llama 3.3 70B)
+langchain-groq==0.2.5  # Groq integration (ultra-fast Llama 3.3 70B)
 langgraph==0.2.60  # Multi-agent orchestration with state machines
-llama-index-core==0.11.34  # Advanced RAG framework (updated version)
+llama-index-core>=0.12.7,<0.13.0  # Advanced RAG framework (compatible with vector stores)
 llama-index-vector-stores-qdrant==0.4.3  # Qdrant integration for LlamaIndex
 llama-index-embeddings-huggingface==0.5.4  # HuggingFace embeddings
 
 # Embeddings & Reranking
-jina-embeddings-v3==2.4.0  # SOTA embeddings with 8192 context
+# jina-embeddings-v3==2.4.0  # SOTA embeddings with 8192 context (package not available)
 FlagEmbedding==1.2.11  # BGE embeddings and reranker
 cohere==5.14.0  # Cohere Rerank v3 (optional, has free tier)
 
@@ -184,7 +184,7 @@ neo4j==5.28.1  # Neo4j Python driver for graph DB
 py2neo==2021.2.4  # Higher-level Neo4j interface
 
 # Text-to-SQL
-vanna==0.8.9  # AI-powered text-to-SQL with self-learning
+vanna==0.7.9  # AI-powered text-to-SQL with self-learning
 sqlglot==26.8.0  # SQL parsing and optimization
 
 # Temporal Query Processing
@@ -193,15 +193,15 @@ parsedatetime==2.6  # Additional date/time parsing
 python-dateutil==2.9.0.post0  # Already present, ensure version
 
 # LLM Observability & Monitoring
-phoenix-ai==4.51.0  # LLM tracing and observability (open-source alternative to LangSmith)
+# phoenix-ai==4.51.0  # LLM tracing and observability (version doesn't exist, latest is 0.2.8.0)
 loguru==0.7.3  # Better structured logging
 
 # Retrieval & Search Utilities
 faiss-cpu==1.9.0.post1  # Facebook AI Similarity Search (fallback vector store)
-pypdf==5.1.0  # Already present for PDF processing
+# pypdf already specified earlier in requirements (>=3.17,<4.0 for camelot-py compatibility)
 
 # Prompt Engineering & Optimization
-langchain-core==0.3.29  # Core abstractions
+langchain-core>=0.3.32,<0.4.0  # Core abstractions (compatible with langchain 0.3.16)
 langfuse==2.56.1  # LLM engineering platform (optional)
 
 # Caching & Performance

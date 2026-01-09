@@ -1,5 +1,5 @@
-# Use official Python 3.12 slim image (better ML package compatibility)
-FROM python:3.12-slim
+# Use official Python 3.11 slim image (better ML package compatibility)
+FROM python:3.11-slim
 
 # Install system dependencies including Rust toolchain and WeasyPrint dependencies
 USER root

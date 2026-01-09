@@ -32,6 +32,7 @@ const TenantRiskDashboard = lazy(() => import('./pages/TenantRiskDashboard'))
 const CollectionsQualityDashboard = lazy(() => import('./pages/CollectionsQualityDashboard'))
 const DocumentCompletenessDashboard = lazy(() => import('./pages/DocumentCompletenessDashboard'))
 const AuditHistoryDashboard = lazy(() => import('./pages/AuditHistoryDashboard'))
+const NaturalLanguageQueryNew = lazy(() => import('./pages/NaturalLanguageQueryNew'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -335,6 +336,10 @@ function AppContent() {
           ) : hashRoute === 'audit-history' ? (
             <Suspense fallback={<PageLoader />}>
               <AuditHistoryDashboard />
+            </Suspense>
+          ) : hashRoute === 'nlq-search' ? (
+            <Suspense fallback={<PageLoader />}>
+              <NaturalLanguageQueryNew />
             </Suspense>
           ) : (
             renderPage()

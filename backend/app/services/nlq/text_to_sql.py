@@ -33,6 +33,7 @@ except ImportError:
 
 from app.config.nlq_config import nlq_config
 from app.services.nlq.temporal_processor import temporal_processor
+from app.services.nlq.schema_generator import get_schema_generator
 
 
 class VannaTextToSQL:
@@ -86,187 +87,167 @@ class VannaTextToSQL:
             logger.error(f"Vanna training error: {e}", exc_info=True)
 
     def _get_ddl_statements(self, db: Session) -> Dict[str, str]:
-        """Generate DDL statements for training"""
+        """
+        Generate DDL statements for training using comprehensive schema generator.
 
-        # Key REIMS tables
-        ddl_statements = {
-            "balance_sheet_data": """
-                CREATE TABLE balance_sheet_data (
-                    id SERIAL PRIMARY KEY,
-                    property_id INTEGER NOT NULL,
-                    period_id INTEGER NOT NULL,
-                    account_code VARCHAR(20) NOT NULL,
-                    account_name VARCHAR(255),
-                    amount DECIMAL(15, 2),
-                    category VARCHAR(50),
-                    statement_date DATE,
-                    year INTEGER,
-                    month INTEGER,
-                    created_at TIMESTAMP,
-                    updated_at TIMESTAMP,
-                    FOREIGN KEY (property_id) REFERENCES properties(id),
-                    FOREIGN KEY (period_id) REFERENCES periods(id)
-                );
-                COMMENT ON TABLE balance_sheet_data IS 'Balance sheet financial data';
-                COMMENT ON COLUMN balance_sheet_data.account_code IS 'Chart of accounts code (e.g., 1010 for Cash)';
-                COMMENT ON COLUMN balance_sheet_data.category IS 'Assets, Liabilities, or Equity';
-            """,
+        This now extracts ALL tables from the database dynamically rather than
+        hardcoding a small subset. Includes 90+ tables covering all REIMS modules.
+        """
+        try:
+            schema_gen = get_schema_generator()
+            ddl_statements = schema_gen.generate_all_ddl(db)
+            logger.info(f"Generated {len(ddl_statements)} DDL statements for training")
+            return ddl_statements
+        except Exception as e:
+            logger.error(f"Error generating DDL statements: {e}", exc_info=True)
+            # Fallback to essential tables if schema generation fails
+            return self._get_fallback_ddl_statements()
 
-            "income_statement_data": """
-                CREATE TABLE income_statement_data (
-                    id SERIAL PRIMARY KEY,
-                    property_id INTEGER NOT NULL,
-                    period_id INTEGER NOT NULL,
-                    account_code VARCHAR(20) NOT NULL,
-                    account_name VARCHAR(255),
-                    amount DECIMAL(15, 2),
-                    category VARCHAR(50),
-                    statement_date DATE,
-                    year INTEGER,
-                    month INTEGER,
-                    created_at TIMESTAMP,
-                    updated_at TIMESTAMP,
-                    FOREIGN KEY (property_id) REFERENCES properties(id),
-                    FOREIGN KEY (period_id) REFERENCES periods(id)
-                );
-                COMMENT ON TABLE income_statement_data IS 'Income statement financial data';
-                COMMENT ON COLUMN income_statement_data.category IS 'Revenue, Operating Expenses, or Other';
-            """,
-
-            "cash_flow_data": """
-                CREATE TABLE cash_flow_data (
-                    id SERIAL PRIMARY KEY,
-                    property_id INTEGER NOT NULL,
-                    period_id INTEGER NOT NULL,
-                    account_code VARCHAR(20) NOT NULL,
-                    account_name VARCHAR(255),
-                    amount DECIMAL(15, 2),
-                    category VARCHAR(50),
-                    statement_date DATE,
-                    year INTEGER,
-                    month INTEGER,
-                    created_at TIMESTAMP,
-                    updated_at TIMESTAMP,
-                    FOREIGN KEY (property_id) REFERENCES properties(id),
-                    FOREIGN KEY (period_id) REFERENCES periods(id)
-                );
-                COMMENT ON TABLE cash_flow_data IS 'Cash flow statement data';
-            """,
-
-            "properties": """
-                CREATE TABLE properties (
-                    id SERIAL PRIMARY KEY,
-                    property_code VARCHAR(10) UNIQUE NOT NULL,
-                    property_name VARCHAR(255),
-                    address TEXT,
-                    city VARCHAR(100),
-                    state VARCHAR(50),
-                    zip_code VARCHAR(20),
-                    property_type VARCHAR(50),
-                    units INTEGER,
-                    square_footage DECIMAL(12, 2),
-                    created_at TIMESTAMP
-                );
-                COMMENT ON TABLE properties IS 'Real estate properties managed in REIMS';
-            """,
-
-            "periods": """
-                CREATE TABLE periods (
-                    id SERIAL PRIMARY KEY,
-                    property_id INTEGER NOT NULL,
-                    year INTEGER NOT NULL,
-                    month INTEGER NOT NULL,
-                    period_type VARCHAR(20),
-                    start_date DATE,
-                    end_date DATE,
-                    is_closed BOOLEAN DEFAULT FALSE,
-                    FOREIGN KEY (property_id) REFERENCES properties(id)
-                );
-                COMMENT ON TABLE periods IS 'Reporting periods for financial statements';
-            """
+    def _get_fallback_ddl_statements(self) -> Dict[str, str]:
+        """
+        Fallback DDL statements for essential tables if dynamic generation fails
+        """
+        return {
+            "properties": "CREATE TABLE properties (id SERIAL PRIMARY KEY, property_code VARCHAR(10) UNIQUE NOT NULL, property_name VARCHAR(255), property_type VARCHAR(50), status VARCHAR(20));",
+            "financial_periods": "CREATE TABLE financial_periods (id SERIAL PRIMARY KEY, property_id INTEGER, period_year INTEGER, period_month INTEGER, is_closed BOOLEAN);",
+            "balance_sheet_data": "CREATE TABLE balance_sheet_data (id SERIAL PRIMARY KEY, property_id INTEGER, period_id INTEGER, account_code VARCHAR(20), account_name VARCHAR(255), amount DECIMAL(15,2), category VARCHAR(50));",
+            "income_statement_data": "CREATE TABLE income_statement_data (id SERIAL PRIMARY KEY, property_id INTEGER, period_id INTEGER, account_code VARCHAR(20), account_name VARCHAR(255), amount DECIMAL(15,2), category VARCHAR(50));",
         }
 
-        return ddl_statements
-
     def _train_documentation(self):
-        """Train on REIMS-specific documentation"""
+        """
+        Train on REIMS-specific documentation using comprehensive schema generator.
+
+        Now includes documentation for ALL REIMS concepts, not just basic ones.
+        """
         if not self.vanna:
             return
 
-        documentation = [
-            "Account code 1010 represents Cash and Cash Equivalents",
-            "Account code 1020 represents Accounts Receivable",
-            "Account code 1030 represents Prepaid Expenses",
-            "Account codes 1000-1999 are Assets",
-            "Account codes 2000-2999 are Liabilities",
-            "Account codes 3000-3999 are Equity",
-            "Account codes 4000-4999 are Revenue",
-            "Account codes 5000-5999 are Operating Expenses",
-            "Property code ESP refers to Esperanza property",
-            "Property code OAK refers to Oakland property",
-            "Cash position means the value in account code 1010 (Cash)",
-            "Net Operating Income (NOI) = Revenue - Operating Expenses",
-            "DSCR (Debt Service Coverage Ratio) = NOI / Annual Debt Service",
-            "Current Ratio = Current Assets / Current Liabilities",
-        ]
+        try:
+            schema_gen = get_schema_generator()
+            documentation = schema_gen.generate_documentation()
 
-        for doc in documentation:
-            self.vanna.train(documentation=doc)
+            logger.info(f"Training on {len(documentation)} documentation items...")
+
+            for doc in documentation:
+                self.vanna.train(documentation=doc)
+
+            logger.info("Documentation training complete")
+
+        except Exception as e:
+            logger.error(f"Error training documentation: {e}", exc_info=True)
 
     def _train_example_queries(self):
-        """Train on example question-SQL pairs"""
+        """
+        Train on example question-SQL pairs covering all major table types.
+
+        Expanded to include examples for:
+        - Financial statements (balance sheet, income statement, cash flow)
+        - Mortgage data
+        - Rent roll
+        - Audit trails
+        - Reconciliation
+        - Data quality
+        - Anomalies
+        - Alerts
+        - Market intelligence
+        """
         if not self.vanna:
             return
 
         examples = [
+            # Basic financial queries
             {
                 "question": "What was the cash position in November 2025?",
-                "sql": """
-                    SELECT b.amount as cash_position
-                    FROM balance_sheet_data b
-                    WHERE b.account_code = '1010'
-                      AND b.year = 2025
-                      AND b.month = 11
-                """
+                "sql": "SELECT b.amount as cash_position FROM balance_sheet_data b WHERE b.account_code = '1010' AND b.year = 2025 AND b.month = 11"
             },
             {
                 "question": "Show me total revenue for Q4 2025",
-                "sql": """
-                    SELECT SUM(i.amount) as total_revenue
-                    FROM income_statement_data i
-                    WHERE i.category = 'Revenue'
-                      AND i.year = 2025
-                      AND i.month IN (10, 11, 12)
-                """
+                "sql": "SELECT SUM(i.amount) as total_revenue FROM income_statement_data i WHERE i.category = 'Revenue' AND i.year = 2025 AND i.month IN (10, 11, 12)"
             },
             {
                 "question": "What are total assets for property ESP?",
-                "sql": """
-                    SELECT p.property_code, SUM(b.amount) as total_assets
-                    FROM balance_sheet_data b
-                    JOIN properties p ON b.property_id = p.id
-                    WHERE p.property_code = 'ESP'
-                      AND b.category = 'Assets'
-                    GROUP BY p.property_code
-                """
+                "sql": "SELECT p.property_code, SUM(b.amount) as total_assets FROM balance_sheet_data b JOIN properties p ON b.property_id = p.id WHERE p.property_code = 'ESP' AND b.category = 'Assets' GROUP BY p.property_code"
+            },
+
+            # Audit trail queries
+            {
+                "question": "Who changed the cash position in November 2025?",
+                "sql": "SELECT a.changed_by_user_id, u.username, a.field_name, a.old_value, a.new_value, a.changed_at FROM audit_trails a JOIN users u ON a.changed_by_user_id = u.id WHERE a.table_name = 'balance_sheet_data' AND a.field_name = 'amount' AND EXTRACT(YEAR FROM a.changed_at) = 2025 AND EXTRACT(MONTH FROM a.changed_at) = 11"
             },
             {
-                "question": "Show operating expenses for last month",
-                "sql": """
-                    SELECT SUM(i.amount) as operating_expenses
-                    FROM income_statement_data i
-                    WHERE i.category = 'Operating Expenses'
-                      AND i.year = EXTRACT(YEAR FROM CURRENT_DATE)
-                      AND i.month = EXTRACT(MONTH FROM CURRENT_DATE - INTERVAL '1 month')
-                """
-            }
+                "question": "Show all changes made by user John Doe",
+                "sql": "SELECT a.table_name, a.record_id, a.field_name, a.old_value, a.new_value, a.changed_at FROM audit_trails a JOIN users u ON a.changed_by_user_id = u.id WHERE u.username = 'John Doe' ORDER BY a.changed_at DESC"
+            },
+
+            # Rent roll queries
+            {
+                "question": "Show me the rent roll for property ESP",
+                "sql": "SELECT r.tenant_name, r.unit_number, r.monthly_rent, r.lease_start_date, r.lease_end_date, r.occupancy_status FROM rent_roll_data r JOIN properties p ON r.property_id = p.id WHERE p.property_code = 'ESP'"
+            },
+            {
+                "question": "What is the occupancy rate for all properties?",
+                "sql": "SELECT p.property_code, p.property_name, COUNT(CASE WHEN r.occupancy_status = 'Occupied' THEN 1 END) * 100.0 / COUNT(*) as occupancy_rate FROM rent_roll_data r JOIN properties p ON r.property_id = p.id GROUP BY p.property_code, p.property_name"
+            },
+
+            # Mortgage queries
+            {
+                "question": "What is the current DSCR for property ESP?",
+                "sql": "SELECT p.property_code, m.dscr_value, m.statement_date FROM mortgage_statement_data m JOIN properties p ON m.property_id = p.id WHERE p.property_code = 'ESP' ORDER BY m.statement_date DESC LIMIT 1"
+            },
+            {
+                "question": "Show mortgage payment history for the last 6 months",
+                "sql": "SELECT m.payment_date, m.principal_amount, m.interest_amount, m.total_payment FROM mortgage_payment_history m WHERE m.payment_date >= CURRENT_DATE - INTERVAL '6 months' ORDER BY m.payment_date DESC"
+            },
+
+            # Reconciliation queries
+            {
+                "question": "Show me unreconciled items",
+                "sql": "SELECT r.account_code, r.account_name, r.amount, r.difference_amount, r.status FROM reconciliation_differences r WHERE r.status = 'unresolved' ORDER BY ABS(r.difference_amount) DESC"
+            },
+            {
+                "question": "What reconciliation sessions are open?",
+                "sql": "SELECT rs.session_name, rs.created_at, rs.status, p.property_code FROM reconciliation_sessions rs LEFT JOIN properties p ON rs.property_id = p.id WHERE rs.status = 'in_progress'"
+            },
+
+            # Data quality queries
+            {
+                "question": "Show me data quality issues",
+                "sql": "SELECT dq.table_name, dq.field_name, dq.issue_type, dq.severity, COUNT(*) as issue_count FROM data_quality_scores dq WHERE dq.severity IN ('high', 'critical') GROUP BY dq.table_name, dq.field_name, dq.issue_type, dq.severity ORDER BY issue_count DESC"
+            },
+            {
+                "question": "What validation errors were found?",
+                "sql": "SELECT v.validation_rule_name, v.table_name, v.field_name, v.error_message, v.record_id FROM validation_results v WHERE v.is_valid = false ORDER BY v.created_at DESC"
+            },
+
+            # Anomaly queries
+            {
+                "question": "Show me detected anomalies",
+                "sql": "SELECT a.anomaly_type, a.account_code, a.account_name, a.expected_value, a.actual_value, a.severity, a.detected_at FROM anomaly_detections a WHERE a.status = 'unresolved' ORDER BY a.severity DESC, a.detected_at DESC"
+            },
+
+            # Alert queries
+            {
+                "question": "Show active alerts",
+                "sql": "SELECT ah.alert_type, ah.severity, ah.message, ah.triggered_at, p.property_code FROM alert_history ah LEFT JOIN properties p ON ah.property_id = p.id WHERE ah.status = 'active' ORDER BY ah.severity DESC, ah.triggered_at DESC"
+            },
+
+            # Market intelligence queries
+            {
+                "question": "Show market intelligence for property ESP",
+                "sql": "SELECT m.data_type, m.metric_name, m.metric_value, m.data_date FROM market_intelligence m JOIN properties p ON m.property_id = p.id WHERE p.property_code = 'ESP' ORDER BY m.data_date DESC"
+            },
         ]
+
+        logger.info(f"Training on {len(examples)} example queries...")
 
         for example in examples:
             self.vanna.train(
                 question=example["question"],
                 sql=example["sql"]
             )
+
+        logger.info("Example query training complete")
 
     async def generate_sql(
         self,
