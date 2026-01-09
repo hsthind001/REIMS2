@@ -128,6 +128,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
   propertyCode,
   onRefresh,
 }) => {
+  const { data: loc, lineage } = data;
   const amenityIcons: Record<string, React.ReactNode> = {
     grocery_stores_1mi: <GroceryIcon />,
     restaurants_1mi: <RestaurantIcon />,
@@ -150,8 +151,36 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
     commute_time_downtown_min: 'Est. Commute to Downtown (min)',
   };
 
+  const confidenceColor =
+    lineage && lineage.confidence !== undefined
+      ? lineage.confidence >= 85
+        ? 'success'
+        : lineage.confidence >= 60
+        ? 'warning'
+        : 'default'
+      : 'default';
+
   return (
     <Box p={3}>
+      {lineage && (
+        <Box mb={3} display="flex" gap={1} flexWrap="wrap" alignItems="center">
+          <Typography variant="body2" color="text.secondary">
+            Data Source:
+          </Typography>
+          <Chip label={(lineage.source || 'unknown').toUpperCase()} size="small" />
+          {lineage.vintage && <Chip label={`Vintage: ${lineage.vintage}`} size="small" />}
+          {lineage.confidence !== undefined && (
+            <Chip label={`Confidence: ${lineage.confidence}%`} size="small" color={confidenceColor} />
+          )}
+          {lineage.fetched_at && (
+            <Chip
+              label={`Fetched: ${new Date(lineage.fetched_at).toLocaleString()}`}
+              size="small"
+              variant="outlined"
+            />
+          )}
+        </Box>
+      )}
       {/* Walkability Scores */}
       <Typography variant="h5" gutterBottom fontWeight="bold">
         Walkability & Accessibility
@@ -164,7 +193,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
         <Grid item xs={12} md={4}>
           <ScoreCard
             title="Walk Score"
-            score={data.data.walk_score}
+            score={loc.walk_score}
             icon={<WalkIcon />}
             description="Walkability based on nearby amenities and pedestrian infrastructure"
             color="#1976d2"
@@ -173,7 +202,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
         <Grid item xs={12} md={4}>
           <ScoreCard
             title="Transit Score"
-            score={data.data.transit_score}
+            score={loc.transit_score}
             icon={<TransitIcon />}
             description="Public transportation access and frequency of service"
             color="#9c27b0"
@@ -182,7 +211,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
         <Grid item xs={12} md={4}>
           <ScoreCard
             title="Bike Score"
-            score={data.data.bike_score}
+            score={loc.bike_score}
             icon={<BikeIcon />}
             description="Bikeability based on bike lanes, trails, and infrastructure"
             color="#ff9800"
@@ -199,7 +228,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
       </Typography>
 
       <Grid container spacing={3} mb={4}>
-        {Object.entries(data.data.amenities).map(([key, count]) => (
+        {Object.entries(loc.amenities).map(([key, count]) => (
           <Grid item xs={12} sm={6} md={4} key={key}>
             <Card>
               <CardContent>
@@ -253,7 +282,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
             </TableRow>
           </TableHead>
           <TableBody>
-            {Object.entries(data.data.transit_access).map(([key, count]) => (
+            {Object.entries(loc.transit_access).map(([key, count]) => (
               <TableRow key={key}>
                 <TableCell>{transitLabels[key] || key}</TableCell>
                 <TableCell align="right">
@@ -266,13 +295,13 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
       </TableContainer>
 
       {/* Crime Index Placeholder */}
-      {data.data.crime_index !== null && (
+      {loc.crime_index !== null && (
         <Box mb={4}>
           <Typography variant="h5" gutterBottom fontWeight="bold">
             Safety & Crime
           </Typography>
           <Alert severity="info" icon={<InfoIcon />}>
-            Crime index data: {data.data.crime_index} (Lower is better)
+            Crime index data: {loc.crime_index} (Lower is better)
             <br />
             <Typography variant="caption" color="text.secondary">
               Crime data integration coming in future update
@@ -282,13 +311,13 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
       )}
 
       {/* School Ratings Placeholder */}
-      {data.data.school_rating_avg !== null && (
+      {loc.school_rating_avg !== null && (
         <Box mb={4}>
           <Typography variant="h5" gutterBottom fontWeight="bold">
             School Ratings
           </Typography>
           <Alert severity="info" icon={<InfoIcon />}>
-            Average school rating: {data.data.school_rating_avg}/10
+            Average school rating: {loc.school_rating_avg}/10
             <br />
             <Typography variant="caption" color="text.secondary">
               Detailed school ratings integration coming in future update

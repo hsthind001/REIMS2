@@ -14,7 +14,8 @@ celery_app = Celery(
         "app.tasks.batch_reprocessing_tasks",  # Phase 1: Batch reprocessing for anomaly detection
         "app.tasks.alert_backfill_tasks",  # Alert backfill batch jobs
         "app.tasks.learning_tasks",  # Self-learning system tasks
-        "app.tasks.forensic_audit_tasks"  # Forensic audit pipeline
+        "app.tasks.forensic_audit_tasks",  # Forensic audit pipeline
+        "app.tasks.market_intelligence_tasks"  # Market intelligence ingestion/refresh
     ]
 )
 

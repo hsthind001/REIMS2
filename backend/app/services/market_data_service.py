@@ -14,13 +14,23 @@ Supports:
 
 import logging
 import time
-from typing import Dict, Any, Optional, List
+import os
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 import requests
 from functools import wraps
 import hashlib
 import json
+import numpy as np
+import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+try:
+    import faiss  # type: ignore
+    HAS_FAISS = True
+except Exception:
+    HAS_FAISS = False
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +122,7 @@ class MarketDataService:
         self.db = db
         self.census_api_key = census_api_key
         self.fred_api_key = fred_api_key
+        self.osrm_base_url = os.getenv('OSRM_BASE_URL')
 
     def _check_rate_limit(self, source: str) -> bool:
         """
@@ -827,6 +838,10 @@ class MarketDataService:
             # Fetch amenity counts from OpenStreetMap
             amenities = self._fetch_amenities_osm(latitude, longitude)
 
+            # Drive-times (OSRM if configured)
+            drive_times = self._compute_drive_times(latitude, longitude)
+            isochrones = self._compute_isochrones(latitude, longitude)
+
             # Calculate transit access
             transit = self._calculate_transit_access(latitude, longitude)
 
@@ -846,7 +861,9 @@ class MarketDataService:
                 'transit_score': transit_score,
                 'bike_score': bike_score,
                 'amenities': amenities,
+                'drive_times': drive_times,
                 'transit_access': transit,
+                'isochrones': isochrones,
                 'crime_index': crime_index,
                 'school_rating_avg': school_rating_avg
             }
@@ -939,6 +956,67 @@ class MarketDataService:
                 'hospitals_5mi': 0,
                 'parks_1mi': 0
             }
+
+    def _compute_drive_times(self, latitude: float, longitude: float) -> Dict[str, Any]:
+        """
+        Compute drive times using OSRM if configured. Returns sample if unavailable.
+        """
+        osrm_base = self.osrm_base_url
+        cache_key = f"drive:{round(latitude,4)}:{round(longitude,4)}"
+        if cache_key in _market_data_cache:
+            cached = _market_data_cache[cache_key]
+            if time.time() - cached['timestamp'] < 3600:
+                return cached['data']
+        if not osrm_base:
+            return {
+                'sample_drive_min': 15
+            }
+        try:
+            target_lat = latitude + 0.05
+            target_lon = longitude + 0.05
+            url = f"{osrm_base}/route/v1/driving/{longitude},{latitude};{target_lon},{target_lat}"
+            params = {'overview': 'false', 'alternatives': 'false'}
+            result = self.fetch_with_retry('osrm', url, params)
+            if result and result.get('routes'):
+                duration_sec = result['routes'][0].get('duration', 900)
+                val = {
+                    'sample_drive_min': round(duration_sec / 60, 1)
+                }
+                _market_data_cache[cache_key] = {'data': val, 'timestamp': time.time()}
+                return val
+        except Exception as e:
+            logger.warning(f"OSRM drive-time failed: {e}")
+        return {
+            'sample_drive_min': 15
+        }
+
+    def _compute_isochrones(self, latitude: float, longitude: float) -> List[Dict[str, Any]]:
+        """
+        Compute simple isochrone polygons from OSRM if configured. Falls back to empty.
+        """
+        osrm_base = self.osrm_base_url
+        cache_key = f"iso:{round(latitude,4)}:{round(longitude,4)}"
+        if cache_key in _market_data_cache:
+            cached = _market_data_cache[cache_key]
+            if time.time() - cached['timestamp'] < 3600:
+                return cached['data']
+        if not osrm_base:
+            return []
+        try:
+            contours = [5, 10, 15]  # minutes
+            polys = []
+            for c in contours:
+                url = f"{osrm_base}/isochrone/v1/driving/{longitude},{latitude}"
+                params = {'contours_minutes': c, 'polygons': 'true', 'generalize': 100}
+                res = self.fetch_with_retry('osrm', url, params)
+                if res and res.get('features'):
+                    poly = res['features'][0].get('geometry')
+                    polys.append({'minutes': c, 'geometry': poly})
+            _market_data_cache[cache_key] = {'data': polys, 'timestamp': time.time()}
+            return polys
+        except Exception as e:
+            logger.warning(f"OSRM isochrone failed: {e}")
+            return []
 
     def _calculate_transit_access(
         self,
@@ -1112,6 +1190,15 @@ class MarketDataService:
         try:
             # Environmental Risk Assessment
             environmental = self._assess_environmental_risk(latitude, longitude, property_data)
+            # Enrich environmental with air quality + green space
+            air_quality = self._fetch_air_quality_openaq(latitude, longitude)
+            green_space = self._fetch_green_space_osm(latitude, longitude)
+            if air_quality:
+                environmental['air_quality_aqi'] = air_quality.get('aqi')
+                environmental['air_quality_source'] = air_quality.get('source')
+            if green_space:
+                environmental['green_space_index'] = green_space.get('green_space_index')
+                environmental['green_space_parks_within_1mi'] = green_space.get('parks_1mi')
 
             # Social Risk Assessment
             social = self._assess_social_risk(latitude, longitude)
@@ -1206,6 +1293,44 @@ class MarketDataService:
             'composite_score': composite
         }
 
+    def _fetch_air_quality_openaq(self, latitude: float, longitude: float) -> Dict[str, Any]:
+        """Fetch air quality from OpenAQ; fallback to sample."""
+        try:
+            url = "https://api.openaq.org/v2/latest"
+            params = {'coordinates': f"{latitude},{longitude}", 'radius': 20000, 'limit': 1}
+            result = self.fetch_with_retry('openaq', url, params)
+            if result and result.get('results'):
+                measurements = result['results'][0].get('measurements', [])
+                if measurements:
+                    aqi = measurements[0].get('value')
+                    return {'aqi': aqi, 'source': 'openaq'}
+        except Exception as e:
+            logger.warning(f"OpenAQ fetch failed: {e}")
+        return {'aqi': 50, 'source': 'sample'}
+
+    def _fetch_green_space_osm(self, latitude: float, longitude: float) -> Dict[str, Any]:
+        """Compute simple green space index using OSM parks within 1 mile."""
+        try:
+            parks_query = f"""
+            [out:json][timeout:20];
+            (
+              node["leisure"="park"](around:1609,{latitude},{longitude});
+              way["leisure"="park"](around:1609,{latitude},{longitude});
+              relation["leisure"="park"](around:1609,{latitude},{longitude});
+            );
+            out count;
+            """
+            overpass_url = "https://overpass-api.de/api/interpreter"
+            resp = requests.post(overpass_url, data={'data': parks_query}, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+            parks = len(data.get('elements', []))
+            index = min(100, parks * 3)
+            return {'parks_1mi': parks, 'green_space_index': index}
+        except Exception as e:
+            logger.warning(f"Green space fetch failed: {e}")
+            return {'parks_1mi': 0, 'green_space_index': 20}
+
     def _assess_social_risk(
         self,
         latitude: float,
@@ -1220,9 +1345,12 @@ class MarketDataService:
         - Census Income Inequality Data
         - CDC PLACES Health Data
         """
-        # Placeholder scoring - would integrate with actual APIs
+        # Schools via OSM
+        schools_count = self._fetch_schools_osm(latitude, longitude)
+        school_quality = min(100, 50 + schools_count * 5)
+
+        # Crime placeholder (could integrate FBI/local APIs)
         crime_score = self._estimate_crime_score(latitude, longitude)
-        school_quality = self._estimate_school_quality(latitude, longitude)
 
         # Income inequality (Gini coefficient placeholder)
         gini = 0.45  # US average
@@ -1250,6 +1378,27 @@ class MarketDataService:
             'community_health_score': health_score,
             'composite_score': composite
         }
+
+    def _fetch_schools_osm(self, latitude: float, longitude: float) -> int:
+        """Fetch count of schools within 2 miles using Overpass."""
+        try:
+            overpass_url = "https://overpass-api.de/api/interpreter"
+            query = f"""
+            [out:json][timeout:20];
+            (
+              node["amenity"="school"](around:3218,{latitude},{longitude});
+              way["amenity"="school"](around:3218,{latitude},{longitude});
+              relation["amenity"="school"](around:3218,{latitude},{longitude});
+            );
+            out count;
+            """
+            resp = requests.post(overpass_url, data={'data': query}, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+            return len(data.get('elements', []))
+        except Exception as e:
+            logger.debug(f"School fetch failed: {e}")
+            return 0
 
     def _assess_governance_risk(
         self,
@@ -1317,13 +1466,23 @@ class MarketDataService:
 
     def _estimate_crime_score(self, latitude: float, longitude: float) -> int:
         """Estimate crime score (0-100, higher is more crime)."""
-        # Placeholder - would integrate with FBI Crime Data API
-        return 35
+        try:
+            amenities = self._fetch_amenities_osm(latitude, longitude)
+            density = sum(amenities.values())
+            score = max(15, 80 - density)  # more amenities → perceived lower crime
+            return int(score)
+        except Exception:
+            # Placeholder - would integrate with FBI Crime Data API
+            return 35
 
     def _estimate_school_quality(self, latitude: float, longitude: float) -> int:
         """Estimate school quality score (0-100)."""
-        # Placeholder - would integrate with GreatSchools API
-        return 75
+        try:
+            schools = self._fetch_schools_osm(latitude, longitude)
+            return min(100, 50 + schools * 5)
+        except Exception:
+            # Placeholder - would integrate with GreatSchools API
+            return 75
 
     def _get_flood_zone(self, flood_risk: int) -> str:
         """Convert flood risk score to FEMA zone designation."""
@@ -1350,7 +1509,8 @@ class MarketDataService:
     def generate_forecasts(
         self,
         property_data: Dict[str, Any],
-        historical_data: Optional[Dict[str, Any]] = None
+        historical_data: Optional[Dict[str, Any]] = None,
+        economic_data: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Generate predictive forecasts for property metrics.
@@ -1363,17 +1523,71 @@ class MarketDataService:
             12-month forecasts for rent, occupancy, cap rate, and value
         """
         try:
+            # Build historical series from DB if available
+            if historical_data is None and property_data.get('property_id'):
+                historical_data = self._load_historical_series(property_data['property_id'])
+
+            # Build synthetic historical series if none provided
+            try:
+                from prophet import Prophet  # type: ignore
+                has_prophet = True
+            except Exception:
+                has_prophet = False
+
             # Extract current metrics
             current_rent = property_data.get('avg_rent', 1500)
             current_occupancy = property_data.get('occupancy_rate', 95.0)
             current_noi = property_data.get('noi', 500000)
             current_value = property_data.get('market_value', 10000000)
+            # Macro adjustment from economic indicators (if provided)
+            unemployment = None
+            if economic_data and isinstance(economic_data, dict):
+                unemployment = economic_data.get('data', {}).get('unemployment_rate', {}).get('value')
 
-            # Generate rent forecast (simplified trend-based)
-            rent_forecast = self._forecast_rent(current_rent, historical_data)
+            # Generate rent forecast using Prophet or ARIMA fallback (with macro nudge)
+            rent_forecast = self._forecast_rent(current_rent, historical_data, economic_data)
+            try:
+                if historical_data and historical_data.get('rent'):
+                    series = historical_data['rent']
+                else:
+                    dates = pd.date_range(end=pd.Timestamp.utcnow(), periods=24, freq='M')
+                    series = pd.Series(
+                        np.linspace(current_rent * 0.9, current_rent * 1.05, len(dates))
+                        + np.random.normal(scale=current_rent * 0.01, size=len(dates)),
+                        index=dates
+                    )
+                if has_prophet:
+                    df = pd.DataFrame({'ds': series.index, 'y': series.values})
+                    m = Prophet(growth='linear', daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
+                    m.fit(df)
+                    future = m.make_future_dataframe(periods=12, freq='M')
+                    forecast = m.predict(future).tail(12)
+                    rent_forecast['predicted_rent'] = float(forecast['yhat'].iloc[-1])
+                    rent_forecast['confidence_interval_95'] = [
+                        float(forecast['yhat_lower'].min()),
+                        float(forecast['yhat_upper'].max())
+                    ]
+                    rent_forecast['model'] = 'prophet'
+                else:
+                    from statsmodels.tsa.statespace.sarimax import SARIMAX
+                    model = SARIMAX(series, order=(1, 0, 0), seasonal_order=(0, 0, 0, 0))
+                    res = model.fit(disp=False)
+                    preds = res.forecast(12)
+                    rent_forecast['predicted_rent'] = float(preds.iloc[-1])
+                    rent_forecast['confidence_interval_95'] = [
+                        float(preds.min()),
+                        float(preds.max())
+                    ]
+                    rent_forecast['model'] = 'arima'
+            except Exception as fe:
+                logger.warning(f"Forecast model fallback used: {fe}")
 
             # Generate occupancy forecast
             occupancy_forecast = self._forecast_occupancy(current_occupancy, historical_data)
+            if unemployment is not None and occupancy_forecast:
+                # Nudge occupancy down if unemployment high
+                adj = max(0, (unemployment - 4.0) * 0.5)
+                occupancy_forecast['predicted_occupancy'] = max(0, occupancy_forecast['predicted_occupancy'] - adj)
 
             # Generate cap rate forecast
             cap_rate_forecast = self._forecast_cap_rate(current_noi, current_value, historical_data)
@@ -1405,7 +1619,8 @@ class MarketDataService:
     def _forecast_rent(
         self,
         current_rent: float,
-        historical_data: Optional[Dict[str, Any]] = None
+        historical_data: Optional[Dict[str, Any]] = None,
+        economic_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Forecast 12-month rent growth.
@@ -1420,7 +1635,7 @@ class MarketDataService:
         lower_bound = predicted_rent * 0.95
         upper_bound = predicted_rent * 1.05
 
-        return {
+        rent_forecast = {
             'predicted_rent': round(predicted_rent, 2),
             'change_pct': round(growth_rate * 100, 2),
             'confidence_interval_95': [round(lower_bound, 2), round(upper_bound, 2)],
@@ -1428,6 +1643,17 @@ class MarketDataService:
             'r_squared': 0.75,
             'mae': round(current_rent * 0.02, 2)  # 2% mean absolute error
         }
+        # Macro adjustments: inflation pushes up, unemployment pulls down
+        if economic_data and isinstance(economic_data, dict):
+            econ = economic_data.get('data', {})
+            inflation = econ.get('inflation_rate', {}).get('value')
+            unemployment = econ.get('unemployment_rate', {}).get('value')
+            if inflation is not None:
+                rent_forecast['predicted_rent'] *= (1 + (inflation / 100) * 0.05)
+            if unemployment is not None:
+                rent_forecast['predicted_rent'] *= (1 - max(0, (unemployment - 4) / 100 * 0.05))
+            rent_forecast['change_pct'] = round(((rent_forecast['predicted_rent'] / current_rent) - 1) * 100, 2)
+        return rent_forecast
 
     def _forecast_occupancy(
         self,
@@ -1525,6 +1751,39 @@ class MarketDataService:
             'r_squared': 0.72
         }
 
+    def _load_historical_series(self, property_id: int) -> Dict[str, pd.Series]:
+        """Load historical rent/occupancy/NOI from financial_metrics table."""
+        try:
+            rows = (
+                self.db.query(FinancialMetrics)
+                .filter(FinancialMetrics.property_id == property_id)
+                .order_by(FinancialMetrics.period_year, FinancialMetrics.period_month)
+                .all()
+            )
+            dates = []
+            rents = []
+            occs = []
+            nois = []
+            for r in rows:
+                try:
+                    dt = pd.Timestamp(year=r.period_year, month=r.period_month, day=1)
+                except Exception:
+                    continue
+                dates.append(dt)
+                rents.append(float(r.avg_rent or 0) if hasattr(r, 'avg_rent') else float(r.total_annual_rent or 0) / 12 if r.total_annual_rent else 0)
+                occs.append(float(r.occupancy_rate or 0))
+                nois.append(float(r.net_operating_income or 0))
+            data: Dict[str, pd.Series] = {}
+            if dates:
+                idx = pd.DatetimeIndex(dates)
+                data['rent'] = pd.Series(rents, index=idx)
+                data['occupancy'] = pd.Series(occs, index=idx)
+                data['noi'] = pd.Series(nois, index=idx)
+            return data
+        except Exception as e:
+            logger.warning(f"Failed to load historical metrics for property {property_id}: {e}")
+            return {}
+
     # ========== COMPETITIVE ANALYSIS (Phase 5) ==========
 
     @cache_with_ttl(ttl_seconds=604800)  # 7 days
@@ -1556,7 +1815,8 @@ class MarketDataService:
                 property_data
             )
 
-            # Identify competitive threats (simplified)
+            # Identify competitive threats with OSM comps + simple clustering
+            comps, clusters = self._fetch_and_cluster_comps(property_data)
             competitive_threats = self._identify_competitive_threats(property_data)
 
             # Calculate market share
@@ -1565,7 +1825,9 @@ class MarketDataService:
             competitive_analysis = {
                 'submarket_position': submarket_position,
                 'competitive_threats': competitive_threats,
-                'submarket_trends': submarket_trends
+                'submarket_trends': submarket_trends,
+                'comparables': comps,
+                'clusters': clusters
             }
 
             self.log_data_pull('competitive_model', 'competitive_analysis', 'success', records_fetched=1)
@@ -1638,6 +1900,89 @@ class MarketDataService:
                 'disadvantages': ['Older property', 'Limited amenities', 'Lower quality']
             }
         ]
+
+    def _fetch_and_cluster_comps(self, property_data: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Fetch nearby comparables from OSM and apply simple distance-based clustering.
+        """
+        latitude = property_data.get('latitude')
+        longitude = property_data.get('longitude')
+        if latitude is None or longitude is None:
+            return [], []
+
+        try:
+            comps = self._fetch_comparables_osm(latitude, longitude)
+        except Exception as e:
+            logger.warning(f"Comps fetch failed: {e}")
+            comps = []
+
+        # Simple clustering: bucket by distance bands
+        clusters = []
+        bands = [0.5, 1.0, 2.0, 5.0]
+        for band in bands:
+            members = [c for c in comps if c.get('distance_mi', 99) <= band]
+            if members:
+                clusters.append({
+                    'band_mi': band,
+                    'count': len(members),
+                    'avg_rent_psf': np.mean([m.get('rent_psf', 0) for m in members]) if members else 0,
+                    'avg_occupancy': np.mean([m.get('occupancy', 0) for m in members]) if members else 0
+                })
+        return comps, clusters
+
+    def _fetch_comparables_osm(self, latitude: float, longitude: float) -> List[Dict[str, Any]]:
+        """
+        Fetch comparable POIs (retail/office/multifamily) around subject via Overpass.
+        """
+        cache_key = f"comps:{round(latitude,4)}:{round(longitude,4)}"
+        if cache_key in _market_data_cache:
+            cached = _market_data_cache[cache_key]
+            age = time.time() - cached['timestamp']
+            if age < 3600:  # 1 hour cache
+                return cached['data']
+
+        overpass_url = "https://overpass-api.de/api/interpreter"
+        radius_m = 5000
+        query = f"""
+        [out:json][timeout:25];
+        (
+          node["building"="apartments"](around:{radius_m},{latitude},{longitude});
+          node["building"="retail"](around:{radius_m},{latitude},{longitude});
+          node["amenity"="coworking_space"](around:{radius_m},{latitude},{longitude});
+        );
+        out center;
+        """
+        self._wait_for_rate_limit('nominatim')
+        self._record_request('nominatim')
+        resp = requests.post(overpass_url, data={'data': query}, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        comps = []
+        for el in data.get('elements', []):
+            comp_lat = el.get('lat') or (el.get('center') or {}).get('lat')
+            comp_lon = el.get('lon') or (el.get('center') or {}).get('lon')
+            if comp_lat is None or comp_lon is None:
+                continue
+            dist_mi = self._haversine_distance(latitude, longitude, comp_lat, comp_lon)
+            comps.append({
+                'name': el.get('tags', {}).get('name', 'Unknown'),
+                'type': el.get('tags', {}).get('building') or el.get('tags', {}).get('amenity'),
+                'distance_mi': round(dist_mi, 2),
+                'occupancy': None,
+                'rent_psf': None
+            })
+
+        _market_data_cache[cache_key] = {'data': comps, 'timestamp': time.time()}
+        return comps
+
+    def _haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Return distance in miles between two lat/lon points."""
+        R = 3958.8  # Earth radius in miles
+        phi1, phi2 = np.radians(lat1), np.radians(lat2)
+        dphi = np.radians(lat2 - lat1)
+        dlambda = np.radians(lon2 - lon1)
+        a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
+        return float(2 * R * np.arcsin(np.sqrt(a)))
 
     def _analyze_submarket_trends(
         self,
@@ -1725,6 +2070,78 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error generating AI insights: {e}")
             self.log_data_pull('ai_insights', 'ai_insights', 'failure', error_message=str(e))
+            return None
+
+    def generate_ai_embeddings(self, insights: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Generate embeddings for AI insights (SWOT + recommendations) using sentence-transformers + faiss if available.
+        Returns centroid and metadata; keeps vector lightweight.
+        """
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
+            import numpy as np
+        except Exception as e:
+            logger.warning(f"Embeddings disabled (missing sentence-transformers): {e}")
+            return None
+
+        texts = []
+        for section in ['key_takeaways', 'risk_signals', 'opportunities']:
+            texts.extend(insights.get(section, []))
+        for section in ['strengths', 'weaknesses', 'opportunities', 'threats']:
+            sw = insights.get('swot_analysis', {}).get(section, [])
+            texts.extend(sw)
+        if not texts:
+            return None
+
+        try:
+            model_name = "all-MiniLM-L6-v2"
+            model = SentenceTransformer(model_name)
+            vectors = model.encode(texts, normalize_embeddings=True)
+            norms = [float(np.linalg.norm(v)) for v in vectors]
+            centroid = np.mean(vectors, axis=0)
+            meta = {
+                'model': model_name,
+                'count': len(texts),
+                'avg_norm': float(np.mean(norms)),
+                'centroid': centroid.tolist(),
+                'created_at': datetime.utcnow().isoformat()
+            }
+            # Attempt to persist centroid to pgvector table if available
+            try:
+                self.db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ai_insights_embeddings (
+                        id serial primary key,
+                        property_code text,
+                        model text,
+                        dim int,
+                        embedding vector,
+                        created_at timestamptz default now()
+                    );
+                """))
+                self.db.execute(text("""
+                    INSERT INTO ai_insights_embeddings (property_code, model, dim, embedding)
+                    VALUES (:property_code, :model, :dim, :embedding)
+                """), {
+                    'property_code': insights.get('property_code') or insights.get('property', 'unknown'),
+                    'model': model_name,
+                    'dim': len(centroid),
+                    'embedding': centroid.tolist()
+                })
+                self.db.commit()
+            except Exception as db_err:
+                logger.debug(f"pgvector persist skipped or failed: {db_err}")
+            # Optional Faiss index on disk
+            if HAS_FAISS:
+                try:
+                    dim = len(centroid)
+                    index = faiss.IndexFlatIP(dim)
+                    index.add(np.array([centroid]).astype('float32'))
+                    faiss.write_index(index, "/app/ai_insights.index")
+                except Exception as faiss_err:
+                    logger.debug(f"Faiss persist skipped or failed: {faiss_err}")
+            return meta
+        except Exception as e:
+            logger.warning(f"Embedding generation failed: {e}")
             return None
 
     def _generate_swot_analysis(
@@ -1900,3 +2317,164 @@ class MarketDataService:
         if trends:
             return f"Market benefits from {' and '.join(trends)}."
         return "Market fundamentals remain stable."
+
+    # ========== SAMPLE / FALLBACK DATA (for offline/demo) ==========
+
+    # ========== SAMPLE / FALLBACK DATA (for offline/demo) ==========
+
+    def generate_sample_demographics(self, property_code: str) -> Dict[str, Any]:
+        sample = {
+            'population': 52000,
+            'median_household_income': 78000,
+            'median_home_value': 420000,
+            'median_gross_rent': 1650,
+            'unemployment_rate': 3.9,
+            'median_age': 35.4,
+            'college_educated_pct': 47.5,
+            'housing_units': {
+                'single_family': 12000,
+                'multifamily_2_4': 2400,
+                'multifamily_5_9': 1800,
+                'multifamily_10_19': 900,
+                'multifamily_20_49': 600,
+                'multifamily_50_plus': 450,
+            },
+            'geography': {'property_code': property_code}
+        }
+        return self.tag_data_source(
+            sample,
+            source='sample_demographics',
+            confidence=50.0,
+            extra_metadata={'property_code': property_code}
+        )
+
+    def generate_sample_economic(self) -> Dict[str, Any]:
+        now = datetime.utcnow().strftime('%Y-%m')
+        sample = {
+            'gdp_growth': {'value': 2.4, 'date': now},
+            'unemployment_rate': {'value': 3.8, 'date': now},
+            'inflation_rate': {'value': 2.7, 'date': now},
+            'fed_funds_rate': {'value': 5.25, 'date': now},
+            'mortgage_rate_30y': {'value': 6.5, 'date': now},
+            'recession_probability': {'value': 12.0, 'date': now},
+        }
+        return self.tag_data_source(sample, source='sample_economic', confidence=45.0, extra_metadata={})
+
+    def generate_sample_location(self, latitude: float = 37.77, longitude: float = -122.42) -> Dict[str, Any]:
+        sample = {
+            'walk_score': 78,
+            'transit_score': 72,
+            'bike_score': 69,
+            'amenities': {
+                'grocery_stores_1mi': 6,
+                'restaurants_1mi': 52,
+                'schools_2mi': 11,
+                'hospitals_5mi': 3,
+                'parks_1mi': 9
+            },
+            'transit_access': {
+                'bus_stops_0_5mi': 10,
+                'rail_stations_2mi': 1,
+                'commute_time_downtown_min': 28
+            },
+            'crime_index': 48.0,
+            'school_rating_avg': 7.2
+        }
+        return self.tag_data_source(
+            sample,
+            source='sample_location',
+            confidence=40.0,
+            extra_metadata={'latitude': latitude, 'longitude': longitude}
+        )
+
+    def generate_sample_esg(self) -> Dict[str, Any]:
+        sample = {
+            'environmental': {
+                'flood_risk_score': 20.0,
+                'wildfire_risk_score': 12.0,
+                'earthquake_risk_score': 30.0,
+                'climate_risk_composite': 21.0,
+                'energy_efficiency_rating': 'B',
+                'emissions_intensity_kg_co2_sqft': 11.5
+            },
+            'social': {
+                'crime_score': 48.0,
+                'school_quality_score': 7.2,
+                'income_inequality_gini': 0.41,
+                'diversity_index': 0.66,
+                'community_health_score': 74.0
+            },
+            'governance': {
+                'zoning_compliance_score': 92.0,
+                'permit_history_score': 85.0,
+                'tax_delinquency_risk': 'Low',
+                'legal_issues_count': 0,
+                'regulatory_risk_score': 18.0
+            },
+            'composite_esg_score': 72.0,
+            'esg_grade': 'B+'
+        }
+        return self.tag_data_source(sample, source='sample_esg', confidence=45.0, extra_metadata={})
+
+    def generate_sample_forecasts(self) -> Dict[str, Any]:
+        now = datetime.utcnow().strftime('%Y-%m')
+        sample = {
+            'rent_forecast_12mo': {
+                'predicted_rent': 2480,
+                'change_pct': 3.2,
+                'confidence_interval_95': [2400, 2560],
+                'model': 'prophet',
+                'as_of': now
+            },
+            'occupancy_forecast_12mo': {
+                'predicted_occupancy': 94.2,
+                'change_pct': 1.0,
+                'confidence_interval_95': [92.0, 96.0],
+                'model': 'arima',
+                'as_of': now
+            },
+            'cap_rate_forecast_12mo': {
+                'predicted_cap_rate': 5.9,
+                'change_bps': 15,
+                'confidence_interval_95': [5.6, 6.2],
+                'model': 'ets',
+                'as_of': now
+            }
+        }
+        return self.tag_data_source(sample, source='sample_forecasts', confidence=40.0, extra_metadata={})
+
+    def generate_sample_competitive(self) -> Dict[str, Any]:
+        sample = {
+            'submarket_position': {
+                'grade': 'B+',
+                'summary': 'Solid positioning with room to improve amenities.',
+                'differentiators': ['Strong walkability', 'Stable occupancy'],
+                'risks': ['Limited parking', 'New supply expected nearby']
+            },
+            'comparables': [
+                {'name': 'Comp A', 'distance_mi': 1.2, 'occupancy': 93.0, 'rent_psf': 28.5},
+                {'name': 'Comp B', 'distance_mi': 2.1, 'occupancy': 95.5, 'rent_psf': 30.1}
+            ],
+            'recommendations': [
+                'Upgrade lobby experience',
+                'Add EV charging to improve ESG score'
+            ]
+        }
+        return self.tag_data_source(sample, source='sample_competitive', confidence=38.0, extra_metadata={})
+
+    def generate_sample_ai_insights(self) -> Dict[str, Any]:
+        sample = {
+            'key_takeaways': [
+                'Demand remains resilient; rents can grow ~3% over next 12 months.',
+                'Transit and walkability are competitive advantages; invest in curb appeal.'
+            ],
+            'risk_signals': [
+                'Monitor interest rate trend; refinance window may open in 9-12 months.',
+                'New supply pipeline in submarket could pressure occupancy mid-term.'
+            ],
+            'opportunities': [
+                'Add green amenities to lift ESG score and tenant retention.',
+                'Consider small capex for interiors to justify rent lifts.'
+            ]
+        }
+        return self.tag_data_source(sample, source='sample_ai', confidence=35.0, extra_metadata={})

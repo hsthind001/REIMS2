@@ -34,6 +34,7 @@ import {
   Landscape as EarthquakeIcon,
 } from '@mui/icons-material';
 import type { ESGAssessment } from '../../types/market-intelligence';
+import * as marketIntelligenceService from '../../services/marketIntelligenceService';
 
 interface ESGAssessmentPanelProps {
   data: ESGAssessment;
@@ -122,9 +123,11 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ title, score, description, icon, 
 };
 
 const ESGAssessmentPanel: React.FC<ESGAssessmentPanelProps> = ({ data }) => {
-  const environmental = data.data.environmental;
-  const social = data.data.social;
-  const governance = data.data.governance;
+  const { data: esg, lineage } = data;
+  const environmental = esg.environmental;
+  const social = esg.social;
+  const governance = esg.governance;
+  const confidenceColor = marketIntelligenceService.getConfidenceBadgeColor(lineage.confidence);
 
   const getRiskSeverity = (score: number): 'success' | 'warning' | 'error' => {
     if (score < 30) return 'success';
@@ -134,26 +137,43 @@ const ESGAssessmentPanel: React.FC<ESGAssessmentPanelProps> = ({ data }) => {
 
   return (
     <Box p={3}>
+      {/* Source / lineage */}
+      <Box mb={2} display="flex" gap={1} flexWrap="wrap" alignItems="center">
+        <Typography variant="body2" color="text.secondary">
+          Data Source:
+        </Typography>
+        <Chip label={(lineage.source || 'N/A').toUpperCase()} size="small" />
+        {lineage.vintage && (
+          <Chip label={`Vintage: ${marketIntelligenceService.formatVintage(lineage.vintage)}`} size="small" />
+        )}
+        {lineage.confidence !== undefined && (
+          <Chip label={`Confidence: ${lineage.confidence}%`} size="small" color={confidenceColor} />
+        )}
+        {lineage.fetched_at && (
+          <Chip label={`Fetched: ${new Date(lineage.fetched_at).toLocaleDateString()}`} size="small" variant="outlined" />
+        )}
+      </Box>
+
       {/* Overall ESG Score */}
       <Box mb={4}>
         <Typography variant="h4" gutterBottom fontWeight="bold">
-          ESG Rating: {data.data.esg_grade}
+          ESG Rating: {esg.esg_grade}
         </Typography>
         <Typography variant="h6" color="text.secondary" paragraph>
-          Overall ESG Score: {data.data.composite_esg_score}/100
+          Overall ESG Score: {esg.composite_esg_score}/100
         </Typography>
         <LinearProgress
           variant="determinate"
-          value={data.data.composite_esg_score}
+          value={esg.composite_esg_score}
           sx={{
             height: 12,
             borderRadius: 6,
             backgroundColor: '#e0e0e0',
             '& .MuiLinearProgress-bar': {
               backgroundColor:
-                data.data.composite_esg_score >= 80
+                esg.composite_esg_score >= 80
                   ? '#2e7d32'
-                  : data.data.composite_esg_score >= 60
+                  : esg.composite_esg_score >= 60
                   ? '#66bb6a'
                   : '#ff9800',
             },
