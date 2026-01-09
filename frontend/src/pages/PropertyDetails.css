@@ -1,0 +1,50 @@
+/* Property Details Page Styles */
+
+.property-details-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.property-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #1890ff;
+}
+
+.property-header h1 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  color: #1890ff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.property-header p {
+  margin: 0;
+  color: #666;
+  font-size: 16px;
+}
+
+/* Card title icons */
+.ant-card-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Descriptions styling */
+.ant-descriptions-item-label {
+  font-weight: 600;
+  background-color: #fafafa;
+}
+
+/* Table styling */
+.ant-table-small .ant-table-tbody > tr > td {
+  padding: 12px 8px;
+}
+
+/* Tabs */
+.ant-tabs-tab {
+  font-size: 15px;
+}

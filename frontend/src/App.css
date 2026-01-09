@@ -1,0 +1,53 @@
+/* Main App Styles */
+
+.logo {
+  float: left;
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  margin-right: 50px;
+}
+
+/* Global styles */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Ant Design overrides */
+.ant-layout-header {
+  padding: 0 50px;
+}
+
+.ant-menu-dark.ant-menu-horizontal {
+  line-height: 64px;
+}
+
+/* Page transitions */
+.page-content {
+  animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
