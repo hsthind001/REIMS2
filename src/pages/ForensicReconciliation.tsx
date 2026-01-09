@@ -612,6 +612,7 @@ export default function ForensicReconciliation() {
               healthScore={healthScore}
               onRunReconciliation={session ? () => handleRunReconciliation(session.id) : undefined}
               onCompleteSession={session ? handleCompleteSession : undefined}
+              onRefresh={loadDashboard}
             />
             {/* Show helpful message if no session exists but data is available */}
             {!session && dataAvailability && dataAvailability.can_reconcile && (
@@ -662,9 +663,9 @@ export default function ForensicReconciliation() {
 
         {/* Tabs */}
         {session && (
-          <div className="mb-6">
-            <div className="border-b border-gray-200">
-              <nav className="-mb-px flex space-x-8">
+          <div className="mb-6 sticky top-0 z-30 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:backdrop-blur border-b border-gray-200 shadow-sm">
+            <div className="max-w-7xl mx-auto px-1">
+              <nav className="-mb-px flex flex-wrap gap-4">
                 {[
                   { id: 'overview', label: 'Overview', icon: FileText },
                   { id: 'cockpit', label: 'Cockpit', icon: TrendingUp },
@@ -678,7 +679,7 @@ export default function ForensicReconciliation() {
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as any)}
                       className={`
-                        flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm
+                        flex items-center gap-2 py-3 px-3 border-b-2 font-semibold text-sm rounded-t-md
                         ${activeTab === tab.id
                           ? 'border-blue-500 text-blue-600'
                           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -819,6 +820,33 @@ export default function ForensicReconciliation() {
                     </div>
                   </div>
                 )}
+                
+                {(matchTypeFilter !== 'all' || statusFilter !== 'all') && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-semibold text-gray-700">Active filters:</span>
+                    {matchTypeFilter !== 'all' && (
+                      <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        Type: {matchTypeFilter}
+                      </span>
+                    )}
+                    {statusFilter !== 'all' && (
+                      <span className="px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200">
+                        Status: {statusFilter}
+                      </span>
+                    )}
+                    <button
+                      className="text-gray-600 hover:text-gray-800 underline"
+                      onClick={() => {
+                        setMatchTypeFilter('all');
+                        setStatusFilter('all');
+                        if (session) loadMatches(session.id);
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
                 <MatchTable
                   matches={matches}
                   loading={loading}
@@ -837,16 +865,35 @@ export default function ForensicReconciliation() {
             )}
             
             {activeTab === 'discrepancies' && (
-              <DiscrepancyPanel
-                discrepancies={discrepancies}
-                loading={loading}
-                onResolve={handleResolveDiscrepancy}
-                severityFilter={severityFilter}
-                onFilterChange={(severity) => {
-                  setSeverityFilter(severity);
-                  if (session) loadDiscrepancies(session.id);
-                }}
-              />
+              <>
+                {severityFilter !== 'all' && (
+                  <div className="mb-3 flex items-center gap-2 text-xs">
+                    <span className="font-semibold text-gray-700">Active filters:</span>
+                    <span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                      Severity: {severityFilter}
+                    </span>
+                    <button
+                      className="text-gray-600 hover:text-gray-800 underline"
+                      onClick={() => {
+                        setSeverityFilter('all');
+                        if (session) loadDiscrepancies(session.id);
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+                <DiscrepancyPanel
+                  discrepancies={discrepancies}
+                  loading={loading}
+                  onResolve={handleResolveDiscrepancy}
+                  severityFilter={severityFilter}
+                  onFilterChange={(severity) => {
+                    setSeverityFilter(severity);
+                    if (session) loadDiscrepancies(session.id);
+                  }}
+                />
+              </>
             )}
 
             {activeTab === 'rules' && selectedPropertyId && selectedPeriodId && (

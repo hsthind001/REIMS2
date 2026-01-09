@@ -131,8 +131,11 @@ SELECT
 
     -- Total Income
     COALESCE(SUM(CASE
-        WHEN ist.account_category = 'INCOME' AND ist.is_total = TRUE
-        THEN ist.amount
+        WHEN ist.is_income = TRUE
+          OR ist.line_category ILIKE 'income%%'
+          OR ist.line_category ILIKE 'revenue%%'
+          OR ist.account_code LIKE '4%%'
+        THEN ist.period_amount
         ELSE 0
     END), 0) as total_income,
 
@@ -141,35 +144,42 @@ SELECT
         WHEN ist.account_name ILIKE '%Rental%Income%'
         OR ist.account_name ILIKE '%Rent%Income%'
         OR ist.account_code LIKE '40%'
-        THEN ist.amount
+        THEN ist.period_amount
         ELSE 0
     END), 0) as rental_income,
 
     -- Other Income
     COALESCE(SUM(CASE
-        WHEN ist.account_category = 'INCOME'
+        WHEN (ist.is_income = TRUE OR ist.line_category ILIKE 'income%%' OR ist.line_category ILIKE 'revenue%%')
         AND ist.account_name NOT ILIKE '%Rental%'
         AND ist.account_name NOT ILIKE '%Rent%'
         AND ist.is_total = FALSE
-        THEN ist.amount
+        THEN ist.period_amount
         ELSE 0
     END), 0) as other_income,
 
     -- Total Operating Expenses
     COALESCE(SUM(CASE
-        WHEN ist.account_category = 'OPERATING_EXPENSE' AND ist.is_total = TRUE
-        THEN ist.amount
+        WHEN ist.line_category ILIKE 'expense%%'
+         OR ist.account_name ILIKE '%expense%'
+         OR ist.account_code LIKE '5%%'
+        THEN ist.period_amount
         ELSE 0
     END), 0) as total_operating_expenses,
 
     -- NOI
     COALESCE(SUM(CASE
-        WHEN ist.account_category = 'INCOME' AND ist.is_total = TRUE
-        THEN ist.amount
+        WHEN ist.is_income = TRUE
+          OR ist.line_category ILIKE 'income%%'
+          OR ist.line_category ILIKE 'revenue%%'
+          OR ist.account_code LIKE '4%%'
+        THEN ist.period_amount
         ELSE 0
     END), 0) - COALESCE(SUM(CASE
-        WHEN ist.account_category = 'OPERATING_EXPENSE' AND ist.is_total = TRUE
-        THEN ist.amount
+        WHEN ist.line_category ILIKE 'expense%%'
+         OR ist.account_name ILIKE '%expense%'
+         OR ist.account_code LIKE '5%%'
+        THEN ist.period_amount
         ELSE 0
     END), 0) as noi,
 
@@ -178,14 +188,14 @@ SELECT
         WHEN ist.account_name ILIKE '%Interest%Expense%'
         OR ist.account_name ILIKE '%Mortgage%Interest%'
         OR ist.account_code LIKE '7%'
-        THEN ist.amount
+        THEN ist.period_amount
         ELSE 0
     END), 0) as interest_expense,
 
     -- Depreciation
     COALESCE(SUM(CASE
         WHEN ist.account_name ILIKE '%Depreciation%'
-        THEN ist.amount
+        THEN ist.period_amount
         ELSE 0
     END), 0) as depreciation_expense,
 
@@ -193,8 +203,8 @@ SELECT
     COALESCE(SUM(CASE
         WHEN ist.account_name ILIKE '%Net%Income%'
         OR ist.account_name ILIKE '%Net%Loss%'
-        OR (ist.is_total = TRUE AND ist.account_category = 'NET_INCOME')
-        THEN ist.amount
+        OR (ist.is_total = TRUE AND ist.line_category ILIKE 'net%')
+        THEN ist.period_amount
         ELSE 0
     END), 0) as net_income,
 
@@ -230,31 +240,34 @@ SELECT
     COALESCE(SUM(CASE
         WHEN cf.account_name ILIKE '%Beginning%Cash%'
         OR cf.account_name ILIKE '%Cash%Beginning%'
-        THEN cf.amount
+        THEN cf.period_amount
         ELSE 0
     END), 0) as beginning_cash,
 
     -- Operating Activities
     COALESCE(SUM(CASE
-        WHEN cf.activity_category = 'OPERATING'
-        OR cf.account_category = 'OPERATING'
-        THEN cf.amount
+        WHEN cf.cash_flow_category ILIKE 'OPERATING%%'
+        OR cf.line_category ILIKE 'operating%%'
+        OR cf.line_section ILIKE 'operating%%'
+        THEN cf.period_amount
         ELSE 0
     END), 0) as operating_cash_flow,
 
     -- Investing Activities
     COALESCE(SUM(CASE
-        WHEN cf.activity_category = 'INVESTING'
-        OR cf.account_category = 'INVESTING'
-        THEN cf.amount
+        WHEN cf.cash_flow_category ILIKE 'INVESTING%%'
+        OR cf.line_category ILIKE 'investing%%'
+        OR cf.line_section ILIKE 'investing%%'
+        THEN cf.period_amount
         ELSE 0
     END), 0) as investing_cash_flow,
 
     -- Financing Activities
     COALESCE(SUM(CASE
-        WHEN cf.activity_category = 'FINANCING'
-        OR cf.account_category = 'FINANCING'
-        THEN cf.amount
+        WHEN cf.cash_flow_category ILIKE 'FINANCING%%'
+        OR cf.line_category ILIKE 'financing%%'
+        OR cf.line_section ILIKE 'financing%%'
+        THEN cf.period_amount
         ELSE 0
     END), 0) as financing_cash_flow,
 
@@ -263,7 +276,7 @@ SELECT
         WHEN cf.account_name ILIKE '%Debt%Service%'
         OR cf.account_name ILIKE '%Mortgage%Payment%'
         OR cf.account_name ILIKE '%Loan%Payment%'
-        THEN cf.amount
+        THEN cf.period_amount
         ELSE 0
     END), 0) as debt_service_payment,
 
@@ -271,8 +284,8 @@ SELECT
     COALESCE(SUM(CASE
         WHEN cf.account_name ILIKE '%Net%Change%'
         OR cf.account_name ILIKE '%Change%Cash%'
-        OR (cf.is_total = TRUE AND cf.account_category NOT IN ('BEGINNING', 'ENDING'))
-        THEN cf.amount
+        OR (cf.is_total = TRUE AND (cf.line_category IS NULL OR cf.line_category NOT IN ('BEGINNING', 'ENDING')))
+        THEN cf.period_amount
         ELSE 0
     END), 0) as net_change_in_cash,
 
@@ -280,7 +293,7 @@ SELECT
     COALESCE(SUM(CASE
         WHEN cf.account_name ILIKE '%Ending%Cash%'
         OR cf.account_name ILIKE '%Cash%Ending%'
-        THEN cf.amount
+        THEN cf.period_amount
         ELSE 0
     END), 0) as ending_cash,
 

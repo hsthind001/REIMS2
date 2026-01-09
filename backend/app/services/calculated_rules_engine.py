@@ -650,24 +650,6 @@ class CalculatedRulesEngine:
         cache[key] = prior_id
         return prior_id
 
-            if 'property_ids' in scope:
-                return property_id in scope.get('property_ids', [])
-
-            if 'property_codes' in scope:
-                codes = scope.get('property_codes', [])
-                if not codes:
-                    return False
-                count = self.db.query(Property).filter(
-                    Property.id == property_id,
-                    Property.property_code.in_(codes)
-                ).count()
-                return count > 0
-
-        if isinstance(scope, list):
-            return property_id in scope
-
-        return False
-
     def _rule_applies_to_documents(self, rule: CalculatedRule, document_types: List[str]) -> bool:
         if not rule.doc_scope:
             return True

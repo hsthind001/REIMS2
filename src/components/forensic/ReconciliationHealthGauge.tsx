@@ -35,12 +35,12 @@ export default function ReconciliationHealthGauge({ healthScore }: Reconciliatio
   const gaugeAngle = (healthScore / 100) * 180;
 
   return (
-    <Card className={`p-6 border-2 ${getHealthBgColor(healthScore)}`}>
-      <div className="text-center">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Reconciliation Health Score</h3>
+    <Card className={`p-8 border-2 shadow-sm ${getHealthBgColor(healthScore)}`}>
+      <div className="text-center space-y-4">
+        <h3 className="text-xl font-semibold text-gray-900">Reconciliation Health Score</h3>
         
         {/* Gauge Visualization */}
-        <div className="relative w-64 h-32 mx-auto mb-4">
+        <div className="relative w-80 h-40 mx-auto">
           {/* Background semicircle */}
           <svg className="w-full h-full" viewBox="0 0 200 100">
             {/* Background arc */}
@@ -64,17 +64,17 @@ export default function ReconciliationHealthGauge({ healthScore }: Reconciliatio
           {/* Score text */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className={`text-5xl font-bold ${getHealthColor(healthScore)}`}>
+              <div className={`text-6xl font-bold ${getHealthColor(healthScore)}`}>
                 {healthScore.toFixed(0)}
               </div>
-              <div className="text-sm text-gray-600 mt-1">{getHealthLabel(healthScore)}</div>
+              <div className="text-base text-gray-600 mt-1">{getHealthLabel(healthScore)}</div>
             </div>
           </div>
         </div>
 
         {/* Health Indicators */}
-        <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="text-center">
+        <div className="grid grid-cols-3 gap-6 pt-2">
+          <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-1 text-green-600 mb-1">
               <TrendingUp className="w-4 h-4" />
               <span className="text-sm font-medium">High Confidence</span>
@@ -82,7 +82,7 @@ export default function ReconciliationHealthGauge({ healthScore }: Reconciliatio
             <p className="text-xs text-gray-600">Matches with ≥90% confidence</p>
           </div>
           
-          <div className="text-center">
+          <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-1 text-amber-600 mb-1">
               <AlertCircle className="w-4 h-4" />
               <span className="text-sm font-medium">Review Needed</span>
@@ -90,7 +90,7 @@ export default function ReconciliationHealthGauge({ healthScore }: Reconciliatio
             <p className="text-xs text-gray-600">Matches requiring auditor review</p>
           </div>
           
-          <div className="text-center">
+          <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-1 text-red-600 mb-1">
               <TrendingDown className="w-4 h-4" />
               <span className="text-sm font-medium">Discrepancies</span>
@@ -102,4 +102,3 @@ export default function ReconciliationHealthGauge({ healthScore }: Reconciliatio
     </Card>
   );
 }
-
