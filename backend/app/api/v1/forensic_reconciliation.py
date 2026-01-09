@@ -1161,6 +1161,23 @@ class CalculatedRuleCreate(BaseModel):
     expires_at: Optional[str] = None
 
 
+class CalculatedRuleEvaluation(BaseModel):
+    """Evaluation result for a calculated rule"""
+    rule_id: str
+    rule_name: str
+    description: Optional[str] = None
+    formula: str
+    severity: str
+    status: str
+    expected_value: Optional[float] = None
+    actual_value: Optional[float] = None
+    difference: Optional[float] = None
+    difference_percent: Optional[float] = None
+    tolerance_absolute: Optional[float] = None
+    tolerance_percent: Optional[float] = None
+    message: Optional[str] = None
+
+
 @router.get("/calculated-rules")
 async def list_calculated_rules(
     property_id: Optional[int] = Query(None, description="Filter by property ID"),
@@ -1208,6 +1225,28 @@ async def list_calculated_rules(
         }
         for r in rules
     ]
+
+
+@router.get("/calculated-rules/evaluate/{property_id}/{period_id}")
+async def evaluate_calculated_rules(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: int = Path(..., description="Period ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Evaluate all calculated rules for a property and period"""
+    engine = CalculatedRulesEngine(db)
+    results = engine.evaluate_rules(property_id=property_id, period_id=period_id)
+
+    return {
+        "property_id": property_id,
+        "period_id": period_id,
+        "total": len(results),
+        "passed": len([r for r in results if r.get("status") == "PASS"]),
+        "failed": len([r for r in results if r.get("status") == "FAIL"]),
+        "skipped": len([r for r in results if r.get("status") == "SKIPPED"]),
+        "rules": results
+    }
 
 
 @router.post("/calculated-rules", status_code=status.HTTP_201_CREATED)
@@ -1280,22 +1319,16 @@ async def test_calculated_rule(
     
     result = engine.evaluate_rule(rule, property_id, period_id)
     
-    if result:
-        return {
-            "success": True,
-            "match": {
-                "source_record_id": result.source_record_id,
-                "target_record_id": result.target_record_id,
-                "confidence": result.confidence_score,
-                "amount_difference": float(result.amount_difference) if result.amount_difference else None,
-                "relationship_formula": result.relationship_formula
-            }
-        }
-    else:
+    if not result:
         return {
             "success": False,
-            "message": "Rule did not match"
+            "message": "Rule could not be evaluated"
         }
+
+    return {
+        "success": result.get("status") != "SKIPPED",
+        "evaluation": result
+    }
 
 
 

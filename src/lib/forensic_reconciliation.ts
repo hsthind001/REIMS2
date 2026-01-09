@@ -124,6 +124,32 @@ export interface ResolveDiscrepancyRequest {
   new_value?: number;
 }
 
+export interface CalculatedRuleEvaluation {
+  rule_id: string;
+  rule_name: string;
+  description?: string | null;
+  formula: string;
+  severity: string;
+  status: 'PASS' | 'FAIL' | 'SKIPPED';
+  expected_value?: number | null;
+  actual_value?: number | null;
+  difference?: number | null;
+  difference_percent?: number | null;
+  tolerance_absolute?: number | null;
+  tolerance_percent?: number | null;
+  message?: string | null;
+}
+
+export interface CalculatedRuleEvaluationResponse {
+  property_id: number;
+  period_id: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  rules: CalculatedRuleEvaluation[];
+}
+
 export const forensicReconciliationService = {
   /**
    * Create a new forensic reconciliation session
@@ -208,6 +234,13 @@ export const forensicReconciliationService = {
    */
   async resolveDiscrepancy(discrepancyId: number, request: ResolveDiscrepancyRequest): Promise<any> {
     return api.post(`/forensic-reconciliation/discrepancies/${discrepancyId}/resolve`, request);
+  },
+
+  /**
+   * Evaluate calculated rules for a property and period
+   */
+  async evaluateCalculatedRules(propertyId: number, periodId: number): Promise<CalculatedRuleEvaluationResponse> {
+    return api.get(`/forensic-reconciliation/calculated-rules/evaluate/${propertyId}/${periodId}`);
   },
 
   /**

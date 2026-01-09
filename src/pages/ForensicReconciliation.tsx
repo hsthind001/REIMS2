@@ -15,7 +15,8 @@ import {
   TrendingUp,
   FileText,
   Filter,
-  Download
+  Download,
+  ListChecks
 } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
 import { forensicReconciliationService, type ForensicReconciliationSession, type ForensicMatch, type ForensicDiscrepancy } from '../lib/forensic_reconciliation';
@@ -31,6 +32,7 @@ import ReconciliationWorkQueue from '../components/forensic/ReconciliationWorkQu
 import ReconciliationFilters from '../components/forensic/ReconciliationFilters';
 import EvidencePanel from '../components/forensic/EvidencePanel';
 import ReconciliationDiagnostics from '../components/forensic/ReconciliationDiagnostics';
+import ReconciliationRulesPanel from '../components/forensic/ReconciliationRulesPanel';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -52,7 +54,7 @@ export default function ForensicReconciliation() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<ForensicMatch | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'discrepancies' | 'cockpit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'discrepancies' | 'cockpit' | 'rules'>('overview');
   
   // Cockpit filters
   const [cockpitSeverityFilter, setCockpitSeverityFilter] = useState<string>('all');
@@ -668,6 +670,7 @@ export default function ForensicReconciliation() {
                   { id: 'cockpit', label: 'Cockpit', icon: TrendingUp },
                   { id: 'matches', label: 'Matches', icon: CheckCircle },
                   { id: 'discrepancies', label: 'Discrepancies', icon: AlertTriangle },
+                  { id: 'rules', label: 'Rules', icon: ListChecks },
                 ].map(tab => {
                   const Icon = tab.icon;
                   return (
@@ -843,6 +846,13 @@ export default function ForensicReconciliation() {
                   setSeverityFilter(severity);
                   if (session) loadDiscrepancies(session.id);
                 }}
+              />
+            )}
+
+            {activeTab === 'rules' && selectedPropertyId && selectedPeriodId && (
+              <ReconciliationRulesPanel
+                propertyId={selectedPropertyId}
+                periodId={selectedPeriodId}
               />
             )}
           </div>

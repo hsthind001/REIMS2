@@ -793,5 +793,9 @@ def seed_all(db: Session, use_sql_seed: bool = True):
         seed_chart_of_accounts(db)
     seed_validation_rules(db)
     seed_extraction_templates(db)
+    try:
+        from app.db.seeds.forensic_calculated_rules_seed import seed_calculated_rules
+        seed_calculated_rules()
+    except Exception as exc:
+        print(f"⚠️  Calculated rules seeding skipped: {exc}")
     print("✅ Database seeding completed!")
-
