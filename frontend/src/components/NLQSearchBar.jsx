@@ -7,26 +7,47 @@
  * <NLQSearchBar propertyCode="ESP" />
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNLQ } from '../hooks/useNLQ';
 import './NLQSearchBar.css';
 
-const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
+const NLQSearchBar = ({
+  propertyCode = null,
+  propertyId = null,
+  quickPrompts = [],
+  externalQuestion = '',
+  onQuerySubmit
+}) => {
   const [question, setQuestion] = useState('');
   const { query, loading, error, result } = useNLQ();
 
-  const handleSearch = async () => {
-    if (!question.trim()) return;
+  useEffect(() => {
+    if (externalQuestion && externalQuestion !== question) {
+      setQuestion(externalQuestion);
+    }
+  }, [externalQuestion, question]);
 
+  const submitQuestion = async (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
     const context = {};
     if (propertyCode) context.property_code = propertyCode;
     if (propertyId) context.property_id = propertyId;
 
-    await query(question, Object.keys(context).length > 0 ? context : null);
+    if (onQuerySubmit) {
+      onQuerySubmit(trimmed);
+    }
+
+    await query(trimmed, Object.keys(context).length > 0 ? context : null);
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !loading) {
+  const handleSearch = async () => {
+    await submitQuestion(question);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !loading) {
+      e.preventDefault();
       handleSearch();
     }
   };
@@ -42,6 +63,42 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
+  const insights = useMemo(() => {
+    const items = [];
+    if (result?.confidence_score !== undefined) {
+      items.push(`Confidence: ${(result.confidence_score * 100).toFixed(0)}%`);
+    }
+    if (result?.execution_time_ms) {
+      items.push(`Execution time: ${formatExecutionTime(result.execution_time_ms)}`);
+    }
+    if (result?.metadata?.temporal_info?.has_temporal) {
+      items.push(`Time period: ${result.metadata.temporal_info.normalized_expression}`);
+    }
+    if (result?.metadata?.agents_used?.length) {
+      items.push(`Agents used: ${result.metadata.agents_used.join(', ')}`);
+    }
+    return items;
+  }, [result]);
+
+  const followUpSuggestions = useMemo(() => {
+    const propertySuffix = propertyCode ? ` for ${propertyCode}` : '';
+    return [
+      `Break down by month${propertySuffix}`,
+      `Compare to the previous period${propertySuffix}`,
+      `Show supporting data${propertySuffix}`,
+      `Explain key drivers${propertySuffix}`
+    ];
+  }, [propertyCode]);
+
+  const handleQuickPrompt = (prompt) => {
+    setQuestion(prompt);
+  };
+
+  const handleFollowUp = (prompt) => {
+    setQuestion(prompt);
+    submitQuestion(prompt);
+  };
+
   return (
     <div className="nlq-search-container">
       <div className="nlq-search-header">
@@ -50,14 +107,14 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
       </div>
 
       <div className="nlq-search-input-group">
-        <input
-          type="text"
-          className="nlq-search-input"
+        <textarea
+          className="nlq-search-input nlq-search-textarea"
           placeholder="e.g., What was cash position in November 2025?"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
           disabled={loading}
+          rows={3}
         />
         <button
           className="nlq-search-button"
@@ -76,6 +133,19 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
           )}
         </button>
       </div>
+
+      {quickPrompts.length > 0 && (
+        <div className="nlq-quick-prompts">
+          <span>Quick prompts:</span>
+          <div className="nlq-suggestion-chips">
+            {quickPrompts.map((prompt) => (
+              <button key={prompt} onClick={() => handleQuickPrompt(prompt)}>
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick suggestions */}
       {!result && !loading && !error && (
@@ -118,58 +188,79 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
       {result && !loading && (
         <div className="nlq-result">
           <div className="nlq-result-header">
-            <h4>✅ Answer</h4>
-            <div className="nlq-result-meta">
-              <span
-                className="nlq-confidence"
-                style={{ color: getConfidenceColor(result.confidence_score) }}
-              >
-                Confidence: {(result.confidence_score * 100).toFixed(0)}%
-              </span>
-              {result.execution_time_ms && (
-                <span className="nlq-execution-time">
-                  ⚡ {formatExecutionTime(result.execution_time_ms)}
-                </span>
+            <h4>✅ Result</h4>
+          </div>
+
+          <div className="nlq-result-sections">
+            <section className="nlq-result-section">
+              <div className="nlq-section-header">Answer</div>
+              <div className="nlq-answer">
+                {result.answer.split('\n').map((line, i) => (
+                  <p key={i}>{line}</p>
+                ))}
+              </div>
+            </section>
+
+            <section className="nlq-result-section">
+              <div className="nlq-section-header">Insights</div>
+              <ul className="nlq-insights-list">
+                {insights.length > 0 ? (
+                  insights.map((item) => (
+                    <li key={item} style={{ color: item.includes('Confidence') ? getConfidenceColor(result.confidence_score) : undefined }}>
+                      {item}
+                    </li>
+                  ))
+                ) : (
+                  <li>No additional insights were returned for this query.</li>
+                )}
+              </ul>
+            </section>
+
+            <section className="nlq-result-section">
+              <div className="nlq-section-header">Data</div>
+              {result.data && result.data.length > 0 ? (
+                <details className="nlq-data-details">
+                  <summary>📊 View Raw Data ({result.data.length} records)</summary>
+                  <pre className="nlq-data-json">
+                    {JSON.stringify(result.data, null, 2)}
+                  </pre>
+                </details>
+              ) : (
+                <p className="nlq-empty-state">No structured data returned.</p>
               )}
+
+              {result.metadata && (
+                <details className="nlq-metadata-details">
+                  <summary>ℹ️ Query Details</summary>
+                  <div className="nlq-metadata">
+                    {result.metadata.temporal_info?.has_temporal && (
+                      <div>
+                        <strong>Time period:</strong>{' '}
+                        {result.metadata.temporal_info.normalized_expression}
+                      </div>
+                    )}
+                    {result.metadata.agents_used && (
+                      <div>
+                        <strong>Agents used:</strong>{' '}
+                        {result.metadata.agents_used.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
+            </section>
+          </div>
+
+          <div className="nlq-followup">
+            <p>Explore deeper:</p>
+            <div className="nlq-suggestion-chips">
+              {followUpSuggestions.map((suggestion) => (
+                <button key={suggestion} onClick={() => handleFollowUp(suggestion)}>
+                  {suggestion}
+                </button>
+              ))}
             </div>
           </div>
-
-          <div className="nlq-answer">
-            {result.answer.split('\n').map((line, i) => (
-              <p key={i}>{line}</p>
-            ))}
-          </div>
-
-          {/* Data display */}
-          {result.data && result.data.length > 0 && (
-            <details className="nlq-data-details">
-              <summary>📊 View Raw Data ({result.data.length} records)</summary>
-              <pre className="nlq-data-json">
-                {JSON.stringify(result.data, null, 2)}
-              </pre>
-            </details>
-          )}
-
-          {/* Metadata */}
-          {result.metadata && (
-            <details className="nlq-metadata-details">
-              <summary>ℹ️ Query Details</summary>
-              <div className="nlq-metadata">
-                {result.metadata.temporal_info?.has_temporal && (
-                  <div>
-                    <strong>Time period:</strong>{' '}
-                    {result.metadata.temporal_info.normalized_expression}
-                  </div>
-                )}
-                {result.metadata.agents_used && (
-                  <div>
-                    <strong>Agents used:</strong>{' '}
-                    {result.metadata.agents_used.join(', ')}
-                  </div>
-                )}
-              </div>
-            </details>
-          )}
         </div>
       )}
     </div>

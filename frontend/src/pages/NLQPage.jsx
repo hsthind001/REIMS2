@@ -4,13 +4,18 @@
  * Standalone page for natural language queries with enhanced features
  */
 
-import React, { useState } from 'react';
-import { Row, Col, Card, Tabs, Select, Button, Space, Tag } from 'antd';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Row, Col, Card, Tabs, Select, Button, Space, Tag, Divider } from 'antd';
 import {
   SearchOutlined,
   QuestionCircleOutlined,
   CalculatorOutlined,
-  HistoryOutlined
+  HistoryOutlined,
+  PushpinOutlined,
+  PushpinFilled,
+  StarOutlined,
+  StarFilled,
+  DeleteOutlined
 } from '@ant-design/icons';
 import NLQSearchBar from '../components/NLQSearchBar';
 import './NLQPage.css';
@@ -20,11 +25,57 @@ const { Option } = Select;
 
 const NLQPage = () => {
   const [selectedProperty, setSelectedProperty] = useState(null);
+  const [activeQuery, setActiveQuery] = useState('');
   const [queryHistory, setQueryHistory] = useState([
-    { query: "What was cash position in November 2025?", timestamp: "2 minutes ago" },
-    { query: "How is DSCR calculated?", timestamp: "5 minutes ago" },
-    { query: "Show revenue for Q4 2025", timestamp: "10 minutes ago" }
+    {
+      id: 'seed-1',
+      query: "What was cash position in November 2025?",
+      timestamp: "2 minutes ago",
+      pinned: true,
+      favorite: true
+    },
+    {
+      id: 'seed-2',
+      query: "How is DSCR calculated?",
+      timestamp: "5 minutes ago",
+      pinned: false,
+      favorite: false
+    },
+    {
+      id: 'seed-3',
+      query: "Show revenue for Q4 2025",
+      timestamp: "10 minutes ago",
+      pinned: false,
+      favorite: false
+    }
   ]);
+
+  const storageKey = 'nlq-query-history-v1';
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const normalized = parsed.map((item, index) => ({
+            id: item.id ?? `stored-${index}-${Date.now()}`,
+            query: item.query,
+            timestamp: item.timestamp ?? new Date().toLocaleString(),
+            pinned: Boolean(item.pinned),
+            favorite: Boolean(item.favorite)
+          }));
+          setQueryHistory(normalized);
+        }
+      } catch (err) {
+        console.warn('Failed to parse NLQ history storage', err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, JSON.stringify(queryHistory));
+  }, [queryHistory]);
 
   const properties = [
     { code: 'ESP', name: 'Esperanza', id: 1 },
@@ -64,9 +115,56 @@ const NLQPage = () => {
   };
 
   const handleExampleClick = (query) => {
-    // This would trigger the search
-    console.log("Example query:", query);
+    setActiveQuery(query);
   };
+
+  const handleQuerySubmit = (query) => {
+    setQueryHistory((prev) => {
+      const existing = prev.find((item) => item.query === query);
+      const timestamp = new Date().toLocaleString();
+      if (existing) {
+        return [
+          { ...existing, timestamp },
+          ...prev.filter((item) => item.query !== query)
+        ];
+      }
+
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        query,
+        timestamp,
+        pinned: false,
+        favorite: false
+      };
+      return [entry, ...prev];
+    });
+  };
+
+  const togglePinned = (id) => {
+    setQueryHistory((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, pinned: !item.pinned } : item
+      )
+    );
+  };
+
+  const toggleFavorite = (id) => {
+    setQueryHistory((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, favorite: !item.favorite } : item
+      )
+    );
+  };
+
+  const removeHistoryItem = (id) => {
+    setQueryHistory((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const historySections = useMemo(() => {
+    const pinned = queryHistory.filter((item) => item.pinned);
+    const recent = queryHistory.filter((item) => !item.pinned);
+    return { pinned, recent };
+  }, [queryHistory]);
 
   return (
     <div className="nlq-page-container page-content">
@@ -107,32 +205,110 @@ const NLQPage = () => {
                   ? properties.find(p => p.code === selectedProperty)?.id
                   : null
               }
+              quickPrompts={[
+                "Summarize cash flow trends",
+                "Show latest NOI",
+                "Compare Q4 revenue vs Q3"
+              ]}
+              externalQuestion={activeQuery}
+              onQuerySubmit={handleQuerySubmit}
             />
-          </Card>
-
-          {/* Query History */}
-          <Card
-            title={<span><HistoryOutlined /> Recent Queries</span>}
-            style={{ marginTop: 16 }}
-          >
-            {queryHistory.map((item, index) => (
-              <div key={index} className="history-item">
-                <Button
-                  type="link"
-                  onClick={() => handleExampleClick(item.query)}
-                  style={{ padding: 0 }}
-                >
-                  {item.query}
-                </Button>
-                <span className="history-timestamp">{item.timestamp}</span>
-              </div>
-            ))}
           </Card>
         </Col>
 
         {/* Examples & Help */}
         <Col xs={24} lg={8}>
-          <Card title={<span><QuestionCircleOutlined /> Example Queries</span>}>
+          <Card
+            title={<span><HistoryOutlined /> Query History</span>}
+            className="nlq-history-panel"
+          >
+            {queryHistory.length === 0 ? (
+              <div className="history-empty">
+                <p>No saved questions yet.</p>
+                <span>Run a search to build your history.</span>
+              </div>
+            ) : (
+              <>
+                {historySections.pinned.length > 0 && (
+                  <div className="history-section">
+                    <span className="history-section-title">Pinned</span>
+                    {historySections.pinned.map((item) => (
+                      <div key={item.id} className="history-item">
+                        <Button
+                          type="link"
+                          onClick={() => handleExampleClick(item.query)}
+                          className="history-query"
+                        >
+                          {item.query}
+                        </Button>
+                        <div className="history-actions">
+                          <Button
+                            type="text"
+                            size="small"
+                            onClick={() => togglePinned(item.id)}
+                            icon={<PushpinFilled />}
+                          />
+                          <Button
+                            type="text"
+                            size="small"
+                            onClick={() => toggleFavorite(item.id)}
+                            icon={item.favorite ? <StarFilled /> : <StarOutlined />}
+                          />
+                          <Button
+                            type="text"
+                            size="small"
+                            onClick={() => removeHistoryItem(item.id)}
+                            icon={<DeleteOutlined />}
+                          />
+                        </div>
+                        <span className="history-timestamp">{item.timestamp}</span>
+                      </div>
+                    ))}
+                    <Divider className="history-divider" />
+                  </div>
+                )}
+                <div className="history-section">
+                  <span className="history-section-title">Recent</span>
+                  {historySections.recent.map((item) => (
+                    <div key={item.id ?? item.query} className="history-item">
+                      <Button
+                        type="link"
+                        onClick={() => handleExampleClick(item.query)}
+                        className="history-query"
+                      >
+                        {item.query}
+                      </Button>
+                      <div className="history-actions">
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => togglePinned(item.id)}
+                          icon={<PushpinOutlined />}
+                        />
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => toggleFavorite(item.id)}
+                          icon={item.favorite ? <StarFilled /> : <StarOutlined />}
+                        />
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => removeHistoryItem(item.id)}
+                          icon={<DeleteOutlined />}
+                        />
+                      </div>
+                      <span className="history-timestamp">
+                        {item.favorite && <StarFilled className="history-favorite" />} {item.timestamp}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </Card>
+
+          <Card title={<span><QuestionCircleOutlined /> Example Queries</span>} style={{ marginTop: 16 }}>
             <Tabs defaultActiveKey="1" tabPosition="top" size="small">
               {Object.entries(exampleQueries).map(([category, queries], idx) => (
                 <TabPane tab={category} key={String(idx + 1)}>
