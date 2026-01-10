@@ -5,12 +5,16 @@
  */
 
 import React, { useState } from 'react';
-import { Row, Col, Card, Statistic, Select, Alert } from 'antd';
+import { Row, Col, Card, Statistic, Select, Alert, List, Timeline, Button, Tag } from 'antd';
 import {
   DollarOutlined,
   RiseOutlined,
   FallOutlined,
-  HomeOutlined
+  HomeOutlined,
+  FileTextOutlined,
+  CalculatorOutlined,
+  BarChartOutlined,
+  AuditOutlined
 } from '@ant-design/icons';
 import NLQSearchBar from '../components/NLQSearchBar';
 import './Dashboard.css';
@@ -32,7 +36,20 @@ const Dashboard = () => {
     totalRevenue: 1250000,
     totalExpenses: 850000,
     netIncome: 400000,
-    properties: 4
+    properties: 4,
+    totalRevenueDelta: 0.062,
+    totalExpensesDelta: -0.041,
+    netIncomeDelta: 0.089,
+    propertiesDelta: 1
+  };
+
+  const chartSeries = [38, 52, 47, 61, 58, 70, 64, 76, 68, 82, 73, 88];
+
+  const formatDelta = (delta, format = 'percent') => {
+    if (format === 'count') {
+      return `${Math.abs(delta)}`;
+    }
+    return `${Math.abs(delta * 100).toFixed(1)}%`;
   };
 
   return (
@@ -80,6 +97,12 @@ const Dashboard = () => {
               suffix="YTD"
               valueStyle={{ color: '#3f8600' }}
             />
+            <div className="kpi-delta kpi-positive">
+              <RiseOutlined />
+              <span>
+                {formatDelta(stats.totalRevenueDelta)} vs prior period
+              </span>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -92,6 +115,12 @@ const Dashboard = () => {
               suffix="YTD"
               valueStyle={{ color: '#cf1322' }}
             />
+            <div className="kpi-delta kpi-negative">
+              <FallOutlined />
+              <span>
+                {formatDelta(stats.totalExpensesDelta)} vs prior period
+              </span>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -104,6 +133,12 @@ const Dashboard = () => {
               suffix="YTD"
               valueStyle={{ color: '#3f8600' }}
             />
+            <div className="kpi-delta kpi-positive">
+              <RiseOutlined />
+              <span>
+                {formatDelta(stats.netIncomeDelta)} vs prior period
+              </span>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -113,6 +148,35 @@ const Dashboard = () => {
               value={stats.properties}
               prefix={<HomeOutlined />}
             />
+            <div className="kpi-delta kpi-positive">
+              <RiseOutlined />
+              <span>
+                {formatDelta(stats.propertiesDelta, 'count')} vs prior period
+              </span>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24}>
+          <Card className="compact-chart-card">
+            <div className="compact-chart-header">
+              <div>
+                <h3>Portfolio Performance Trend</h3>
+                <p>Last 12 months, rolling net operating income</p>
+              </div>
+              <Tag color="green">+8.2% YTD</Tag>
+            </div>
+            <div className="compact-chart">
+              {chartSeries.map((value, index) => (
+                <span
+                  key={`chart-bar-${index}`}
+                  className="compact-chart-bar"
+                  style={{ height: `${value}%` }}
+                />
+              ))}
+            </div>
           </Card>
         </Col>
       </Row>
@@ -139,18 +203,48 @@ const Dashboard = () => {
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} lg={12}>
           <Card title="Recent Activity" bordered={false}>
-            <p>• Cash position updated for ESP - Nov 2025</p>
-            <p>• New tenant lease signed - OAK</p>
-            <p>• DSCR calculation completed - PIN</p>
-            <p>• Monthly report generated - All properties</p>
+            <Timeline
+              items={[
+                {
+                  color: 'green',
+                  children: 'Cash position updated for ESP — Nov 2025'
+                },
+                {
+                  color: 'blue',
+                  children: 'New tenant lease signed — OAK'
+                },
+                {
+                  color: 'purple',
+                  children: 'DSCR calculation completed — PIN'
+                },
+                {
+                  color: 'gray',
+                  children: 'Monthly report generated — All properties'
+                }
+              ]}
+            />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="Quick Actions" bordered={false}>
-            <p>✓ View financial statements</p>
-            <p>✓ Calculate metrics</p>
-            <p>✓ Generate reports</p>
-            <p>✓ Review audit trail</p>
+            <List
+              dataSource={[
+                {
+                  label: 'View financial statements',
+                  icon: <FileTextOutlined />
+                },
+                { label: 'Calculate metrics', icon: <CalculatorOutlined /> },
+                { label: 'Generate reports', icon: <BarChartOutlined /> },
+                { label: 'Review audit trail', icon: <AuditOutlined /> }
+              ]}
+              renderItem={item => (
+                <List.Item className="quick-action-item">
+                  <Button icon={item.icon} type="primary" block>
+                    {item.label}
+                  </Button>
+                </List.Item>
+              )}
+            />
           </Card>
         </Col>
       </Row>
