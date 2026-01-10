@@ -139,18 +139,22 @@ const Dashboard = () => {
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} lg={12}>
           <Card title="Recent Activity" bordered={false}>
-            <p>• Cash position updated for ESP - Nov 2025</p>
-            <p>• New tenant lease signed - OAK</p>
-            <p>• DSCR calculation completed - PIN</p>
-            <p>• Monthly report generated - All properties</p>
+            <div className="dashboard-list">
+              <p>• Cash position updated for ESP - Nov 2025</p>
+              <p>• New tenant lease signed - OAK</p>
+              <p>• DSCR calculation completed - PIN</p>
+              <p>• Monthly report generated - All properties</p>
+            </div>
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="Quick Actions" bordered={false}>
-            <p>✓ View financial statements</p>
-            <p>✓ Calculate metrics</p>
-            <p>✓ Generate reports</p>
-            <p>✓ Review audit trail</p>
+            <div className="dashboard-list">
+              <p>✓ View financial statements</p>
+              <p>✓ Calculate metrics</p>
+              <p>✓ Generate reports</p>
+              <p>✓ Review audit trail</p>
+            </div>
           </Card>
         </Col>
       </Row>
