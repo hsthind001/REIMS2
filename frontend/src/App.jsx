@@ -42,7 +42,7 @@ function App() {
         </Header>
 
         <Content style={{ padding: '0 50px', marginTop: 64 }}>
-          <div style={{ background: '#fff', padding: 24, minHeight: 'calc(100vh - 134px)', marginTop: 16 }}>
+          <div style={{ background: 'var(--color-surface)', padding: 24, minHeight: 'calc(100vh - 134px)', marginTop: 16 }}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/property/:propertyCode" element={<PropertyDetails />} />

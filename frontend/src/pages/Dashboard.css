@@ -12,12 +12,12 @@
 .dashboard-header h1 {
   margin: 0 0 8px 0;
   font-size: 32px;
-  color: #1890ff;
+  color: var(--color-primary);
 }
 
 .dashboard-header p {
   margin: 0;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 16px;
 }
 
@@ -31,7 +31,7 @@
 .dashboard-container p {
   margin: 8px 0;
   padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .dashboard-container p:last-child {
