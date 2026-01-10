@@ -6,12 +6,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Row, Col, Card, Descriptions, Tabs, Table, Tag, Alert, InputNumber, Button, Space, Typography } from 'antd';
+import { Row, Col, Card, Descriptions, Tabs, Table, Tag, Alert, InputNumber, Button, Space, Typography, Empty } from 'antd';
 import {
   HomeOutlined,
   DollarOutlined,
   CalculatorOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  DownloadOutlined,
+  SwapOutlined,
+  BellOutlined
 } from '@ant-design/icons';
 import NLQSearchBar from '../components/NLQSearchBar';
 import rulesService from '../services/rulesService';
@@ -174,6 +177,30 @@ const PropertyDetails = () => {
     }
   ];
 
+  const kpiMetrics = [
+    {
+      key: 'noi',
+      label: 'NOI',
+      value: '$40,000',
+      helper: 'Monthly net operating income',
+      icon: <DollarOutlined />
+    },
+    {
+      key: 'dscr',
+      label: 'DSCR',
+      value: '1.45x',
+      helper: 'Debt service coverage ratio',
+      icon: <CalculatorOutlined />
+    },
+    {
+      key: 'occupancy',
+      label: 'Occupancy',
+      value: '94%',
+      helper: 'Occupied units',
+      icon: <HomeOutlined />
+    }
+  ];
+
   if (!property) {
     return <div>Loading...</div>;
   }
@@ -219,10 +246,38 @@ const PropertyDetails = () => {
     <div className="property-details-container page-content">
       {/* Property Header */}
       <div className="property-header">
-        <h1>
-          <HomeOutlined /> {property.name} ({property.code})
-        </h1>
-        <p>{property.address}, {property.city}, {property.state} {property.zip}</p>
+        <div className="property-header-top">
+          <div>
+            <h1>
+              <HomeOutlined /> {property.name} ({property.code})
+            </h1>
+            <div className="property-badges">
+              <Tag color="blue">{property.type}</Tag>
+              <Tag color="gold">Risk: Moderate</Tag>
+              <Tag>Updated 2 days ago</Tag>
+            </div>
+            <p>{property.address}, {property.city}, {property.state} {property.zip}</p>
+          </div>
+          <Space className="property-header-actions" wrap>
+            <Button icon={<DownloadOutlined />}>Export</Button>
+            <Button icon={<SwapOutlined />}>Compare</Button>
+            <Button type="primary" icon={<BellOutlined />}>Alerts</Button>
+          </Space>
+        </div>
+        <Row gutter={[16, 16]} className="property-kpi-section">
+          {kpiMetrics.map((metric) => (
+            <Col xs={24} md={8} key={metric.key}>
+              <Card className="property-kpi-card" bordered={false}>
+                <div className="property-kpi-header">
+                  <span className="property-kpi-icon">{metric.icon}</span>
+                  <span className="property-kpi-label">{metric.label}</span>
+                </div>
+                <div className="property-kpi-value">{metric.value}</div>
+                <div className="property-kpi-helper">{metric.helper}</div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
       </div>
 
       <Row gutter={[16, 16]}>
@@ -292,16 +347,28 @@ const PropertyDetails = () => {
           <Card>
             <Tabs defaultActiveKey="1">
               <TabPane tab="Financial Statements" key="1">
-                <p>Balance Sheet, Income Statement, Cash Flow</p>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="Financial statements will appear here once the latest balance sheet, income statement, and cash flow are synced."
+                />
               </TabPane>
               <TabPane tab="Rent Roll" key="2">
-                <p>Unit details, Occupancy, Lease information</p>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="Rent roll data will list unit mix, lease expirations, and occupancy trends for this asset."
+                />
               </TabPane>
               <TabPane tab="Maintenance" key="3">
-                <p>Work orders, Repairs, Capital expenditures</p>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="Maintenance activity, open work orders, and capital projects will surface here."
+                />
               </TabPane>
               <TabPane tab="Documents" key="4">
-                <p>Leases, Contracts, Reports</p>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="Uploaded leases, contracts, and inspection reports will be organized in this section."
+                />
               </TabPane>
               <TabPane tab="Rules" key="5">
                 <Space direction="vertical" style={{ width: '100%' }}>
