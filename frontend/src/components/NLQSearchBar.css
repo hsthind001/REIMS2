@@ -6,7 +6,9 @@
   padding: 24px;
   background: #ffffff;
   border-radius: 8px;
+  border: 1px solid #f0f0f0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
 }
 
 .nlq-search-header {
@@ -185,6 +187,13 @@
   border-radius: 6px;
   padding: 20px;
   animation: nlq-fadeIn 0.3s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.nlq-result:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
 @keyframes nlq-fadeIn {
