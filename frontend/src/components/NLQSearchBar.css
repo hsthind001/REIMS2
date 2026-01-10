@@ -4,7 +4,7 @@
   max-width: 900px;
   margin: 20px auto;
   padding: 24px;
-  background: #ffffff;
+  background: var(--color-surface);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
@@ -16,12 +16,12 @@
 .nlq-search-header h3 {
   margin: 0 0 8px 0;
   font-size: 24px;
-  color: #1890ff;
+  color: var(--color-primary);
 }
 
 .nlq-search-header p {
   margin: 0;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
@@ -35,19 +35,19 @@
   flex: 1;
   padding: 12px 16px;
   font-size: 16px;
-  border: 2px solid #d9d9d9;
+  border: 2px solid var(--color-border);
   border-radius: 6px;
   transition: all 0.3s;
 }
 
 .nlq-search-input:focus {
   outline: none;
-  border-color: #1890ff;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .nlq-search-input:disabled {
-  background: #f5f5f5;
+  background: var(--color-surface-muted);
   cursor: not-allowed;
 }
 
@@ -55,8 +55,8 @@
   padding: 12px 32px;
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
-  background: #1890ff;
+  color: var(--color-surface);
+  background: var(--color-primary);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -68,7 +68,7 @@
 }
 
 .nlq-search-button:hover:not(:disabled) {
-  background: #40a9ff;
+  background: var(--color-primary-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
 }
@@ -78,7 +78,7 @@
 }
 
 .nlq-search-button:disabled {
-  background: #d9d9d9;
+  background: var(--color-border);
   cursor: not-allowed;
 }
 
@@ -89,7 +89,7 @@
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  border-top-color: #fff;
+  border-top-color: var(--color-surface);
   animation: nlq-spin 0.6s linear infinite;
 }
 
@@ -98,7 +98,7 @@
   height: 40px;
   border: 3px solid rgba(24, 144, 255, 0.2);
   border-radius: 50%;
-  border-top-color: #1890ff;
+  border-top-color: var(--color-primary);
   animation: nlq-spin 0.8s linear infinite;
   margin: 0 auto;
 }
@@ -115,7 +115,7 @@
 .nlq-suggestions p {
   margin: 0 0 8px 0;
   font-size: 13px;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .nlq-suggestion-chips {
@@ -127,61 +127,61 @@
 .nlq-suggestion-chips button {
   padding: 6px 12px;
   font-size: 13px;
-  color: #1890ff;
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border: 1px solid var(--color-primary-border);
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.3s;
 }
 
 .nlq-suggestion-chips button:hover {
-  background: #bae7ff;
-  border-color: #69c0ff;
+  background: var(--color-primary-soft-hover);
+  border-color: var(--color-primary-border-hover);
 }
 
 /* Loading */
 .nlq-loading {
   text-align: center;
   padding: 40px;
-  background: #f9f9f9;
+  background: var(--color-surface-subtle);
   border-radius: 6px;
   margin-top: 16px;
 }
 
 .nlq-loading p {
   margin: 16px 0 0 0;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
 /* Error */
 .nlq-error {
   padding: 16px;
-  background: #fff2f0;
-  border: 1px solid #ffccc7;
-  border-left: 4px solid #ff4d4f;
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
+  border-left: 4px solid var(--color-danger);
   border-radius: 6px;
   margin-top: 16px;
 }
 
 .nlq-error h4 {
   margin: 0 0 8px 0;
-  color: #ff4d4f;
+  color: var(--color-danger);
   font-size: 16px;
 }
 
 .nlq-error p {
   margin: 0;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
 /* Result */
 .nlq-result {
   margin-top: 20px;
-  background: #f9f9f9;
-  border-left: 4px solid #52c41a;
+  background: var(--color-surface-subtle);
+  border-left: 4px solid var(--color-success);
   border-radius: 6px;
   padding: 20px;
   animation: nlq-fadeIn 0.3s;
@@ -204,13 +204,13 @@
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #d9d9d9;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .nlq-result-header h4 {
   margin: 0;
   font-size: 18px;
-  color: #52c41a;
+  color: var(--color-success);
 }
 
 .nlq-result-meta {
@@ -224,13 +224,13 @@
 }
 
 .nlq-execution-time {
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .nlq-answer {
   font-size: 15px;
   line-height: 1.6;
-  color: #333;
+  color: var(--color-text-primary);
 }
 
 .nlq-answer p {
@@ -238,16 +238,16 @@
 }
 
 .nlq-answer strong {
-  color: #1890ff;
+  color: var(--color-primary);
 }
 
 /* Data details */
 .nlq-data-details,
 .nlq-metadata-details {
   margin-top: 16px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .nlq-data-details summary,
@@ -255,20 +255,20 @@
   padding: 12px;
   cursor: pointer;
   font-weight: 600;
-  color: #1890ff;
+  color: var(--color-primary);
   user-select: none;
 }
 
 .nlq-data-details summary:hover,
 .nlq-metadata-details summary:hover {
-  background: #f5f5f5;
+  background: var(--color-surface-muted);
 }
 
 .nlq-data-json {
   margin: 0;
   padding: 16px;
-  background: #f5f5f5;
-  border-top: 1px solid #d9d9d9;
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-border);
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.5;
@@ -276,17 +276,17 @@
 
 .nlq-metadata {
   padding: 16px;
-  border-top: 1px solid #d9d9d9;
+  border-top: 1px solid var(--color-border);
 }
 
 .nlq-metadata div {
   margin: 8px 0;
   font-size: 14px;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .nlq-metadata strong {
-  color: #333;
+  color: var(--color-text-primary);
   margin-right: 8px;
 }
 

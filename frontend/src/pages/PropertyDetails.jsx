@@ -276,7 +276,7 @@ const PropertyDetails = () => {
               </span>
             }
             bordered={false}
-            style={{ background: '#f9f9f9' }}
+            style={{ background: 'var(--color-surface-subtle)' }}
           >
             <NLQSearchBar
               propertyCode={property.code}
