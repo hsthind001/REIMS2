@@ -5,13 +5,37 @@
  */
 
 import React, { useState } from 'react';
-import { Row, Col, Card, Statistic, Select, Alert } from 'antd';
+import {
+  Row,
+  Col,
+  Card,
+  Statistic,
+  Select,
+  Alert,
+  List,
+  Timeline,
+  Button,
+  Tag,
+  Space
+} from 'antd';
 import {
   DollarOutlined,
   RiseOutlined,
   FallOutlined,
-  HomeOutlined
+  HomeOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+  MinusOutlined
 } from '@ant-design/icons';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid
+} from 'recharts';
 import NLQSearchBar from '../components/NLQSearchBar';
 import './Dashboard.css';
 
@@ -33,6 +57,119 @@ const Dashboard = () => {
     totalExpenses: 850000,
     netIncome: 400000,
     properties: 4
+  };
+
+  const kpiCards = [
+    {
+      key: 'revenue',
+      title: 'Total Revenue',
+      value: stats.totalRevenue,
+      precision: 2,
+      prefix: <DollarOutlined />,
+      suffix: 'YTD',
+      valueStyle: { color: '#3f8600' },
+      trend: 'up',
+      delta: '+8.2%',
+      label: 'vs last month',
+      spark: [6, 7, 8, 7, 9]
+    },
+    {
+      key: 'expenses',
+      title: 'Total Expenses',
+      value: stats.totalExpenses,
+      precision: 2,
+      prefix: <DollarOutlined />,
+      suffix: 'YTD',
+      valueStyle: { color: '#cf1322' },
+      trend: 'down',
+      delta: '-3.4%',
+      label: 'vs last month',
+      spark: [8, 7, 6, 6, 5]
+    },
+    {
+      key: 'noi',
+      title: 'Net Income',
+      value: stats.netIncome,
+      precision: 2,
+      prefix: <RiseOutlined />,
+      suffix: 'YTD',
+      valueStyle: { color: '#3f8600' },
+      trend: 'up',
+      delta: '+5.1%',
+      label: 'vs last month',
+      spark: [5, 6, 7, 7, 8]
+    },
+    {
+      key: 'properties',
+      title: 'Properties',
+      value: stats.properties,
+      prefix: <HomeOutlined />,
+      trend: 'flat',
+      delta: '0',
+      label: 'net adds',
+      spark: [4, 4, 4, 4, 4]
+    }
+  ];
+
+  const activityItems = [
+    {
+      title: 'Cash position updated for ESP',
+      description: 'November close posted to treasury',
+      time: 'Today, 9:30 AM'
+    },
+    {
+      title: 'New tenant lease signed - OAK',
+      description: '36-month lease finalized with 3.5% escalator',
+      time: 'Yesterday'
+    },
+    {
+      title: 'DSCR calculation completed - PIN',
+      description: 'DSCR improved to 1.42 for Q3',
+      time: '2 days ago'
+    },
+    {
+      title: 'Monthly report generated - All properties',
+      description: 'Portfolio performance deck published',
+      time: 'Last week'
+    }
+  ];
+
+  const quickActions = [
+    {
+      title: 'View financial statements',
+      description: 'Income statement, balance sheet, cash flow',
+      action: 'Open statements'
+    },
+    {
+      title: 'Calculate key metrics',
+      description: 'NOI, DSCR, occupancy, rent growth',
+      action: 'Run metrics'
+    },
+    {
+      title: 'Generate reports',
+      description: 'Investor-ready summaries and exports',
+      action: 'Create report'
+    },
+    {
+      title: 'Review audit trail',
+      description: 'Track approvals and data changes',
+      action: 'View audit'
+    }
+  ];
+
+  const chartData = [
+    { month: 'Apr', revenue: 920, noi: 310 },
+    { month: 'May', revenue: 980, noi: 330 },
+    { month: 'Jun', revenue: 1040, noi: 360 },
+    { month: 'Jul', revenue: 990, noi: 340 },
+    { month: 'Aug', revenue: 1120, noi: 390 },
+    { month: 'Sep', revenue: 1180, noi: 410 }
+  ];
+
+  const trendIcon = trend => {
+    if (trend === 'up') return <ArrowUpOutlined />;
+    if (trend === 'down') return <ArrowDownOutlined />;
+    return <MinusOutlined />;
   };
 
   return (
@@ -69,53 +206,71 @@ const Dashboard = () => {
       </Card>
 
       {/* Key Metrics */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Total Revenue"
-              value={stats.totalRevenue}
-              precision={2}
-              prefix={<DollarOutlined />}
-              suffix="YTD"
-              valueStyle={{ color: '#3f8600' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Total Expenses"
-              value={stats.totalExpenses}
-              precision={2}
-              prefix={<DollarOutlined />}
-              suffix="YTD"
-              valueStyle={{ color: '#cf1322' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Net Income"
-              value={stats.netIncome}
-              precision={2}
-              prefix={<RiseOutlined />}
-              suffix="YTD"
-              valueStyle={{ color: '#3f8600' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Properties"
-              value={stats.properties}
-              prefix={<HomeOutlined />}
-            />
-          </Card>
-        </Col>
+      <Row gutter={[16, 16]} className="dashboard-section">
+        {kpiCards.map(card => (
+          <Col key={card.key} xs={24} sm={12} lg={6}>
+            <Card className="dashboard-card">
+              <Statistic
+                title={card.title}
+                value={card.value}
+                precision={card.precision}
+                prefix={card.prefix}
+                suffix={card.suffix}
+                valueStyle={card.valueStyle}
+              />
+              <div className="kpi-trend">
+                <Space size={8} align="center">
+                  <span className={`trend-icon ${card.trend}`}>
+                    {trendIcon(card.trend)}
+                  </span>
+                  <span className={`trend-delta ${card.trend}`}>
+                    {card.delta}
+                  </span>
+                  <span className="trend-label">{card.label}</span>
+                </Space>
+                <div className="trend-spark">
+                  {card.spark.map((value, index) => (
+                    <span
+                      key={`${card.key}-${index}`}
+                      className="spark-bar"
+                      style={{ height: `${value + 4}px` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </Card>
+          </Col>
+        ))}
       </Row>
+
+      <Card
+        title={<span className="section-title">Portfolio Momentum</span>}
+        className="dashboard-card dashboard-section"
+        bordered={false}
+      >
+        <div className="chart-header">
+          <div>
+            <h3>Revenue & NOI Trend</h3>
+            <p>Rolling six-month performance snapshot</p>
+          </div>
+          <Space>
+            <Tag color="green">Revenue</Tag>
+            <Tag color="blue">NOI</Tag>
+          </Space>
+        </div>
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={chartData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} />
+              <YAxis axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Line type="monotone" dataKey="revenue" stroke="#52c41a" strokeWidth={2} />
+              <Line type="monotone" dataKey="noi" stroke="#1890ff" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
 
       {/* OPTION 1: Simple NLQ Search Bar */}
       <Alert
@@ -136,21 +291,52 @@ const Dashboard = () => {
       />
 
       {/* Additional Dashboard Content */}
-      <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+      <Row gutter={[16, 16]} className="dashboard-section">
         <Col xs={24} lg={12}>
-          <Card title="Recent Activity" bordered={false}>
-            <p>• Cash position updated for ESP - Nov 2025</p>
-            <p>• New tenant lease signed - OAK</p>
-            <p>• DSCR calculation completed - PIN</p>
-            <p>• Monthly report generated - All properties</p>
+          <Card
+            title={<span className="section-title">Recent Activity</span>}
+            className="dashboard-card"
+            bordered={false}
+          >
+            <Timeline
+              items={activityItems.map(item => ({
+                children: (
+                  <div className="activity-item">
+                    <div>
+                      <strong>{item.title}</strong>
+                      <p>{item.description}</p>
+                    </div>
+                    <Tag color="default">{item.time}</Tag>
+                  </div>
+                )
+              }))}
+            />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="Quick Actions" bordered={false}>
-            <p>✓ View financial statements</p>
-            <p>✓ Calculate metrics</p>
-            <p>✓ Generate reports</p>
-            <p>✓ Review audit trail</p>
+          <Card
+            title={<span className="section-title">Quick Actions</span>}
+            className="dashboard-card"
+            bordered={false}
+          >
+            <List
+              itemLayout="horizontal"
+              dataSource={quickActions}
+              renderItem={item => (
+                <List.Item
+                  actions={[
+                    <Button key={item.action} type="primary" size="small">
+                      {item.action}
+                    </Button>
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={item.title}
+                    description={item.description}
+                  />
+                </List.Item>
+              )}
+            />
           </Card>
         </Col>
       </Row>
