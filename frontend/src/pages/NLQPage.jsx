@@ -20,10 +20,14 @@ const { Option } = Select;
 
 const NLQPage = () => {
   const [selectedProperty, setSelectedProperty] = useState(null);
-  const [queryHistory, setQueryHistory] = useState([
+  const [queryHistory] = useState([
     { query: "What was cash position in November 2025?", timestamp: "2 minutes ago" },
     { query: "How is DSCR calculated?", timestamp: "5 minutes ago" },
     { query: "Show revenue for Q4 2025", timestamp: "10 minutes ago" }
+  ]);
+  const [pinnedResults] = useState([
+    { label: "Cash position summary", query: "Cash position in November 2025" },
+    { label: "Q4 revenue rollup", query: "Show revenue for Q4 2025" }
   ]);
 
   const properties = [
@@ -76,8 +80,50 @@ const NLQPage = () => {
       </div>
 
       <Row gutter={[16, 16]}>
+        {/* Conversation History */}
+        <Col xs={24} lg={5}>
+          <Card
+            title={<span><HistoryOutlined /> Conversation</span>}
+            className="conversation-card"
+          >
+            <div className="conversation-section">
+              <div className="conversation-label">Recent</div>
+              <div className="conversation-chips">
+                {queryHistory.map((item, index) => (
+                  <Button
+                    key={index}
+                    type="default"
+                    size="small"
+                    className="conversation-chip"
+                    onClick={() => handleExampleClick(item.query)}
+                  >
+                    {item.query}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="conversation-section">
+              <div className="conversation-label">Pinned results</div>
+              <div className="conversation-chips">
+                {pinnedResults.map((item, index) => (
+                  <Button
+                    key={`${item.label}-${index}`}
+                    type="dashed"
+                    size="small"
+                    className="conversation-chip pinned"
+                    onClick={() => handleExampleClick(item.query)}
+                  >
+                    📌 {item.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </Col>
+
         {/* Main Search Area */}
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={13}>
           <Card>
             {/* Property Selector */}
             <div style={{ marginBottom: 16 }}>
@@ -109,29 +155,10 @@ const NLQPage = () => {
               }
             />
           </Card>
-
-          {/* Query History */}
-          <Card
-            title={<span><HistoryOutlined /> Recent Queries</span>}
-            style={{ marginTop: 16 }}
-          >
-            {queryHistory.map((item, index) => (
-              <div key={index} className="history-item">
-                <Button
-                  type="link"
-                  onClick={() => handleExampleClick(item.query)}
-                  style={{ padding: 0 }}
-                >
-                  {item.query}
-                </Button>
-                <span className="history-timestamp">{item.timestamp}</span>
-              </div>
-            ))}
-          </Card>
         </Col>
 
         {/* Examples & Help */}
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={6}>
           <Card title={<span><QuestionCircleOutlined /> Example Queries</span>}>
             <Tabs defaultActiveKey="1" tabPosition="top" size="small">
               {Object.entries(exampleQueries).map(([category, queries], idx) => (
