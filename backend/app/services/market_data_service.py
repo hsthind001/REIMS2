@@ -2015,7 +2015,7 @@ class MarketDataService:
         market_intelligence: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        Generate AI-powered insights and recommendations.
+        Generate AI-powered insights and recommendations using open-source LLMs.
 
         Args:
             property_data: Property characteristics and metrics
@@ -2025,6 +2025,45 @@ class MarketDataService:
             SWOT analysis, investment recommendation, and narrative insights
         """
         try:
+            # Try using the new AI service first (with LLMs)
+            try:
+                from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
+                import asyncio
+
+                logger.info("Using open-source AI service for insights generation")
+                ai_service = get_market_intelligence_ai_service()
+
+                # Run async method in sync context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, create a new task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            asyncio.run,
+                            ai_service.generate_ai_insights(property_data, market_intelligence)
+                        )
+                        ai_insights = future.result(timeout=300)  # 5 minute timeout
+                else:
+                    # Run directly
+                    ai_insights = asyncio.run(
+                        ai_service.generate_ai_insights(property_data, market_intelligence)
+                    )
+
+                if ai_insights:
+                    self.log_data_pull('ai_insights', 'ai_insights', 'success', records_fetched=1)
+                    return self.tag_data_source(
+                        ai_insights,
+                        source='local_llm',
+                        vintage='2025-01',
+                        confidence=ai_insights.get('confidence', 85)
+                    )
+            except Exception as ai_error:
+                logger.warning(f"AI service unavailable, falling back to rule-based: {ai_error}")
+
+            # Fallback to rule-based insights
+            logger.info("Using rule-based fallback for insights generation")
+
             # Extract key data points
             demographics = market_intelligence.get('demographics', {})
             economic = market_intelligence.get('economic_indicators', {})
@@ -2064,16 +2103,17 @@ class MarketDataService:
                 'investment_recommendation': recommendation,
                 'risk_assessment': risk_assessment,
                 'opportunities': opportunities,
-                'market_trend_synthesis': self._synthesize_market_trends(economic, demographics)
+                'market_trend_synthesis': self._synthesize_market_trends(economic, demographics),
+                'generated_by': 'fallback_rules'
             }
 
             self.log_data_pull('ai_insights', 'ai_insights', 'success', records_fetched=1)
 
             return self.tag_data_source(
                 ai_insights,
-                source='ai_insights_model',
-                vintage='2025-12',
-                confidence=75
+                source='rule_based_fallback',
+                vintage='2025-01',
+                confidence=60
             )
 
         except Exception as e:

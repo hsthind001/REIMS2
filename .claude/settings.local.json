@@ -141,7 +141,13 @@
       "Bash(.venv/bin/python:*)",
       "Bash(rm:*)",
       "Bash(lsof:*)",
-      "Bash(netstat:*)"
+      "Bash(netstat:*)",
+      "Bash(./scripts/deploy_open_source_ai.sh:*)",
+      "Bash(docker network:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker start:*)",
+      "Bash(docker stats --no-stream --format \"table {{.Name}}\\\\t{{.MemUsage}}\\\\t{{.MemPerc}}\")"
     ]
   }
 }

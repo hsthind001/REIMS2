@@ -1,0 +1,109 @@
+# Docker Compose for Ollama Local LLM Service
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+
+services:
+  # Ollama - Local LLM inference server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: reims-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama  # Persistent model storage
+    ports:
+      - "11434:11434"  # Ollama API
+    networks:
+      - reims-network
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*  # Allow CORS from all origins
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 32G  # Adjust based on model size
+          cpus: '8.0'
+        reservations:
+          memory: 16G
+          cpus: '4.0'
+      # GPU support (uncomment if NVIDIA GPU available)
+      # device_requests:
+      #   - driver: nvidia
+      #     count: 1
+      #     capabilities: [gpu]
+
+  # Ollama Model Initialization (pulls models on first run)
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: reims-ollama-init
+    restart: "no"  # Only runs once
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - reims-network
+    volumes:
+      - ollama-models:/root/.ollama
+    entrypoint: >
+      /bin/sh -c "
+      echo '🤖 Ollama Init: Pulling recommended models...';
+
+      echo '📥 Pulling Llama 3.2 3B (fast, lightweight)...';
+      ollama pull llama3.2:3b-instruct-q4_K_M;
+
+      echo '📥 Pulling Llama 3.3 70B (GPT-4 quality) - This will take time...';
+      ollama pull llama3.3:70b-instruct-q4_K_M;
+
+      echo '📥 Pulling Qwen2.5 32B (balanced performance)...';
+      ollama pull qwen2.5:32b-instruct-q4_K_M;
+
+      echo '📥 Pulling LLaVA for vision tasks...';
+      ollama pull llava:13b-v1.6-vicuna-q4_K_M;
+
+      echo '✅ Ollama Init: All models ready!';
+      echo 'Models location: /root/.ollama (persisted in ollama-models volume)';
+      echo 'Available models:';
+      ollama list;
+      "
+    environment:
+      - OLLAMA_HOST=ollama:11434
+
+  # Open WebUI - Beautiful UI for testing Ollama models (optional)
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: reims-open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"  # WebUI interface
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_AUTH=false  # Set to true for authentication
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - ollama
+    networks:
+      - reims-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+networks:
+  reims-network:
+    name: reims2_reims-network
+    external: true  # Use existing network from main docker-compose.yml
+
+volumes:
+  ollama-models:
+    driver: local  # Persistent storage for Ollama models (~100GB for all models)
+  open-webui-data:
+    driver: local

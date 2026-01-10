@@ -66,10 +66,23 @@ class Settings(BaseSettings):
     # LLM API Settings
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
-    LLM_PROVIDER: str = "openai"  # "openai" or "anthropic"
-    LLM_MODEL: str = "gpt-4-turbo-preview"  # gpt-4-turbo-preview, gpt-4, claude-3-5-sonnet-20241022
+    GROQ_API_KEY: Optional[str] = None  # Groq Cloud API (free tier, 800 tokens/sec)
+    LLM_PROVIDER: str = "ollama"  # "ollama", "groq", "openai", or "anthropic"
+    LLM_MODEL: str = "llama3.2:3b-instruct-q4_K_M"  # Ollama model name (using available model)
     LLM_TEMPERATURE: float = 0.3  # Lower temperature for factual summarization
     LLM_MAX_TOKENS: int = 4000
+
+    # Ollama Configuration (Local LLM)
+    OLLAMA_BASE_URL: str = "http://ollama:11434"
+    OLLAMA_DEFAULT_MODEL: str = "llama3.2:3b-instruct-q4_K_M"  # Currently available model
+    OLLAMA_GPU_LAYERS: int = -1  # -1 = all layers on GPU, 0 = CPU only
+    OLLAMA_NUM_THREADS: int = 8  # CPU threads for inference
+
+    # LLM Performance Settings
+    LLM_ENABLE_STREAMING: bool = True  # Stream responses for real-time UI
+    LLM_ENABLE_CACHING: bool = True  # Cache LLM responses (semantic caching)
+    LLM_CACHE_TTL_HOURS: int = 24  # Cache duration
+    LLM_AUTO_SELECT: bool = True  # Automatically choose model based on task
     
     # External API Keys (Optional - for higher rate limits)
     CENSUS_API_KEY: Optional[str] = None  # Optional - Census API works without key for basic queries

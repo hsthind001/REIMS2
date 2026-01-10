@@ -117,6 +117,7 @@ lime==0.2.0.1  # LIME explanations for fast local interpretability
 # AI/LLM for Multi-Agent System & NLQ
 openai>=1.58.1,<2.0.0  # Required by langchain-openai 0.2.14
 anthropic==0.39.0
+groq==0.15.0  # Groq cloud API for ultra-fast LLM inference
 
 # Vector Database for RAG
 chromadb==0.4.22
