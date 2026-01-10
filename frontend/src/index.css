@@ -16,6 +16,21 @@ body {
   background-color: #f0f2f5;
 }
 
+:focus-visible {
+  outline: 3px solid var(--focus-ring, #0f5ed7);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid var(--focus-ring, #0f5ed7);
+  outline-offset: 2px;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
