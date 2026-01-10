@@ -23,9 +23,9 @@ const { Header, Content, Footer } = Layout;
 function App() {
   return (
     <Router>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Header style={{ position: 'fixed', zIndex: 1, width: '100%' }}>
-          <div className="logo" style={{ float: 'left', color: 'white', fontSize: '20px', fontWeight: 'bold', marginRight: '50px' }}>
+      <Layout className="app-layout">
+        <Header className="app-header">
+          <div className="logo app-logo">
             REIMS
           </div>
           <Menu theme="dark" mode="horizontal" defaultSelectedKeys={['dashboard']}>
@@ -41,8 +41,8 @@ function App() {
           </Menu>
         </Header>
 
-        <Content style={{ padding: '0 50px', marginTop: 64 }}>
-          <div style={{ background: '#fff', padding: 24, minHeight: 'calc(100vh - 134px)', marginTop: 16 }}>
+        <Content className="app-content">
+          <div className="app-content-inner">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/property/:propertyCode" element={<PropertyDetails />} />
@@ -51,7 +51,7 @@ function App() {
           </div>
         </Content>
 
-        <Footer style={{ textAlign: 'center' }}>
+        <Footer className="app-footer">
           REIMS ©2025 - Real Estate Investment Management System
         </Footer>
       </Layout>

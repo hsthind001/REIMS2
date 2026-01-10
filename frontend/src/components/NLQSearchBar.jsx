@@ -54,6 +54,7 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
           type="text"
           className="nlq-search-input"
           placeholder="e.g., What was cash position in November 2025?"
+          aria-label="Ask a financial question"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyPress={handleKeyPress}
@@ -63,6 +64,7 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
           className="nlq-search-button"
           onClick={handleSearch}
           disabled={loading || !question.trim()}
+          aria-label="Submit natural language query"
         >
           {loading ? (
             <>
@@ -82,16 +84,28 @@ const NLQSearchBar = ({ propertyCode = null, propertyId = null }) => {
         <div className="nlq-suggestions">
           <p>Try asking:</p>
           <div className="nlq-suggestion-chips">
-            <button onClick={() => setQuestion(`What was cash position in November 2025?`)}>
+            <button
+              onClick={() => setQuestion(`What was cash position in November 2025?`)}
+              aria-label="Use suggestion: cash position"
+            >
               Cash position
             </button>
-            <button onClick={() => setQuestion(`How is DSCR calculated?`)}>
+            <button
+              onClick={() => setQuestion(`How is DSCR calculated?`)}
+              aria-label="Use suggestion: formula explanation"
+            >
               Formula explanation
             </button>
-            <button onClick={() => setQuestion(`Show revenue for Q4 2025`)}>
+            <button
+              onClick={() => setQuestion(`Show revenue for Q4 2025`)}
+              aria-label="Use suggestion: quarterly revenue"
+            >
               Quarterly revenue
             </button>
-            <button onClick={() => setQuestion(`Calculate current ratio${propertyCode ? ` for ${propertyCode}` : ''}`)}>
+            <button
+              onClick={() => setQuestion(`Calculate current ratio${propertyCode ? ` for ${propertyCode}` : ''}`)}
+              aria-label="Use suggestion: calculate metric"
+            >
               Calculate metric
             </button>
           </div>
