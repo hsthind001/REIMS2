@@ -11,7 +11,8 @@ import {
   HomeOutlined,
   DollarOutlined,
   CalculatorOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons';
 import NLQSearchBar from '../components/NLQSearchBar';
 import rulesService from '../services/rulesService';
@@ -42,11 +43,16 @@ const PropertyDetails = () => {
         state: 'CA',
         zip: '90001',
         type: 'Multi-Family',
+        risk: 'Moderate',
+        lastUpdated: 'Sep 18, 2024',
         units: 120,
         squareFeet: 95000,
         yearBuilt: 2018,
         purchasePrice: 15000000,
-        currentValue: 18500000
+        currentValue: 18500000,
+        noi: 2100000,
+        dscr: 1.46,
+        occupancy: 0.94
       },
       OAK: {
         id: 2,
@@ -57,11 +63,16 @@ const PropertyDetails = () => {
         state: 'CA',
         zip: '94601',
         type: 'Commercial',
+        risk: 'Elevated',
+        lastUpdated: 'Sep 12, 2024',
         units: 15,
         squareFeet: 45000,
         yearBuilt: 2015,
         purchasePrice: 8000000,
-        currentValue: 9200000
+        currentValue: 9200000,
+        noi: 1250000,
+        dscr: 1.32,
+        occupancy: 0.88
       },
       PIN: {
         id: 3,
@@ -72,11 +83,16 @@ const PropertyDetails = () => {
         state: 'CA',
         zip: '92101',
         type: 'Multi-Family',
+        risk: 'Low',
+        lastUpdated: 'Sep 20, 2024',
         units: 80,
         squareFeet: 65000,
         yearBuilt: 2020,
         purchasePrice: 12000000,
-        currentValue: 13800000
+        currentValue: 13800000,
+        noi: 1750000,
+        dscr: 1.58,
+        occupancy: 0.97
       }
     };
 
@@ -217,13 +233,49 @@ const PropertyDetails = () => {
 
   return (
     <div className="property-details-container page-content">
-      {/* Property Header */}
-      <div className="property-header">
-        <h1>
-          <HomeOutlined /> {property.name} ({property.code})
-        </h1>
-        <p>{property.address}, {property.city}, {property.state} {property.zip}</p>
-      </div>
+      {/* Property Hero */}
+      <section className="property-hero">
+        <div className="property-hero-header">
+          <div>
+            <h1>
+              <HomeOutlined /> {property.name} ({property.code})
+            </h1>
+            <p className="property-hero-address">
+              {property.address}, {property.city}, {property.state} {property.zip}
+            </p>
+            <div className="property-hero-tags">
+              <Tag className={`property-tag property-tag-${property.risk.toLowerCase()}`}>
+                Risk: {property.risk}
+              </Tag>
+              <Tag className="property-tag property-tag-type">
+                Type: {property.type}
+              </Tag>
+              <Tag className="property-tag property-tag-updated">
+                <ClockCircleOutlined /> Last updated: {property.lastUpdated}
+              </Tag>
+            </div>
+          </div>
+          <div className="property-hero-kpis">
+            <div className="property-kpi-card">
+              <span className="property-kpi-label">NOI</span>
+              <span className="property-kpi-value">
+                ${property.noi.toLocaleString()}
+              </span>
+              <span className="property-kpi-subtext">Annualized net operating income</span>
+            </div>
+            <div className="property-kpi-card">
+              <span className="property-kpi-label">DSCR</span>
+              <span className="property-kpi-value">{property.dscr.toFixed(2)}</span>
+              <span className="property-kpi-subtext">Debt service coverage ratio</span>
+            </div>
+            <div className="property-kpi-card">
+              <span className="property-kpi-label">Occupancy</span>
+              <span className="property-kpi-value">{Math.round(property.occupancy * 100)}%</span>
+              <span className="property-kpi-subtext">Trailing 30 days</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <Row gutter={[16, 16]}>
         {/* Property Information */}
@@ -292,16 +344,120 @@ const PropertyDetails = () => {
           <Card>
             <Tabs defaultActiveKey="1">
               <TabPane tab="Financial Statements" key="1">
-                <p>Balance Sheet, Income Statement, Cash Flow</p>
+                <div className="tab-empty-state">
+                  <div className="tab-empty-title">
+                    <FileTextOutlined />
+                    <div>
+                      <h3>Financial statements are compiling</h3>
+                      <p>We will surface the latest statements once ingestion completes.</p>
+                    </div>
+                  </div>
+                  <div className="tab-empty-grid">
+                    <div className="tab-empty-card">
+                      <h4>Planned summaries</h4>
+                      <ul>
+                        <li>Balance sheet snapshots by period</li>
+                        <li>Income statement variance highlights</li>
+                        <li>Cash flow coverage vs. budget</li>
+                      </ul>
+                    </div>
+                    <div className="tab-empty-card">
+                      <h4>Upcoming KPIs</h4>
+                      <ul>
+                        <li>NOI trend lines and seasonality</li>
+                        <li>Expense ratio by category</li>
+                        <li>Debt service coverage history</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </TabPane>
               <TabPane tab="Rent Roll" key="2">
-                <p>Unit details, Occupancy, Lease information</p>
+                <div className="tab-empty-state">
+                  <div className="tab-empty-title">
+                    <FileTextOutlined />
+                    <div>
+                      <h3>Rent roll insights are queued</h3>
+                      <p>Lease-level detail will appear here once uploads are reconciled.</p>
+                    </div>
+                  </div>
+                  <div className="tab-empty-grid">
+                    <div className="tab-empty-card">
+                      <h4>Planned summaries</h4>
+                      <ul>
+                        <li>Unit occupancy and lease expiration ladder</li>
+                        <li>In-place vs. market rent comparisons</li>
+                        <li>Top tenant exposure report</li>
+                      </ul>
+                    </div>
+                    <div className="tab-empty-card">
+                      <h4>Upcoming KPIs</h4>
+                      <ul>
+                        <li>Physical and economic occupancy</li>
+                        <li>Delinquency and concessions</li>
+                        <li>Move-in/move-out velocity</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </TabPane>
               <TabPane tab="Maintenance" key="3">
-                <p>Work orders, Repairs, Capital expenditures</p>
+                <div className="tab-empty-state">
+                  <div className="tab-empty-title">
+                    <FileTextOutlined />
+                    <div>
+                      <h3>Maintenance tracking is in setup</h3>
+                      <p>Service history and capital plans will populate after the next sync.</p>
+                    </div>
+                  </div>
+                  <div className="tab-empty-grid">
+                    <div className="tab-empty-card">
+                      <h4>Planned summaries</h4>
+                      <ul>
+                        <li>Open work orders by priority</li>
+                        <li>CapEx projects and milestones</li>
+                        <li>Vendor performance scorecards</li>
+                      </ul>
+                    </div>
+                    <div className="tab-empty-card">
+                      <h4>Upcoming KPIs</h4>
+                      <ul>
+                        <li>Average days to close</li>
+                        <li>Preventative maintenance compliance</li>
+                        <li>Budget vs. actual spend</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </TabPane>
               <TabPane tab="Documents" key="4">
-                <p>Leases, Contracts, Reports</p>
+                <div className="tab-empty-state">
+                  <div className="tab-empty-title">
+                    <FileTextOutlined />
+                    <div>
+                      <h3>Document vault is warming up</h3>
+                      <p>Agreements, reports, and audits will be indexed here shortly.</p>
+                    </div>
+                  </div>
+                  <div className="tab-empty-grid">
+                    <div className="tab-empty-card">
+                      <h4>Planned summaries</h4>
+                      <ul>
+                        <li>Latest leases and addenda</li>
+                        <li>Insurance, compliance, and inspection files</li>
+                        <li>Annual reporting pack</li>
+                      </ul>
+                    </div>
+                    <div className="tab-empty-card">
+                      <h4>Upcoming KPIs</h4>
+                      <ul>
+                        <li>Document coverage by category</li>
+                        <li>Missing critical expirations</li>
+                        <li>Audit trail activity</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </TabPane>
               <TabPane tab="Rules" key="5">
                 <Space direction="vertical" style={{ width: '100%' }}>
