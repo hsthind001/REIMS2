@@ -1,11 +1,80 @@
 /* Main App Styles */
 
-.logo {
-  float: left;
-  color: white;
+.app-layout {
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+.app-header {
+  position: fixed;
+  z-index: 10;
+  width: 100%;
+  padding: 0 32px;
+  background: #001529;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.15);
+}
+
+.app-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  height: 64px;
+}
+
+.app-logo {
+  color: #fff;
   font-size: 20px;
-  font-weight: bold;
-  margin-right: 50px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.app-nav-desktop {
+  flex: 1;
+}
+
+.app-menu {
+  font-weight: 500;
+}
+
+.app-menu-horizontal {
+  line-height: 64px;
+}
+
+.app-mobile-trigger {
+  display: none;
+  color: #fff;
+  font-size: 20px;
+}
+
+.app-mobile-drawer .ant-drawer-body {
+  padding: 0;
+  background: #001529;
+}
+
+.app-mobile-drawer .ant-menu {
+  background: transparent;
+}
+
+.app-content {
+  padding: 0 50px;
+  margin-top: 64px;
+}
+
+.app-content-card {
+  background: #fff;
+  padding: 32px;
+  min-height: calc(100vh - 146px);
+  margin-top: 16px;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.app-footer {
+  text-align: center;
+  padding: 24px 16px;
+  color: #64748b;
+  background: transparent;
 }
 
 /* Global styles */
@@ -28,12 +97,8 @@ code {
 }
 
 /* Ant Design overrides */
-.ant-layout-header {
-  padding: 0 50px;
-}
-
-.ant-menu-dark.ant-menu-horizontal {
-  line-height: 64px;
+.ant-menu-dark.ant-menu-inline .ant-menu-item {
+  margin: 0;
 }
 
 /* Page transitions */
@@ -49,5 +114,36 @@ code {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    padding: 0 20px;
+  }
+
+  .app-nav-desktop {
+    display: none;
+  }
+
+  .app-mobile-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-content {
+    padding: 0 20px;
+  }
+
+  .app-content-card {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-content-card {
+    padding: 20px;
+    margin-top: 12px;
   }
 }

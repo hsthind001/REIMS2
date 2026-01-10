@@ -6,7 +6,7 @@
   padding: 24px;
   background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
 .nlq-search-header {
@@ -16,13 +16,15 @@
 .nlq-search-header h3 {
   margin: 0 0 8px 0;
   font-size: 24px;
-  color: #1890ff;
+  color: #1f4b99;
+  font-weight: 600;
 }
 
 .nlq-search-header p {
   margin: 0;
-  color: #666;
+  color: #4b5563;
   font-size: 14px;
+  line-height: 1.6;
 }
 
 .nlq-search-input-group {
@@ -35,19 +37,31 @@
   flex: 1;
   padding: 12px 16px;
   font-size: 16px;
-  border: 2px solid #d9d9d9;
+  border: 2px solid #d0d7de;
   border-radius: 6px;
   transition: all 0.3s;
+  color: #1f2937;
+  background: #fff;
 }
 
 .nlq-search-input:focus {
   outline: none;
-  border-color: #1890ff;
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.nlq-search-input:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 1px;
+}
+
+.nlq-search-input::placeholder {
+  color: #9ca3af;
 }
 
 .nlq-search-input:disabled {
-  background: #f5f5f5;
+  background: #f3f4f6;
+  color: #9ca3af;
   cursor: not-allowed;
 }
 
@@ -56,7 +70,7 @@
   font-size: 16px;
   font-weight: 600;
   color: #fff;
-  background: #1890ff;
+  background: #2563eb;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -68,9 +82,14 @@
 }
 
 .nlq-search-button:hover:not(:disabled) {
-  background: #40a9ff;
+  background: #3b82f6;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
+
+.nlq-search-button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
 }
 
 .nlq-search-button:active:not(:disabled) {
@@ -78,7 +97,8 @@
 }
 
 .nlq-search-button:disabled {
-  background: #d9d9d9;
+  background: #d1d5db;
+  color: #f9fafb;
   cursor: not-allowed;
 }
 
@@ -115,7 +135,7 @@
 .nlq-suggestions p {
   margin: 0 0 8px 0;
   font-size: 13px;
-  color: #666;
+  color: #4b5563;
 }
 
 .nlq-suggestion-chips {
@@ -127,31 +147,36 @@
 .nlq-suggestion-chips button {
   padding: 6px 12px;
   font-size: 13px;
-  color: #1890ff;
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.3s;
 }
 
 .nlq-suggestion-chips button:hover {
-  background: #bae7ff;
-  border-color: #69c0ff;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.nlq-suggestion-chips button:focus-visible {
+  outline: 2px solid rgba(29, 78, 216, 0.45);
+  outline-offset: 2px;
 }
 
 /* Loading */
 .nlq-loading {
   text-align: center;
   padding: 40px;
-  background: #f9f9f9;
+  background: #f8fafc;
   border-radius: 6px;
   margin-top: 16px;
 }
 
 .nlq-loading p {
   margin: 16px 0 0 0;
-  color: #666;
+  color: #4b5563;
   font-size: 14px;
 }
 
@@ -173,14 +198,14 @@
 
 .nlq-error p {
   margin: 0;
-  color: #666;
+  color: #4b5563;
   font-size: 14px;
 }
 
 /* Result */
 .nlq-result {
   margin-top: 20px;
-  background: #f9f9f9;
+  background: #f8fafc;
   border-left: 4px solid #52c41a;
   border-radius: 6px;
   padding: 20px;
