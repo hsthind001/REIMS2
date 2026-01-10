@@ -1,11 +1,85 @@
 /* Main App Styles */
 
-.logo {
-  float: left;
+.app-header {
+  position: fixed;
+  z-index: 10;
+  width: 100%;
+  height: var(--app-header-height);
+  line-height: var(--app-header-height);
+  padding: 0 var(--app-horizontal-padding);
+  display: flex;
+  align-items: center;
+}
+
+.app-header-inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--app-logo-gap);
+}
+
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--app-content-gap);
+}
+
+.app-logo {
   color: white;
   font-size: 20px;
-  font-weight: bold;
-  margin-right: 50px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.app-menu {
+  flex: 1;
+}
+
+.app-menu-button {
+  color: #fff;
+}
+
+.app-menu-button:hover,
+.app-menu-button:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (min-width: 769px) {
+  .app-menu-button {
+    display: none;
+  }
+}
+
+.app-drawer .ant-drawer-header-title {
+  font-weight: 600;
+}
+
+.app-content {
+  padding: 0 var(--app-horizontal-padding);
+  margin-top: var(--app-header-height);
+}
+
+.app-content-inner {
+  background: #fff;
+  padding: var(--app-content-padding);
+  min-height: calc(100vh - var(--app-header-height) - 70px);
+  margin-top: var(--app-content-gap);
+  border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 var(--app-content-gap);
+  }
+
+  .app-menu {
+    display: none;
+  }
+
+  .app-content {
+    padding: 0 var(--app-content-gap);
+  }
 }
 
 /* Global styles */
@@ -28,12 +102,8 @@ code {
 }
 
 /* Ant Design overrides */
-.ant-layout-header {
-  padding: 0 50px;
-}
-
 .ant-menu-dark.ant-menu-horizontal {
-  line-height: 64px;
+  line-height: var(--app-header-height);
 }
 
 /* Page transitions */
