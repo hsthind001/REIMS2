@@ -65,7 +65,7 @@ npm run dev
 
 ### 4. Access Dashboard
 
-Navigate to: `http://localhost:3000/#forensic-reconciliation`
+Navigate to: `http://localhost:5173/#forensic-reconciliation`
 
 ---
 

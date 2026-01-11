@@ -77,7 +77,7 @@ uvicorn app.main:app --reload
 npm start
 ```
 
-The app will open at `http://localhost:3000`
+The app will open at `http://localhost:5173`
 
 ## 📱 Pages & Routes
 

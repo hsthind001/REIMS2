@@ -151,6 +151,7 @@ const LocationIntelligencePanel: React.FC<LocationIntelligencePanelProps> = ({
   const transitLabels: Record<string, string> = {
     bus_stops_0_5mi: 'Bus Stops (0.5 mi)',
     subway_stations_1mi: 'Subway/Rail Stations (1 mi)',
+    rail_stations_2mi: 'Rail Stations (2 mi)',
     commute_time_downtown_min: 'Est. Commute to Downtown (min)',
   };
 

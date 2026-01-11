@@ -79,6 +79,16 @@ const MarketIntelligenceDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoFetchingLocation, setAutoFetchingLocation] = useState(false);
+  const [locationFetchAttempted, setLocationFetchAttempted] = useState(false);
+  const [autoFetchingEsg, setAutoFetchingEsg] = useState(false);
+  const [esgFetchAttempted, setEsgFetchAttempted] = useState(false);
+  const [autoFetchingForecasts, setAutoFetchingForecasts] = useState(false);
+  const [forecastsFetchAttempted, setForecastsFetchAttempted] = useState(false);
+  const [autoFetchingCompetitive, setAutoFetchingCompetitive] = useState(false);
+  const [competitiveFetchAttempted, setCompetitiveFetchAttempted] = useState(false);
+  const [autoFetchingInsights, setAutoFetchingInsights] = useState(false);
+  const [insightsFetchAttempted, setInsightsFetchAttempted] = useState(false);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -91,9 +101,149 @@ const MarketIntelligenceDashboard: React.FC = () => {
 
   useEffect(() => {
     if (propertyCode) {
+      setLocationFetchAttempted(false);
+       setEsgFetchAttempted(false);
+      setForecastsFetchAttempted(false);
+      setCompetitiveFetchAttempted(false);
+      setInsightsFetchAttempted(false);
       loadMarketIntelligence();
     }
   }, [propertyCode]);
+
+  useEffect(() => {
+    const fetchMissingLocation = async () => {
+      if (!propertyCode || !marketIntel || marketIntel.location_intelligence || locationFetchAttempted) return;
+
+      try {
+        setAutoFetchingLocation(true);
+        setLocationFetchAttempted(true);
+        const response = await marketIntelligenceService.getLocationIntelligence(propertyCode, { refresh: true });
+        setMarketIntel(prev =>
+          prev
+            ? {
+                ...prev,
+                location_intelligence: response.location_intelligence,
+                last_refreshed: response.last_refreshed || prev.last_refreshed,
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error('Auto-fetch location intelligence failed:', err);
+      } finally {
+        setAutoFetchingLocation(false);
+      }
+    };
+
+    fetchMissingLocation();
+  }, [propertyCode, marketIntel, locationFetchAttempted]);
+
+  useEffect(() => {
+    const fetchMissingEsg = async () => {
+      if (!propertyCode || !marketIntel || marketIntel.esg_assessment || esgFetchAttempted) return;
+
+      try {
+        setAutoFetchingEsg(true);
+        setEsgFetchAttempted(true);
+        const response = await marketIntelligenceService.getESGAssessment(propertyCode, { refresh: true });
+        setMarketIntel(prev =>
+          prev
+            ? {
+                ...prev,
+                esg_assessment: response.esg_assessment,
+                last_refreshed: response.last_refreshed || prev.last_refreshed,
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error('Auto-fetch ESG assessment failed:', err);
+      } finally {
+        setAutoFetchingEsg(false);
+      }
+    };
+
+    fetchMissingEsg();
+  }, [propertyCode, marketIntel, esgFetchAttempted]);
+
+  useEffect(() => {
+    const fetchMissingForecasts = async () => {
+      if (!propertyCode || !marketIntel || marketIntel.forecasts || forecastsFetchAttempted) return;
+
+      try {
+        setAutoFetchingForecasts(true);
+        setForecastsFetchAttempted(true);
+        const response = await marketIntelligenceService.getForecasts(propertyCode, { refresh: true });
+        setMarketIntel(prev =>
+          prev
+            ? {
+                ...prev,
+                forecasts: response.forecasts,
+                last_refreshed: response.last_refreshed || prev.last_refreshed,
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error('Auto-fetch forecasts failed:', err);
+      } finally {
+        setAutoFetchingForecasts(false);
+      }
+    };
+
+    fetchMissingForecasts();
+  }, [propertyCode, marketIntel, forecastsFetchAttempted]);
+
+  useEffect(() => {
+    const fetchMissingCompetitive = async () => {
+      if (!propertyCode || !marketIntel || marketIntel.competitive_analysis || competitiveFetchAttempted) return;
+
+      try {
+        setAutoFetchingCompetitive(true);
+        setCompetitiveFetchAttempted(true);
+        const response = await marketIntelligenceService.getCompetitiveAnalysis(propertyCode, { refresh: true });
+        setMarketIntel(prev =>
+          prev
+            ? {
+                ...prev,
+                competitive_analysis: response.competitive_analysis,
+                last_refreshed: response.last_refreshed || prev.last_refreshed,
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error('Auto-fetch competitive analysis failed:', err);
+      } finally {
+        setAutoFetchingCompetitive(false);
+      }
+    };
+
+    fetchMissingCompetitive();
+  }, [propertyCode, marketIntel, competitiveFetchAttempted]);
+
+  useEffect(() => {
+    const fetchMissingInsights = async () => {
+      if (!propertyCode || !marketIntel || marketIntel.ai_insights || insightsFetchAttempted) return;
+
+      try {
+        setAutoFetchingInsights(true);
+        setInsightsFetchAttempted(true);
+        const response = await marketIntelligenceService.getAIInsights(propertyCode, { refresh: true });
+        setMarketIntel(prev =>
+          prev
+            ? {
+                ...prev,
+                ai_insights: response.ai_insights,
+                last_refreshed: response.last_refreshed || prev.last_refreshed,
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error('Auto-fetch AI insights failed:', err);
+      } finally {
+        setAutoFetchingInsights(false);
+      }
+    };
+
+    fetchMissingInsights();
+  }, [propertyCode, marketIntel, insightsFetchAttempted]);
 
   const loadMarketIntelligence = async () => {
     if (!propertyCode) return;
@@ -288,31 +438,26 @@ const MarketIntelligenceDashboard: React.FC = () => {
             icon={<AssessmentIcon />}
             label="Location Intelligence"
             iconPosition="start"
-            disabled={!marketIntel.location_intelligence}
           />
           <Tab
             icon={<EcoIcon />}
             label="ESG Assessment"
             iconPosition="start"
-            disabled={!marketIntel.esg_assessment}
           />
           <Tab
             icon={<TimelineIcon />}
             label="Forecasts"
             iconPosition="start"
-            disabled={!marketIntel.forecasts}
           />
           <Tab
             icon={<CompetitiveIcon />}
             label="Competitive Analysis"
             iconPosition="start"
-            disabled={!marketIntel.competitive_analysis}
           />
           <Tab
             icon={<AIIcon />}
             label="AI Insights"
             iconPosition="start"
-            disabled={!marketIntel.ai_insights}
           />
           <Tab icon={<HistoryIcon />} label="Data Lineage" iconPosition="start" />
         </Tabs>
@@ -377,15 +522,17 @@ const MarketIntelligenceDashboard: React.FC = () => {
             />
           ) : (
             <Box p={3}>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No location intelligence data available for this property.
+              <Alert severity={autoFetchingLocation ? 'info' : 'warning'} sx={{ mb: 2 }}>
+                {autoFetchingLocation
+                  ? 'Fetching location intelligence for this property...'
+                  : 'No location intelligence data available for this property.'}
               </Alert>
               <Button
                 variant="contained"
                 onClick={() => handleRefresh(['location'])}
-                disabled={refreshing}
+                disabled={refreshing || autoFetchingLocation}
               >
-                Fetch Location Intelligence
+                {autoFetchingLocation ? 'Loading...' : 'Fetch Location Intelligence'}
               </Button>
             </Box>
           )}
@@ -401,15 +548,17 @@ const MarketIntelligenceDashboard: React.FC = () => {
             />
           ) : (
             <Box p={3}>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No ESG assessment data available for this property.
+              <Alert severity={autoFetchingEsg ? 'info' : 'warning'} sx={{ mb: 2 }}>
+                {autoFetchingEsg
+                  ? 'Fetching ESG assessment for this property...'
+                  : 'No ESG assessment data available for this property.'}
               </Alert>
               <Button
                 variant="contained"
                 onClick={() => handleRefresh(['esg'])}
-                disabled={refreshing}
+                disabled={refreshing || autoFetchingEsg}
               >
-                Fetch ESG Assessment
+                {autoFetchingEsg ? 'Loading...' : 'Fetch ESG Assessment'}
               </Button>
             </Box>
           )}
@@ -425,15 +574,17 @@ const MarketIntelligenceDashboard: React.FC = () => {
             />
           ) : (
             <Box p={3}>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No forecast data available for this property.
+              <Alert severity={autoFetchingForecasts ? 'info' : 'warning'} sx={{ mb: 2 }}>
+                {autoFetchingForecasts
+                  ? 'Generating forecasts for this property...'
+                  : 'No forecast data available for this property.'}
               </Alert>
               <Button
                 variant="contained"
                 onClick={() => handleRefresh(['forecasts'])}
-                disabled={refreshing}
+                disabled={refreshing || autoFetchingForecasts}
               >
-                Generate Forecasts
+                {autoFetchingForecasts ? 'Loading...' : 'Generate Forecasts'}
               </Button>
             </Box>
           )}
@@ -449,15 +600,17 @@ const MarketIntelligenceDashboard: React.FC = () => {
             />
           ) : (
             <Box p={3}>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No competitive analysis data available for this property.
+              <Alert severity={autoFetchingCompetitive ? 'info' : 'warning'} sx={{ mb: 2 }}>
+                {autoFetchingCompetitive
+                  ? 'Generating competitive analysis for this property...'
+                  : 'No competitive analysis data available for this property.'}
               </Alert>
               <Button
                 variant="contained"
                 onClick={() => handleRefresh(['competitive'])}
-                disabled={refreshing}
+                disabled={refreshing || autoFetchingCompetitive}
               >
-                Generate Competitive Analysis
+                {autoFetchingCompetitive ? 'Loading...' : 'Generate Competitive Analysis'}
               </Button>
             </Box>
           )}
@@ -473,15 +626,17 @@ const MarketIntelligenceDashboard: React.FC = () => {
             />
           ) : (
             <Box p={3}>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No AI insights available for this property.
+              <Alert severity={autoFetchingInsights ? 'info' : 'warning'} sx={{ mb: 2 }}>
+                {autoFetchingInsights
+                  ? 'Generating AI insights for this property...'
+                  : 'No AI insights available for this property.'}
               </Alert>
               <Button
                 variant="contained"
                 onClick={() => handleRefresh(['insights'])}
-                disabled={refreshing}
+                disabled={refreshing || autoFetchingInsights}
               >
-                Generate AI Insights
+                {autoFetchingInsights ? 'Loading...' : 'Generate AI Insights'}
               </Button>
             </Box>
           )}

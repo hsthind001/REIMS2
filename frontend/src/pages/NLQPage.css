@@ -20,26 +20,51 @@
 
 .nlq-page-header p {
   margin: 0;
-  color: #666;
+  color: var(--color-text-muted);
   font-size: 16px;
 }
 
-/* History items */
-.history-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
+.conversation-card {
+  height: 100%;
 }
 
-.history-item:last-child {
-  border-bottom: none;
+.conversation-section {
+  margin-bottom: 20px;
 }
 
-.history-timestamp {
+.conversation-section:last-child {
+  margin-bottom: 0;
+}
+
+.conversation-label {
   font-size: 12px;
-  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #6b7280;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.conversation-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conversation-chip {
+  text-align: left;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  white-space: normal;
+  height: auto;
+  line-height: 1.4;
+}
+
+.conversation-chip.pinned {
+  border-style: dashed;
+  background: #f7f3ff;
+  color: #531dab;
 }
 
 /* Example queries */

@@ -13,7 +13,18 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f0f2f5;
+  background-color: var(--color-background, #f0f2f5);
+}
+
+:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role='button']:focus-visible {
+  outline: 3px solid var(--focus-ring, #0f5ed7);
+  outline-offset: 2px;
 }
 
 code {

@@ -151,10 +151,10 @@ curl -X POST http://localhost:8000/api/v1/alert-rules/1/test \
 Upload a document that will trigger an alert (e.g., income statement with low DSCR).
 
 ### 3. View Alerts
-Navigate to: http://localhost:3000/#/risk-management
+Navigate to: http://localhost:5173/#/risk-management
 
 ### 4. Manage Rules
-Navigate to: http://localhost:3000/#alert-rules
+Navigate to: http://localhost:5173/#alert-rules
 
 ### 5. Check Notifications
 Click the notification bell in the header.
@@ -189,10 +189,10 @@ docker exec reims-postgres psql -U reims -d reims -c "SELECT rule_name, is_activ
 curl http://localhost:8000/api/v1/risk-alerts/summary
 
 # View alert dashboard
-# Navigate to: http://localhost:3000/#/risk-management
+# Navigate to: http://localhost:5173/#/risk-management
 
 # Manage rules
-# Navigate to: http://localhost:3000/#alert-rules
+# Navigate to: http://localhost:5173/#alert-rules
 ```
 
 ## Support

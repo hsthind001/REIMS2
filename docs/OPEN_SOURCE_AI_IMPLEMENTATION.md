@@ -146,7 +146,7 @@ ai_insights = await ai_service.generate_ai_insights(
 
 ```bash
 # Access beautiful UI for testing models
-# Open browser: http://localhost:3000
+# Open browser: http://localhost:5173
 
 # Test prompts interactively
 # Switch between models

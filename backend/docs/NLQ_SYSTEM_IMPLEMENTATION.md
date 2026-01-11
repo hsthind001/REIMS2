@@ -598,7 +598,7 @@ POST /api/v1/nlq/query
 
 Access metrics at:
 - Prometheus: `http://localhost:9090/metrics`
-- Grafana: `http://localhost:3000`
+- Grafana: `http://localhost:5173`
 
 ---
 

@@ -203,7 +203,7 @@ class AlertNotificationService:
             <p><strong>Property:</strong> {property_obj.property_name}</p>
             <p><strong>Severity:</strong> {alert.severity.value}</p>
             <p><strong>Status:</strong> {alert.status.value}</p>
-            <p><a href="http://localhost:3000/#/risk-management?alert={alert.id}">View Alert</a></p>
+            <p><a href="http://localhost:5173/#/risk-management?alert={alert.id}">View Alert</a></p>
         </body>
         </html>
         """
@@ -282,7 +282,7 @@ class AlertNotificationService:
                 <p>{alert.description or 'No description provided'}</p>
                 
                 <div style="margin-top: 30px; padding: 15px; background: #f5f5f5; border-radius: 5px;">
-                    <a href="http://localhost:3000/#/risk-management?alert={alert.id}" 
+                    <a href="http://localhost:5173/#/risk-management?alert={alert.id}" 
                        style="background: {severity_color}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
                         View Alert in REIMS
                     </a>
@@ -334,7 +334,7 @@ class AlertNotificationService:
             html += f"""
                         <tr>
                             <td style="padding: 10px; border: 1px solid #ddd;">
-                                <a href="http://localhost:3000/#/risk-management?alert={alert.id}">{alert.title}</a>
+                                <a href="http://localhost:5173/#/risk-management?alert={alert.id}">{alert.title}</a>
                             </td>
                             <td style="padding: 10px; border: 1px solid #ddd; color: {severity_color};">
                                 {alert.severity.value}
@@ -353,7 +353,7 @@ class AlertNotificationService:
                 </table>
                 
                 <div style="margin-top: 30px; padding: 15px; background: #f5f5f5; border-radius: 5px;">
-                    <a href="http://localhost:3000/#/risk-management" 
+                    <a href="http://localhost:5173/#/risk-management" 
                        style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
                         View All Alerts in REIMS
                     </a>

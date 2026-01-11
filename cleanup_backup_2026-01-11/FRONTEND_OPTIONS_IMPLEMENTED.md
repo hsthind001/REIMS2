@@ -9,7 +9,7 @@ Both requested integration options have been fully implemented and are ready to 
 ### ✅ **Option 1: Simple Search Integration**
 **Location:** Dashboard page
 **File:** `frontend/src/pages/Dashboard.jsx`
-**Route:** `http://localhost:3000/`
+**Route:** `http://localhost:5173/`
 
 **Implementation:**
 ```jsx
@@ -31,7 +31,7 @@ Both requested integration options have been fully implemented and are ready to 
 ### ✅ **Option 2: Card Integration**
 **Location:** Property Details page
 **File:** `frontend/src/pages/PropertyDetails.jsx`
-**Route:** `http://localhost:3000/property/ESP` (or OAK, PIN, MAP)
+**Route:** `http://localhost:5173/property/ESP` (or OAK, PIN, MAP)
 
 **Implementation:**
 ```jsx
@@ -63,7 +63,7 @@ Both requested integration options have been fully implemented and are ready to 
 ### 🎁 **Bonus: Dedicated NLQ Page**
 **Location:** NLQ Search page
 **File:** `frontend/src/pages/NLQPage.jsx`
-**Route:** `http://localhost:3000/nlq`
+**Route:** `http://localhost:5173/nlq`
 
 **Features:**
 - Full-featured search interface
@@ -144,13 +144,13 @@ cd /home/hsthind/Documents/GitHub/REIMS2
 
 **Done!** 🎉
 
-The app opens at `http://localhost:3000`
+The app opens at `http://localhost:5173`
 
 ---
 
 ## 🎨 Screenshots Preview
 
-### Option 1: Dashboard (http://localhost:3000/)
+### Option 1: Dashboard (http://localhost:5173/)
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -178,7 +178,7 @@ The app opens at `http://localhost:3000`
 └────────────────────────────────────────────────────────────┘
 ```
 
-### Option 2: Property Details (http://localhost:3000/property/ESP)
+### Option 2: Property Details (http://localhost:5173/property/ESP)
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -211,7 +211,7 @@ The app opens at `http://localhost:3000`
 
 ### Option 1 - Dashboard Search
 
-1. Go to `http://localhost:3000/`
+1. Go to `http://localhost:5173/`
 2. Select property "Esperanza (ESP)" from dropdown
 3. Type: **"What was cash position in November 2025?"**
 4. Click **"Ask"**
@@ -219,7 +219,7 @@ The app opens at `http://localhost:3000`
 
 ### Option 2 - Property-Specific Search
 
-1. Go to `http://localhost:3000/property/ESP`
+1. Go to `http://localhost:5173/property/ESP`
 2. Scroll to "Ask Questions About Esperanza" card
 3. Type: **"Calculate DSCR for this property"**
 4. Click **"Ask"**
@@ -399,6 +399,6 @@ npm start
 **Your NLQ-powered React frontend is ready to use!** 🎉
 
 Visit:
-- **Option 1:** http://localhost:3000/
-- **Option 2:** http://localhost:3000/property/ESP
-- **Bonus:** http://localhost:3000/nlq
+- **Option 1:** http://localhost:5173/
+- **Option 2:** http://localhost:5173/property/ESP
+- **Bonus:** http://localhost:5173/nlq

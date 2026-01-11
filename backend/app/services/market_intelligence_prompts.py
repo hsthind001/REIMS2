@@ -575,24 +575,38 @@ def generate_market_trends_prompt(
     demographics = _extract_data(market_data.get("demographics"))
     forecasts = _extract_data(market_data.get("forecasts"))
 
+    gdp_growth = _safe_get(economic, 'gdp_growth', 0, float)
+    unemployment_rate = _safe_get(economic, 'unemployment_rate', 0, float)
+    inflation_rate = _safe_get(economic, 'inflation_rate', 0, float)
+    federal_funds_rate = _safe_get(economic, 'federal_funds_rate', 0, float)
+    recession_probability = _safe_get(economic, 'recession_probability', 0, float)
+
+    total_population = _safe_get(demographics, 'total_population', 0, int)
+    median_income = _safe_get(demographics, 'median_household_income', 0, int)
+    college_educated = _safe_get(demographics, 'college_educated_percentage', 0, float)
+
+    rent_growth = _safe_get(forecasts, 'rent_growth_percentage', 0, float)
+    occupancy = _safe_get(forecasts, 'occupancy_percentage', 0, float)
+    cap_rate = _safe_get(forecasts, 'cap_rate', 0, float)
+
     prompt = f"""Synthesize market trends for property {property_code} based on current and historical data.
 
 **CURRENT ECONOMIC CONDITIONS:**
-- GDP Growth: {economic.get('gdp_growth', 0):.2f}%
-- Unemployment: {economic.get('unemployment_rate', 0):.2f}%
-- Inflation: {economic.get('inflation_rate', 0):.2f}%
-- Federal Funds Rate: {economic.get('federal_funds_rate', 0):.2f}%
-- Recession Probability: {economic.get('recession_probability', 0):.2f}%
+- GDP Growth: {gdp_growth:.2f}%
+- Unemployment: {unemployment_rate:.2f}%
+- Inflation: {inflation_rate:.2f}%
+- Federal Funds Rate: {federal_funds_rate:.2f}%
+- Recession Probability: {recession_probability:.2f}%
 
 **DEMOGRAPHIC TRENDS:**
-- Population: {demographics.get('total_population', 0):,}
-- Median Income: ${demographics.get('median_household_income', 0):,}
-- College Educated: {demographics.get('college_educated_percentage', 0):.1f}%
+- Population: {total_population:,}
+- Median Income: ${median_income:,}
+- College Educated: {college_educated:.1f}%
 
 **FORECASTS:**
-- Projected Rent Growth: {forecasts.get('rent_growth_percentage', 0):.2f}%
-- Projected Occupancy: {forecasts.get('occupancy_percentage', 0):.1f}%
-- Projected Cap Rate: {forecasts.get('cap_rate', 0):.2f}%
+- Projected Rent Growth: {rent_growth:.2f}%
+- Projected Occupancy: {occupancy:.1f}%
+- Projected Cap Rate: {cap_rate:.2f}%
 
 ---
 

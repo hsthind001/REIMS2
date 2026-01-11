@@ -91,8 +91,19 @@ export interface Amenities {
 
 export interface TransitAccess {
   bus_stops_0_5mi: number;
-  subway_stations_1mi: number;
+  subway_stations_1mi?: number;
+  rail_stations_2mi?: number;
   commute_time_downtown_min: number;
+}
+
+export interface DriveTimes {
+  sample_drive_min?: number;
+  [key: string]: number | undefined;
+}
+
+export interface Isochrone {
+  minutes?: number;
+  geometry?: Record<string, any>;
 }
 
 export interface LocationIntelligenceData {
@@ -103,6 +114,8 @@ export interface LocationIntelligenceData {
   transit_access: TransitAccess;
   crime_index: number;
   school_rating_avg: number;
+  drive_times?: DriveTimes;
+  isochrones?: Isochrone[];
 }
 
 export type LocationIntelligence = TaggedData<LocationIntelligenceData>;

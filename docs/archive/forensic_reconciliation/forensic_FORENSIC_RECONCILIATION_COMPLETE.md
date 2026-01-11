@@ -126,7 +126,7 @@ curl -X GET http://localhost:8000/api/v1/forensic-reconciliation/dashboard/1/1 \
 
 Start the frontend and navigate to:
 ```
-http://localhost:3000/#forensic-reconciliation
+http://localhost:5173/#forensic-reconciliation
 ```
 
 Verify:

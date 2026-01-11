@@ -147,7 +147,10 @@
       "Bash(docker inspect:*)",
       "Bash(docker stop:*)",
       "Bash(docker start:*)",
-      "Bash(docker stats --no-stream --format \"table {{.Name}}\\\\t{{.MemUsage}}\\\\t{{.MemPerc}}\")"
+      "Bash(docker stats --no-stream --format \"table {{.Name}}\\\\t{{.MemUsage}}\\\\t{{.MemPerc}}\")",
+      "Bash(docker rm:*)",
+      "Bash(sudo rm:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }
