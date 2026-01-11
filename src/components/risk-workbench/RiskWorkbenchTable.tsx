@@ -7,6 +7,7 @@
 import { useState, useMemo } from 'react';
 import { Eye, AlertCircle, Trash2 } from 'lucide-react';
 import { ExportButton } from '../ExportButton';
+import { Skeleton as UISkeleton } from '../ui/Skeleton';
 
 export interface RiskItem {
   id: number;
@@ -159,15 +160,6 @@ export default function RiskWorkbenchTable({
     }
   };
 
-  if (loading) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <div className="spinner"></div>
-        <p>Loading risk items...</p>
-      </div>
-    );
-  }
-
   return (
     <div style={{ padding: '1.5rem' }}>
       {/* Actions */}
@@ -191,9 +183,24 @@ export default function RiskWorkbenchTable({
 
       {/* Table */}
       <div style={{ overflowX: 'auto', border: '1px solid #ddd', borderRadius: '4px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
+        {loading ? (
+          <div style={{ padding: '1rem' }}>
+            {[...Array(6)].map((_, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <UISkeleton style={{ width: '12%', height: '0.85rem' }} />
+                <UISkeleton style={{ width: '18%', height: '0.85rem' }} />
+                <UISkeleton style={{ width: '10%', height: '0.85rem' }} />
+                <UISkeleton style={{ width: '10%', height: '0.85rem' }} />
+                <UISkeleton style={{ width: '14%', height: '0.85rem' }} />
+                <UISkeleton style={{ width: '8%', height: '0.85rem' }} />
+                <UISkeleton style={{ width: '10%', height: '0.85rem' }} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
               <th
                 style={{
                   padding: '0.75rem',
@@ -421,8 +428,9 @@ export default function RiskWorkbenchTable({
                 </tr>
               ))
             )}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div style={{ marginTop: '1rem', color: '#6c757d', fontSize: '0.875rem' }}>

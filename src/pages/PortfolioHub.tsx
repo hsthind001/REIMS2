@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   FileText,
@@ -14,16 +14,19 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { Card, Button, ProgressBar } from '../components/design-system';
+import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
 import { PropertyMap } from '../components/PropertyMap';
 import { propertyService } from '../lib/property';
 import { mortgageService } from '../lib/mortgage';
 import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
+import { AlertService } from '../lib/alerts';
 import { financialDataService } from '../lib/financial_data';
 import { financialPeriodsService } from '../lib/financial_periods';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { MortgageMetricsWidget } from '../components/mortgage/MortgageMetricsWidget';
 import { MortgageStatementDetails } from '../components/mortgage/MortgageStatementDetails';
+import { InlineEdit } from '../components/ui/InlineEdit';
 import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/exportUtils';
 import type { Property, PropertyCreate, DocumentUpload as DocumentUploadType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
@@ -154,6 +157,9 @@ type DetailTab = 'overview' | 'financials' | 'market' | 'tenants' | 'docs';
 export default function PortfolioHub() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [comparisonSet, setComparisonSet] = useState<Set<number>>(new Set());
+  const [quickFilter, setQuickFilter] = useState<'all' | 'high-performers' | 'at-risk' | 'recent'>('all');
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [metrics, setMetrics] = useState<PropertyMetrics | null>(null);
   const [costs, setCosts] = useState<PropertyCosts | null>(null);
   const [unitInfo, setUnitInfo] = useState<UnitInfo | null>(null);
@@ -179,7 +185,15 @@ export default function PortfolioHub() {
   const [tenantDetails, setTenantDetails] = useState<any[]>([]);
   const [loadingTenants, setLoadingTenants] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [alertCounts, setAlertCounts] = useState<Map<number, number>>(new Map());
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setQuickFilter('all');
+    setSortBy('noi');
+  };
+  const comparisonModalRef = useRef<HTMLDivElement | null>(null);
   const locationScore = marketIntel?.locationScore ?? 0;
+  const metricsLoading = Boolean(selectedProperty && !metrics);
 
   useEffect(() => {
     loadProperties();
@@ -213,6 +227,34 @@ export default function PortfolioHub() {
       loadTenantDetails(selectedProperty.id);
     }
   }, [selectedProperty, selectedYear, selectedMonth]);
+
+  const handlePropertyNameSave = async (nextName: string) => {
+    if (!selectedProperty) return;
+    const trimmed = nextName.trim();
+    if (!trimmed) {
+      throw new Error('Name is required');
+    }
+
+    const previous = selectedProperty;
+    const optimistic = { ...selectedProperty, property_name: trimmed, name: trimmed };
+
+    // Optimistic UI update for detail header and list cards
+    setSelectedProperty(optimistic);
+    setProperties((prev) =>
+      prev.map((p) => (p.id === optimistic.id ? { ...p, property_name: trimmed, name: trimmed } : p))
+    );
+
+    try {
+      const updated = await propertyService.updateProperty(selectedProperty.id, { property_name: trimmed });
+      setSelectedProperty(updated);
+      setProperties((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+    } catch (error) {
+      // Revert on failure so the user never sees stale data
+      setSelectedProperty(previous);
+      setProperties((prev) => prev.map((p) => (p.id === previous.id ? previous : p)));
+      throw error;
+    }
+  };
 
   const loadProperties = async () => {
     try {
@@ -1005,10 +1047,90 @@ export default function PortfolioHub() {
     }
   };
 
-  const filteredProperties = properties.filter(p => 
-    p.property_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.property_code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    if (comparisonSet.size === 0) {
+      setAlertCounts(new Map());
+      return;
+    }
+    let cancelled = false;
+    const loadAlerts = async () => {
+      const entries = await Promise.all(
+        Array.from(comparisonSet).map(async (id) => {
+          try {
+            const summary = await AlertService.getSummary({ property_id: id, days: 90 });
+            return [id, summary?.active_alerts ?? summary?.total_alerts ?? 0] as const;
+          } catch (err) {
+            console.error('Failed to load alerts for property', id, err);
+            return [id, 0] as const;
+          }
+        })
+      );
+      if (!cancelled) {
+        setAlertCounts(new Map(entries));
+      }
+    };
+    loadAlerts();
+    return () => {
+      cancelled = true;
+    };
+  }, [comparisonSet]);
+
+  const matchesQuickFilter = (p: Property) => {
+    const metrics = propertyMetricsMap.get(p.id);
+    if (quickFilter === 'high-performers') {
+      const occ = metrics?.occupancy_rate ?? 0;
+      const dscr = metrics?.dscr ?? 0;
+      return occ >= 90 && dscr >= 1.35;
+    }
+    if (quickFilter === 'at-risk') {
+      const occ = metrics?.occupancy_rate ?? 100;
+      const dscr = metrics?.dscr ?? 999;
+      return occ < 80 || dscr < 1.25;
+    }
+    if (quickFilter === 'recent') {
+      if (!p.created_at) return false;
+      const days = (Date.now() - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24);
+      return days <= 90;
+    }
+    return true;
+  };
+
+  const filteredProperties = properties
+    .filter(p =>
+      p.property_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.property_code.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .filter(matchesQuickFilter);
+
+  // Prefetch alert counts for visible properties (up to 20 to avoid heavy load)
+  useEffect(() => {
+    const visible = filteredProperties.slice(0, 20);
+    if (visible.length === 0) {
+      setAlertCounts(new Map());
+      return;
+    }
+    let cancelled = false;
+    const loadAlerts = async () => {
+      const entries = await Promise.all(
+        visible.map(async (p) => {
+          try {
+            const summary = await AlertService.getSummary({ property_id: p.id, days: 90 });
+            return [p.id, summary?.active_alerts ?? summary?.total_alerts ?? 0] as const;
+          } catch (err) {
+            console.error('Failed to load alerts for property', p.id, err);
+            return [p.id, 0] as const;
+          }
+        })
+      );
+      if (!cancelled) {
+        setAlertCounts(new Map(entries));
+      }
+    };
+    loadAlerts();
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredProperties]);
 
   const sortedProperties = [...filteredProperties].sort((a, b) => {
     const aMetrics = propertyMetricsMap.get(a.id);
@@ -1031,6 +1153,78 @@ export default function PortfolioHub() {
     }
     return 0;
   });
+
+  const comparisonProperties = properties.filter((p) => comparisonSet.has(p.id));
+  const comparisonStats = (() => {
+    const metrics: Record<string, number[]> = {
+      value: [],
+      noi: [],
+      dscr: [],
+      ltv: [],
+      occupancy: [],
+      capRate: [],
+      docs: [],
+      alerts: [],
+    };
+    comparisonProperties.forEach((p) => {
+      const m = propertyMetricsMap.get(p.id);
+      const value = m?.total_assets || 0;
+      const noi = m?.net_operating_income || m?.net_income || 0;
+      const dscr = m?.dscr ?? null;
+      const ltv = m?.ltv_ratio ?? null;
+      const occ = m?.occupancy_rate ?? null;
+      const capRate = value > 0 ? (noi / value) * 100 : null;
+      const docs = availableDocuments.filter((d) => d.property_code === p.property_code).length;
+      const alerts = alertCounts.get(p.id) ?? 0;
+      metrics.value.push(value);
+      metrics.noi.push(noi);
+      if (dscr !== null) metrics.dscr.push(dscr);
+      if (ltv !== null) metrics.ltv.push(ltv);
+      if (occ !== null) metrics.occupancy.push(occ);
+      if (capRate !== null) metrics.capRate.push(capRate);
+      metrics.docs.push(docs);
+      metrics.alerts.push(alerts);
+    });
+    const calc = (arr: number[]) => ({ max: Math.max(...arr, 0), min: Math.min(...arr, Infinity) });
+    return {
+      value: calc(metrics.value),
+      noi: calc(metrics.noi),
+      dscr: metrics.dscr.length ? calc(metrics.dscr) : { max: 0, min: 0 },
+      ltv: metrics.ltv.length ? calc(metrics.ltv) : { max: 0, min: 0 },
+      occupancy: metrics.occupancy.length ? calc(metrics.occupancy) : { max: 0, min: 0 },
+      capRate: metrics.capRate.length ? calc(metrics.capRate) : { max: 0, min: 0 },
+      docs: calc(metrics.docs),
+      alerts: calc(metrics.alerts),
+    };
+  })();
+
+  // Basic focus trap and Escape handling for comparison modal
+  useEffect(() => {
+    if (!showComparisonModal) return;
+    const modalEl = comparisonModalRef.current;
+    const focusable = modalEl?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    focusable?.[0]?.focus();
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowComparisonModal(false);
+        return;
+      }
+      if (e.key === 'Tab' && focusable && focusable.length > 0) {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [showComparisonModal]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -1076,22 +1270,53 @@ export default function PortfolioHub() {
                     placeholder="Search properties..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                    aria-label="Search properties"
                     className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 items-center">
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as any)}
-                    className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                    className="flex-1 min-w-[160px] px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
                   >
                     <option value="noi">Sort by NOI</option>
                     <option value="risk">Sort by Risk</option>
                     <option value="value">Sort by Value</option>
                   </select>
-                  <Button variant="primary" size="sm" icon={<Filter className="w-4 h-4" />}>
-                    Filter
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 'all', label: 'All' },
+                      { id: 'high-performers', label: 'High Performers' },
+                      { id: 'at-risk', label: 'At Risk' },
+                      { id: 'recent', label: 'Recent Activity' },
+                    ].map((filter) => (
+                      <button
+                        key={filter.id}
+                        aria-pressed={quickFilter === filter.id}
+                        className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          quickFilter === filter.id
+                            ? 'bg-info text-white border-info'
+                            : 'text-text-secondary bg-background hover:text-text-primary'
+                        }`}
+                        onClick={() => {
+                          setQuickFilter(filter.id as any);
+                          if (filter.id === 'high-performers') setSortBy('noi');
+                          if (filter.id === 'at-risk') setSortBy('risk');
+                        }}
+                      >
+                        {filter.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="primary" size="sm" icon={<Filter className="w-4 h-4" />}>
+                      Advanced
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+                      Clear
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -1127,19 +1352,20 @@ export default function PortfolioHub() {
             <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto">
               {sortedProperties.map((property) => {
                 const isSelected = selectedProperty?.id === property.id;
-                // Get this property's metrics from the map
+                const isCompared = comparisonSet.has(property.id);
                 const propertyMetric = propertyMetricsMap.get(property.id);
-                // Use selected property's detailed metrics if this is the selected property, otherwise use summary metrics
                 const displayMetrics = isSelected && metrics ? metrics : null;
                 const displayValue = displayMetrics?.value || propertyMetric?.total_assets || 0;
-                // Use net_operating_income (NOI) instead of net_income for consistency with Command Center
                 const displayNoi = displayMetrics?.noi || propertyMetric?.net_operating_income || propertyMetric?.net_income || 0;
                 const displayOccupancy = displayMetrics?.occupancy || propertyMetric?.occupancy_rate || 0;
-                // Use DSCR from API (propertyDscrMap) if available, otherwise fall back to propertyMetric.dscr from summary
                 const displayDscr = displayMetrics?.dscr || propertyDscrMap.get(property.id) || propertyMetric?.dscr || null;
-                // Determine status: use selected property's status if selected, otherwise default to 'good'
                 const status = displayMetrics?.status || (displayOccupancy > 90 ? 'good' : displayOccupancy > 70 ? 'warning' : 'critical');
                 const variant = getStatusVariant(status) as any;
+
+                const occupancyPercent = Math.min(displayOccupancy, 100);
+                const ltv = propertyMetric?.ltv_ratio ?? null;
+                const docCount = availableDocuments.filter((d) => d.property_code === property.property_code).length;
+                const alertsCount = alertCounts.get(property.id) ?? 0;
 
                 return (
                   <Card
@@ -1151,54 +1377,521 @@ export default function PortfolioHub() {
                     onClick={() => setSelectedProperty(property)}
                     hover
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-5 h-5 text-info" />
-                        <div>
-                          <div className="font-semibold text-text-primary">{property.property_name}</div>
-                          <div className="text-sm text-text-secondary">{property.property_code}</div>
-                        </div>
-                      </div>
-                      {status === 'critical' && <span className="text-danger">🔴</span>}
-                      {status === 'warning' && <span className="text-warning">🟡</span>}
-                      {status === 'good' && <span className="text-success">🟢</span>}
-                    </div>
-                    
-                    {(displayMetrics || propertyMetric) && (
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-text-secondary">Value:</span>
-                          <span className="font-medium">${(displayValue / 1000000).toFixed(1)}M</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-text-secondary">NOI:</span>
-                          <span className="font-medium">${(displayNoi / 1000).toFixed(1)}K</span>
-                        </div>
-                        {displayDscr !== null && (
-                          <div className="flex justify-between">
-                            <span className="text-text-secondary">DSCR:</span>
-                            <span className="font-medium">{displayDscr.toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className="mt-2 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-info rounded-full"
-                            style={{ width: `${Math.min(displayOccupancy, 100)}%` }}
+                    <div className="flex items-start justify-between mb-3 gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="relative">
+                          <Building2 className="w-5 h-5 text-info" />
+                          <span
+                            className={`absolute -top-1 -right-1 inline-flex h-3 w-3 rounded-full ${
+                              status === 'critical'
+                                ? 'bg-danger'
+                                : status === 'warning'
+                                ? 'bg-warning'
+                                : 'bg-success'
+                            }`}
                           />
                         </div>
-                        {displayMetrics?.trends?.noi && displayMetrics.trends.noi.length > 0 && (
-                          <div className="text-xs text-text-secondary text-center">
-                            {displayMetrics.trends.noi.slice(-12).map((_, i) => (
-                              <span key={i} className="inline-block w-1 h-3 bg-info rounded-t mx-0.5" />
-                            ))}
+                        <div>
+                          <div className="font-semibold text-text-primary">{property.property_name}</div>
+                        <div className="text-sm text-text-secondary flex items-center gap-2 flex-wrap">
+                          <span>{property.property_code}</span>
+                          {docCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-surface border border-border">
+                              <FileText className="w-3 h-3" /> {docCount} docs
+                            </span>
+                          )}
+                          {alertsCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-danger-light text-danger border border-danger/40">
+                              ⚠️ {alertsCount} alerts
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right text-sm text-text-secondary space-y-1">
+                      <div className="font-medium text-text-primary">${(displayValue / 1000000).toFixed(1)}M</div>
+                      <div className="text-xs text-text-secondary">NOI ${(displayNoi / 1000).toFixed(1)}K</div>
+                      {ltv !== null && <div className="text-xs text-text-secondary">LTV {(ltv * 100).toFixed(0)}%</div>}
+                      <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isCompared}
+                          onChange={(e) => {
+                            const next = new Set(comparisonSet);
+                            if (e.target.checked) {
+                              next.add(property.id);
+                            } else {
+                              next.delete(property.id);
+                            }
+                            setComparisonSet(next);
+                          }}
+                        />
+                        Compare
+                      </label>
+                    </div>
+                  </div>
+
+                    {(displayMetrics || propertyMetric) && (
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-text-secondary">Occupancy</span>
+                          <span className="font-medium">{occupancyPercent.toFixed(0)}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              status === 'critical'
+                                ? 'bg-danger'
+                                : status === 'warning'
+                                ? 'bg-warning'
+                                : 'bg-success'
+                            }`}
+                            style={{ width: `${occupancyPercent}%` }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="p-2 rounded-lg bg-background text-center">
+                            <div className="text-xs text-text-secondary">DSCR</div>
+                            <div className="font-semibold">{displayDscr !== null ? displayDscr.toFixed(2) : '—'}</div>
                           </div>
-                        )}
+                          <div className="p-2 rounded-lg bg-background text-center">
+                            <div className="text-xs text-text-secondary">Trend</div>
+                            <div className="h-6 flex items-end gap-0.5 justify-center">
+                              {(displayMetrics?.trends?.noi || propertyMetric?.noi_trend || []).slice(-8).map((val: number, i: number, arr: number[]) => {
+                                const max = Math.max(...arr, 1);
+                                const height = (val / max) * 100;
+                                return (
+                                  <span key={i} className="w-1 bg-info rounded-sm" style={{ height: `${Math.max(height, 8)}%` }} />
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-lg bg-background text-center">
+                            <div className="text-xs text-text-secondary">Status</div>
+                            <div className="font-semibold">
+                              {status === 'critical' ? 'At Risk' : status === 'warning' ? 'Watch' : 'Healthy'}
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-lg bg-background text-center">
+                            <div className="text-xs text-text-secondary">Alerts</div>
+                            <div className="font-semibold">{alertsCount}</div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </Card>
                 );
               })}
             </div>
+            )}
+
+            {/* Comparison Call-to-Action */}
+            {comparisonSet.size > 1 && (
+              <Card className="p-4 bg-surface border border-border space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-sm text-text-secondary">Compare Selected Properties</div>
+                    <div className="text-lg font-semibold text-text-primary">{comparisonSet.size} selected</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setComparisonSet(new Set())}
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        const link = window.location.href.replace(/#.*$/, '') + '#compare';
+                        try {
+                          await navigator.clipboard.writeText(link);
+                        } catch {
+                          // noop
+                        }
+                      }}
+                    >
+                      Share link
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Sparkles className="w-4 h-4" />}
+                      onClick={() => setShowComparisonModal(true)}
+                    >
+                      Side-by-Side View
+                    </Button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-2 pr-4 font-semibold text-text-secondary">Metric</th>
+                        {properties.filter((p) => comparisonSet.has(p.id)).map((p) => (
+                          <th key={p.id} className="text-left py-2 pr-4 font-semibold text-text-primary">
+                            {p.property_code || p.property_name}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {['Value', 'NOI', 'DSCR', 'LTV', 'Occupancy', 'Cap Rate', 'Docs', 'Alerts'].map((metric) => (
+                        <tr key={metric} className="border-t border-border">
+                          <td className="py-2 pr-4 font-medium text-text-primary">{metric}</td>
+                          {properties.filter((p) => comparisonSet.has(p.id)).map((p) => {
+                            const m = propertyMetricsMap.get(p.id);
+                            const value = m?.total_assets || 0;
+                            const noi = m?.net_operating_income || m?.net_income || 0;
+                            const dscr = m?.dscr ?? null;
+                            const ltv = m?.ltv_ratio ?? null;
+                            const occ = m?.occupancy_rate ?? null;
+                            const capRate = value > 0 ? (noi / value) * 100 : null;
+                            const docs = availableDocuments.filter((d) => d.property_code === p.property_code).length;
+                            const alerts = alertCounts.get(p.id) ?? 0;
+
+                            let display = '—';
+                            switch (metric) {
+                              case 'Value':
+                                display = value ? `$${(value / 1_000_000).toFixed(1)}M` : '—';
+                                break;
+                              case 'NOI':
+                                display = noi ? `$${(noi / 1_000).toFixed(1)}K` : '—';
+                                break;
+                              case 'DSCR':
+                                display = dscr !== null ? dscr.toFixed(2) : '—';
+                                break;
+                              case 'LTV':
+                                display = ltv !== null ? `${(ltv * 100).toFixed(0)}%` : '—';
+                                break;
+                              case 'Occupancy':
+                                display = occ !== null ? `${occ.toFixed(0)}%` : '—';
+                                break;
+                              case 'Cap Rate':
+                                display = capRate !== null ? `${capRate.toFixed(1)}%` : '—';
+                                break;
+                              case 'Docs':
+                                display = `${docs}`;
+                                break;
+                              case 'Alerts':
+                                display = `${alerts}`;
+                                break;
+                            }
+
+                            const statMap: Record<string, { min: number; max: number }> = {
+                              'Value': comparisonStats.value,
+                              'NOI': comparisonStats.noi,
+                              'DSCR': comparisonStats.dscr,
+                              'Occupancy': comparisonStats.occupancy,
+                              'Cap Rate': comparisonStats.capRate,
+                              'Docs': comparisonStats.docs,
+                              'Alerts': comparisonStats.alerts,
+                              'LTV': comparisonStats.ltv,
+                            };
+                            const invertHeat = metric === 'LTV';
+                            const stat = statMap[metric];
+                            let heatStyle: React.CSSProperties = {};
+                            const numericVal = metric === 'Value' ? value
+                              : metric === 'NOI' ? noi
+                              : metric === 'DSCR' ? dscr
+                              : metric === 'Occupancy' ? occ
+                              : metric === 'Cap Rate' ? capRate
+                              : metric === 'Docs' ? docs
+                              : metric === 'Alerts' ? alerts
+                              : metric === 'LTV' ? ltv
+                              : null;
+                            if (stat && numericVal !== null && stat.max !== stat.min) {
+                              const ratio = (numericVal - stat.min) / (stat.max - stat.min);
+                              const intensity = Math.max(0.08, Math.min(0.4, invertHeat ? 0.4 - ratio * 0.3 : 0.1 + ratio * 0.3));
+                              heatStyle = { backgroundColor: `rgba(34,197,94,${intensity})` }; // green hue
+                            }
+
+                            const highlight = () => {
+                              if (metric === 'LTV') {
+                                if (ltv === comparisonStats.ltv.min) return 'bg-green-50 text-text-primary';
+                                if (ltv === comparisonStats.ltv.max) return 'bg-red-50 text-text-primary';
+                              } else if (metric === 'Docs') {
+                                if (docs === comparisonStats.docs.max) return 'bg-green-50 text-text-primary';
+                                if (docs === comparisonStats.docs.min) return 'bg-red-50 text-text-primary';
+                              } else {
+                                const map: Record<string, { min: number; max: number }> = {
+                                  'Value': comparisonStats.value,
+                                  'NOI': comparisonStats.noi,
+                                  'DSCR': comparisonStats.dscr,
+                                  'Occupancy': comparisonStats.occupancy,
+                                  'Cap Rate': comparisonStats.capRate,
+                                };
+                                const val = metric === 'Value' ? value
+                                  : metric === 'NOI' ? noi
+                                  : metric === 'DSCR' ? dscr
+                                  : metric === 'Occupancy' ? occ
+                                  : metric === 'Cap Rate' ? capRate
+                                  : null;
+                                const stat = map[metric];
+                                if (val !== null && stat) {
+                                  if (val === stat.max) return 'bg-green-50 text-text-primary';
+                                  if (val === stat.min) return 'bg-red-50 text-text-primary';
+                                }
+                              }
+                              return '';
+                            };
+
+                            return (
+                              <td key={p.id} className={`py-2 pr-4 text-text-secondary ${highlight()}`}>
+                                <div className="flex flex-col gap-1" style={heatStyle}>
+                                  <span>{display}</span>
+                                  {['Value', 'NOI', 'Occupancy'].includes(metric) && numericVal !== null && stat && stat.max !== stat.min ? (
+                                    <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full ${metric === 'NOI' ? 'bg-info' : 'bg-success'} rounded-full`}
+                                        style={{ width: `${Math.max(6, (numericVal / stat.max) * 100)}%` }}
+                                      />
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-3 text-xs text-text-secondary">
+                    Alerts include active items from the last 90 days; shading highlights best/worst per metric.
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Side-by-Side Comparison Modal */}
+          {showComparisonModal && comparisonProperties.length > 1 && (
+            <div
+              className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Property comparison modal"
+              onClick={() => setShowComparisonModal(false)}
+            >
+              <div
+                ref={comparisonModalRef}
+                className="bg-surface rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                    <div>
+                      <div className="text-sm text-text-secondary">Side-by-Side Comparison</div>
+                      <div className="text-xl font-semibold text-text-primary">{comparisonProperties.length} properties</div>
+                    </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setShowComparisonModal(false)} aria-label="Close comparison dialog">Close</Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Download className="w-4 h-4" />}
+                      aria-label="Export comparison table as CSV"
+                        onClick={() => {
+                          const header = ['Metric', ...comparisonProperties.map((p) => p.property_code || p.property_name)];
+                          const rows = [
+                            ['Value', ...comparisonProperties.map((p) => {
+                              const m = propertyMetricsMap.get(p.id);
+                              return m?.total_assets ? `$${(m.total_assets / 1_000_000).toFixed(1)}M` : '—';
+                            })],
+                            ['NOI', ...comparisonProperties.map((p) => {
+                              const m = propertyMetricsMap.get(p.id);
+                              return m?.net_operating_income ? `$${(m.net_operating_income / 1_000).toFixed(1)}K` : '—';
+                            })],
+                            ['DSCR', ...comparisonProperties.map((p) => {
+                              const m = propertyMetricsMap.get(p.id);
+                              return m?.dscr ? m.dscr.toFixed(2) : '—';
+                            })],
+                            ['LTV', ...comparisonProperties.map((p) => {
+                              const m = propertyMetricsMap.get(p.id);
+                              return m?.ltv_ratio ? `${(m.ltv_ratio * 100).toFixed(0)}%` : '—';
+                            })],
+                            ['Occupancy', ...comparisonProperties.map((p) => {
+                              const m = propertyMetricsMap.get(p.id);
+                              return m?.occupancy_rate ? `${m.occupancy_rate.toFixed(0)}%` : '—';
+                            })],
+                          ];
+                          const csv = [header, ...rows].map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+                          try {
+                            // Download CSV
+                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = 'property-comparison.csv';
+                            link.click();
+                            URL.revokeObjectURL(url);
+
+                            // Copy to clipboard as a convenience
+                            if (navigator?.clipboard?.writeText) {
+                              navigator.clipboard.writeText(csv).catch(() => {});
+                            }
+                            alert('Comparison exported as CSV (also copied to clipboard when permitted).');
+                          } catch (err) {
+                            console.error('Failed to export comparison', err);
+                            alert('Export failed. Please try again.');
+                          }
+                        }}
+                      >
+                        Export
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Copy comparison summary to clipboard"
+                        onClick={() => {
+                          const summary = comparisonProperties.map((p) => {
+                            const m = propertyMetricsMap.get(p.id);
+                            return `${p.property_name} (${p.property_code}) — Value ${m?.total_assets ? `$${(m.total_assets / 1_000_000).toFixed(1)}M` : '—'}, NOI ${m?.net_operating_income ? `$${(m.net_operating_income / 1_000).toFixed(1)}K` : '—'}, DSCR ${m?.dscr ?? '—'}`;
+                          }).join('\n');
+                          if (navigator?.clipboard?.writeText) {
+                            navigator.clipboard.writeText(summary).catch(() => {});
+                          }
+                        }}
+                      >
+                        Copy Summary
+                      </Button>
+                  </div>
+                </div>
+                  <div className="p-6 overflow-auto max-h-[75vh]">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                      {comparisonProperties.map((p) => {
+                        const m = propertyMetricsMap.get(p.id);
+                        const value = m?.total_assets || 0;
+                        const noi = m?.net_operating_income || m?.net_income || 0;
+                        const occ = m?.occupancy_rate || 0;
+                        const dscr = m?.dscr ?? null;
+                        const ltv = m?.ltv_ratio ?? null;
+                        const capRate = value > 0 ? (noi / value) * 100 : null;
+                        const docCount = availableDocuments.filter((d) => d.property_code === p.property_code).length;
+                        const trend = (m?.noi_trend || []).slice(-8);
+                        const noiDelta = trend.length >= 2 ? trend[trend.length - 1] - trend[trend.length - 2] : null;
+                        const sparkMax = Math.max(...trend, 1);
+                        return (
+                          <Card key={p.id} className="p-4 border border-border">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-lg font-semibold text-text-primary">{p.property_name}</div>
+                                <div className="text-sm text-text-secondary">{p.property_code} • {p.city}, {p.state}</div>
+                              </div>
+                              <div className="text-sm text-text-secondary">
+                                <div className="font-semibold text-text-primary">${(value / 1_000_000).toFixed(1)}M</div>
+                                <div>NOI ${(noi / 1_000).toFixed(1)}K</div>
+                              </div>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                              <div className="p-2 rounded-lg bg-background">
+                                <div className="text-xs text-text-secondary">DSCR</div>
+                                <div className="font-semibold text-text-primary">{dscr !== null ? dscr.toFixed(2) : '—'}</div>
+                              </div>
+                              <div className="p-2 rounded-lg bg-background">
+                                <div className="text-xs text-text-secondary">LTV</div>
+                                <div className="font-semibold text-text-primary">{ltv !== null ? `${(ltv * 100).toFixed(0)}%` : '—'}</div>
+                              </div>
+                              <div className="p-2 rounded-lg bg-background">
+                                <div className="text-xs text-text-secondary">Cap Rate</div>
+                                <div className="font-semibold text-text-primary">{capRate !== null ? `${capRate.toFixed(1)}%` : '—'}</div>
+                              </div>
+                              <div className="p-2 rounded-lg bg-background">
+                                <div className="text-xs text-text-secondary">Docs</div>
+                                <div className="font-semibold text-text-primary">{docCount}</div>
+                              </div>
+                              <div className="col-span-2">
+                                <div className="flex justify-between text-xs text-text-secondary">
+                                  <span>Occupancy</span>
+                                  <span className="font-semibold text-text-primary">{occ.toFixed(0)}%</span>
+                                </div>
+                                <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden mt-1">
+                                  <div
+                                    className="h-full bg-info rounded-full"
+                                    style={{ width: `${Math.min(occ, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-span-2">
+                                <div className="flex items-center justify-between text-xs text-text-secondary">
+                                  <span>NOI Trend</span>
+                                  {docCount > 0 && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border text-[11px]">
+                                      <FileText className="w-3 h-3" /> {docCount} docs
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-end gap-1 mt-1 h-10">
+                                  {trend.length > 0 ? trend.map((val: number, i: number) => {
+                                    const height = (val / sparkMax) * 100;
+                                    return (
+                                      <span key={i} className="flex-1 bg-info rounded-sm" style={{ height: `${Math.max(height, 6)}%` }} />
+                                    );
+                                  }) : (
+                                    <span className="text-xs text-text-secondary">No trend data</span>
+                                  )}
+                                </div>
+                                {noiDelta !== null && (
+                                  <div className={`mt-1 text-xs font-medium ${noiDelta >= 0 ? 'text-success' : 'text-danger'}`}>
+                                    {noiDelta >= 0 ? '↑' : '↓'} {Math.abs(noiDelta).toFixed(1)} (last period)
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th className="text-left py-2 pr-4 font-semibold text-text-secondary">Metric</th>
+                            {comparisonProperties.map((p) => (
+                              <th key={p.id} className="text-left py-2 pr-4 font-semibold text-text-primary">
+                                {p.property_code || p.property_name}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {['Value', 'NOI', 'DSCR', 'LTV', 'Occupancy'].map((metric) => (
+                            <tr key={metric} className="border-t border-border">
+                              <td className="py-2 pr-4 font-medium text-text-primary">{metric}</td>
+                              {comparisonProperties.map((p) => {
+                                const m = propertyMetricsMap.get(p.id);
+                                let display = '—';
+                                switch (metric) {
+                                  case 'Value':
+                                    display = m?.total_assets ? `$${(m.total_assets / 1_000_000).toFixed(1)}M` : '—';
+                                    break;
+                                  case 'NOI':
+                                    display = m?.net_operating_income ? `$${(m.net_operating_income / 1_000).toFixed(1)}K` : '—';
+                                    break;
+                                  case 'DSCR':
+                                    display = m?.dscr ? m.dscr.toFixed(2) : '—';
+                                    break;
+                                  case 'LTV':
+                                    display = m?.ltv_ratio ? `${(m.ltv_ratio * 100).toFixed(0)}%` : '—';
+                                    break;
+                                  case 'Occupancy':
+                                    display = m?.occupancy_rate ? `${m.occupancy_rate.toFixed(0)}%` : '—';
+                                    break;
+                                }
+                                return (
+                                  <td key={p.id} className="py-2 pr-4 text-text-secondary">
+                                    {display}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Map View */}
@@ -1221,11 +1914,19 @@ export default function PortfolioHub() {
                 {/* Property Header */}
                 <Card className="p-6">
                   <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-                        <Building2 className="w-6 h-6" />
-                        {selectedProperty.property_name}
-                      </h2>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <Building2 className="w-6 h-6 shrink-0" />
+                        <InlineEdit
+                          className="inline-edit-heading w-full"
+                          displayClassName="w-full text-left"
+                          inputClassName="w-full"
+                          value={selectedProperty.property_name}
+                          placeholder="Property name"
+                          activation="double-click"
+                          onSave={handlePropertyNameSave}
+                        />
+                      </div>
                       <p className="text-text-secondary mt-1">
                         {selectedProperty.property_code} • {selectedProperty.city}, {selectedProperty.state}
                       </p>
@@ -1297,38 +1998,47 @@ export default function PortfolioHub() {
                     {/* Key Metrics */}
                     <Card className="p-6">
                       <h3 className="text-lg font-semibold mb-4">Key Metrics</h3>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                          <div className="text-sm text-text-secondary">Purchase Price</div>
-                          <div className="text-xl font-bold">${((metrics?.value || costs?.initialBuying || 0) / 1000000).toFixed(2)}M</div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-text-secondary">Current Value</div>
-                          <div className="text-xl font-bold">${((metrics?.value || 0) / 1000000).toFixed(2)}M</div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-text-secondary">Hold Period</div>
-                          <div className="text-xl font-bold">
-                            {selectedProperty?.acquisition_date ?
-                              (() => {
-                                const acqDate = new Date(selectedProperty.acquisition_date);
-                                const now = new Date();
-                                const months = (now.getFullYear() - acqDate.getFullYear()) * 12 + (now.getMonth() - acqDate.getMonth());
-                                return `${months} mo`;
-                              })()
-                              : 'N/A'}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-text-secondary">Cap Rate</div>
-                          <div className="text-xl font-bold">
-                            {metrics?.capRate !== null && metrics?.capRate !== undefined 
-                              ? `${metrics.capRate.toFixed(2)}%` 
-                              : metrics?.value && metrics?.noi 
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <UIMetricCard
+                          title="Purchase Price"
+                          value={`$${(((metrics?.value || costs?.initialBuying || 0)) / 1_000_000).toFixed(2)}M`}
+                          loading={metricsLoading}
+                          comparison="Original basis"
+                        />
+                        <UIMetricCard
+                          title="Current Value"
+                          value={`$${(((metrics?.value || 0)) / 1_000_000).toFixed(2)}M`}
+                          loading={metricsLoading}
+                          comparison="Latest valuation"
+                          status="info"
+                        />
+                        <UIMetricCard
+                          title="Hold Period"
+                          value={
+                            selectedProperty?.acquisition_date
+                              ? (() => {
+                                  const acqDate = new Date(selectedProperty.acquisition_date);
+                                  const now = new Date();
+                                  const months = (now.getFullYear() - acqDate.getFullYear()) * 12 + (now.getMonth() - acqDate.getMonth());
+                                  return `${months} mo`;
+                                })()
+                              : 'N/A'
+                          }
+                          loading={metricsLoading}
+                        />
+                        <UIMetricCard
+                          title="Cap Rate"
+                          value={
+                            metrics?.capRate !== null && metrics?.capRate !== undefined
+                              ? `${metrics.capRate.toFixed(2)}%`
+                              : metrics?.value && metrics?.noi
                                 ? `${((metrics.noi / metrics.value) * 100).toFixed(2)}%`
-                                : 'N/A'}
-                          </div>
-                        </div>
+                                : 'N/A'
+                          }
+                          loading={metricsLoading}
+                          status="success"
+                          comparison="NOI / Value"
+                        />
                       </div>
                     </Card>
 

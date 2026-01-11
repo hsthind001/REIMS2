@@ -6,13 +6,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: var(--space-2);
 }
 
 .iconContainer {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--space-2);
 }
 
 .icon {
@@ -20,37 +20,37 @@
 }
 
 .title {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .value {
-  font-size: 1.875rem;
+  font-size: var(--text-2xl);
   font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
 }
 
 .change {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   margin-top: 0.25rem;
 }
 
 .changeUp {
-  color: var(--success-color);
+  color: var(--color-success);
 }
 
 .changeDown {
-  color: var(--danger-color);
+  color: var(--color-danger);
 }
 
 .changeNeutral {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .sparkline {
@@ -59,13 +59,12 @@
   display: flex;
   align-items: flex-end;
   gap: 0.125rem;
-  margin-top: var(--spacing-sm);
+  margin-top: var(--space-2);
 }
 
 .sparklineBar {
   flex: 1;
-  background-color: var(--info-color);
+  background-color: var(--color-info);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   min-height: 5%;
 }
-

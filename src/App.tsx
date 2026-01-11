@@ -3,6 +3,13 @@ import './App.css'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { LoginForm } from './components/LoginForm'
 import { RegisterForm } from './components/RegisterForm'
+import { Button } from './components/ui/Button'
+import { useTheme } from './hooks/useTheme'
+import { routes } from './config/routes'
+import { CommandPalette } from './components/CommandPalette'
+import './components/CommandPalette.css'
+import { propertyService } from './lib/property'
+import { documentService } from './lib/document'
 
 // Lazy load pages for better initial bundle size
 const CommandCenter = lazy(() => import('./pages/CommandCenter'))
@@ -53,6 +60,9 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [hashRoute, setHashRoute] = useState<string>('')
   const { user, logout, isAuthenticated, loading } = useAuth()
+  const { theme, toggle } = useTheme()
+  const [isPaletteOpen, setPaletteOpen] = useState(false)
+  const [paletteQuery, setPaletteQuery] = useState('')
 
   console.log('🎨 AppContent: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated);
 
@@ -106,6 +116,107 @@ function AppContent() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [currentPage])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCommandK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
+      if (isCommandK) {
+        e.preventDefault();
+        setPaletteOpen(prev => !prev);
+      }
+      if (e.key === 'Escape' && isPaletteOpen) {
+        e.preventDefault();
+        setPaletteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isPaletteOpen]);
+  const [propertyCommands, setPropertyCommands] = useState<any[]>([]);
+  const [docCommands, setDocCommands] = useState<any[]>([]);
+  const [propertySource, setPropertySource] = useState<any[]>([]);
+  const [docSource, setDocSource] = useState<any[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadPropertyCommands = async () => {
+      if (!isPaletteOpen || !isAuthenticated) return;
+      try {
+        const props = await propertyService.getAllProperties({ limit: 50, signal: controller.signal });
+        const sorted = props.sort((a, b) => a.property_name.localeCompare(b.property_name));
+        setPropertySource(sorted);
+      } catch (err) {
+        if ((err as any)?.name !== 'AbortError') {
+          console.error('Failed to load properties for command palette', err);
+        }
+      }
+    };
+    loadPropertyCommands();
+    return () => controller.abort();
+  }, [isPaletteOpen, isAuthenticated]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadDocCommands = async () => {
+      if (!isPaletteOpen || !isAuthenticated) return;
+      try {
+        const docs = await documentService.getDocuments({ limit: 20, signal: controller.signal });
+        const items = docs.items || [];
+        setDocSource(items);
+      } catch (err) {
+        if ((err as any)?.name !== 'AbortError') {
+          console.error('Failed to load documents for command palette', err);
+        }
+      }
+    };
+    loadDocCommands();
+    return () => controller.abort();
+  }, [isPaletteOpen, isAuthenticated]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const q = paletteQuery.toLowerCase();
+      const filteredProps = propertySource
+        .filter((p) =>
+          !q ||
+          p.property_name.toLowerCase().includes(q) ||
+          p.property_code.toLowerCase().includes(q) ||
+          (p.city || '').toLowerCase().includes(q)
+        )
+        .slice(0, 50)
+        .map((p) => ({
+          id: `prop-${p.id}`,
+          label: `${p.property_name} (${p.property_code}) • ${p.city || 'Unknown'}, ${p.state || ''}`.trim(),
+          section: 'Properties',
+          handler: () => {
+            setCurrentPage('properties');
+            window.location.hash = `market-intelligence/${p.property_code}`;
+          }
+        }));
+      setPropertyCommands(filteredProps);
+
+      const filteredDocs = docSource
+        .filter((d: any) =>
+          !q ||
+          d.file_name.toLowerCase().includes(q) ||
+          (d.property_code || '').toLowerCase().includes(q) ||
+          (d.document_type || '').toLowerCase().includes(q)
+        )
+        .slice(0, 20)
+        .map((d: any) => ({
+          id: `doc-${d.id}`,
+          label: `${d.file_name} • ${d.property_code || 'Unknown'} (${d.document_type})`,
+          section: 'Documents',
+          handler: () => {
+            window.location.hash = 'bulk-import';
+            setHashRoute('bulk-import');
+          }
+        }));
+      setDocCommands(filteredDocs);
+    }, 200);
+
+    return () => clearTimeout(t);
+  }, [paletteQuery, propertySource, docSource]);
 
   // Show loading state while checking authentication
   if (loading) {
@@ -168,6 +279,26 @@ function AppContent() {
     )
   }
 
+  const commandActions = [
+    { id: 'nav-dashboard', label: 'Go to Insights Hub', section: 'Navigation', shortcut: 'Ctrl/Cmd + 1', handler: () => setCurrentPage('dashboard') },
+    { id: 'nav-properties', label: 'Go to Properties', section: 'Navigation', shortcut: 'Ctrl/Cmd + 2', handler: () => setCurrentPage('properties') },
+    { id: 'nav-financials', label: 'Go to Financials', section: 'Navigation', shortcut: 'Ctrl/Cmd + 3', handler: () => setCurrentPage('reports') },
+    { id: 'nav-quality', label: 'Go to Quality Control', section: 'Navigation', shortcut: 'Ctrl/Cmd + 4', handler: () => setCurrentPage('operations') },
+    { id: 'nav-admin', label: 'Go to Administration', section: 'Navigation', shortcut: 'Ctrl/Cmd + 5', handler: () => setCurrentPage('users') },
+    { id: 'nav-risk', label: 'Go to Risk Intelligence', section: 'Navigation', shortcut: 'Ctrl/Cmd + 6', handler: () => setCurrentPage('risk') },
+    { id: 'nav-ai', label: 'Open AI Assistant', section: 'Navigation', shortcut: 'Ctrl/Cmd + 7', handler: () => { window.location.hash = 'nlq-search'; setHashRoute('nlq-search'); } },
+    { id: 'nav-financials-variance', label: 'Open Variance Analysis', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'variance'; setHashRoute('variance'); } },
+    { id: 'nav-financials-statements', label: 'Open Financial Statements', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'statements'; setHashRoute('statements'); } },
+    { id: 'nav-financials-coa', label: 'Open Chart of Accounts', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'chart-of-accounts'; setHashRoute('chart-of-accounts'); } },
+    { id: 'nav-risk-anomalies', label: 'Open Risk Anomalies', section: 'Risk', handler: () => { setCurrentPage('risk'); window.location.hash = 'anomalies'; setHashRoute('anomalies'); } },
+    { id: 'theme-toggle', label: theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode', section: 'Theme', shortcut: 'Ctrl/Cmd + J', handler: toggle },
+    { id: 'refresh-dashboard', label: 'Refresh Insights Hub', section: 'Actions', handler: () => { setCurrentPage('dashboard'); window.location.reload(); } },
+    { id: 'goto-docs', label: 'Upload Documents', section: 'Actions', shortcut: '/', handler: () => { window.location.hash = 'bulk-import'; setHashRoute('bulk-import'); } },
+    { id: 'goto-alerts', label: 'View Alerts Rules', section: 'Actions', handler: () => { window.location.hash = 'alert-rules'; setHashRoute('alert-rules'); setCurrentPage('risk'); } },
+    { id: 'goto-compare', label: 'Open Properties Comparison', section: 'Actions', handler: () => { setCurrentPage('properties'); window.location.hash = 'compare'; } },
+  ];
+  const combinedActions = [...commandActions, ...propertyCommands, ...docCommands];
+
   const handleLogout = async () => {
     try {
       await logout()
@@ -179,6 +310,7 @@ function AppContent() {
 
   return (
     <div className="app">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       {/* Header */}
       <header className="header">
         <div className="header-left">
@@ -192,6 +324,14 @@ function AppContent() {
           <span className="app-subtitle">Real Estate Investment Management System</span>
         </div>
         <div className="header-right">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggle}
+            aria-label="Toggle theme"
+          >
+            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+          </Button>
           {isAuthenticated ? (
             <>
               <NotificationCenter />
@@ -220,63 +360,73 @@ function AppContent() {
       </header>
 
       <div className="main-container">
-        {/* Sidebar - 5 Strategic Pages Only */}
+        {/* Sidebar - driven by route map */}
         <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
           <nav className="nav-menu">
-            <button
-              className={`nav-item ${currentPage === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('dashboard')}
-            >
-              <span className="nav-icon">📊</span>
-              {sidebarOpen && <span className="nav-text">Command Center</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'properties' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('properties')}
-            >
-              <span className="nav-icon">🏢</span>
-              {sidebarOpen && <span className="nav-text">Portfolio Hub</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'reports' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('reports')}
-            >
-              <span className="nav-icon">💰</span>
-              {sidebarOpen && <span className="nav-text">Financial Command</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'operations' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('operations')}
-            >
-              <span className="nav-icon">🔧</span>
-              {sidebarOpen && <span className="nav-text">Data Control Center</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'users' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('users')}
-            >
-              <span className="nav-icon">⚙️</span>
-              {sidebarOpen && <span className="nav-text">Admin Hub</span>}
-            </button>
-            <button
-              className={`nav-item ${currentPage === 'risk' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('risk')}
-            >
-              <span className="nav-icon">🛡️</span>
-              {sidebarOpen && <span className="nav-text">Risk Management</span>}
-            </button>
-            <button
-              className={`nav-item ${hashRoute === 'nlq-search' ? 'active' : ''}`}
-              onClick={() => window.location.hash = 'nlq-search'}
-            >
-              <span className="nav-icon">💬</span>
-              {sidebarOpen && <span className="nav-text">Ask AI</span>}
-            </button>
+            {routes.map((route) => {
+              const isActive =
+                (route.path === '/' && currentPage === 'dashboard') ||
+                (route.path === '/properties' && currentPage === 'properties') ||
+                (route.path === '/financials' && currentPage === 'reports') ||
+                (route.path === '/quality' && currentPage === 'operations') ||
+                (route.path === '/admin' && currentPage === 'users') ||
+                (route.path === '/risk' && currentPage === 'risk') ||
+                (route.path === '/ai' && hashRoute === 'nlq-search');
+
+              const handleClick = () => {
+                switch (route.path) {
+                  case '/':
+                    setCurrentPage('dashboard');
+                    break;
+                  case '/properties':
+                    setCurrentPage('properties');
+                    break;
+                  case '/financials':
+                    setCurrentPage('reports');
+                    break;
+                  case '/quality':
+                    setCurrentPage('operations');
+                    break;
+                  case '/admin':
+                    setCurrentPage('users');
+                    break;
+                  case '/risk':
+                    setCurrentPage('risk');
+                    break;
+                  case '/ai':
+                    window.location.hash = 'nlq-search';
+                    break;
+                  default:
+                    setCurrentPage('dashboard');
+                }
+              };
+
+              const iconMap: Record<string, string> = {
+                dashboard: '📊',
+                building: '🏢',
+                finance: '💰',
+                check: '🔧',
+                settings: '⚙️',
+                shield: '🛡️',
+                bot: '💬',
+              };
+
+              return (
+                <button
+                  key={route.path}
+                  className={`nav-item ${isActive ? 'active' : ''}`}
+                  onClick={handleClick}
+                >
+                  <span className="nav-icon">{iconMap[route.icon] || '•'}</span>
+                  {sidebarOpen && <span className="nav-text">{route.label}</span>}
+                </button>
+              );
+            })}
           </nav>
         </aside>
 
         {/* Main Content */}
-        <main className="content">
+        <main className="content" id="main-content">
           {hashRoute.startsWith('financial-data') ? (
             <Suspense fallback={<PageLoader />}>
               <FullFinancialData />
@@ -358,6 +508,14 @@ function AppContent() {
           )}
         </main>
       </div>
+
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        actions={combinedActions}
+        sectionsOrder={['Navigation', 'Actions', 'Properties', 'Documents', 'Theme', 'General']}
+        onQueryChange={(q) => setPaletteQuery(q)}
+      />
     </div>
   )
 }

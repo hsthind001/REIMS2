@@ -1,0 +1,85 @@
+.inline-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inline-edit-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.inline-edit-display {
+  border: 1px dashed var(--color-border-default);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  transition: border var(--duration-normal) var(--ease-in-out);
+}
+
+.inline-edit-display:hover {
+  border-color: var(--brand-primary);
+}
+
+.inline-edit-control input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+
+.inline-edit-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.inline-edit-actions button {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-tertiary);
+  cursor: pointer;
+}
+
+.inline-edit-actions button:first-of-type {
+  background: var(--brand-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--brand-primary);
+}
+
+.inline-edit-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inline-edit-error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+/* Heading variant for prominent titles */
+.inline-edit.inline-edit-heading .inline-edit-display {
+  border-style: solid;
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+}
+
+.inline-edit.inline-edit-heading .inline-edit-display:hover {
+  border-color: var(--brand-primary);
+  background: var(--color-bg-secondary);
+}
+
+.inline-edit.inline-edit-heading .inline-edit-control input {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+}

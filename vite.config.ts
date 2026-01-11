@@ -19,6 +19,10 @@ if (process.env.ANALYZE) {
 // https://vite.dev/config/
 export default defineConfig({
   plugins,
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+  },
 
   // Optimize dependencies
   optimizeDeps: {

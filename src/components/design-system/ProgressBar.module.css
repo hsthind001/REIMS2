@@ -2,34 +2,34 @@
   width: 100%;
   border-radius: var(--radius-full);
   overflow: hidden;
-  background-color: var(--bg-tertiary);
+  background-color: var(--color-bg-tertiary);
 }
 
 .track {
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width var(--transition-base);
+  transition: width var(--duration-normal) var(--ease-in-out);
 }
 
 /* Variants */
 .success {
-  background: var(--success-gradient);
+  background: linear-gradient(135deg, var(--color-success) 0%, #059669 100%);
 }
 
 .warning {
-  background: var(--warning-color);
+  background: linear-gradient(135deg, var(--color-warning) 0%, #d97706 100%);
 }
 
 .danger {
-  background: var(--danger-gradient);
+  background: linear-gradient(135deg, var(--color-danger) 0%, #dc2626 100%);
 }
 
 .info {
-  background: var(--info-color);
+  background: var(--color-info);
 }
 
 .primary {
-  background: var(--primary-gradient);
+  background: var(--brand-gradient);
 }
 
 /* Heights */
@@ -46,8 +46,7 @@
 }
 
 .label {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
   margin-top: 0.25rem;
 }
-

@@ -1,0 +1,138 @@
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  z-index: 2000;
+}
+
+.command-palette {
+  width: min(720px, 90vw);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+.command-palette-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-secondary);
+}
+
+.command-palette-header input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  outline: none;
+}
+
+.command-palette-header button {
+  background: transparent;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.5rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.command-palette-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.command-section-block + .command-section-block {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border-default);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0.35rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.command-palette-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  transition: background var(--duration-normal) var(--ease-in-out);
+}
+
+.command-palette-item:hover,
+.command-palette-item:focus-visible {
+  background: var(--color-bg-tertiary);
+}
+
+.command-label {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.command-section {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.command-shortcut {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.4rem;
+}
+
+.command-palette-empty {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.command-hints {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.4rem;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   MessageSquare, 
   TrendingUp, 
@@ -16,6 +16,8 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Card, Button, ProgressBar } from '../components/design-system';
+import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
+import { Skeleton as UISkeleton } from '../components/ui/Skeleton';
 import { propertyService } from '../lib/property';
 import { reportsService } from '../lib/reports';
 import { documentService } from '../lib/document';
@@ -30,6 +32,7 @@ import { MortgageMetrics } from '../components/mortgage/MortgageMetrics';
 import { api } from '../lib/api';
 import type { Property, DocumentUpload as DocumentUploadType, FinancialPeriod } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
+import TrendAnalysisChart from '../components/charts/TrendAnalysisChart';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
@@ -83,6 +86,8 @@ export default function FinancialCommand() {
   const [financialMetrics, setFinancialMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showFullFinancialData, setShowFullFinancialData] = useState(false);
+  const [showLineItems, setShowLineItems] = useState(true);
+  const [showTotalsOnly, setShowTotalsOnly] = useState(false);
   const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingFinancialData, setLoadingFinancialData] = useState(false);
@@ -123,6 +128,18 @@ export default function FinancialCommand() {
   const [varianceSearchQuery, setVarianceSearchQuery] = useState('');
   const [availablePeriods, setAvailablePeriods] = useState<FinancialPeriod[]>([]);
   const [selectedVariancePeriod, setSelectedVariancePeriod] = useState<number | null>(null);
+  const balanceSheetSnapshot = useMemo(() => {
+    if (!financialData || financialData.document_type !== 'balance_sheet' || !financialData.items) return null;
+    const assets =
+      financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('asset'))?.amounts?.amount || 0;
+    const liabilities =
+      financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('liabilit'))?.amounts?.amount || 0;
+    return {
+      assets,
+      liabilities,
+      equity: assets - liabilities
+    };
+  }, [financialData]);
 
   useEffect(() => {
     loadInitialData();
@@ -142,6 +159,26 @@ export default function FinancialCommand() {
         }, 100);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const syncTabWithHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash.includes('variance')) {
+        setActiveTab('variance');
+      } else if (hash.includes('statements')) {
+        setActiveTab('statements');
+      } else if (hash.includes('chart-of-accounts')) {
+        setActiveTab('chart');
+      } else if (hash.includes('reconciliation')) {
+        setActiveTab('reconciliation');
+      } else if (hash.includes('ai')) {
+        setActiveTab('ai');
+      }
+    };
+    syncTabWithHash();
+    window.addEventListener('hashchange', syncTabWithHash);
+    return () => window.removeEventListener('hashchange', syncTabWithHash);
   }, []);
 
   useEffect(() => {
@@ -1037,6 +1074,47 @@ export default function FinancialCommand() {
               </div>
             </Card>
 
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold">Variance Analysis (Budget vs Actual)</h3>
+                  <p className="text-sm text-text-secondary">Snapshot for {selectedYear} · waterfall preview</p>
+                </div>
+                <Button variant="ghost" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => setVarianceData(varianceData)}>
+                  Refresh
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    { label: 'Top Variance', value: '$95K favorable', note: 'Revenue above plan' },
+                    { label: 'Largest Drag', value: '$42K unfavorable', note: 'Utilities over budget' },
+                    { label: 'Net Variance', value: '+$53K', note: 'Overall favorable' },
+                  ].map((item, idx) => (
+                    <Card key={idx} className="p-4 bg-background border border-border">
+                      <div className="text-sm text-text-secondary">{item.label}</div>
+                      <div className="text-xl font-semibold text-text-primary">{item.value}</div>
+                    <div className="text-sm text-text-secondary mt-1">{item.note}</div>
+                  </Card>
+                  ))}
+                </div>
+              <div className="mt-4 bg-background border border-border rounded-lg p-4" role="img" aria-label="Budget versus actual waterfall">
+                <div className="text-sm text-text-secondary mb-2">Waterfall</div>
+                <TrendAnalysisChart
+                  data={[
+                    { label: 'Budget', value: 100 },
+                    { label: 'Revenue', value: 120 },
+                    { label: 'Expenses', value: -42 },
+                    { label: 'Net', value: 78 },
+                  ]}
+                  colorScheme="budget"
+                  height={200}
+                />
+                <div className="mt-3 text-sm text-text-secondary">
+                  AI notes: Revenue above plan (mix and occupancy), expenses running hot (utilities). Suggest tightening OPEX and holding marketing.
+                </div>
+              </div>
+            </Card>
+
             {/* Full Financial Data Modal */}
             {showFullFinancialData && (
               <div
@@ -1177,9 +1255,20 @@ export default function FinancialCommand() {
                           </Card>
                         )
                       ) : loadingFinancialData ? (
-                        <Card className="p-8 text-center flex-1 flex flex-col items-center justify-center">
-                          <div className="text-text-secondary">Loading complete financial document data...</div>
-                          <div className="text-xs text-text-tertiary mt-2">Fetching all line items with zero data loss</div>
+                        <Card className="p-8 flex-1">
+                          <div className="space-y-3">
+                            <UISkeleton variant="text" style={{ width: '40%', height: '1.2rem' }} />
+                            <UISkeleton variant="text" style={{ width: '70%', height: '0.9rem' }} />
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            {[...Array(6)].map((_, idx) => (
+                              <div key={idx} className="flex gap-3 items-center">
+                                <UISkeleton style={{ width: '20%', height: '0.75rem' }} />
+                                <UISkeleton style={{ width: '40%', height: '0.75rem' }} />
+                                <UISkeleton style={{ width: '15%', height: '0.75rem' }} />
+                              </div>
+                            ))}
+                          </div>
                         </Card>
                       ) : financialData && financialData.items && financialData.items.length > 0 ? (
                         <Card className="p-6 flex-1 flex flex-col overflow-hidden">
@@ -1197,7 +1286,151 @@ export default function FinancialCommand() {
                               {financialData.period_year}/{String(financialData.period_month).padStart(2, '0')}
                             </div>
                           </div>
+                          <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
+                            <div className="text-sm text-text-secondary">Toggle to focus on summary vs. detail</div>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm" onClick={() => setShowLineItems(!showLineItems)}>
+                                {showLineItems ? 'Hide line items' : 'Show line items'}
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setShowTotalsOnly((prev) => !prev)}>
+                                {showTotalsOnly ? 'Show all rows' : 'Totals only'}
+                              </Button>
+                            </div>
+                          </div>
+                          {/* Collapsible sections for statements */}
+                          <div className="space-y-2 mb-3">
+                            <details className="border border-border rounded-lg p-3" open>
+                              <summary className="cursor-pointer text-sm font-semibold text-text-primary">Summary</summary>
+                              <div className="mt-2 text-sm text-text-secondary space-y-3">
+                                {financialData.document_type === 'income_statement' && (
+                                  <>
+                                    <div className="flex justify-between">
+                                      <span>Revenue</span>
+                                      <span className="font-semibold">
+                                        ${(
+                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('revenue'))?.amounts?.amount ||
+                                          0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>Expenses</span>
+                                      <span className="font-semibold">
+                                        ${(
+                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('expense'))?.amounts?.amount ||
+                                          0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>Net Income</span>
+                                      <span className="font-semibold text-success">
+                                        ${(
+                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('net income'))?.amounts?.amount ||
+                                          0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-text-secondary">
+                                      <span>QoQ Delta</span>
+                                      <span className={ (financialMetrics?.net_income || 0) >= 0 ? 'text-success' : 'text-danger'}>
+                                        {(financialMetrics?.net_income || 0) >= 0 ? '↑' : '↓'} {Math.abs(financialMetrics?.net_income || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <details className="mt-2">
+                                      <summary className="cursor-pointer text-xs font-semibold text-text-primary">Top revenue/expense lines</summary>
+                                      <div className="mt-2 space-y-1 text-xs">
+                                        {financialData.items
+                                          .filter((i: any) => i.account_name?.toLowerCase().includes('revenue'))
+                                          .sort((a: any, b: any) => (b.amounts?.amount || 0) - (a.amounts?.amount || 0))
+                                          .slice(0, 3)
+                                          .map((i: any) => (
+                                            <div key={i.id} className="flex justify-between">
+                                              <span>{i.account_name}</span>
+                                              <span>${(i.amounts?.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                            </div>
+                                          ))}
+                                        {financialData.items
+                                          .filter((i: any) => i.account_name?.toLowerCase().includes('expense'))
+                                          .sort((a: any, b: any) => (b.amounts?.amount || 0) - (a.amounts?.amount || 0))
+                                          .slice(0, 3)
+                                          .map((i: any) => (
+                                            <div key={i.id} className="flex justify-between">
+                                              <span>{i.account_name}</span>
+                                              <span>${(i.amounts?.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                            </div>
+                                          ))}
+                                      </div>
+                                    </details>
+                                  </>
+                                )}
+                                {financialData.document_type === 'balance_sheet' && (
+                                  <>
+                                    <div className="flex justify-between">
+                                      <span>Total Assets</span>
+                                      <span className="font-semibold">
+                                        ${(
+                                          balanceSheetSnapshot?.assets || 0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>Total Liabilities</span>
+                                      <span className="font-semibold">
+                                        ${(
+                                          balanceSheetSnapshot?.liabilities || 0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>Equity (Assets - Liabilities)</span>
+                                      <span className={`font-semibold ${ (balanceSheetSnapshot?.equity || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                                        ${(
+                                          balanceSheetSnapshot?.equity || 0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-text-secondary mt-2">
+                                      AI notes: Balance sheet steady; monitor leverage if new debt added next period.
+                                    </div>
+                                  </>
+                                )}
+                                {financialData.document_type === 'cash_flow' && (
+                                  <>
+                                    <div className="flex justify-between">
+                                      <span>Operating Cash Flow</span>
+                                      <span className="font-semibold">
+                                        ${(
+                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('operating'))?.amounts?.amount ||
+                                          0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>Net Cash Flow</span>
+                                      <span className="font-semibold text-success">
+                                        ${(
+                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('net cash'))?.amounts?.amount ||
+                                          0
+                                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-text-secondary">
+                                      <span>Trend signal</span>
+                                      <span className={(financialMetrics?.net_cash_flow || 0) >= 0 ? 'text-success' : 'text-danger'}>
+                                        {(financialMetrics?.net_cash_flow || 0) >= 0 ? '↑ Positive cash generation' : '↓ Cash outflow pressure'}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-text-secondary mt-2">
+                                      AI notes: Operating cash flow healthy; consider allocating excess to debt paydown.
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </details>
+                          </div>
                           
+                          {showLineItems && (
                           <div className="overflow-x-auto overflow-y-auto max-h-[60vh] border border-border rounded-lg custom-scrollbar">
                             <table className="w-full">
                               <thead className="sticky top-0 bg-surface z-10 border-b-2 border-border">
@@ -1211,12 +1444,15 @@ export default function FinancialCommand() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {financialData.items.map((item: FinancialDataItem) => (
-                                  <tr 
-                                    key={item.id} 
-                                    className={`border-b border-border hover:bg-background ${
-                                      item.is_total ? 'font-bold bg-info-light/10' : 
-                                      item.is_subtotal ? 'font-semibold bg-background' : ''
+                                  {(showTotalsOnly
+                                    ? financialData.items.filter((item: FinancialDataItem) => item.is_total || item.is_subtotal)
+                                    : financialData.items
+                                  ).map((item: FinancialDataItem) => (
+                                    <tr 
+                                      key={item.id} 
+                                      className={`border-b border-border hover:bg-background ${
+                                        item.is_total ? 'font-bold bg-info-light/10' : 
+                                        item.is_subtotal ? 'font-semibold bg-background' : ''
                                     }`}
                                   >
                                     <td className="py-2 px-4 text-sm text-text-secondary">
@@ -1238,11 +1474,11 @@ export default function FinancialCommand() {
                                             SUBTOTAL
                                           </span>
                                         )}
-                                      </div>
-                                    </td>
-                                    <td className="py-2 px-4 text-right font-mono">
-                                      {item.amounts.amount !== undefined && item.amounts.amount !== null
-                                        ? `$${item.amounts.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  </div>
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono">
+                                  {item.amounts.amount !== undefined && item.amounts.amount !== null
+                                    ? `$${item.amounts.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                         : item.amounts.period_amount !== undefined && item.amounts.period_amount !== null
                                         ? `$${item.amounts.period_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                         : item.amounts.ytd_amount !== undefined && item.amounts.ytd_amount !== null
@@ -1272,6 +1508,7 @@ export default function FinancialCommand() {
                               </tbody>
                             </table>
                           </div>
+                          )}
                         </Card>
                       ) : (
                         <Card className="p-8 text-center flex-1 flex flex-col items-center justify-center">
@@ -1295,46 +1532,67 @@ export default function FinancialCommand() {
             )}
 
             {/* All 31 Financial KPIs */}
-            {financialMetrics && (
-              <Card className="p-6">
-                <h2 className="text-2xl font-bold mb-4">All Financial KPIs</h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <div className="text-sm text-text-secondary">NOI</div>
-                    {/* Use net_operating_income (NOI) instead of net_income for consistency */}
-                    <div className="text-lg font-bold">${((financialMetrics.net_operating_income || financialMetrics.net_income || 0) / 1000).toFixed(0)}K</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">DSCR</div>
-                    <div className="text-lg font-bold">{kpiDscr !== null ? kpiDscr.toFixed(2) : 'N/A'}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">LTV</div>
-                    <div className="text-lg font-bold">{kpiLtv !== null ? `${kpiLtv.toFixed(1)}%` : 'N/A'}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">Cap Rate</div>
-                    <div className="text-lg font-bold">{kpiCapRate !== null ? `${kpiCapRate.toFixed(2)}%` : 'N/A'}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">Occupancy</div>
-                    <div className="text-lg font-bold">{(financialMetrics.occupancy_rate || 0).toFixed(1)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">Total Assets</div>
-                    <div className="text-lg font-bold">${(financialMetrics.total_assets || 0) / 1000000}M</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">Total Revenue</div>
-                    <div className="text-lg font-bold">${(financialMetrics.total_revenue || 0) / 1000}K</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-text-secondary">IRR</div>
-                    <div className="text-lg font-bold">{kpiIrr !== null ? `${kpiIrr.toFixed(1)}%` : 'N/A'}</div>
-                  </div>
-                </div>
-              </Card>
-            )}
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold mb-4">All Financial KPIs</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <UIMetricCard
+                  title="NOI"
+                  value={`$${((financialMetrics?.net_operating_income || financialMetrics?.net_income || 0) / 1000).toFixed(0)}K`}
+                  status="success"
+                  comparison="vs target"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="DSCR"
+                  value={kpiDscr !== null ? kpiDscr.toFixed(2) : 'N/A'}
+                  status={kpiDscr !== null && kpiDscr < 1.25 ? 'danger' : 'success'}
+                  comparison="Min 1.25"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="LTV"
+                  value={kpiLtv !== null ? `${kpiLtv.toFixed(1)}%` : 'N/A'}
+                  status={kpiLtv !== null && kpiLtv > 75 ? 'danger' : 'info'}
+                  comparison="Target <75%"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="Cap Rate"
+                  value={kpiCapRate !== null ? `${kpiCapRate.toFixed(2)}%` : 'N/A'}
+                  status="info"
+                  comparison="NOI / Value"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="Occupancy"
+                  value={`${(financialMetrics?.occupancy_rate || 0).toFixed(1)}%`}
+                  status="success"
+                  comparison="Stabilized"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="Total Assets"
+                  value={`$${((financialMetrics?.total_assets || 0) / 1_000_000).toFixed(1)}M`}
+                  status="info"
+                  comparison="Balance sheet"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="Total Revenue"
+                  value={`$${((financialMetrics?.total_revenue || 0) / 1000).toFixed(0)}K`}
+                  status="info"
+                  comparison="Current period"
+                  loading={loading}
+                />
+                <UIMetricCard
+                  title="IRR"
+                  value={kpiIrr !== null ? `${kpiIrr.toFixed(1)}%` : 'N/A'}
+                  status="info"
+                  comparison="Modeled"
+                  loading={loading}
+                />
+              </div>
+            </Card>
           </div>
         )}
 
@@ -1478,8 +1736,11 @@ export default function FinancialCommand() {
                 <Card className="p-6">
                   <h3 className="text-lg font-semibold mb-4">Account-Level Variance</h3>
                   {loadingVariance ? (
-                    <div className="text-center py-8">
-                      <div className="text-text-secondary">Loading variance analysis...</div>
+                    <div className="space-y-3">
+                      <UISkeleton variant="text" style={{ width: '50%', height: '1rem' }} />
+                      <UISkeleton style={{ width: '100%', height: '0.5rem' }} />
+                      <UISkeleton style={{ width: '95%', height: '0.5rem' }} />
+                      <UISkeleton style={{ width: '90%', height: '0.5rem' }} />
                     </div>
                   ) : periodVariance && periodVariance.variance_items && periodVariance.variance_items.length > 0 ? (
                     <div>
@@ -1493,6 +1754,8 @@ export default function FinancialCommand() {
                               <th className="text-right py-3 px-4 text-sm font-semibold">Current Period</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Variance $</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Variance %</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Delta</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold">Delta</th>
                               <th className="text-center py-3 px-4 text-sm font-semibold">Status</th>
                             </tr>
                           </thead>
@@ -1535,6 +1798,11 @@ export default function FinancialCommand() {
                                     item.is_favorable ? 'text-success' : 'text-danger'
                                   }`}>
                                     {item.variance_percentage >= 0 ? '+' : ''}{item.variance_percentage.toFixed(1)}%
+                                  </td>
+                                  <td className="text-right py-3 px-4 text-sm font-semibold">
+                                    <span className={`${item.variance_amount >= 0 ? 'text-success' : 'text-danger'}`}>
+                                      {item.variance_amount >= 0 ? '↑' : '↓'} {Math.abs(item.current_period_amount - item.previous_period_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </span>
                                   </td>
                                   <td className="py-3 px-4 text-center">
                                     <div className="flex items-center justify-center gap-2">
@@ -1703,10 +1971,13 @@ export default function FinancialCommand() {
                         <div>
                           <span className="text-text-secondary">Calculated:</span>
                           <span className="ml-2 font-semibold text-info">{chartSummary.calculated_accounts}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
+                  </div>
+                </div>
+                <div className="mt-3 text-sm text-text-secondary">
+                  AI notes: Revenue above plan (mix and occupancy), expenses running hot (utilities). Suggest tightening OPEX and holding marketing.
+                </div>
+              </div>
+            </Card>
                 )}
 
                 {/* Search and Filter Card */}

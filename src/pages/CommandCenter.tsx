@@ -13,7 +13,9 @@ import {
   Play,
   Download
 } from 'lucide-react';
-import { MetricCard, Card, Button, ProgressBar } from '../components/design-system';
+import { Card, Button, ProgressBar } from '../components/design-system';
+import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
+import { Skeleton as UISkeleton } from '../components/ui/Skeleton';
 import { PDFViewer } from '../components/PDFViewer';
 import { propertyService } from '../lib/property';
 import { mortgageService } from '../lib/mortgage';
@@ -94,6 +96,7 @@ interface AIInsight {
   title: string;
   description: string;
   confidence: number;
+  updated_at?: string;
 }
 
 export default function CommandCenter() {
@@ -102,6 +105,8 @@ export default function CommandCenter() {
   const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlert[]>([]);
   const [propertyPerformance, setPropertyPerformance] = useState<PropertyPerformance[]>([]);
   const [aiInsights, setAIInsights] = useState<AIInsight[]>([]);
+  const [loadingCriticalAlerts, setLoadingCriticalAlerts] = useState(false);
+  const [loadingAIInsights, setLoadingAIInsights] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -339,6 +344,7 @@ export default function CommandCenter() {
   };
 
   const loadCriticalAlerts = async () => {
+    setLoadingCriticalAlerts(true);
     try {
       // Fetch critical alerts for the selected year
       // Use severity=CRITICAL (not priority) and optionally filter by year
@@ -418,6 +424,8 @@ export default function CommandCenter() {
       console.error('Failed to load critical alerts:', err);
       // Set empty alerts on error to prevent blocking
       setCriticalAlerts([]);
+    } finally {
+      setLoadingCriticalAlerts(false);
     }
   };
 
@@ -607,6 +615,7 @@ export default function CommandCenter() {
   };
 
   const loadAIInsights = async () => {
+    setLoadingAIInsights(true);
     try {
       // Fetch real AI insights from NLQ API
       const response = await fetch(`${API_BASE_URL}/nlq/insights/portfolio`, {
@@ -624,6 +633,8 @@ export default function CommandCenter() {
       console.error('Failed to load AI insights:', err);
       // No fallback - show empty state on error
       setAIInsights([]);
+    } finally {
+      setLoadingAIInsights(false);
     }
   };
 
@@ -1195,13 +1206,33 @@ export default function CommandCenter() {
   const noiChange = portfolioHealth?.percentageChanges?.noi_change ?? 0;
   const occupancyChange = portfolioHealth?.percentageChanges?.occupancy_change ?? 0;
   const dscrChange = portfolioHealth?.percentageChanges?.dscr_change ?? 0;
+  const criticalCount = portfolioHealth?.alertCount?.critical ?? 0;
+  const warningCount = portfolioHealth?.alertCount?.warning ?? 0;
+  const insightCount = portfolioHealth?.alertCount?.info ?? 0;
 
   if (loading && !portfolioHealth) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-info" />
-          <p className="text-text-secondary">Loading Command Center...</p>
+      <div className="min-h-screen bg-background">
+        <div className="bg-hero-gradient text-white py-12 px-6">
+          <div className="max-w-7xl mx-auto space-y-4">
+            <UISkeleton variant="text" style={{ width: '40%', height: '2rem' }} />
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <UISkeleton variant="text" style={{ width: '200px', height: '1rem' }} />
+              <UISkeleton variant="text" style={{ width: '140px', height: '1rem' }} />
+              <UISkeleton variant="text" style={{ width: '120px', height: '1rem' }} />
+            </div>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[0, 1, 2, 3].map((i) => (
+              <Card key={i} className="p-6">
+                <UISkeleton variant="text" style={{ width: '55%', height: '1rem', marginBottom: '0.75rem' }} />
+                <UISkeleton variant="text" style={{ width: '40%', height: '1.75rem', marginBottom: '0.5rem' }} />
+                <UISkeleton style={{ width: '100%', height: '8px' }} />
+              </Card>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -1212,100 +1243,130 @@ export default function CommandCenter() {
       {/* Hero Section - Portfolio Health Score */}
       <div className="bg-hero-gradient text-white py-12 px-6">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-4xl font-bold mb-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+            <div className="space-y-3">
+              <h1 className="text-4xl font-bold">
                 {selectedPropertyFilter === 'all'
-                  ? '🏢 Portfolio Health Score'
-                  : `🏢 ${properties.find(p => p.property_code === selectedPropertyFilter)?.property_name || 'Property'} Health Score`
+                  ? '🏢 Portfolio Vitals'
+                  : `🏢 ${properties.find(p => p.property_code === selectedPropertyFilter)?.property_name || 'Property'} Vitals`
                 }
               </h1>
-              <div className="flex items-center gap-4">
-                <p className="text-white/80">
-                  Last Updated: {lastRefresh.toLocaleTimeString()}
-                </p>
-                <div className="flex items-center gap-2">
+              <p className="text-white/80">
+                Last updated: {lastRefresh.toLocaleTimeString()} • Auto-refresh {isPaused ? 'off' : 'on (5 min)'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={toggle}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                  title={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+                >
+                  {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  <span>{isPaused ? 'Resume' : 'Pause'}</span>
+                </button>
+                <button
+                  onClick={refresh}
+                  disabled={isRefreshing}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm disabled:opacity-50"
+                  title="Refresh now"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                </button>
+                <div className="relative">
                   <button
-                    onClick={toggle}
+                    onClick={() => setShowExportMenu(!showExportMenu)}
                     className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
-                    title={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+                    title="Export data"
                   >
-                    {isPaused ? (
-                      <>
-                        <Play className="w-4 h-4" />
-                        <span>Resume</span>
-                      </>
-                    ) : (
-                      <>
-                        <Pause className="w-4 h-4" />
-                        <span>Pause</span>
-                      </>
-                    )}
+                    <Download className="w-4 h-4" />
+                    <span>Export</span>
                   </button>
-                  <button
-                    onClick={refresh}
-                    disabled={isRefreshing}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm disabled:opacity-50"
-                    title="Refresh now"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-                  </button>
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowExportMenu(!showExportMenu)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
-                      title="Export data"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Export</span>
-                    </button>
-                    {showExportMenu && (
-                      <div className="absolute top-full right-0 mt-2 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 min-w-[160px] z-50">
-                        <button
-                          onClick={handleExportPDF}
-                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-t-lg"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Export PDF
-                        </button>
-                        <button
-                          onClick={handleExportExcel}
-                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Export Excel
-                        </button>
-                        <button
-                          onClick={handleExportCSV}
-                          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-b-lg"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Export CSV
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {!isPaused && (
-                    <span className="text-xs text-white/60">Auto-refresh: Every 5 min</span>
+                  {showExportMenu && (
+                    <div className="absolute top-full right-0 mt-2 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 min-w-[160px] z-50">
+                      <button
+                        onClick={handleExportPDF}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-t-lg"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Export PDF
+                      </button>
+                      <button
+                        onClick={handleExportExcel}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Export Excel
+                      </button>
+                      <button
+                        onClick={handleExportCSV}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors rounded-b-lg"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Export CSV
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
-            </div>
-            <div className="text-right">
-              <div className="text-6xl font-bold mb-2">
-                {portfolioHealth?.score || 0}/100
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-sm">
+                  🔴 Critical: {criticalCount}
+                </span>
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-sm">
+                  🟡 Warnings: {warningCount}
+                </span>
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-sm">
+                  🔵 Insights: {insightCount}
+                </span>
               </div>
-              <div className="flex items-center gap-2 text-xl">
-                {getStatusIcon(portfolioHealth?.status || 'fair')}
-                <span className="uppercase font-semibold">{portfolioHealth?.status || 'FAIR'}</span>
+              <div className="mt-3 rounded-xl border border-white/20 bg-white/10 backdrop-blur-sm p-3 flex flex-wrap items-center gap-3 text-sm" aria-live="polite">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-danger/20 text-white font-semibold">{criticalCount}</span>
+                  <div>
+                    <div className="font-semibold text-white">Priority Actions</div>
+                    <div className="text-white/80">Critical: {criticalCount} • Warnings: {warningCount} • Insights: {insightCount}</div>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => { window.location.hash = 'alert-rules'; }}
+                    className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                  >
+                    View Priority Actions
+                  </button>
+                  <button
+                    onClick={() => setShowQuickActions(true)}
+                    className="px-3 py-1.5 rounded-lg border border-white/30 text-white hover:bg-white/20 transition-colors"
+                  >
+                    Quick Actions
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <div className="relative w-56 h-56">
+                <div
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    background: `conic-gradient(#22c55e ${Math.min(portfolioHealth?.score || 0, 100)}%, rgba(255,255,255,0.1) ${Math.min(portfolioHealth?.score || 0, 100)}%)`
+                  }}
+                />
+                <div className="absolute inset-3 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center text-center">
+                  <div className="text-sm uppercase tracking-wide text-white/70">Health</div>
+                  <div className="text-5xl font-bold">{portfolioHealth?.score || 0}</div>
+                  <div className="text-sm text-white/80">of 100</div>
+                  <div className="mt-2 flex items-center gap-2 text-lg">
+                    {getStatusIcon(portfolioHealth?.status || 'fair')}
+                    <span className="uppercase font-semibold">{portfolioHealth?.status || 'FAIR'}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Property and Year Filter */}
         <Card className="p-4 mb-6">
           <div className="flex items-center gap-6 flex-wrap">
@@ -1355,37 +1416,40 @@ export default function CommandCenter() {
 
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          <MetricCard
+          <UIMetricCard
             title={selectedPropertyFilter === 'all' ? "Total Portfolio Value" : "Property Value"}
-            value={portfolioHealth?.totalValue || 0}
-            change={totalValueChange}
+            value={portfolioHealth?.totalValue ? `$${(portfolioHealth.totalValue / 1_000_000).toFixed(1)}M` : '$0'}
+            delta={Number.isFinite(totalValueChange) ? Number(totalValueChange.toFixed(1)) : 0}
             trend={totalValueChange >= 0 ? "up" : "down"}
-            icon="💰"
-            variant="success"
-            sparkline={sparklineData.value.length > 0 ? sparklineData.value : undefined}
+            status="success"
+            target={portfolioHealth?.percentageChanges?.total_value_change ?? undefined}
+            comparison={selectedPropertyFilter === 'all' ? 'vs last period' : 'vs prior period'}
+            loading={loading}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('property_value') : undefined}
           />
-          <MetricCard
+          <UIMetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
-            value={portfolioHealth?.totalNOI || 0}
-            change={noiChange}
+            value={portfolioHealth?.totalNOI ? `$${(portfolioHealth.totalNOI / 1_000_000).toFixed(1)}M` : '$0'}
+            delta={Number.isFinite(noiChange) ? Number(noiChange.toFixed(1)) : 0}
             trend={noiChange >= 0 ? "up" : "down"}
-            icon="📊"
-            variant="info"
-            sparkline={sparklineData.noi.length > 0 ? sparklineData.noi : undefined}
+            status="info"
+            target={portfolioHealth?.percentageChanges?.noi_change ?? undefined}
+            comparison="vs last period"
+            loading={loading}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('net_operating_income') : undefined}
           />
-          <MetricCard
+          <UIMetricCard
             title={selectedPropertyFilter === 'all' ? "Average Occupancy" : "Occupancy Rate"}
             value={`${(portfolioHealth?.avgOccupancy || 0).toFixed(1)}%`}
-            change={occupancyChange}
+            delta={Number.isFinite(occupancyChange) ? Number(occupancyChange.toFixed(1)) : 0}
             trend={occupancyChange >= 0 ? "up" : "down"}
-            icon="🏘️"
-            variant="warning"
-            sparkline={sparklineData.occupancy.length > 0 ? sparklineData.occupancy : undefined}
+            status="warning"
+            target={portfolioHealth?.percentageChanges?.occupancy_change ?? undefined}
+            comparison="vs last period"
+            loading={loading}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('occupancy_rate') : undefined}
           />
-          <MetricCard
+          <UIMetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
             subtitle={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.period
               ? `${latestCompleteDSCR.period.year}-${String(latestCompleteDSCR.period.month).padStart(2, '0')} (Complete)`
@@ -1393,11 +1457,12 @@ export default function CommandCenter() {
             value={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.dscr
               ? latestCompleteDSCR.dscr.toFixed(2)
               : portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "N/A"}
-            change={dscrChange}
+            delta={Number.isFinite(dscrChange) ? Number(dscrChange.toFixed(2)) : 0}
             trend={dscrChange >= 0 ? "up" : "down"}
-            icon="📈"
-            variant="success"
-            sparkline={sparklineData.dscr.length > 0 ? sparklineData.dscr : undefined}
+            status="success"
+            target={portfolioHealth?.percentageChanges?.dscr_change ?? undefined}
+            comparison="vs last period"
+            loading={loading}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('dscr') : undefined}
           />
         </div>
@@ -1409,37 +1474,96 @@ export default function CommandCenter() {
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 📄 Document Availability Matrix - {selectedYear}
               </h2>
-              {latestCompleteDSCR && latestCompleteDSCR.period && (
-                <div className="flex items-center gap-4 bg-blue-50 px-4 py-2 rounded-lg">
-                  <span className="text-sm font-semibold text-gray-700">
-                    Latest Complete Period: {latestCompleteDSCR.period.year}-{String(latestCompleteDSCR.period.month).padStart(2, '0')}
-                  </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    All Docs
-                  </span>
-                  <div className="h-6 w-px bg-gray-300"></div>
-                  <div className="text-sm">
-                    <span className="text-gray-600">DSCR: </span>
-                    <span className={`font-bold ${
-                      latestCompleteDSCR.dscr >= 1.25 ? 'text-green-600' :
-                      latestCompleteDSCR.dscr >= 1.10 ? 'text-yellow-600' :
-                      'text-red-600'
-                    }`}>
-                      {latestCompleteDSCR.dscr ? latestCompleteDSCR.dscr.toFixed(4) : 'N/A'}
+              <div className="flex items-center gap-3">
+                {latestCompleteDSCR && latestCompleteDSCR.period && (
+                  <div className="flex items-center gap-3 bg-blue-50 px-4 py-2 rounded-lg">
+                    <span className="text-sm font-semibold text-gray-700">
+                      Latest Complete: {latestCompleteDSCR.period.year}-{String(latestCompleteDSCR.period.month).padStart(2, '0')}
                     </span>
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      All Docs
+                    </span>
+                    <div className="h-6 w-px bg-gray-300"></div>
+                    <div className="text-sm">
+                      <span className="text-gray-600">DSCR: </span>
+                      <span className={`font-bold ${
+                        latestCompleteDSCR.dscr >= 1.25 ? 'text-green-600' :
+                        latestCompleteDSCR.dscr >= 1.10 ? 'text-yellow-600' :
+                        'text-red-600'
+                      }`}>
+                        {latestCompleteDSCR.dscr ? latestCompleteDSCR.dscr.toFixed(4) : 'N/A'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+                <Button variant="primary" size="sm" icon={<Upload className="w-4 h-4" />} onClick={() => setShowUploadModal(true)}>
+                  Upload Missing Docs
+                </Button>
+              </div>
             </div>
 
             {loadingDocMatrix ? (
-              <div className="text-center py-8 text-gray-500">
-                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-                Loading document matrix...
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...Array(6)].map((_, idx) => (
+                  <div key={idx} className="space-y-3">
+                    <UISkeleton variant="text" style={{ width: '70%', height: '1rem' }} />
+                    <UISkeleton style={{ width: '100%', height: '0.5rem' }} />
+                    <UISkeleton style={{ width: '100%', height: '0.5rem' }} />
+                    <UISkeleton style={{ width: '80%', height: '0.5rem' }} />
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="space-y-4">
+                {documentMatrix.months && (
+                  <div className="flex flex-col gap-3">
+                    {(() => {
+                      const totalMonths = documentMatrix.months.length;
+                      const completeMonths = documentMatrix.months.filter((m: any) => m.all_available).length;
+                      const progress = totalMonths ? Math.round((completeMonths / totalMonths) * 100) : 0;
+                      const missingDocs = documentMatrix.months.reduce((count: number, month: any) => {
+                        const missing = documentMatrix.required_documents?.filter((doc: string) => !month.documents?.[doc])?.length || 0;
+                        return count + missing;
+                      }, 0);
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="p-4 rounded-xl border border-border bg-surface">
+                            <div className="text-sm text-text-secondary mb-1">Completeness</div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xl font-semibold text-text-primary">{progress}%</span>
+                              <span className="text-sm text-text-secondary">{completeMonths}/{totalMonths} months</span>
+                            </div>
+                            <ProgressBar value={progress} max={100} showLabel={false} />
+                          </div>
+                          <div className="p-4 rounded-xl border border-border bg-surface">
+                            <div className="text-sm text-text-secondary mb-1">Missing Documents</div>
+                            <div className="text-xl font-semibold text-text-primary">{missingDocs}</div>
+                            <div className="text-sm text-text-secondary">Across all periods</div>
+                          </div>
+                          <div className="p-4 rounded-xl border border-border bg-surface">
+                            <div className="text-sm text-text-secondary mb-1">Timeline</div>
+                            <div className="flex flex-wrap gap-2">
+                              {documentMatrix.months.map((month: any) => (
+                                <span
+                                  key={month.period_id}
+                                  className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                                    month.all_available
+                                      ? 'bg-green-50 text-green-700 border-green-200'
+                                      : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                  } ${documentMatrix.latest_complete_period?.period_id === month.period_id ? 'ring-2 ring-blue-400' : ''}`}
+                                >
+                                  {month.month_name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+                <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-100">
@@ -1472,7 +1596,7 @@ export default function CommandCenter() {
                         </td>
                         {documentMatrix.required_documents?.map((doc: string) => (
                           <td key={doc} className="border border-gray-300 px-4 py-2 text-center">
-                            {month.documents[doc] ? (
+                            {month.documents?.[doc] ? (
                               <CheckCircle className="w-5 h-5 text-green-600 mx-auto" />
                             ) : (
                               <span className="text-gray-300 text-2xl">✗</span>
@@ -1494,6 +1618,21 @@ export default function CommandCenter() {
                     ))}
                   </tbody>
                 </table>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-sm font-semibold text-text-primary mb-2">Heatmap</div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {documentMatrix.months?.map((month: any) => (
+                      <div key={month.period_id} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-50 border border-border">
+                        <span className={`inline-block h-3 w-3 rounded-full ${
+                          month.all_available ? 'bg-success' : 'bg-warning'
+                        }`} />
+                        <span>{month.month_name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 {!documentMatrix.latest_complete_period && (
                   <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -1517,77 +1656,136 @@ export default function CommandCenter() {
           </Card>
         )}
 
-        {/* Critical Alerts Section */}
-        {criticalAlerts.length > 0 && (
-          <Card variant="danger" className="mb-8 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                <AlertTriangle className="w-6 h-6 text-danger" />
-                Critical Alerts ({criticalAlerts.length} Require Immediate Action)
-              </h2>
+        {/* Priority Actions / Alerts */}
+        <Card variant="danger" className="mb-8 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-6 h-6 text-danger" />
+              <div>
+                <h2 className="text-2xl font-bold">Priority Actions</h2>
+                <p className="text-sm text-text-secondary">Live issues across the portfolio</p>
+              </div>
             </div>
-            <div className="space-y-4">
-              {criticalAlerts.map((alert) => (
-                <Card key={alert.id} variant="danger" className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span className="text-danger font-bold">🔴</span>
-                        <span className="font-semibold text-lg">
-                          {alert.property.name} - {alert.metric.name} {alert.metric.current}
-                        </span>
-                        <span className="text-sm text-text-secondary">
-                          (Below {alert.metric.threshold})
-                        </span>
-                        {alert.period && (
-                          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-medium">
-                            {new Date(alert.period.year, alert.period.month - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+            <div className="flex items-center gap-2">
+              {(() => {
+                const counts = criticalAlerts.reduce(
+                  (acc, a) => {
+                    acc[a.severity] = (acc[a.severity] || 0) + 1;
+                    return acc;
+                  },
+                  { critical: 0, high: 0, medium: 0 } as Record<string, number>
+                );
+                const badge = (label: string, count: number, tone: 'danger' | 'warning' | 'info') => (
+                  <span
+                    key={label}
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border ${
+                      tone === 'danger'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : tone === 'warning'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    }`}
+                  >
+                    {label}: {count}
+                  </span>
+                );
+                return (
+                  <>
+                    {badge('Critical', counts.critical, 'danger')}
+                    {badge('High', counts.high, 'warning')}
+                    {badge('Medium', counts.medium, 'info')}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+          <div className="space-y-4">
+            {loadingCriticalAlerts ? (
+              [...Array(3)].map((_, idx) => (
+                <div key={idx} className="space-y-2">
+                  <UISkeleton variant="text" style={{ width: '60%', height: '1.25rem' }} />
+                  <UISkeleton style={{ width: '100%', height: '0.5rem' }} />
+                  <UISkeleton style={{ width: '80%', height: '0.5rem' }} />
+                </div>
+              ))
+            ) : criticalAlerts.length === 0 ? (
+              <div className="space-y-2 bg-success-light/20 p-4 rounded-lg border border-success/30">
+                <p className="font-medium text-success">No critical alerts</p>
+                <p className="text-sm text-text-secondary">All systems are stable.</p>
+              </div>
+            ) : (
+              criticalAlerts.map((alert) => {
+                const tone =
+                  alert.severity === 'critical'
+                    ? { bg: 'bg-red-50 border-red-200', pill: 'bg-red-100 text-red-800', bar: 'danger', dot: '🔴' }
+                    : alert.severity === 'high'
+                    ? { bg: 'bg-amber-50 border-amber-200', pill: 'bg-amber-100 text-amber-800', bar: 'warning', dot: '🟠' }
+                    : { bg: 'bg-blue-50 border-blue-200', pill: 'bg-blue-100 text-blue-800', bar: 'info', dot: '🔵' };
+
+                return (
+                  <Card key={alert.id} variant="danger" className={`p-4 border ${tone.bg}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold">{tone.dot}</span>
+                          <span className="font-semibold text-lg">
+                            {alert.property.name} • {alert.metric.name} {alert.metric.current}
                           </span>
-                        )}
+                          <span className={`text-xs px-2 py-1 rounded-full font-semibold ${tone.pill}`}>
+                            {alert.severity.toUpperCase()}
+                          </span>
+                          {alert.period && (
+                            <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-medium">
+                              {new Date(alert.period.year, alert.period.month - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-text-secondary flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-text-primary">{alert.property.code}</span>
+                          <span className="text-text-secondary">Threshold {alert.metric.threshold}</span>
+                          <span className="text-text-secondary">• Impact: {alert.metric.impact}</span>
+                        </div>
+                        <p className="text-text-secondary">
+                          <strong>Action:</strong> {alert.recommendation}
+                        </p>
+                        <ProgressBar
+                          value={(alert.metric.current / alert.metric.threshold) * 100}
+                          max={100}
+                          variant={tone.bar as any}
+                          showLabel
+                          label={`${Math.round((alert.metric.current / alert.metric.threshold) * 100)}% of threshold (${Math.round(((alert.metric.threshold - alert.metric.current) / alert.metric.threshold) * 100)}% below compliance)`}
+                        />
                       </div>
-                      <p className="text-text-secondary mb-2">
-                        <strong>Impact:</strong> {alert.metric.impact}
-                      </p>
-                      <p className="text-text-secondary mb-3">
-                        <strong>Action:</strong> {alert.recommendation}
-                      </p>
-                      <ProgressBar
-                        value={((alert.metric.current / alert.metric.threshold) * 100)}
-                        max={100}
-                        variant="danger"
-                        showLabel
-                        label={`${Math.round((alert.metric.current / alert.metric.threshold) * 100)}% of threshold (${Math.round(((alert.metric.threshold - alert.metric.current) / alert.metric.threshold) * 100)}% below compliance)`}
-                      />
+                      <div className="ml-4 flex flex-col gap-2 shrink-0">
+                        <Button 
+                          variant="info" 
+                          size="sm"
+                          onClick={() => handleViewFinancials(alert)}
+                        >
+                          View Financials
+                        </Button>
+                        <Button 
+                          variant="premium" 
+                          size="sm"
+                          onClick={() => handleAIRecommendations(alert)}
+                        >
+                          AI Recommendations
+                        </Button>
+                        <Button 
+                          variant="success" 
+                          size="sm"
+                          onClick={() => handleAcknowledgeAlert(alert)}
+                        >
+                          Acknowledge
+                        </Button>
+                      </div>
                     </div>
-                    <div className="ml-4 flex gap-2">
-                      <Button 
-                        variant="info" 
-                        size="sm"
-                        onClick={() => handleViewFinancials(alert)}
-                      >
-                        View Financials
-                      </Button>
-                      <Button 
-                        variant="premium" 
-                        size="sm"
-                        onClick={() => handleAIRecommendations(alert)}
-                      >
-                        AI Recommendations
-                      </Button>
-                      <Button 
-                        variant="success" 
-                        size="sm"
-                        onClick={() => handleAcknowledgeAlert(alert)}
-                      >
-                        Acknowledge
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </Card>
-        )}
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </Card>
 
         {/* Portfolio Performance Section - Added spacing from KPI cards */}
         <div className="mt-10">
@@ -1666,7 +1864,15 @@ export default function CommandCenter() {
 
               {/* AI Insights */}
               <div className="space-y-4">
-                {aiInsights.length === 0 ? (
+                {loadingAIInsights ? (
+                  [...Array(3)].map((_, idx) => (
+                    <div key={idx} className="space-y-2">
+                      <UISkeleton variant="text" style={{ width: '50%', height: '1rem' }} />
+                      <UISkeleton style={{ width: '100%', height: '0.5rem' }} />
+                      <UISkeleton style={{ width: '80%', height: '0.5rem' }} />
+                    </div>
+                  ))
+                ) : aiInsights.length === 0 ? (
                   <div className="bg-success-light/20 p-4 rounded-lg border border-success/30">
                     <div className="flex items-center gap-3">
                       <CheckCircle className="w-6 h-6 text-success" />
@@ -1684,16 +1890,29 @@ export default function CommandCenter() {
                 ) : (
                   aiInsights.map((insight) => (
                   <div key={insight.id} className="bg-premium-light/20 p-3 rounded-lg border border-premium/30">
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-3">
                       <span className="text-premium">🟣</span>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm mb-1">{insight.title}</p>
-                        <p className="text-xs text-text-secondary">{insight.description}</p>
-                        <div className="mt-2 flex gap-2">
-                          <Button 
-                            variant="premium" 
-                            size="sm"
-                            onClick={async () => {
+                      <div className="flex-1 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-sm">{insight.title}</p>
+                      <span className="text-xs px-2 py-1 rounded-full bg-white/30 text-white">
+                        {Math.round(insight.confidence)}% confidence
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-secondary">{insight.description}</p>
+                    <div className="flex gap-2 flex-wrap text-xs">
+                      <span className="px-2 py-1 rounded bg-white/10 text-white">
+                        Impact: {insight.type === 'risk' ? 'High' : insight.type === 'opportunity' ? 'Medium' : 'Low'}
+                      </span>
+                      <span className="px-2 py-1 rounded bg-white/10 text-white">
+                        Updated: {insight.updated_at ? new Date(insight.updated_at).toLocaleTimeString() : 'just now'}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex gap-2 flex-wrap">
+                      <Button 
+                        variant="premium" 
+                        size="sm"
+                        onClick={async () => {
                               setSelectedInsight(insight);
                               setShowAnalysisModal(true);
                               await loadInsightAnalysis(insight);
@@ -1701,6 +1920,7 @@ export default function CommandCenter() {
                           >
                             View Analysis
                           </Button>
+                          <Button variant="ghost" size="sm">Acknowledge</Button>
                         </div>
                       </div>
                     </div>

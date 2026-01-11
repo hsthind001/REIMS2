@@ -24,6 +24,7 @@ import {
 import { TrendingUp, TrendingDown, Calendar, Download } from 'lucide-react';
 import { Button } from '../design-system';
 import { exportToExcel, exportToCSV } from '../../lib/exportUtils';
+import { useMemo } from 'react';
 
 export interface TrendDataPoint {
   date: string;
@@ -81,6 +82,10 @@ export default function TrendAnalysisChart({
 }: TrendAnalysisChartProps) {
   const [trendDirection, setTrendDirection] = useState<'up' | 'down' | 'neutral'>('neutral');
   const [trendPercentage, setTrendPercentage] = useState<number>(0);
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    []
+  );
 
   useEffect(() => {
     if (data.length >= 2 && showTrend) {
@@ -140,6 +145,16 @@ export default function TrendAnalysisChart({
   const yFormatter = yAxisFormatter || defaultYAxisFormatter;
   const tooltipFormatterFn = tooltipFormatter || defaultTooltipFormatter;
 
+  const getToken = (token: string, fallback: string) => {
+    const val = getComputedStyle(document.documentElement).getPropertyValue(token);
+    return val?.trim() || fallback;
+  };
+
+  const strokeColor = color || getToken('--color-info', '#3b82f6');
+  const gridColor = getToken('--color-border-default', '#e5e7eb');
+  const textColor = getToken('--color-text-secondary', '#6b7280');
+  const bgColor = getToken('--color-bg-primary', '#ffffff');
+
   const handleExportExcel = () => {
     const exportData = data.map(point => ({
       Date: point.date,
@@ -174,26 +189,26 @@ export default function TrendAnalysisChart({
         <AreaChart {...chartProps}>
           <defs>
             <linearGradient id={`color${metric}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.8} />
-              <stop offset="95%" stopColor={color} stopOpacity={0.1} />
+              <stop offset="5%" stopColor={strokeColor} stopOpacity={0.8} />
+              <stop offset="95%" stopColor={strokeColor} stopOpacity={0.1} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
           <XAxis 
             dataKey="date" 
-            stroke="#6b7280"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
+            stroke={textColor}
+            tick={{ fill: textColor, fontSize: 12 }}
           />
           <YAxis 
-            stroke="#6b7280"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
+            stroke={textColor}
+            tick={{ fill: textColor, fontSize: 12 }}
             label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft' } : undefined}
             tickFormatter={yFormatter}
           />
           <Tooltip
-            contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '4px' }}
+            contentStyle={{ backgroundColor: bgColor, border: `1px solid ${gridColor}`, borderRadius: '4px' }}
             formatter={(value: any) => [tooltipFormatterFn(value), metric]}
-            labelStyle={{ color: '#374151', fontWeight: 600 }}
+            labelStyle={{ color: textColor, fontWeight: 600 }}
           />
           <Legend />
           {referenceLine && (
@@ -207,32 +222,33 @@ export default function TrendAnalysisChart({
           <Area
             type="monotone"
             dataKey="value"
-            stroke={color}
+            stroke={strokeColor}
             fillOpacity={1}
             fill={`url(#color${metric})`}
             name={metric}
+            isAnimationActive={!prefersReducedMotion}
           />
         </AreaChart>
       );
     } else if (chartType === 'bar') {
       return (
         <BarChart {...chartProps}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
           <XAxis 
             dataKey="date" 
-            stroke="#6b7280"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
+            stroke={textColor}
+            tick={{ fill: textColor, fontSize: 12 }}
           />
           <YAxis 
-            stroke="#6b7280"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
+            stroke={textColor}
+            tick={{ fill: textColor, fontSize: 12 }}
             label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft' } : undefined}
             tickFormatter={yFormatter}
           />
           <Tooltip
-            contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '4px' }}
+            contentStyle={{ backgroundColor: bgColor, border: `1px solid ${gridColor}`, borderRadius: '4px' }}
             formatter={(value: any) => [tooltipFormatterFn(value), metric]}
-            labelStyle={{ color: '#374151', fontWeight: 600 }}
+            labelStyle={{ color: textColor, fontWeight: 600 }}
           />
           <Legend />
           {referenceLine && (
@@ -243,29 +259,35 @@ export default function TrendAnalysisChart({
               label={{ value: referenceLineLabel || 'Threshold', position: 'right' }}
             />
           )}
-          <Bar dataKey="value" fill={color} name={metric} radius={[8, 8, 0, 0]} />
+          <Bar
+            dataKey="value"
+            fill={strokeColor}
+            name={metric}
+            radius={[8, 8, 0, 0]}
+            isAnimationActive={!prefersReducedMotion}
+          />
         </BarChart>
       );
     } else {
       // Line chart (default)
       return (
         <LineChart {...chartProps}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
           <XAxis 
             dataKey="date" 
-            stroke="#6b7280"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
+            stroke={textColor}
+            tick={{ fill: textColor, fontSize: 12 }}
           />
           <YAxis 
-            stroke="#6b7280"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
+            stroke={textColor}
+            tick={{ fill: textColor, fontSize: 12 }}
             label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft' } : undefined}
             tickFormatter={yFormatter}
           />
           <Tooltip
-            contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '4px' }}
+            contentStyle={{ backgroundColor: bgColor, border: `1px solid ${gridColor}`, borderRadius: '4px' }}
             formatter={(value: any) => [tooltipFormatterFn(value), metric]}
-            labelStyle={{ color: '#374151', fontWeight: 600 }}
+            labelStyle={{ color: textColor, fontWeight: 600 }}
           />
           <Legend />
           {referenceLine && (
@@ -279,11 +301,12 @@ export default function TrendAnalysisChart({
           <Line
             type="monotone"
             dataKey="value"
-            stroke={color}
+            stroke={strokeColor}
             strokeWidth={2}
-            dot={{ fill: color, r: 4 }}
+            dot={{ fill: strokeColor, r: 4 }}
             activeDot={{ r: 6 }}
             name={metric}
+            isAnimationActive={!prefersReducedMotion}
           />
         </LineChart>
       );
@@ -360,4 +383,3 @@ export default function TrendAnalysisChart({
     </div>
   );
 }
-

@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import './tokens.css';
+
+:root,
+[data-theme] {
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  font-family: var(--font-sans);
+  /* Legacy variable aliases mapped to new tokens for compatibility */
+  --primary-color: var(--brand-primary);
+  --primary-hover: var(--brand-primary-dark);
+  --primary-light: var(--brand-primary-light);
+  --secondary-color: var(--color-text-secondary);
+  --success-color: var(--color-success);
+  --warning-color: var(--color-warning);
+  --danger-color: var(--color-danger);
+  --info-color: var(--color-info);
+  --premium-color: var(--brand-primary);
+  --premium-gradient: var(--brand-gradient);
+  --primary-gradient: var(--brand-gradient);
+  --success-gradient: linear-gradient(135deg, var(--color-success) 0%, #059669 100%);
+  --danger-gradient: linear-gradient(135deg, var(--color-danger) 0%, #dc2626 100%);
+  --hero-gradient: var(--brand-gradient);
+  --bg-primary: var(--color-bg-primary);
+  --bg-secondary: var(--color-bg-secondary);
+  --bg-tertiary: var(--color-bg-tertiary);
+  --background: var(--color-bg-secondary);
+  --surface: var(--color-bg-elevated);
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-tertiary: var(--color-text-tertiary);
+  --border-color: var(--color-border-default);
+  --border: 1px solid var(--color-border-default);
+  --spacing-xs: var(--space-1);
+  --spacing-sm: var(--space-2);
+  --spacing-md: var(--space-4);
+  --spacing-lg: var(--space-6);
+  --spacing-xl: var(--space-8);
+  --spacing-2xl: var(--space-12);
+  --transition-fast: var(--duration-fast) var(--ease-in-out);
+  --transition-base: var(--duration-normal) var(--ease-in-out);
+  --transition-slow: var(--duration-slow) var(--ease-in-out);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--brand-primary);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  text-decoration: none;
+  z-index: 9999;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+a {
+  color: var(--color-text-link);
+}

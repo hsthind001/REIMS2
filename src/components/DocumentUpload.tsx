@@ -303,6 +303,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
             onChange={handleFileInputChange}
             style={{ display: 'none' }}
             disabled={uploading}
+            aria-label="Upload PDF file"
           />
 
           {selectedFile ? (
@@ -356,4 +357,3 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     </div>
   );
 }
-

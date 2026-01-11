@@ -14,10 +14,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import '../App.css'
 import { 
-  Shield, AlertTriangle, Lock, TrendingUp, TrendingDown, 
+  Shield, AlertTriangle, Lock, TrendingUp, 
   RefreshCw, Filter, Search, Download, Settings, BarChart3,
   CheckCircle, XCircle, Clock, Activity, Zap, Eye, EyeOff, Trash2
 } from 'lucide-react'
+import { MetricCard as UIMetricCard } from '../components/ui/MetricCard'
 import { propertyService } from '../lib/property'
 import { anomaliesService } from '../lib/anomalies'
 import { workflowLockService, type WorkflowLock } from '../lib/workflowLocks'
@@ -660,43 +661,48 @@ export default function RiskManagement() {
           gap: '1rem',
           marginBottom: '2rem'
         }}>
-          <KPICard
+          <UIMetricCard
             title="Critical Alerts"
             value={dashboardStats.total_critical_alerts}
-            icon={<AlertTriangle size={24} />}
-            color="#dc2626"
+            status="danger"
             trend={dashboardStats.total_critical_alerts > 0 ? 'up' : 'neutral'}
+            comparison="Active critical issues"
+            loading={loading}
           />
-          <KPICard
+          <UIMetricCard
             title="Active Alerts"
             value={dashboardStats.total_active_alerts}
-            icon={<AlertTriangle size={24} />}
-            color="#f59e0b"
+            status="warning"
+            comparison="All severities"
+            loading={loading}
           />
-          <KPICard
+          <UIMetricCard
             title="Active Locks"
             value={dashboardStats.total_active_locks}
-            icon={<Lock size={24} />}
-            color="#8b5cf6"
+            status="info"
+            comparison="Current period locks"
+            loading={loading}
           />
-          <KPICard
+          <UIMetricCard
             title="Anomalies"
             value={dashboardStats.total_anomalies}
-            icon={<BarChart3 size={24} />}
-            color="#3b82f6"
+            status="warning"
+            comparison="Open anomalies"
+            loading={loading}
           />
-          <KPICard
+          <UIMetricCard
             title="Properties at Risk"
             value={dashboardStats.properties_at_risk}
-            icon={<Shield size={24} />}
-            color="#ef4444"
-            subtitle={`of ${dashboardStats.total_properties} total`}
+            status="danger"
+            comparison={`of ${dashboardStats.total_properties} total`}
+            loading={loading}
           />
-          <KPICard
+          <UIMetricCard
             title="SLA Compliance"
             value={`${dashboardStats.sla_compliance_rate.toFixed(1)}%`}
-            icon={<CheckCircle size={24} />}
-            color={dashboardStats.sla_compliance_rate >= 95 ? '#10b981' : '#f59e0b'}
+            status={dashboardStats.sla_compliance_rate >= 95 ? 'success' : 'warning'}
+            comparison="Target ≥95%"
+            loading={loading}
           />
         </div>
       </div>
@@ -976,39 +982,4 @@ export default function RiskManagement() {
   )
 }
 
-// KPI Card Component
-interface KPICardProps {
-  title: string
-  value: number | string
-  icon: React.ReactNode
-  color: string
-  trend?: 'up' | 'down' | 'neutral'
-  subtitle?: string
-}
-
-function KPICard({ title, value, icon, color, trend, subtitle }: KPICardProps) {
-  return (
-    <div className="card" style={{ 
-      borderLeft: `4px solid ${color}`,
-      padding: '1rem'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-        <div style={{ color, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {icon}
-          <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#6b7280' }}>{title}</span>
-        </div>
-        {trend && trend !== 'neutral' && (
-          trend === 'up' ? <TrendingUp size={16} color={color} /> : <TrendingDown size={16} color="#10b981" />
-        )}
-      </div>
-      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#111827' }}>
-        {value}
-      </div>
-      {subtitle && (
-        <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
-          {subtitle}
-        </div>
-      )}
-    </div>
-  )
-}
+// Legacy KPI card replaced by premium MetricCard

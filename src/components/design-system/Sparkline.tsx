@@ -11,13 +11,14 @@ export interface SparklineProps {
 
 export const Sparkline: React.FC<SparklineProps> = ({
   data,
-  color = '#0ea5e9', // Default: sky-500
+  color,
   height = 32,
   showGradient = true,
   trend
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   // Measure container width on mount and resize
   useEffect(() => {
@@ -47,6 +48,14 @@ export const Sparkline: React.FC<SparklineProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mediaQuery.matches);
+    const handler = () => setPrefersReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
   // Return null if no data
   if (!data || data.length === 0) {
     return null;
@@ -58,18 +67,21 @@ export const Sparkline: React.FC<SparklineProps> = ({
     value: value || 0
   }));
 
-  // Auto-detect trend if not provided
-  let lineColor = color;
+  // Auto-detect trend if not provided; use token-based defaults
+  let lineColor = color || getComputedStyle(document.documentElement).getPropertyValue('--color-info') || '#0ea5e9';
+  const success = getComputedStyle(document.documentElement).getPropertyValue('--color-success') || '#10b981';
+  const danger = getComputedStyle(document.documentElement).getPropertyValue('--color-danger') || '#ef4444';
+  const neutral = getComputedStyle(document.documentElement).getPropertyValue('--color-text-tertiary') || '#94a3b8';
+
   if (trend) {
-    if (trend === 'up') lineColor = '#10b981'; // green-500
-    if (trend === 'down') lineColor = '#ef4444'; // red-500
-    if (trend === 'neutral') lineColor = '#64748b'; // slate-500
+    if (trend === 'up') lineColor = success;
+    if (trend === 'down') lineColor = danger;
+    if (trend === 'neutral') lineColor = neutral;
   } else if (data.length >= 2) {
-    // Auto-detect trend from first and last values
     const first = data[0] || 0;
     const last = data[data.length - 1] || 0;
-    if (last > first * 1.05) lineColor = '#10b981';
-    if (last < first * 0.95) lineColor = '#ef4444';
+    if (last > first * 1.05) lineColor = success;
+    if (last < first * 0.95) lineColor = danger;
   }
 
   // Calculate min/max for Y-axis domain
@@ -113,8 +125,8 @@ export const Sparkline: React.FC<SparklineProps> = ({
               strokeWidth={2}
               dot={false}
               activeDot={false}
-              isAnimationActive={true}
-              animationDuration={800}
+              isAnimationActive={!prefersReducedMotion}
+              animationDuration={prefersReducedMotion ? 0 : 800}
               animationEasing="ease-in-out"
               fill={showGradient ? `url(#sparkline-gradient-${lineColor.replace('#', '')})` : 'none'}
             />
