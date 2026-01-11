@@ -13,9 +13,12 @@ import {
   Play,
   Download
 } from 'lucide-react';
-import { Card, Button, ProgressBar } from '../components/design-system';
+import { ProgressBar } from '../components/design-system';
+import { Card as UICard } from '../components/ui/Card';
 import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
 import { Skeleton as UISkeleton } from '../components/ui/Skeleton';
+import { Button } from '../components/ui/Button';
+import { useToastContext } from '../hooks/ToastContext';
 import { PDFViewer } from '../components/PDFViewer';
 import { propertyService } from '../lib/property';
 import { mortgageService } from '../lib/mortgage';
@@ -101,6 +104,7 @@ interface AIInsight {
 
 export default function CommandCenter() {
   const { user } = useAuth();
+  const { success: toastSuccess, error: toastError, warning: toastWarning } = useToastContext();
   const [portfolioHealth, setPortfolioHealth] = useState<PortfolioHealth | null>(null);
   const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlert[]>([]);
   const [propertyPerformance, setPropertyPerformance] = useState<PropertyPerformance[]>([]);
@@ -867,8 +871,14 @@ export default function CommandCenter() {
       // Load property performance (depends on properties being loaded)
       await loadPropertyPerformance(propertiesData);
 
+      // Show success toast only on manual refresh (not on initial load)
+      if (initialLoadRef.current) {
+        toastSuccess('Dashboard data refreshed');
+      }
+
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
+      toastError('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -1019,58 +1029,73 @@ export default function CommandCenter() {
   // Export functions
   const handleExportPDF = () => {
     if (!portfolioHealth) {
-      alert('No data to export');
+      toastWarning('No data to export');
       return;
     }
 
-    exportPortfolioHealthToPDF(
-      { ...portfolioHealth, portfolioIRR: portfolioHealth.portfolioIRR ?? 0 },
-      propertyPerformance,
-      'portfolio-health-report'
-    );
-    setShowExportMenu(false);
+    try {
+      exportPortfolioHealthToPDF(
+        { ...portfolioHealth, portfolioIRR: portfolioHealth.portfolioIRR ?? 0 },
+        propertyPerformance,
+        'portfolio-health-report'
+      );
+      toastSuccess('PDF report exported successfully');
+      setShowExportMenu(false);
+    } catch (error) {
+      toastError('Failed to export PDF report');
+    }
   };
 
   const handleExportExcel = () => {
     if (propertyPerformance.length === 0) {
-      alert('No property data to export');
+      toastWarning('No property data to export');
       return;
     }
 
-    const data = propertyPerformance.map(p => ({
-      'Property': p.name,
-      'Property Code': p.code,
-      'Value': p.value,
-      'NOI': p.noi,
-      'DSCR': p.dscr,
-      'LTV': p.ltv,
-      'Occupancy': p.occupancy,
-      'Status': p.status
-    }));
+    try {
+      const data = propertyPerformance.map(p => ({
+        'Property': p.name,
+        'Property Code': p.code,
+        'Value': p.value,
+        'NOI': p.noi,
+        'DSCR': p.dscr,
+        'LTV': p.ltv,
+        'Occupancy': p.occupancy,
+        'Status': p.status
+      }));
 
-    exportToExcel(data, 'portfolio-performance', 'Properties');
-    setShowExportMenu(false);
+      exportToExcel(data, 'portfolio-performance', 'Properties');
+      toastSuccess('Excel file exported successfully');
+      setShowExportMenu(false);
+    } catch (error) {
+      toastError('Failed to export Excel file');
+    }
   };
 
   const handleExportCSV = () => {
     if (propertyPerformance.length === 0) {
-      alert('No property data to export');
+      toastWarning('No property data to export');
       return;
     }
 
-    const data = propertyPerformance.map(p => ({
-      'Property': p.name,
-      'Property Code': p.code,
-      'Value': p.value,
-      'NOI': p.noi,
-      'DSCR': p.dscr,
-      'LTV': p.ltv,
-      'Occupancy': p.occupancy,
-      'Status': p.status
-    }));
+    try {
+      const data = propertyPerformance.map(p => ({
+        'Property': p.name,
+        'Property Code': p.code,
+        'Value': p.value,
+        'NOI': p.noi,
+        'DSCR': p.dscr,
+        'LTV': p.ltv,
+        'Occupancy': p.occupancy,
+        'Status': p.status
+      }));
 
-    exportToCSV(data, 'portfolio-performance');
-    setShowExportMenu(false);
+      exportToCSV(data, 'portfolio-performance');
+      toastSuccess('CSV file exported successfully');
+      setShowExportMenu(false);
+    } catch (error) {
+      toastError('Failed to export CSV file');
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -1226,11 +1251,11 @@ export default function CommandCenter() {
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[0, 1, 2, 3].map((i) => (
-              <Card key={i} className="p-6">
+              <UICard key={i} variant="elevated" className="p-6">
                 <UISkeleton variant="text" style={{ width: '55%', height: '1rem', marginBottom: '0.75rem' }} />
                 <UISkeleton variant="text" style={{ width: '40%', height: '1.75rem', marginBottom: '0.5rem' }} />
                 <UISkeleton style={{ width: '100%', height: '8px' }} />
-              </Card>
+              </UICard>
             ))}
           </div>
         </div>
@@ -1368,7 +1393,7 @@ export default function CommandCenter() {
 
         <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Property and Year Filter */}
-        <Card className="p-4 mb-6">
+        <UICard variant="elevated" className="p-4 mb-6">
           <div className="flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-4 flex-1 min-w-[300px]">
               <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
@@ -1412,7 +1437,7 @@ export default function CommandCenter() {
               }
             </div>
           </div>
-        </Card>
+        </UICard>
 
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
@@ -1451,9 +1476,6 @@ export default function CommandCenter() {
           />
           <UIMetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio DSCR" : "Property DSCR"}
-            subtitle={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.period
-              ? `${latestCompleteDSCR.period.year}-${String(latestCompleteDSCR.period.month).padStart(2, '0')} (Complete)`
-              : undefined}
             value={selectedPropertyFilter !== 'all' && latestCompleteDSCR?.dscr
               ? latestCompleteDSCR.dscr.toFixed(2)
               : portfolioHealth?.portfolioDSCR ? portfolioHealth.portfolioDSCR.toFixed(2) : "N/A"}
@@ -1469,7 +1491,7 @@ export default function CommandCenter() {
 
         {/* Document Availability Matrix - Only show for individual property */}
         {selectedPropertyFilter !== 'all' && documentMatrix && (
-          <Card className="mb-8 p-6">
+          <UICard variant="elevated" className="mb-8 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 📄 Document Availability Matrix - {selectedYear}
@@ -1653,11 +1675,11 @@ export default function CommandCenter() {
                 )}
               </div>
             )}
-          </Card>
+          </UICard>
         )}
 
         {/* Priority Actions / Alerts */}
-        <Card variant="danger" className="mb-8 p-6">
+        <UICard variant="elevated" className="mb-8 p-6 border-l-4 border-l-red-500">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-6 h-6 text-danger" />
@@ -1723,7 +1745,7 @@ export default function CommandCenter() {
                     : { bg: 'bg-blue-50 border-blue-200', pill: 'bg-blue-100 text-blue-800', bar: 'info', dot: '🔵' };
 
                 return (
-                  <Card key={alert.id} variant="danger" className={`p-4 border ${tone.bg}`}>
+                  <UICard key={alert.id} variant="elevated" hoverable className={`p-4 border ${tone.bg}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1780,19 +1802,19 @@ export default function CommandCenter() {
                         </Button>
                       </div>
                     </div>
-                  </Card>
+                  </UICard>
                 );
               })
             )}
           </div>
-        </Card>
+        </UICard>
 
         {/* Portfolio Performance Section - Added spacing from KPI cards */}
         <div className="mt-10">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Portfolio Performance Grid */}
             <div className="lg:col-span-2">
-              <Card className="p-6">
+              <UICard variant="elevated" className="p-6">
                 <h2 className="text-2xl font-bold mb-4">Portfolio Performance</h2>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -1850,12 +1872,12 @@ export default function CommandCenter() {
                   </tbody>
                 </table>
               </div>
-            </Card>
+            </UICard>
           </div>
 
           {/* AI Insights Widget */}
           <div>
-            <Card variant="premium" className="p-6">
+            <UICard variant="glass" className="p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-6 h-6 text-premium" />
                 <h2 className="text-2xl font-bold">AI Portfolio Insights</h2>
@@ -1928,7 +1950,7 @@ export default function CommandCenter() {
                   ))
                 )}
               </div>
-            </Card>
+            </UICard>
           </div>
           </div>
         </div>

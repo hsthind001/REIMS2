@@ -19,6 +19,9 @@ if (process.env.ANALYZE) {
 // https://vite.dev/config/
 export default defineConfig({
   plugins,
+  resolve: {
+    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
+  },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
@@ -169,6 +172,9 @@ export default defineConfig({
     strictPort: true,
     hmr: {
       overlay: true, // Show errors as overlay
+    },
+    headers: {
+      'Cache-Control': 'no-store',
     },
     // Proxy API requests to backend (optional)
     proxy: {

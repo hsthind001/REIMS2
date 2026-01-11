@@ -8,16 +8,17 @@ import { useTheme } from './hooks/useTheme'
 import { routes } from './config/routes'
 import { CommandPalette } from './components/CommandPalette'
 import './components/CommandPalette.css'
+import { ToastProvider } from './hooks/ToastContext'
 import { propertyService } from './lib/property'
 import { documentService } from './lib/document'
 
 // Lazy load pages for better initial bundle size
-const CommandCenter = lazy(() => import('./pages/CommandCenter'))
-const PortfolioHub = lazy(() => import('./pages/PortfolioHub'))
-const FinancialCommand = lazy(() => import('./pages/FinancialCommand'))
-const DataControlCenter = lazy(() => import('./pages/DataControlCenter'))
-const AdminHub = lazy(() => import('./pages/AdminHub'))
-const RiskManagement = lazy(() => import('./pages/RiskManagement'))
+const InsightsHub = lazy(() => import('./pages/InsightsHub'))
+const Properties = lazy(() => import('./pages/Properties'))
+const Financials = lazy(() => import('./pages/Financials'))
+const QualityControl = lazy(() => import('./pages/QualityControl'))
+const Administration = lazy(() => import('./pages/Administration'))
+const RiskIntelligence = lazy(() => import('./pages/RiskIntelligence'))
 const AlertRules = lazy(() => import('./pages/AlertRules'))
 const BulkImport = lazy(() => import('./pages/BulkImport'))
 const FullFinancialData = lazy(() => import('./pages/FullFinancialData'))
@@ -252,23 +253,23 @@ function AppContent() {
     const PageComponent = () => {
       switch (currentPage) {
         case 'dashboard':
-          return <CommandCenter />
+          return <InsightsHub />
         case 'properties':
-          return <PortfolioHub />
+          return <Properties />
         case 'reports':
-          return <FinancialCommand />
+          return <Financials />
         case 'operations':
-          return <DataControlCenter />
+          return <QualityControl />
         case 'users':
-          return <AdminHub />
+          return <Administration />
         case 'risk':
           // Check if hash route is alert-rules
           if (hashRoute === 'alert-rules') {
             return <AlertRules />
           }
-          return <RiskManagement />
+          return <RiskIntelligence />
         default:
-          return <CommandCenter />
+          return <InsightsHub />
       }
     }
 
@@ -523,7 +524,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   )
 }

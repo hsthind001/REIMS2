@@ -150,7 +150,12 @@
       "Bash(docker stats --no-stream --format \"table {{.Name}}\\\\t{{.MemUsage}}\\\\t{{.MemPerc}}\")",
       "Bash(docker rm:*)",
       "Bash(sudo rm:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(git mv:*)",
+      "Bash(node --eval:*)",
+      "Bash(kill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(sudo kill:*)"
     ]
   }
 }
