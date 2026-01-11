@@ -1,0 +1,110 @@
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.input-wrapper-full {
+  width: 100%;
+}
+
+.input-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+}
+
+.input-required {
+  color: var(--color-danger-solid);
+  margin-left: var(--space-1);
+}
+
+.input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  transition: var(--transition-colors);
+}
+
+.input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.input:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+
+.input:focus {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: -1px;
+  border-color: var(--brand-primary);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-container-error .input {
+  border-color: var(--color-danger-solid);
+}
+
+.input-container-error .input:focus {
+  outline-color: var(--color-danger-solid);
+  border-color: var(--color-danger-solid);
+}
+
+.input-with-left-icon {
+  padding-left: 44px;
+}
+
+.input-with-right-icon {
+  padding-right: 44px;
+}
+
+.input-icon {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.input-icon-left {
+  left: var(--space-4);
+}
+
+.input-icon-right {
+  right: var(--space-4);
+}
+
+.input-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger-solid);
+}
+
+.input-helper {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Dark Mode */
+[data-theme="dark"] .input {
+  background: var(--color-bg-secondary);
+}

@@ -1,0 +1,85 @@
+.tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  max-width: 320px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-text-primary);
+  color: var(--color-text-inverse);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  animation: tooltipFadeIn var(--duration-fast) var(--ease-out);
+  word-wrap: break-word;
+}
+
+/* Placement Arrows */
+.tooltip::before {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+}
+
+.tooltip-top::before {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: var(--color-text-primary);
+}
+
+.tooltip-bottom::before {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-color: var(--color-text-primary);
+}
+
+.tooltip-left::before {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left-color: var(--color-text-primary);
+}
+
+.tooltip-right::before {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: var(--color-text-primary);
+}
+
+/* Animations */
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Dark Mode */
+[data-theme="dark"] .tooltip {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-strong);
+}
+
+[data-theme="dark"] .tooltip-top::before {
+  border-top-color: var(--color-bg-elevated);
+}
+
+[data-theme="dark"] .tooltip-bottom::before {
+  border-bottom-color: var(--color-bg-elevated);
+}
+
+[data-theme="dark"] .tooltip-left::before {
+  border-left-color: var(--color-bg-elevated);
+}
+
+[data-theme="dark"] .tooltip-right::before {
+  border-right-color: var(--color-bg-elevated);
+}

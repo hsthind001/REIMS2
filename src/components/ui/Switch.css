@@ -1,0 +1,114 @@
+.switch-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.switch-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-label-left {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+}
+
+.switch-label-right {
+  gap: var(--space-3);
+}
+
+.switch-label-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.switch-container {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  display: block;
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: var(--color-border-strong);
+  border-radius: var(--radius-full);
+  transition: var(--transition-colors);
+  cursor: pointer;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.switch-input:hover:not(:disabled) + .switch-track {
+  background: var(--color-text-tertiary);
+}
+
+.switch-input:focus-visible + .switch-track {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.switch-input:checked + .switch-track {
+  background: var(--brand-primary);
+}
+
+.switch-input:checked + .switch-track .switch-thumb {
+  transform: translateX(20px);
+}
+
+.switch-input:disabled + .switch-track {
+  cursor: not-allowed;
+}
+
+.switch-text {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  line-height: var(--leading-normal);
+}
+
+.switch-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger-solid);
+}
+
+.switch-helper {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Dark Mode */
+[data-theme="dark"] .switch-track {
+  background: var(--color-bg-tertiary);
+}
+
+[data-theme="dark"] .switch-input:hover:not(:disabled) + .switch-track {
+  background: var(--color-border-strong);
+}
+
+[data-theme="dark"] .switch-thumb {
+  background: var(--color-bg-elevated);
+}
