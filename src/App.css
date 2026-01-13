@@ -252,6 +252,7 @@ body {
   border-radius: 0.75rem;
   padding: 1.5rem;
   box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base), transform var(--transition-base), border-color var(--transition-base);
 }
 
 .card h3 {
@@ -1256,11 +1257,13 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 1rem;
-  transition: box-shadow 0.2s;
+  transition: box-shadow var(--transition-base), transform var(--transition-base), border-color var(--transition-base);
 }
 
 .property-card:hover {
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.2);
 }
 
 .property-header {
@@ -1295,10 +1298,12 @@ body {
 
 .card {
   background: white;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 1.5rem;
   box-shadow: var(--shadow-sm);
   margin-bottom: 1.5rem;
+  transition: box-shadow var(--transition-base), transform var(--transition-base), border-color var(--transition-base);
 }
 
 .card h3 {
@@ -1616,7 +1621,7 @@ body {
   display: flex;
   align-items: center;
   gap: 1rem;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
 }
 
 .stat-card:hover {
@@ -1734,6 +1739,14 @@ body {
   padding: 1rem;
   border-radius: 8px;
   border-left: 4px solid var(--primary-color);
+  border: 1px solid var(--border-color);
+  transition: box-shadow var(--transition-base), transform var(--transition-base), border-color var(--transition-base);
+}
+
+.property-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.25);
 }
 
 .property-card h4 {
@@ -1852,8 +1865,10 @@ body {
 /* Example Queries */
 .examples-section {
   margin-top: 1.5rem;
-  padding-top: 1.5rem;
+  padding: 1.5rem;
   border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border-radius: 12px;
 }
 
 .examples-section h4 {
@@ -1885,9 +1900,38 @@ body {
   border-color: var(--primary-color);
 }
 
+/* Results Section */
+.results-section {
+  margin-top: 2rem;
+  padding: 1.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base), transform var(--transition-base);
+}
+
+.results-section:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.results-section .section-title {
+  margin-bottom: 1.25rem;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
 /* Result Cards */
 .result-card {
   margin-bottom: 1.5rem;
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+  border-color: transparent;
+}
+
+.result-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(16, 185, 129, 0.2);
 }
 
 .result-header {
@@ -1980,12 +2024,13 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1.5rem;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
 }
 
 .recommendation-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
+  border-color: rgba(37, 99, 235, 0.2);
 }
 
 .rec-header {
@@ -2312,6 +2357,12 @@ body {
   background: var(--bg-tertiary);
   border-radius: 8px;
   border-left: 4px solid var(--primary-color);
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+}
+
+.import-type-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .import-type-card h4 {
@@ -2482,7 +2533,7 @@ button, a, .nav-item, .tab, .stat-card {
   border: 2px solid var(--border-color);
   border-radius: 12px;
   padding: 1.5rem;
-  transition: all 0.3s ease;
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
 }
 
 .strategy-card:hover {
