@@ -13,6 +13,7 @@ import {
   Download,
   TrendingUp
 } from 'lucide-react';
+import { usePortfolioStore } from '../store';
 import { Card, Button, ProgressBar } from '../components/design-system';
 import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
 import { PropertyMap } from '../components/PropertyMap';
@@ -155,10 +156,27 @@ interface TenantMatch {
 type DetailTab = 'overview' | 'financials' | 'market' | 'tenants' | 'docs';
 
 export default function PortfolioHub() {
+  // Portfolio Store - Persistent state
+  const {
+    selectedProperty,
+    setSelectedProperty,
+    selectedYear,
+    setSelectedYear,
+    viewMode,
+    setViewMode,
+    filters,
+    setFilters,
+    resetFilters,
+    comparisonMode,
+    toggleComparisonMode,
+    selectedForComparison,
+    addToComparison,
+    removeFromComparison,
+    clearComparison
+  } = usePortfolioStore();
+
+  // Local state - Non-persistent
   const [properties, setProperties] = useState<Property[]>([]);
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [comparisonSet, setComparisonSet] = useState<Set<number>>(new Set());
-  const [quickFilter, setQuickFilter] = useState<'all' | 'high-performers' | 'at-risk' | 'recent'>('all');
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [metrics, setMetrics] = useState<PropertyMetrics | null>(null);
   const [costs, setCosts] = useState<PropertyCosts | null>(null);
@@ -168,13 +186,10 @@ export default function PortfolioHub() {
   const [tenantMatches, setTenantMatches] = useState<TenantMatch[]>([]);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'noi' | 'risk' | 'value'>('noi');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [financialStatements, setFinancialStatements] = useState<any>(null);
   const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow' | 'mortgage'>('income');
-  const [selectedYear, setSelectedYear] = useState(2023); // Default to 2023 where data exists
   const [propertyMetricsMap, setPropertyMetricsMap] = useState<Map<number, any>>(new Map());
   const [propertyDscrMap, setPropertyDscrMap] = useState<Map<number, number | null>>(new Map());
   const [selectedMonth, setSelectedMonth] = useState(12); // Default to December 2023
@@ -184,12 +199,25 @@ export default function PortfolioHub() {
   const [tenantMix, setTenantMix] = useState<any[]>([]);
   const [tenantDetails, setTenantDetails] = useState<any[]>([]);
   const [loadingTenants, setLoadingTenants] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [alertCounts, setAlertCounts] = useState<Map<number, number>>(new Map());
+
+  // Convert selectedForComparison Set to comparisonSet for backward compatibility
+  const comparisonSet = selectedForComparison;
+
+  // Derived state from filters
+  const searchTerm = filters.search;
+  const setSearchTerm = (search: string) => setFilters({ search });
+  const quickFilter = (Array.isArray(filters.status) && filters.status.length > 0
+    ? filters.status[0]
+    : 'all') as 'all' | 'high-performers' | 'at-risk' | 'recent';
+  const setQuickFilter = (status: string) => setFilters({ status: [status] });
+  const sortBy = (filters.search ? 'value' : 'noi') as 'noi' | 'risk' | 'value';
+  const setSortBy = (sort: 'noi' | 'risk' | 'value') => {
+    // Sorting is derived from filters, no separate state needed
+  };
+
   const handleClearFilters = () => {
-    setSearchTerm('');
-    setQuickFilter('all');
-    setSortBy('noi');
+    resetFilters();
   };
   const comparisonModalRef = useRef<HTMLDivElement | null>(null);
   const locationScore = marketIntel?.locationScore ?? 0;
@@ -1417,13 +1445,11 @@ export default function PortfolioHub() {
                           type="checkbox"
                           checked={isCompared}
                           onChange={(e) => {
-                            const next = new Set(comparisonSet);
                             if (e.target.checked) {
-                              next.add(property.id);
+                              addToComparison(property.id);
                             } else {
-                              next.delete(property.id);
+                              removeFromComparison(property.id);
                             }
-                            setComparisonSet(next);
                           }}
                         />
                         Compare
@@ -1497,7 +1523,7 @@ export default function PortfolioHub() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setComparisonSet(new Set())}
+                      onClick={clearComparison}
                     >
                       Clear
                     </Button>

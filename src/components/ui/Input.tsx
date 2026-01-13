@@ -22,14 +22,19 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       className = '',
       required,
       disabled,
+      id,
       ...props
     },
     ref
   ) => {
+    const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+    const errorId = `${inputId}-error`;
+    const helperId = `${inputId}-helper`;
+
     return (
       <div className={`input-wrapper ${fullWidth ? 'input-wrapper-full' : ''} ${className}`}>
         {label && (
-          <label className="input-label">
+          <label htmlFor={inputId} className="input-label">
             {label}
             {required && <span className="input-required">*</span>}
           </label>
@@ -42,23 +47,24 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {leftIcon && <span className="input-icon input-icon-left">{leftIcon}</span>}
           <input
             ref={ref}
+            id={inputId}
             className={`input ${leftIcon ? 'input-with-left-icon' : ''} ${
               rightIcon ? 'input-with-right-icon' : ''
             }`}
             disabled={disabled}
             aria-invalid={error ? 'true' : 'false'}
-            aria-describedby={error ? 'input-error' : helperText ? 'input-helper' : undefined}
+            aria-describedby={error ? errorId : helperText ? helperId : undefined}
             {...props}
           />
           {rightIcon && <span className="input-icon input-icon-right">{rightIcon}</span>}
         </div>
         {error && (
-          <p id="input-error" className="input-error">
+          <p id={errorId} className="input-error">
             {error}
           </p>
         )}
         {!error && helperText && (
-          <p id="input-helper" className="input-helper">
+          <p id={helperId} className="input-helper">
             {helperText}
           </p>
         )}

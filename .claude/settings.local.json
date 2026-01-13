@@ -155,7 +155,8 @@
       "Bash(node --eval:*)",
       "Bash(kill:*)",
       "Bash(npm run dev:*)",
-      "Bash(sudo kill:*)"
+      "Bash(sudo kill:*)",
+      "Bash(npm test:*)"
     ]
   }
 }

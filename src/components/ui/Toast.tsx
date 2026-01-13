@@ -38,7 +38,7 @@ const variantIcons = {
   ),
 };
 
-export const Toast: React.FC<ToastProps> = ({
+const Toast: React.FC<ToastProps> = ({
   id,
   message,
   variant = 'info',
@@ -84,3 +84,5 @@ export const Toast: React.FC<ToastProps> = ({
     </div>
   );
 };
+
+export { Toast };

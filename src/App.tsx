@@ -4,13 +4,15 @@ import { AuthProvider, useAuth } from './components/AuthContext'
 import { LoginForm } from './components/LoginForm'
 import { RegisterForm } from './components/RegisterForm'
 import { Button } from './components/ui/Button'
-import { useTheme } from './hooks/useTheme'
+import { useUserPreferencesStore } from './store/userPreferencesStore'
 import { routes } from './config/routes'
 import { CommandPalette } from './components/CommandPalette'
 import './components/CommandPalette.css'
 import { ToastProvider } from './hooks/ToastContext'
 import { propertyService } from './lib/property'
 import { documentService } from './lib/document'
+import { BottomNav } from './components/ui/BottomNav'
+import './components/ui/BottomNav.css'
 
 // Lazy load pages for better initial bundle size
 const InsightsHub = lazy(() => import('./pages/InsightsHub'))
@@ -58,10 +60,12 @@ type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'r
 function AppContent() {
   console.log('🎨 AppContent: Component rendering');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [hashRoute, setHashRoute] = useState<string>('')
   const { user, logout, isAuthenticated, loading } = useAuth()
-  const { theme, toggle } = useTheme()
+
+  // Use Zustand store for theme and sidebar state
+  const { theme, toggleTheme, sidebarOpen, setSidebarOpen } = useUserPreferencesStore()
+
   const [isPaletteOpen, setPaletteOpen] = useState(false)
   const [paletteQuery, setPaletteQuery] = useState('')
 
@@ -292,7 +296,7 @@ function AppContent() {
     { id: 'nav-financials-statements', label: 'Open Financial Statements', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'statements'; setHashRoute('statements'); } },
     { id: 'nav-financials-coa', label: 'Open Chart of Accounts', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'chart-of-accounts'; setHashRoute('chart-of-accounts'); } },
     { id: 'nav-risk-anomalies', label: 'Open Risk Anomalies', section: 'Risk', handler: () => { setCurrentPage('risk'); window.location.hash = 'anomalies'; setHashRoute('anomalies'); } },
-    { id: 'theme-toggle', label: theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode', section: 'Theme', shortcut: 'Ctrl/Cmd + J', handler: toggle },
+    { id: 'theme-toggle', label: theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode', section: 'Theme', shortcut: 'Ctrl/Cmd + J', handler: toggleTheme },
     { id: 'refresh-dashboard', label: 'Refresh Insights Hub', section: 'Actions', handler: () => { setCurrentPage('dashboard'); window.location.reload(); } },
     { id: 'goto-docs', label: 'Upload Documents', section: 'Actions', shortcut: '/', handler: () => { window.location.hash = 'bulk-import'; setHashRoute('bulk-import'); } },
     { id: 'goto-alerts', label: 'View Alerts Rules', section: 'Actions', handler: () => { window.location.hash = 'alert-rules'; setHashRoute('alert-rules'); setCurrentPage('risk'); } },
@@ -328,7 +332,7 @@ function AppContent() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={toggle}
+            onClick={toggleTheme}
             aria-label="Toggle theme"
           >
             {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
@@ -517,6 +521,50 @@ function AppContent() {
         sectionsOrder={['Navigation', 'Actions', 'Properties', 'Documents', 'Theme', 'General']}
         onQueryChange={(q) => setPaletteQuery(q)}
       />
+
+      {/* Mobile Bottom Navigation */}
+      {isAuthenticated && (
+        <BottomNav
+          currentPage={currentPage}
+          items={[
+            {
+              id: 'nav-dashboard',
+              label: 'Insights',
+              icon: '📊',
+              path: 'dashboard',
+              onClick: () => setCurrentPage('dashboard')
+            },
+            {
+              id: 'nav-properties',
+              label: 'Properties',
+              icon: '🏢',
+              path: 'properties',
+              onClick: () => setCurrentPage('properties')
+            },
+            {
+              id: 'nav-financials',
+              label: 'Finance',
+              icon: '💰',
+              path: 'reports',
+              onClick: () => setCurrentPage('reports')
+            },
+            {
+              id: 'nav-risk',
+              label: 'Risk',
+              icon: '🛡️',
+              path: 'risk',
+              onClick: () => setCurrentPage('risk')
+            },
+            {
+              id: 'nav-more',
+              label: 'More',
+              icon: '⚙️',
+              path: 'users',
+              onClick: () => setCurrentPage('users')
+            }
+          ]}
+        />
+      )}
     </div>
   )
 }

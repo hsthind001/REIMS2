@@ -265,12 +265,17 @@ python scripts/cleanup_duplicates.py --force
 
 ### 1. Pattern Recognition
 
-The system learns from existing duplicates:
+The system learns from existing duplicates and common errors:
 ```python
-# Automatically detects patterns like:
+# Documentation patterns:
 FORENSIC_RECONCILIATION_*.md  → forensic_reconciliation category
 MARKET_INTELLIGENCE_*.md      → market_intelligence category
 *_IMPLEMENTATION_SUMMARY.md   → implementation category
+
+# TypeScript/Frontend error patterns:
+"doesn't provide an export" → verbatimModuleSyntax misconfiguration
+Missing type imports           → Add 'import type' separation
+Export not found at runtime    → Export at point of definition
 ```
 
 ### 2. Knowledge Base
@@ -408,6 +413,90 @@ When creating documentation for REIMS2:
 
 ## 🐛 Troubleshooting
 
+### TypeScript Module Export Error: "doesn't provide an export named"
+
+**Symptom:**
+```
+Uncaught SyntaxError: The requested module 'http://localhost:5173/src/components/ui/Toast.tsx'
+doesn't provide an export named: 'ToastProps'
+```
+
+**Root Cause:**
+This error occurs when using TypeScript's `verbatimModuleSyntax: true` setting in `tsconfig.app.json`. This strict setting requires:
+1. Types must be exported at their point of definition (not re-exported later)
+2. Type imports must be separated from value imports using `import type`
+3. No mixing of types and values in the same import statement
+
+**Solution:**
+
+**Step 1: Export types at point of definition**
+```typescript
+// ❌ WRONG - Type defined without export, then re-exported
+type ToastVariant = 'success' | 'error' | 'warning' | 'info';
+interface ToastProps { ... }
+// ... component code ...
+export type { ToastProps, ToastVariant };  // Re-export doesn't work with verbatimModuleSyntax
+
+// ✅ CORRECT - Export at definition
+export type ToastVariant = 'success' | 'error' | 'warning' | 'info';
+export interface ToastProps { ... }
+// ... component code ...
+export { Toast };  // Only export component, types already exported
+```
+
+**Step 2: Separate type imports from value imports**
+```typescript
+// ❌ WRONG - Mixing type and value imports
+import { Toast, ToastProps } from './Toast';
+
+// ✅ CORRECT - Separate type and value imports
+import { Toast } from './Toast';
+import type { ToastProps } from './Toast';
+```
+
+**Step 3: Clear Vite cache and restart**
+```bash
+# Clear Vite cache in Docker container
+docker exec reims-frontend rm -rf /app/node_modules/.vite
+
+# Restart frontend container
+docker restart reims-frontend
+
+# Or if running locally
+rm -rf node_modules/.vite
+npm run dev
+```
+
+**Step 4: Verify in browser**
+- Hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
+- Check browser console for errors
+- Module should now load successfully
+
+**Prevention:**
+- Always export types at their point of definition when using `verbatimModuleSyntax: true`
+- Use `import type` for type-only imports
+- Follow the pattern used by other UI components (Modal, Button, Card)
+- Run `npx tsc --noEmit` to catch type errors before runtime
+
+**Related Files:**
+- `tsconfig.app.json` - Contains `verbatimModuleSyntax` setting
+- `src/components/ui/index.ts` - Barrel export file
+- All component files in `src/components/ui/`
+
+**Alternative Solution (Not Recommended):**
+If you cannot fix the imports, you can disable strict module syntax:
+```json
+// tsconfig.app.json
+{
+  "compilerOptions": {
+    "verbatimModuleSyntax": false  // Less strict, but allows existing code to work
+  }
+}
+```
+However, this is not recommended as it reduces TypeScript's type safety.
+
+---
+
 ### "Cleanup script says file not found"
 
 **Solution:**
@@ -528,6 +617,13 @@ To improve this system:
 
 ## 📝 Changelog
 
+### 2026-01-12 - TypeScript Module Export Error Pattern Added
+- ✅ Added TypeScript `verbatimModuleSyntax` troubleshooting guide
+- ✅ Documented Toast component export error and solution
+- ✅ Added type import/export pattern recognition
+- ✅ Included prevention strategies for frontend errors
+- ✅ Added to self-learning pattern recognition system
+
 ### 2025-12-26 - Initial Implementation
 - Created cleanup_duplicates.py
 - Created pre_commit_duplicate_prevention.py
@@ -541,6 +637,8 @@ To improve this system:
 - [ ] Create web-based documentation browser
 - [ ] Add duplicate detection in code files
 - [ ] Implement semantic similarity analysis (ML-based)
+- [ ] Add frontend TypeScript error detection patterns
+- [ ] Create automated type import/export validation
 
 ## 🎯 Summary
 
