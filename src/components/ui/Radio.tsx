@@ -72,9 +72,9 @@ export const RadioGroup: React.FC<RadioGroupProps> = ({
       <div className={`radio-group-items radio-group-${orientation}`} role="radiogroup">
         {React.Children.map(children, (child) => {
           if (React.isValidElement(child) && child.type === Radio) {
-            return React.cloneElement(child as React.ReactElement<RadioProps>, {
+            return React.cloneElement(child as React.ReactElement<any>, {
               name,
-              checked: child.props.value === value,
+              checked: (child.props as any).value === value,
               onChange: handleChange,
             });
           }

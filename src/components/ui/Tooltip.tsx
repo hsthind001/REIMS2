@@ -19,9 +19,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const timeoutRef = useRef<number>();
+  const timeoutRef = useRef<number | undefined>(undefined);
 
   const updatePosition = () => {
+    // ... same code
     if (!triggerRef.current || !tooltipRef.current) return;
 
     const triggerRect = triggerRef.current.getBoundingClientRect();
@@ -89,23 +90,23 @@ export const Tooltip: React.FC<TooltipProps> = ({
     setIsVisible(false);
   };
 
-  const clonedChild = React.cloneElement(children, {
+  const clonedChild = React.cloneElement(children as React.ReactElement<any>, {
     ref: triggerRef,
     onMouseEnter: (e: React.MouseEvent) => {
       showTooltip();
-      children.props.onMouseEnter?.(e);
+      (children.props as any).onMouseEnter?.(e);
     },
     onMouseLeave: (e: React.MouseEvent) => {
       hideTooltip();
-      children.props.onMouseLeave?.(e);
+      (children.props as any).onMouseLeave?.(e);
     },
     onFocus: (e: React.FocusEvent) => {
       showTooltip();
-      children.props.onFocus?.(e);
+      (children.props as any).onFocus?.(e);
     },
     onBlur: (e: React.FocusEvent) => {
       hideTooltip();
-      children.props.onBlur?.(e);
+      (children.props as any).onBlur?.(e);
     },
   });
 

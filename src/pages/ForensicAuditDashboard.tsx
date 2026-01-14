@@ -18,7 +18,7 @@ import {
   RefreshCw,
   Play,
 } from 'lucide-react';
-import { Card, Button } from '../components/design-system';
+import { Card, Button } from '../components/ui';
 import {
   forensicAuditService,
   type AuditScorecard,
@@ -494,6 +494,7 @@ export default function ForensicAuditDashboard() {
             value={selectedPropertyId}
             onChange={(e) => setSelectedPropertyId(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            aria-label="Select Property"
           >
             <option value="">Select Property</option>
             {properties.map((property) => (
@@ -509,6 +510,7 @@ export default function ForensicAuditDashboard() {
             onChange={(e) => setSelectedPeriodId(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             disabled={!selectedPropertyId}
+            aria-label="Select Financial Period"
           >
             <option value="">Select Period</option>
             {periods.map((period) => (
@@ -522,8 +524,9 @@ export default function ForensicAuditDashboard() {
           <Button
             onClick={handleRefresh}
             disabled={loading || !selectedPropertyId || !selectedPeriodId}
+            loading={loading}
+            icon={<RefreshCw className="w-4 h-4" />}
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
 
@@ -531,26 +534,28 @@ export default function ForensicAuditDashboard() {
             onClick={() => handleExport('pdf')}
             disabled={exportingFormat !== null || !selectedPropertyId || !selectedPeriodId}
             variant="secondary"
+            loading={exportingFormat === 'pdf'}
+            icon={<Download className="w-4 h-4" />}
           >
-            <Download className={`w-4 h-4 ${exportingFormat === 'pdf' ? 'animate-pulse' : ''}`} />
-            {exportingFormat === 'pdf' ? 'Exporting PDF...' : 'Export PDF'}
+            Export PDF
           </Button>
 
           <Button
             onClick={() => handleExport('excel')}
             disabled={exportingFormat !== null || !selectedPropertyId || !selectedPeriodId}
             variant="secondary"
+            loading={exportingFormat === 'excel'}
+            icon={<Download className="w-4 h-4" />}
           >
-            <Download className={`w-4 h-4 ${exportingFormat === 'excel' ? 'animate-pulse' : ''}`} />
-            {exportingFormat === 'excel' ? 'Exporting Excel...' : 'Export Excel'}
+            Export Excel
           </Button>
 
           <Button
             onClick={() => goToRoute('audit-history')}
             disabled={!selectedPropertyId}
             variant="outline"
+            icon={<History className="w-4 h-4" />}
           >
-            <History className="w-4 h-4" />
             Audit History
           </Button>
 
@@ -558,8 +563,9 @@ export default function ForensicAuditDashboard() {
             onClick={handleRunAudit}
             disabled={runningAudit || !selectedPropertyId || !selectedPeriodId}
             variant="primary"
+            loading={runningAudit}
+            icon={<Play className="w-4 h-4" />}
           >
-            <Play className={`w-4 h-4 ${runningAudit ? 'animate-pulse' : ''}`} />
             {runningAudit ? 'Running Audit...' : 'Run Audit'}
           </Button>
         </div>

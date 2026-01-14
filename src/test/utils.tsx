@@ -1,5 +1,5 @@
-import { render, RenderOptions } from '@testing-library/react';
-import { ReactElement } from 'react';
+import { render, type RenderOptions } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { ToastProvider } from '../hooks/ToastContext';
 
 // Custom render function that includes common providers

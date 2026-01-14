@@ -14,6 +14,18 @@ export type { SkeletonProps } from './Skeleton';
 export { InlineEdit } from './InlineEdit';
 export type { InlineEditProps } from './InlineEdit';
 
+export { ProgressBar } from './ProgressBar';
+export type { ProgressBarProps } from './ProgressBar';
+
+export { Badge } from './Badge';
+export type { BadgeProps } from './Badge';
+
+export { Avatar, AvatarGroup } from './Avatar';
+export type { AvatarProps, AvatarGroupProps } from './Avatar';
+
+export { Breadcrumb } from './Breadcrumb';
+export type { BreadcrumbProps, BreadcrumbItem } from './Breadcrumb';
+
 // Feedback Components
 export { Toast } from './Toast';
 export type { ToastProps, ToastVariant } from './Toast';

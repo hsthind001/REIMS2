@@ -18,7 +18,14 @@ import {
   RefreshCw, Filter, Search, Download, Settings, BarChart3,
   CheckCircle, XCircle, Clock, Activity, Zap, Eye, EyeOff, Trash2
 } from 'lucide-react'
-import { MetricCard as UIMetricCard } from '../components/ui/MetricCard'
+import { 
+  Card, 
+  Button, 
+  MetricCard, 
+  Select, 
+  Input, 
+  type SelectOption 
+} from '../components/ui'
 import { propertyService } from '../lib/property'
 import { anomaliesService } from '../lib/anomalies'
 import { workflowLockService, type WorkflowLock } from '../lib/workflowLocks'
@@ -619,85 +626,84 @@ export default function RiskManagement() {
   }
 
   return (
-    <div className="risk-management-dashboard" style={{ padding: '2rem', maxWidth: '100%' }}>
+    <div className="p-8 w-full max-w-full space-y-8">
       {/* Header */}
-      <div style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Shield style={{ color: '#3b82f6' }} size={32} />
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <Shield className="text-blue-500" size={32} />
               Risk Management
             </h1>
-            <p style={{ color: '#6b7280', margin: '0.5rem 0 0 0' }}>
+            <p className="text-gray-600 mt-2">
               Comprehensive Risk Monitoring & Workflow Controls
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button
+          <div className="flex gap-2 items-center">
+            <Button
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`btn btn-sm ${autoRefresh ? 'btn-primary' : 'btn-secondary'}`}
+              variant={autoRefresh ? 'primary' : 'secondary'}
+              size="sm"
               title={autoRefresh ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}
+              icon={autoRefresh ? <Activity size={16} /> : <EyeOff size={16} />}
             >
-              {autoRefresh ? <Activity size={16} /> : <EyeOff size={16} />}
-            </button>
-            <button
+              {autoRefresh ? 'Auto' : 'Manual'}
+            </Button>
+            <Button
               onClick={() => {
                 loadDashboardStats()
                 loadUnifiedRiskItems()
               }}
-              className="btn btn-sm btn-secondary"
-              disabled={loading}
+              variant="secondary"
+              size="sm"
+              loading={loading}
+              icon={<RefreshCw size={16} />}
             >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            </button>
+              Refresh
+            </Button>
             <ExportButton onExport={exportData} />
           </div>
         </div>
 
         {/* KPI Cards */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-          gap: '1rem',
-          marginBottom: '2rem'
-        }}>
-          <UIMetricCard
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+          <MetricCard
             title="Critical Alerts"
-            value={dashboardStats.total_critical_alerts}
+            value={dashboardStats.total_critical_alerts.toLocaleString()}
             status="danger"
             trend={dashboardStats.total_critical_alerts > 0 ? 'up' : 'neutral'}
             comparison="Active critical issues"
             loading={loading}
           />
-          <UIMetricCard
+          <MetricCard
             title="Active Alerts"
-            value={dashboardStats.total_active_alerts}
+            value={dashboardStats.total_active_alerts.toLocaleString()}
             status="warning"
             comparison="All severities"
             loading={loading}
           />
-          <UIMetricCard
+          <MetricCard
             title="Active Locks"
-            value={dashboardStats.total_active_locks}
+            value={dashboardStats.total_active_locks.toLocaleString()}
             status="info"
             comparison="Current period locks"
             loading={loading}
           />
-          <UIMetricCard
+          <MetricCard
             title="Anomalies"
-            value={dashboardStats.total_anomalies}
+            value={dashboardStats.total_anomalies.toLocaleString()}
             status="warning"
             comparison="Open anomalies"
             loading={loading}
           />
-          <UIMetricCard
+          <MetricCard
             title="Properties at Risk"
-            value={dashboardStats.properties_at_risk}
+            value={dashboardStats.properties_at_risk.toLocaleString()}
             status="danger"
             comparison={`of ${dashboardStats.total_properties} total`}
             loading={loading}
           />
-          <UIMetricCard
+          <MetricCard
             title="SLA Compliance"
             value={`${dashboardStats.sla_compliance_rate.toFixed(1)}%`}
             status={dashboardStats.sla_compliance_rate >= 95 ? 'success' : 'warning'}
@@ -708,230 +714,175 @@ export default function RiskManagement() {
       </div>
 
       {/* Property Selector */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-          Select Property
-        </label>
-        <select
-          value={selectedProperty || ''}
-          onChange={(e) => {
-            const propId = e.target.value ? parseInt(e.target.value) : null
+      <div className="mb-6 w-full max-w-sm">
+        <Select
+          label="Select Property"
+          value={selectedProperty ? String(selectedProperty) : ''}
+          onChange={(val) => {
+            const propId = val ? parseInt(val) : null
             setSelectedProperty(propId)
             setFilters(prev => ({ ...prev, propertyId: propId }))
           }}
-          className="select-input"
-          style={{ width: '100%', maxWidth: '400px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-        >
-          <option value="">All Properties</option>
-          {properties.map(prop => (
-            <option key={prop.id} value={prop.id}>
-              {prop.property_name} - {prop.property_code}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: '', label: 'All Properties' },
+            ...properties.map(prop => ({
+              value: String(prop.id),
+              label: `${prop.property_name} - ${prop.property_code}`
+            }))
+          ]}
+          searchable
+        />
       </div>
 
       {/* Quick Access Links */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-        gap: '1rem',
-        marginBottom: '1.5rem'
-      }}>
-        <button
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <Card 
+          interactive 
           onClick={() => window.location.hash = 'anomaly-dashboard'}
-          style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '12px',
-            padding: '1rem',
-            cursor: 'pointer',
-            textAlign: 'left',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)'
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'
-          }}
+          className="p-6 cursor-pointer bg-gradient-to-br from-blue-500 to-indigo-600 text-white border-0"
         >
-          <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🔍</div>
-          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>
-            All Anomalies
-          </h3>
-          <p style={{ margin: 0, opacity: 0.9, fontSize: '0.875rem' }}>
-            Browse and filter all detected anomalies in grid view
-          </p>
-        </button>
+            <div className="text-3xl mb-2">🔍</div>
+            <h3 className="text-lg font-semibold mb-2">All Anomalies</h3>
+            <p className="text-blue-100 text-sm">Browse and filter all detected anomalies in grid view</p>
+        </Card>
 
-        <button
+        <Card 
+          interactive 
           onClick={() => window.location.hash = 'forensic-audit-dashboard'}
-          style={{
-            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '12px',
-            padding: '1rem',
-            cursor: 'pointer',
-            textAlign: 'left',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)'
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(240, 147, 251, 0.4)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'
-          }}
+          className="p-6 cursor-pointer bg-gradient-to-br from-purple-400 to-pink-500 text-white border-0"
         >
-          <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🔬</div>
-          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>
-            Forensic Audit Suite
-          </h3>
-          <p style={{ margin: 0, opacity: 0.9, fontSize: '0.875rem' }}>
-            Access 10 specialized audit dashboards
-          </p>
-        </button>
+            <div className="text-3xl mb-2">🔬</div>
+            <h3 className="text-lg font-semibold mb-2">Forensic Audit Suite</h3>
+            <p className="text-pink-100 text-sm">Access 10 specialized audit dashboards</p>
+        </Card>
       </div>
 
-      {/* View Mode Tabs */}
-      <div style={{
-        display: 'flex',
-        gap: '0.5rem',
-        marginBottom: '1.5rem',
-        borderBottom: '2px solid #e5e7eb',
-        paddingBottom: '0.5rem'
-      }}>
+      {/* View Mode Tabs using Buttons */}
+      <div className="flex gap-2 mb-6 border-b border-gray-200 pb-2 overflow-x-auto">
         {(['unified', 'anomalies', 'alerts', 'locks', 'analytics', 'value_setup'] as ViewMode[]).map(mode => (
-          <button
+          <Button
             key={mode}
             onClick={() => setViewMode(mode)}
-            className={`btn btn-sm ${viewMode === mode ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ textTransform: 'capitalize' }}
+            variant={viewMode === mode ? 'primary' : 'secondary'}
+            size="sm"
+            className="capitalize whitespace-nowrap"
+            icon={
+              mode === 'unified' ? <Activity size={16} /> :
+              mode === 'value_setup' ? <Settings size={16} /> :
+              undefined
+            }
           >
-            {mode === 'unified' && <Activity size={16} style={{ marginRight: '0.25rem' }} />}
-            {mode === 'value_setup' && <Settings size={16} style={{ marginRight: '0.25rem' }} />}
             {mode === 'value_setup' ? 'Value Setup' : mode}
-          </button>
+          </Button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
-          <button
+        <div className="ml-auto flex gap-2">
+          <Button
             onClick={() => setShowBatchForm(!showBatchForm)}
-            className="btn btn-sm btn-primary"
+            variant="primary"
+            size="sm"
+            icon={<Zap size={16} />}
           >
-            <Zap size={16} style={{ marginRight: '0.25rem' }} />
             Batch Operations
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Filters */}
       {viewMode !== 'value_setup' && (
-        <div style={{ 
-          display: 'flex', 
-          gap: '1rem', 
-          marginBottom: '1.5rem',
-          flexWrap: 'wrap',
-          alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flex: 1, minWidth: '200px' }}>
-            <Search size={16} style={{ color: '#6b7280' }} />
-            <input
-              type="text"
-              placeholder="Search risks..."
-              value={filters.searchQuery}
-              onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-              className="form-input"
-              style={{ flex: 1, padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-            />
+        <div className="flex gap-4 mb-6 flex-wrap items-end">
+          <div className="flex-1 min-w-[200px]">
+             <Input
+                placeholder="Search risks..."
+                value={filters.searchQuery}
+                onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
+                leftIcon={<Search size={16} className="text-gray-400" />}
+                fullWidth
+             />
           </div>
-          <select
-            value={filters.severity}
-            onChange={(e) => setFilters(prev => ({ ...prev, severity: e.target.value }))}
-            className="select-input"
-            style={{ minWidth: '150px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-          >
-            <option value="">All Severities</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-          <select
-            value={filters.status}
-            onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-            className="select-input"
-            style={{ minWidth: '150px', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db' }}
-          >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="resolved">Resolved</option>
-            <option value="acknowledged">Acknowledged</option>
-          </select>
-          <select
-            value={filters.documentType}
-            onChange={(e) => setFilters(prev => ({ ...prev, documentType: e.target.value }))}
-            className="form-select"
-            style={{ minWidth: '180px' }}
-          >
-            <option value="">All Document Types</option>
-            <option value="income_statement">Income Statement</option>
-            <option value="balance_sheet">Balance Sheet</option>
-            <option value="cash_flow">Cash Flow</option>
-            <option value="rent_roll">Rent Roll</option>
-            <option value="mortgage_statement">Mortgage Statement</option>
-          </select>
-          <select
-            value={filters.period}
-            onChange={(e) => setFilters(prev => ({ ...prev, period: e.target.value }))}
-            className="form-select"
-            style={{ minWidth: '200px' }}
-            aria-label="Filter by period (YYYY-MM)"
-          >
-            <option value="">All Periods</option>
-            {periodOptions.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div className="w-40">
+             <Select
+                placeholder="All Severities"
+                value={filters.severity}
+                onChange={(val) => setFilters(prev => ({ ...prev, severity: val }))}
+                options={[
+                   { value: '', label: 'All Severities' },
+                   { value: 'critical', label: 'Critical' },
+                   { value: 'high', label: 'High' },
+                   { value: 'medium', label: 'Medium' },
+                   { value: 'low', label: 'Low' },
+                ]}
+             />
+          </div>
+          <div className="w-40">
+             <Select
+                placeholder="All Statuses"
+                value={filters.status}
+                onChange={(val) => setFilters(prev => ({ ...prev, status: val }))}
+                options={[
+                   { value: '', label: 'All Statuses' },
+                   { value: 'active', label: 'Active' },
+                   { value: 'resolved', label: 'Resolved' },
+                   { value: 'acknowledged', label: 'Acknowledged' },
+                ]}
+             />
+          </div>
+          <div className="w-48">
+              <Select
+                placeholder="All Document Types"
+                value={filters.documentType}
+                onChange={(val) => setFilters(prev => ({ ...prev, documentType: val }))}
+                options={[
+                    { value: '', label: 'All Document Types' },
+                    { value: 'income_statement', label: 'Income Statement' },
+                    { value: 'balance_sheet', label: 'Balance Sheet' },
+                    { value: 'cash_flow', label: 'Cash Flow' },
+                    { value: 'rent_roll', label: 'Rent Roll' },
+                    { value: 'mortgage_statement', label: 'Mortgage Statement' },
+                ]}
+              />
+          </div>
+          <div className="w-56">
+               <Select
+                placeholder="All Periods"
+                value={filters.period}
+                onChange={(val) => setFilters(prev => ({ ...prev, period: val }))}
+                options={[
+                    { value: '', label: 'All Periods' },
+                    ...periodOptions
+                ]}
+              />
+          </div>
         </div>
       )}
 
       {/* Batch Operations Panel */}
       {showBatchForm && (
-        <div style={{ marginBottom: '2rem' }}>
+        <div className="mb-8">
           <BatchReprocessingForm />
         </div>
       )}
 
       {/* Main Content Area */}
-      <div style={{ minHeight: '400px' }}>
+      <div className="min-h-[400px]">
         {error && (
-          <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
+          <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
             {error}
           </div>
         )}
 
         {['unified', 'anomalies', 'alerts', 'locks'].includes(viewMode) && (
           <>
-            {viewMode === 'unified' && filteredItems.filter(item => item.type === 'alert').length > 0 && (
-              <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button
+            {viewMode === 'unified' && filteredItems.some(item => item.type === 'alert') && (
+              <div className="mb-4 flex justify-end">
+                <Button
                   onClick={handleBulkDeleteAlerts}
-                  className="btn btn-sm btn-danger"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                  variant="danger"
+                  size="sm"
+                  icon={<Trash2 size={16} />}
                 >
-                  <Trash2 size={16} />
                   Delete All Visible Alerts
-                </button>
+                </Button>
               </div>
             )}
             <RiskWorkbenchTable
@@ -946,12 +897,12 @@ export default function RiskManagement() {
         )}
 
         {viewMode === 'analytics' && (
-          <div className="card">
-            <h3>Risk Analytics</h3>
-            <p style={{ color: '#6b7280' }}>
+          <Card className="p-6 text-center">
+            <h3 className="text-xl font-semibold mb-2">Risk Analytics</h3>
+            <p className="text-gray-600">
               Analytics view coming soon. This will include trend analysis, risk scoring, and predictive insights.
             </p>
-          </div>
+          </Card>
         )}
 
         {viewMode === 'value_setup' && (
@@ -961,8 +912,8 @@ export default function RiskManagement() {
 
       {/* Detail Modals */}
       {selectedDetail?.type === 'alert' && (
-        <div className="modal-overlay" onClick={() => setSelectedDetail(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', overflow: 'auto' }}>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedDetail(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <AlertDetailView 
               alertId={selectedDetail.id}
               onClose={() => setSelectedDetail(null)}

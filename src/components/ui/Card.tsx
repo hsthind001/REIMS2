@@ -1,9 +1,9 @@
 import React from 'react';
 import './card.css';
 
-type Variant = 'default' | 'elevated' | 'glass' | 'outlined';
+export type Variant = 'default' | 'elevated' | 'glass' | 'outlined';
 
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: Variant;
   hoverable?: boolean;
   interactive?: boolean;

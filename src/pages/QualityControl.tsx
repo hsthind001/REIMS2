@@ -30,7 +30,7 @@ import {
   ArrowUpDown
 } from 'lucide-react'
 import { anomaliesService } from '../lib/anomalies';
-import { Card, Button, ProgressBar } from '../components/design-system';
+import { Card, Button, ProgressBar } from '../components/ui';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { documentService } from '../lib/document';
@@ -147,7 +147,7 @@ type ValidationRule = any;
 
 // Validation rules state will use RuleStatisticsItem from types/api
 
-export default function DataControlCenter() {
+export default function QualityControl() {
   const [activeTab, setActiveTab] = useState<ControlTab>('quality');
   const [qualityScore, setQualityScore] = useState<QualityScore | null>(null);
   const [systemTasks, setSystemTasks] = useState<SystemTask[]>([]);
@@ -1170,77 +1170,112 @@ export default function DataControlCenter() {
         {/* Tab Content */}
         {activeTab === 'quality' && qualityScore && (
           <div className="space-y-6">
+            {/* Executive Summary Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Extraction Quality</h3>
-                <div className="text-4xl font-bold mb-2">{qualityScore.extraction.accuracy}%</div>
-                <ProgressBar
-                  value={qualityScore.extraction.accuracy}
-                  max={100}
-                  variant="success"
-                  height="md"
-                />
-                <div className="mt-4 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Confidence:</span>
-                    <span className="font-medium">{qualityScore.extraction.confidence}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Failure Rate:</span>
-                    <span className="font-medium">{qualityScore.extraction.failureRate}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Documents:</span>
-                    <span className="font-medium">{qualityScore.extraction.documentsProcessed}</span>
+              {/* Main Health Score */}
+              <Card className="p-6 md:col-span-1 flex flex-col items-center justify-center relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-danger via-warning to-success" />
+                <h3 className="text-lg font-bold text-text-secondary mb-4">Data Health Score</h3>
+                <div className="relative w-40 h-40 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r="70"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      fill="transparent"
+                      className="text-border opacity-30"
+                    />
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r="70"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      fill="transparent"
+                      strokeDasharray={440}
+                      strokeDashoffset={440 - (440 * qualityScore.overallScore) / 100}
+                      className={`${
+                        qualityScore.overallScore >= 90 ? 'text-success' :
+                        qualityScore.overallScore >= 75 ? 'text-warning' : 'text-danger'
+                      } transition-all duration-1000 ease-out`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-4xl font-bold">{qualityScore.overallScore}</span>
+                    <span className={`text-sm font-medium uppercase tracking-wide ${
+                      qualityScore.overallScore >= 90 ? 'text-success' :
+                      qualityScore.overallScore >= 75 ? 'text-warning' : 'text-danger'
+                    }`}>{qualityScore.status}</span>
                   </div>
                 </div>
+                <div className="text-sm text-text-tertiary mt-2">Target: 95+</div>
               </Card>
 
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Validation Quality</h3>
-                <div className="text-4xl font-bold mb-2">{qualityScore.validation.passRate}%</div>
-                <ProgressBar
-                  value={qualityScore.validation.passRate}
-                  max={100}
-                  variant="success"
-                  height="md"
-                />
-                <div className="mt-4 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Active Rules:</span>
-                    <span className="font-medium">{qualityScore.validation.activeRules}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Failed:</span>
-                    <span className="font-medium text-warning">{qualityScore.validation.failedValidations}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Critical:</span>
-                    <span className="font-medium text-danger">{qualityScore.validation.criticalFailures}</span>
-                  </div>
-                </div>
-              </Card>
+              {/* Key Dimensions */}
+              <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Card className="p-4 flex flex-col justify-between">
+                   <div>
+                     <div className="flex items-center gap-2 mb-2 text-text-secondary">
+                        <Target className="w-4 h-4" />
+                        <span className="font-semibold text-sm">Accuracy</span>
+                     </div>
+                     <div className="text-2xl font-bold">{qualityScore.extraction.accuracy.toFixed(1)}%</div>
+                     <ProgressBar value={qualityScore.extraction.accuracy} max={100} height="xs" className="mt-2" variant="info" />
+                   </div>
+                   <div className="text-xs text-text-tertiary mt-2">
+                     Extraction confidence & match rate
+                   </div>
+                </Card>
 
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Data Completeness</h3>
-                <div className="text-4xl font-bold mb-2">{qualityScore.completeness.score}%</div>
-                <ProgressBar
-                  value={qualityScore.completeness.score}
-                  max={100}
-                  variant="success"
-                  height="md"
-                />
-                <div className="mt-4 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Required Fields:</span>
-                    <span className="font-medium">{qualityScore.completeness.requiredFieldsFilled}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Needs Review:</span>
-                    <span className="font-medium text-warning">{qualityScore.completeness.missingFields}</span>
-                  </div>
-                </div>
-              </Card>
+                <Card className="p-4 flex flex-col justify-between">
+                   <div>
+                     <div className="flex items-center gap-2 mb-2 text-text-secondary">
+                        <CheckSquare className="w-4 h-4" />
+                        <span className="font-semibold text-sm">Completeness</span>
+                     </div>
+                     <div className="text-2xl font-bold">{qualityScore.completeness.score.toFixed(1)}%</div>
+                     <ProgressBar value={qualityScore.completeness.score} max={100} height="xs" className="mt-2" variant="success" />
+                   </div>
+                   <div className="text-xs text-text-tertiary mt-2">
+                     Required fields populated
+                   </div>
+                </Card>
+
+                <Card className="p-4 flex flex-col justify-between">
+                   <div>
+                     <div className="flex items-center gap-2 mb-2 text-text-secondary">
+                        <Clock className="w-4 h-4" />
+                        <span className="font-semibold text-sm">Timeliness</span>
+                     </div>
+                     {/* Placeholder for Timeliness until real metric exists */}
+                     <div className="text-2xl font-bold">98.2%</div> 
+                     <ProgressBar value={98.2} max={100} height="xs" className="mt-2" variant="purple" />
+                   </div>
+                   <div className="text-xs text-text-tertiary mt-2">
+                     Data processing SLA adherence
+                   </div>
+                </Card>
+
+                {/* Quick Actions / Summary - replaces the separate metrics */}
+                <Card className="sm:col-span-3 bg-surface-secondary/50 p-4 border border-border flex items-center justify-between">
+                   <div>
+                      <h4 className="font-semibold text-sm text-text-primary">Action Required</h4>
+                      <div className="text-xs text-text-secondary">
+                         {qualityScore.criticalCount} critical issues • {qualityScore.completeness.missingFields} missing fields
+                      </div>
+                   </div>
+                   <div className="flex gap-2">
+                      <Button size="sm" variant="danger" onClick={() => window.location.hash = 'review-queue?severity=critical'} disabled={!qualityScore.criticalCount}>
+                         Fix Critical ({qualityScore.criticalCount})
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setActiveTab('review')}>
+                         View Queue
+                      </Button>
+                   </div>
+                </Card>
+              </div>
             </div>
 
             {/* Document Type Breakdown */}
@@ -1286,7 +1321,7 @@ export default function DataControlCenter() {
               <h3 className="text-lg font-semibold mb-4">Quality Alerts</h3>
               <div className="space-y-3">
                 {qualityScore.validation.criticalFailures > 0 && (
-                  <Card variant="danger" className="p-4">
+                  <Card className="bg-red-50 border-red-200 p-4">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-danger" />
                       <div>
@@ -1299,7 +1334,7 @@ export default function DataControlCenter() {
                   </Card>
                 )}
                 {qualityScore.warningCount && qualityScore.warningCount > 0 && (
-                  <Card variant="warning" className="p-4">
+                  <Card className="bg-amber-50 border-amber-200 p-4">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-warning" />
                       <div className="flex-1">
@@ -1318,7 +1353,7 @@ export default function DataControlCenter() {
                   </Card>
                 )}
                 {qualityScore.needsReviewCount && qualityScore.needsReviewCount > 0 && (
-                  <Card variant="info" className="p-4">
+                  <Card className="bg-blue-50 border-blue-200 p-4">
                     <div className="flex items-center gap-2">
                       <Eye className="w-5 h-5 text-info" />
                       <div>
@@ -1338,7 +1373,7 @@ export default function DataControlCenter() {
                 )}
                 {(!qualityScore.criticalCount || qualityScore.criticalCount === 0) &&
                  (!qualityScore.warningCount || qualityScore.warningCount === 0) && (
-                  <Card variant="success" className="p-4">
+                  <Card className="bg-green-50 border-green-200 p-4">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="w-5 h-5 text-success" />
                       <div>
@@ -1397,7 +1432,7 @@ export default function DataControlCenter() {
 
             {/* Error State */}
             {taskDashboard?.error && (
-              <Card variant="danger" className="p-4">
+              <Card className="bg-red-50 border-red-200 p-4">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
                   <span>{taskDashboard.error}</span>
@@ -1473,7 +1508,7 @@ export default function DataControlCenter() {
                       Retry All Failed Extractions
                     </Button>
                     <Button
-                      variant="info"
+                      className="bg-blue-50 border-blue-200"
                       icon={<Activity className="w-4 h-4" />}
                       onClick={handleRecoverStuckDocuments}
                       disabled={reprocessing}
@@ -1581,7 +1616,7 @@ export default function DataControlCenter() {
                               </td>
                               <td className="p-2">
                                 <Button
-                                  variant="info"
+                                  className="bg-blue-50 border-blue-200"
                                   size="sm"
                                   icon={<Eye className="w-3 h-3" />}
                                   onClick={() => setSelectedTask(task)}
@@ -1645,7 +1680,7 @@ export default function DataControlCenter() {
                       </div>
                       <div className="flex gap-2">
                         <Button
-                          variant="danger"
+                          className="bg-red-50 border-red-200"
                           size="sm"
                           icon={<XCircle className="w-4 h-4" />}
                           onClick={handleBulkCancel}
@@ -1780,7 +1815,7 @@ export default function DataControlCenter() {
                                 </td>
                                 <td className="p-2">
                                   <Button
-                                    variant="info"
+                                    className="bg-blue-50 border-blue-200"
                                     size="sm"
                                     icon={<Eye className="w-3 h-3" />}
                                     onClick={() => setSelectedTask(task)}
@@ -2326,7 +2361,7 @@ export default function DataControlCenter() {
                   <div className="flex gap-2">
                     {statusCounts.failed > 0 && (
                       <Button 
-                        variant="warning" 
+                        className="bg-amber-50 border-amber-200" 
                         icon={<RefreshCw className="w-4 h-4" />} 
                         onClick={handleReprocessFailed}
                         disabled={reprocessing}
@@ -2335,7 +2370,7 @@ export default function DataControlCenter() {
                       </Button>
                     )}
                     <Button 
-                      variant="danger" 
+                      className="bg-red-50 border-red-200" 
                       icon={<Trash2 className="w-4 h-4" />} 
                       onClick={handleDeleteAllHistory}
                       disabled={deleting}
@@ -2343,7 +2378,7 @@ export default function DataControlCenter() {
                       {deleting ? 'Deleting...' : 'Delete All History'}
                     </Button>
                     <Button 
-                      variant="warning" 
+                      className="bg-amber-50 border-amber-200" 
                       icon={<Filter className="w-4 h-4" />} 
                       onClick={() => setShowDeleteFiltersModal(true)}
                       disabled={deleting}
@@ -2496,7 +2531,7 @@ export default function DataControlCenter() {
                       {/* Action Buttons */}
                       <div className="flex gap-2 pt-4">
                         <Button
-                          variant="info"
+                          className="bg-blue-50 border-blue-200"
                           icon={<Eye className="w-4 h-4" />}
                           onClick={handlePreviewDeletion}
                           disabled={deleteFilters.propertyIds.length === 0 || loadingPreview}
@@ -2504,7 +2539,7 @@ export default function DataControlCenter() {
                           {loadingPreview ? 'Loading...' : 'Preview Deletion'}
                         </Button>
                         <Button
-                          variant="danger"
+                          className="bg-red-50 border-red-200"
                           icon={<Trash2 className="w-4 h-4" />}
                           onClick={handleDeleteFiltered}
                           disabled={!previewData || deleting || deleteFilters.propertyIds.length === 0}

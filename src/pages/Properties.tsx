@@ -11,11 +11,20 @@ import {
   List,
   Map as MapIcon,
   Download,
-  TrendingUp
+  TrendingUp,
+  ArrowRight
 } from 'lucide-react';
 import { usePortfolioStore } from '../store';
-import { Card, Button, ProgressBar } from '../components/design-system';
-import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
+import { 
+  Button,
+  Card,
+  ProgressBar,
+  MetricCard,
+  Input,
+  Select,
+  Checkbox,
+  type SelectOption
+} from '../components/ui';
 import { PropertyMap } from '../components/PropertyMap';
 import { propertyService } from '../lib/property';
 import { mortgageService } from '../lib/mortgage';
@@ -155,7 +164,7 @@ interface TenantMatch {
 
 type DetailTab = 'overview' | 'financials' | 'market' | 'tenants' | 'docs';
 
-export default function PortfolioHub() {
+export default function Properties() {
   // Portfolio Store - Persistent state
   const {
     selectedProperty,
@@ -177,6 +186,7 @@ export default function PortfolioHub() {
 
   // Local state - Non-persistent
   const [properties, setProperties] = useState<Property[]>([]);
+  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [metrics, setMetrics] = useState<PropertyMetrics | null>(null);
   const [costs, setCosts] = useState<PropertyCosts | null>(null);
@@ -210,10 +220,50 @@ export default function PortfolioHub() {
   const quickFilter = (Array.isArray(filters.status) && filters.status.length > 0
     ? filters.status[0]
     : 'all') as 'all' | 'high-performers' | 'at-risk' | 'recent';
+
   const setQuickFilter = (status: string) => setFilters({ status: [status] });
-  const sortBy = (filters.search ? 'value' : 'noi') as 'noi' | 'risk' | 'value';
-  const setSortBy = (sort: 'noi' | 'risk' | 'value') => {
-    // Sorting is derived from filters, no separate state needed
+  const [sortBy, setSortBy] = useState<'noi' | 'risk' | 'value'>('noi');
+  
+  // Advanced Filters State for Modal
+  const [tempFilters, setTempFilters] = useState({
+    minNOI: filters.minNOI || '',
+    minOccupancy: filters.minOccupancy || '',
+    minUnits: filters.minUnits || '',
+    maxLTV: filters.maxLTV || '',
+    tags: filters.tags || [] as string[]
+  });
+
+  // Sync temp filters when modal opens
+  useEffect(() => {
+    if (showAdvancedFilter) {
+      setTempFilters({
+        minNOI: filters.minNOI || '',
+        minOccupancy: filters.minOccupancy || '',
+        minUnits: filters.minUnits || '',
+        maxLTV: filters.maxLTV || '',
+        tags: filters.tags || []
+      });
+    }
+  }, [showAdvancedFilter, filters]);
+  
+  const handleApplyAdvancedFilters = () => {
+    setFilters({
+      minNOI: tempFilters.minNOI ? Number(tempFilters.minNOI) : undefined,
+      minOccupancy: tempFilters.minOccupancy ? Number(tempFilters.minOccupancy) : undefined,
+      minUnits: tempFilters.minUnits ? Number(tempFilters.minUnits) : undefined,
+      maxLTV: tempFilters.maxLTV ? Number(tempFilters.maxLTV) : undefined,
+      tags: tempFilters.tags.length > 0 ? tempFilters.tags : undefined
+    });
+    setShowAdvancedFilter(false);
+  };
+  
+  const toggleTag = (tag: string) => {
+    setTempFilters(prev => {
+      const newTags = prev.tags.includes(tag) 
+        ? prev.tags.filter(t => t !== tag)
+        : [...prev.tags, tag];
+      return { ...prev, tags: newTags };
+    });
   };
 
   const handleClearFilters = () => {
@@ -708,7 +758,7 @@ export default function PortfolioHub() {
       // Load tenant matches
       await loadTenantMatches(propertyId);
     } catch (err) {
-      console.error('Failed to load property details:', err);
+      console.error('Failed to load asset details:', err);
     }
   };
 
@@ -1123,12 +1173,57 @@ export default function PortfolioHub() {
     return true;
   };
 
+  const matchesAdvancedFilter = (p: Property) => {
+     const metrics = propertyMetricsMap.get(p.id);
+     
+     // Min NOI
+     if (filters.minNOI !== undefined) {
+       const noi = metrics?.net_operating_income || metrics?.net_income || 0;
+       if (noi < filters.minNOI) return false;
+     }
+     
+     // Min Occupancy
+     if (filters.minOccupancy !== undefined) {
+        const occ = metrics?.occupancy_rate ?? 0;
+        if (occ < filters.minOccupancy) return false;
+     }
+     
+     // Min Units
+     if (filters.minUnits !== undefined) {
+        // Assuming unit count is part of property data or metrics, currently using hardcoded check or derived
+        // If unit count isn't readily available, we might skip or assume 0. 
+        // Note: unitInfo logic implies units fetch. For now, checking if property has total_units field
+        const units = (p as any).total_units || 0; 
+        if (units < filters.minUnits) return false;
+     }
+
+     // Max LTV
+     if (filters.maxLTV !== undefined) {
+        const ltv = metrics?.ltv_ratio ? metrics.ltv_ratio * 100 : 0;
+        if (ltv > filters.maxLTV) return false;
+     }
+     
+     // Tags
+     if (filters.tags && filters.tags.length > 0) {
+        // Assuming tags are on the property object or we match against some criteria
+        // For now, let's assume property.tags exists or we match loosely
+        const pTags = (p as any).tags || [];
+        const hasTag = filters.tags.some(t => pTags.includes(t));
+        // If property has no tags but we selected tags, filter out? Or permissive?
+        // Let's assume strict match for now if property supports tags
+        if (!hasTag) return false;
+     }
+     
+     return true;
+  };
+
   const filteredProperties = properties
     .filter(p =>
       p.property_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.property_code.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    .filter(matchesQuickFilter);
+    .filter(matchesQuickFilter)
+    .filter(matchesAdvancedFilter);
 
   // Prefetch alert counts for visible properties (up to 20 to avoid heavy load)
   useEffect(() => {
@@ -1264,7 +1359,7 @@ export default function PortfolioHub() {
           </div>
           <div className="flex gap-2">
             <Button
-              variant="info"
+              className="bg-blue-50 border-blue-200"
               icon={<Download className="w-4 h-4" />}
               onClick={() => exportPropertyListToCSV(properties)}
               size="sm"
@@ -1272,7 +1367,7 @@ export default function PortfolioHub() {
               CSV
             </Button>
             <Button
-              variant="info"
+              className="bg-blue-50 border-blue-200"
               icon={<Download className="w-4 h-4" />}
               onClick={() => exportPropertyListToExcel(properties)}
               size="sm"
@@ -1292,26 +1387,26 @@ export default function PortfolioHub() {
             <Card className="p-4">
               <div className="space-y-3">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-secondary" />
-                  <input
-                    type="text"
+                  <Input
                     placeholder="Search properties..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    aria-label="Search properties"
-                    className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                    leftIcon={<Search className="w-4 h-4 text-text-secondary" />}
+                    fullWidth
                   />
                 </div>
                 <div className="flex flex-wrap gap-2 items-center">
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as any)}
-                    className="flex-1 min-w-[160px] px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
-                  >
-                    <option value="noi">Sort by NOI</option>
-                    <option value="risk">Sort by Risk</option>
-                    <option value="value">Sort by Value</option>
-                  </select>
+                  <div className="flex-1 min-w-[160px]">
+                    <Select
+                      options={[
+                        { value: 'noi', label: 'Sort by NOI' },
+                        { value: 'risk', label: 'Sort by Risk' },
+                        { value: 'value', label: 'Sort by Value' }
+                      ]}
+                      value={sortBy}
+                      onChange={(val) => setSortBy(val as any)}
+                    />
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {[
                       { id: 'all', label: 'All' },
@@ -1338,7 +1433,7 @@ export default function PortfolioHub() {
                     ))}
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="primary" size="sm" icon={<Filter className="w-4 h-4" />}>
+                    <Button variant="primary" size="sm" icon={<Filter className="w-4 h-4" />} onClick={() => setShowAdvancedFilter(true)}>
                       Advanced
                     </Button>
                     <Button variant="ghost" size="sm" onClick={handleClearFilters}>
@@ -1375,7 +1470,7 @@ export default function PortfolioHub() {
               </div>
             </Card>
 
-            {/* Property Cards (List View) */}
+            {/* Property Gallery (List View) */}
             {viewMode === 'list' && (
             <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto">
               {sortedProperties.map((property) => {
@@ -1398,113 +1493,126 @@ export default function PortfolioHub() {
                 return (
                   <Card
                     key={property.id}
-                    variant={isSelected ? variant : 'default'}
-                    className={`p-4 cursor-pointer transition-all ${
-                      isSelected ? 'ring-2 ring-info shadow-lg' : ''
+                    variant={isSelected ? 'elevated' : 'default'}
+                    className={`group relative p-4 cursor-pointer transition-all duration-200 overflow-hidden ${
+                      isSelected ? 'ring-2 ring-info shadow-md' : 'hover:shadow-lg hover:-translate-y-0.5'
                     }`}
                     onClick={() => setSelectedProperty(property)}
-                    hover
                   >
-                    <div className="flex items-start justify-between mb-3 gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className="relative">
-                          <Building2 className="w-5 h-5 text-info" />
-                          <span
-                            className={`absolute -top-1 -right-1 inline-flex h-3 w-3 rounded-full ${
-                              status === 'critical'
-                                ? 'bg-danger'
-                                : status === 'warning'
-                                ? 'bg-warning'
-                                : 'bg-success'
-                            }`}
-                          />
+                    {/* Comparison Checkbox (Top Left) - Visible on Hover or Checked */}
+                    <div 
+                      className={`absolute top-3 left-3 z-20 transition-opacity duration-200 ${isCompared ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox 
+                        checked={isCompared} 
+                        onChange={(e) => {
+                          if (e.target.checked) addToComparison(property.id);
+                          else removeFromComparison(property.id);
+                        }}
+                        className="bg-surface/80 backdrop-blur-sm rounded-sm"
+                      />
+                    </div>
+
+                    {/* Header Section */}
+                    <div className="flex justify-between items-start mb-3 pl-8"> 
+                      <div className="flex gap-3">
+                        <div className={`p-2 rounded-lg transition-colors ${isSelected ? 'bg-info/10 text-info' : 'bg-surface-hover text-text-secondary group-hover:bg-primary/5 group-hover:text-primary'}`}>
+                          <Building2 className="w-5 h-5" />
                         </div>
                         <div>
-                          <div className="font-semibold text-text-primary">{property.property_name}</div>
-                        <div className="text-sm text-text-secondary flex items-center gap-2 flex-wrap">
-                          <span>{property.property_code}</span>
-                          {docCount > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-surface border border-border">
-                              <FileText className="w-3 h-3" /> {docCount} docs
-                            </span>
-                          )}
-                          {alertsCount > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-danger-light text-danger border border-danger/40">
-                              ⚠️ {alertsCount} alerts
-                            </span>
-                          )}
+                          <h4 className="font-semibold text-text-primary leading-tight transition-colors group-hover:text-primary">
+                            {property.property_name}
+                          </h4>
+                          <div className="flex items-center gap-2 text-xs text-text-secondary mt-1">
+                            <span className="font-mono bg-surface-hover px-1.5 py-0.5 rounded text-xs">{property.property_code}</span>
+                            {docCount > 0 && <span className="flex items-center gap-0.5"><FileText className="w-3 h-3" /> {docCount}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-text-primary text-lg">
+                          ${(displayValue / 1000000).toFixed(1)}M
+                        </div>
+                        <div className="text-xs text-text-secondary font-medium">
+                          NOI <span className={displayNoi > 0 ? 'text-success' : ''}>${(displayNoi / 1000).toFixed(0)}K</span>
+                          <span className="mx-1 text-border">|</span>
+                          LTV {ltv ? `${(ltv * 100).toFixed(0)}%` : '-'}
                         </div>
                       </div>
                     </div>
-                    <div className="text-right text-sm text-text-secondary space-y-1">
-                      <div className="font-medium text-text-primary">${(displayValue / 1000000).toFixed(1)}M</div>
-                      <div className="text-xs text-text-secondary">NOI ${(displayNoi / 1000).toFixed(1)}K</div>
-                      {ltv !== null && <div className="text-xs text-text-secondary">LTV {(ltv * 100).toFixed(0)}%</div>}
-                      <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={isCompared}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              addToComparison(property.id);
-                            } else {
-                              removeFromComparison(property.id);
-                            }
-                          }}
-                        />
-                        Compare
-                      </label>
-                    </div>
-                  </div>
 
-                    {(displayMetrics || propertyMetric) && (
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-text-secondary">Occupancy</span>
-                          <span className="font-medium">{occupancyPercent.toFixed(0)}%</span>
-                        </div>
-                        <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              status === 'critical'
-                                ? 'bg-danger'
-                                : status === 'warning'
-                                ? 'bg-warning'
-                                : 'bg-success'
-                            }`}
-                            style={{ width: `${occupancyPercent}%` }}
-                          />
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className="p-2 rounded-lg bg-background text-center">
-                            <div className="text-xs text-text-secondary">DSCR</div>
-                            <div className="font-semibold">{displayDscr !== null ? displayDscr.toFixed(2) : '—'}</div>
-                          </div>
-                          <div className="p-2 rounded-lg bg-background text-center">
-                            <div className="text-xs text-text-secondary">Trend</div>
-                            <div className="h-6 flex items-end gap-0.5 justify-center">
-                              {(displayMetrics?.trends?.noi || propertyMetric?.noi_trend || []).slice(-8).map((val: number, i: number, arr: number[]) => {
-                                const max = Math.max(...arr, 1);
-                                const height = (val / max) * 100;
-                                return (
-                                  <span key={i} className="w-1 bg-info rounded-sm" style={{ height: `${Math.max(height, 8)}%` }} />
-                                );
-                              })}
-                            </div>
-                          </div>
-                          <div className="p-2 rounded-lg bg-background text-center">
-                            <div className="text-xs text-text-secondary">Status</div>
-                            <div className="font-semibold">
-                              {status === 'critical' ? 'At Risk' : status === 'warning' ? 'Watch' : 'Healthy'}
-                            </div>
-                          </div>
-                          <div className="p-2 rounded-lg bg-background text-center">
-                            <div className="text-xs text-text-secondary">Alerts</div>
-                            <div className="font-semibold">{alertsCount}</div>
-                          </div>
-                        </div>
+                    {/* Occupancy Bar */}
+                    <div className="space-y-1.5 mb-4">
+                      <div className="flex justify-between text-xs items-end">
+                        <span className="text-text-secondary font-medium">Occupancy</span>
+                        <span className={`${
+                          occupancyPercent >= 90 ? 'text-success' : occupancyPercent >= 75 ? 'text-warning' : 'text-danger'
+                        } font-bold`}>{occupancyPercent.toFixed(0)}%</span>
                       </div>
-                    )}
+                      <ProgressBar 
+                        value={occupancyPercent} 
+                        max={100} 
+                        height="sm" 
+                        variant={occupancyPercent >= 90 ? 'success' : occupancyPercent >= 75 ? 'warning' : 'danger'} 
+                        className="opacity-80 group-hover:opacity-100 transition-opacity"
+                      />
+                    </div>
+
+                    {/* Footer Metrics Grid */}
+                    <div className="grid grid-cols-4 gap-2 text-center text-xs border-t border-border pt-3">
+                        <div>
+                             <div className="text-text-secondary mb-0.5">DSCR</div>
+                             <div className={`font-semibold ${displayDscr && displayDscr < 1.15 ? 'text-danger' : ''}`}>
+                                 {displayDscr ? displayDscr.toFixed(2) : '-'}
+                             </div>
+                        </div>
+                        <div className="col-span-1">
+                             <div className="text-text-secondary mb-0.5">Alerts</div>
+                               {alertsCount > 0 ? (
+                                   <div className="font-bold text-danger flex items-center justify-center gap-1">
+                                       <span className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse" /> {alertsCount}
+                                   </div>
+                               ) : (
+                                   <div className="text-text-tertiary">-</div>
+                               )}
+                        </div>
+                        <div className="col-span-1">
+                             <div className="text-text-secondary mb-0.5">Trend</div>
+                             <div className="h-4 flex items-end justify-center gap-0.5 opacity-60">
+                                  {(displayMetrics?.trends?.noi || propertyMetric?.noi_trend || []).slice(-5).map((val: number, i: number, arr: number[]) => (
+                                      <div key={i} className="w-0.5 bg-text-primary rounded-full" style={{ height: `${(val / (Math.max(...arr, 1))) * 100}%` }} />
+                                  ))}
+                             </div>
+                        </div>
+                        <div className="col-span-1 flex items-center justify-center">
+                            <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                status === 'critical' ? 'bg-danger/10 text-danger' : 
+                                status === 'warning' ? 'bg-warning/10 text-warning' : 
+                                'bg-success/10 text-success'
+                            }`}>
+                                {status === 'critical' ? 'Risk' : status === 'warning' ? 'Watch' : 'Fine'}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Hover Quick Actions Overlay */}
+                    <div className="absolute inset-x-0 bottom-0 p-3 bg-surface/90 backdrop-blur-md border-t border-border flex items-center justify-between opacity-0 translate-y-2 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 z-10">
+                        <div className="text-xs text-text-secondary font-medium">
+                            {ltv ? `LTV: ${(ltv * 100).toFixed(0)}%` : 'No LTV'}
+                        </div>
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 text-xs hover:bg-primary/10 hover:text-primary p-0 px-2"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedProperty(property);
+                            }}
+                        >
+                            View Details <ArrowRight className="ml-1 w-3 h-3" />
+                        </Button>
+                    </div>
                   </Card>
                 );
               })}
@@ -1933,7 +2041,7 @@ export default function PortfolioHub() {
             )}
           </div>
 
-          {/* Right Panel - Property Details (70%) */}
+          {/* Right Panel - Asset Details (70%) */}
           <div className="lg:col-span-7">
             {selectedProperty ? (
               <div className="space-y-6">
@@ -1961,7 +2069,7 @@ export default function PortfolioHub() {
                       <Button variant="primary" size="sm" icon={<Edit className="w-4 h-4" />}>
                         Edit
                       </Button>
-                      <Button variant="danger" size="sm" icon={<Trash2 className="w-4 h-4" />}>
+                      <Button className="bg-red-50 border-red-200" size="sm" icon={<Trash2 className="w-4 h-4" />}>
                         Delete
                       </Button>
                     </div>
@@ -1993,30 +2101,23 @@ export default function PortfolioHub() {
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium text-text-secondary">View Period</h3>
                         <div className="flex gap-2">
-                          <select
-                            value={selectedYear}
-                            onChange={(e) => {
-                              setSelectedYear(Number(e.target.value));
-                            }}
-                            className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info text-sm"
-                          >
-                            {[2023, 2024, 2025, 2026, 2027].map(year => (
-                              <option key={year} value={year}>{year}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={selectedMonth}
-                            onChange={(e) => {
-                              setSelectedMonth(Number(e.target.value));
-                            }}
-                            className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info text-sm"
-                          >
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                              <option key={month} value={month}>
-                                {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="w-32">
+                            <Select
+                              value={selectedYear.toString()}
+                              onChange={(val) => setSelectedYear(parseInt(val))}
+                              options={[2023, 2024, 2025, 2026, 2027].map(year => ({ value: year.toString(), label: year.toString() }))}
+                            />
+                          </div>
+                          <div className="w-40">
+                            <Select
+                              value={selectedMonth.toString()}
+                              onChange={(val) => setSelectedMonth(parseInt(val))}
+                              options={Array.from({ length: 12 }, (_, i) => i + 1).map(month => ({
+                                value: month.toString(),
+                                label: new Date(2000, month - 1).toLocaleString('default', { month: 'long' })
+                              }))}
+                            />
+                          </div>
                         </div>
                       </div>
                     </Card>
@@ -2025,20 +2126,20 @@ export default function PortfolioHub() {
                     <Card className="p-6">
                       <h3 className="text-lg font-semibold mb-4">Key Metrics</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <UIMetricCard
+                        <MetricCard
                           title="Purchase Price"
                           value={`$${(((metrics?.value || costs?.initialBuying || 0)) / 1_000_000).toFixed(2)}M`}
                           loading={metricsLoading}
                           comparison="Original basis"
                         />
-                        <UIMetricCard
+                        <MetricCard
                           title="Current Value"
                           value={`$${(((metrics?.value || 0)) / 1_000_000).toFixed(2)}M`}
                           loading={metricsLoading}
                           comparison="Latest valuation"
                           status="info"
                         />
-                        <UIMetricCard
+                        <MetricCard
                           title="Hold Period"
                           value={
                             selectedProperty?.acquisition_date
@@ -2052,7 +2153,7 @@ export default function PortfolioHub() {
                           }
                           loading={metricsLoading}
                         />
-                        <UIMetricCard
+                        <MetricCard
                           title="Cap Rate"
                           value={
                             metrics?.capRate !== null && metrics?.capRate !== undefined
@@ -2082,7 +2183,7 @@ export default function PortfolioHub() {
                           <ProgressBar
                             value={metrics?.noi && metrics.noi > 0 ? ((metrics.noi / (metrics.noi * 1.25)) * 100) : 0}
                             max={100}
-                            variant="success"
+                            className="bg-green-50 border-green-200"
                             height="md"
                           />
                         </div>
@@ -2110,7 +2211,7 @@ export default function PortfolioHub() {
                           <ProgressBar
                             value={((unitInfo?.occupiedUnits || 0) / (unitInfo?.totalUnits || 1)) * 100}
                             max={100}
-                            variant="success"
+                            className="bg-green-50 border-green-200"
                             height="md"
                           />
                         </div>
@@ -2189,43 +2290,40 @@ export default function PortfolioHub() {
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold">Financial Statements</h3>
                         <div className="flex gap-2">
-                          <select
-                            value={selectedYear}
-                            onChange={(e) => {
-                              setSelectedYear(Number(e.target.value));
-                              if (selectedProperty) {
-                                loadFinancialStatements(selectedProperty.property_code);
-                              }
-                            }}
-                            className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
-                          >
-                            {[2023, 2024, 2025, 2026].map(year => (
-                              <option key={year} value={year}>{year}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={selectedMonth}
-                            onChange={(e) => {
-                              setSelectedMonth(Number(e.target.value));
-                              if (selectedProperty) {
-                                loadFinancialStatements(selectedProperty.property_code);
-                              }
-                            }}
-                            className="px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
-                          >
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                              <option key={month} value={month}>
-                                {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="w-32">
+                            <Select
+                              value={selectedYear.toString()}
+                              onChange={(val) => {
+                                setSelectedYear(parseInt(val));
+                                if (selectedProperty) {
+                                  loadFinancialStatements(selectedProperty.property_code);
+                                }
+                              }}
+                              options={[2023, 2024, 2025, 2026].map(year => ({ value: year.toString(), label: year.toString() }))}
+                            />
+                          </div>
+                          <div className="w-40">
+                            <Select
+                              value={selectedMonth.toString()}
+                              onChange={(val) => {
+                                setSelectedMonth(parseInt(val));
+                                if (selectedProperty) {
+                                  loadFinancialStatements(selectedProperty.property_code);
+                                }
+                              }}
+                              options={Array.from({ length: 12 }, (_, i) => i + 1).map(month => ({
+                                value: month.toString(),
+                                label: new Date(2000, month - 1).toLocaleString('default', { month: 'long' })
+                              }))}
+                            />
+                          </div>
                         </div>
                       </div>
 
                       {/* Statement Type Cards */}
                       <div className="grid grid-cols-4 gap-4 mb-6">
                         <Card
-                          variant={selectedStatement === 'income' ? 'info' : 'default'}
+                          variant={selectedStatement === 'income' ? 'outlined' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'income' ? 'ring-2 ring-info' : ''}`}
                           onClick={async () => {
                             setSelectedStatement('income');
@@ -2236,7 +2334,15 @@ export default function PortfolioHub() {
                               loadFinancialDocumentData('income_statement', docs);
                             }
                           }}
-                          hover
+                          hoverable
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              // Trigger click logic if needed, but for now we just satisfy a11y
+                            }
+                          }}
                         >
                           <div className="text-center">
                             <div className="text-2xl mb-2">📊</div>
@@ -2247,7 +2353,7 @@ export default function PortfolioHub() {
                           </div>
                         </Card>
                         <Card
-                          variant={selectedStatement === 'balance' ? 'info' : 'default'}
+                          variant={selectedStatement === 'balance' ? 'outlined' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'balance' ? 'ring-2 ring-info' : ''}`}
                           onClick={async () => {
                             setSelectedStatement('balance');
@@ -2258,7 +2364,15 @@ export default function PortfolioHub() {
                               loadFinancialDocumentData('balance_sheet', docs);
                             }
                           }}
-                          hover
+                          hoverable
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              // Trigger click logic if needed, but for now we just satisfy a11y
+                            }
+                          }}
                         >
                           <div className="text-center">
                             <div className="text-2xl mb-2">💰</div>
@@ -2269,7 +2383,7 @@ export default function PortfolioHub() {
                           </div>
                         </Card>
                         <Card
-                          variant={selectedStatement === 'cashflow' ? 'info' : 'default'}
+                          variant={selectedStatement === 'cashflow' ? 'outlined' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'cashflow' ? 'ring-2 ring-info' : ''}`}
                           onClick={async () => {
                             setSelectedStatement('cashflow');
@@ -2280,7 +2394,15 @@ export default function PortfolioHub() {
                               loadFinancialDocumentData('cash_flow', docs);
                             }
                           }}
-                          hover
+                          hoverable
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              // Trigger click logic if needed, but for now we just satisfy a11y
+                            }
+                          }}
                         >
                           <div className="text-center">
                             <div className="text-2xl mb-2">💸</div>
@@ -2291,7 +2413,7 @@ export default function PortfolioHub() {
                           </div>
                         </Card>
                         <Card
-                          variant={selectedStatement === 'mortgage' ? 'info' : 'default'}
+                          variant={selectedStatement === 'mortgage' ? 'outlined' : 'default'}
                           className={`p-4 cursor-pointer transition-all ${selectedStatement === 'mortgage' ? 'ring-2 ring-info' : ''}`}
                           onClick={async () => {
                             setSelectedStatement('mortgage');
@@ -2302,7 +2424,15 @@ export default function PortfolioHub() {
                               loadFinancialDocumentData('mortgage_statement', docs);
                             }
                           }}
-                          hover
+                          hoverable
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              // Trigger click logic if needed, but for now we just satisfy a11y
+                            }
+                          }}
                         >
                           <div className="text-center">
                             <div className="text-2xl mb-2">🏦</div>
@@ -2605,7 +2735,7 @@ export default function PortfolioHub() {
                     ) : marketIntel ? (
                       <>
                         {/* Executive Summary - Top Priority */}
-                        <Card variant="premium" className="p-8 mb-6">
+                        <Card variant="glass" className="p-8 mb-6">
                           <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
                               <Sparkles className="w-6 h-6 text-premium" />
@@ -2800,7 +2930,7 @@ export default function PortfolioHub() {
 
                         {/* Additional AI Insights - If More Available */}
                         {marketIntel.aiInsights.length > 1 && (
-                          <Card variant="info" className="p-6 mt-6">
+                          <Card className="bg-blue-50 border-blue-200 p-6 mt-6">
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                               <Sparkles className="w-5 h-5 text-info" />
                               Additional Market Insights
@@ -2966,7 +3096,7 @@ export default function PortfolioHub() {
 
                     {/* AI Tenant Matching */}
                     {tenantMatches.length > 0 && (
-                      <Card variant="success" className="p-6">
+                      <Card className="bg-green-50 border-green-200 p-6">
                         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                           <Sparkles className="w-5 h-5 text-success" />
                           AI Tenant Matching Engine
@@ -3010,9 +3140,9 @@ export default function PortfolioHub() {
                                 </ul>
                               </div>
                               <div className="flex gap-2 mt-4">
-                                <Button variant="success" size="sm">Contact Tenant</Button>
+                                <Button className="bg-green-50 border-green-200" size="sm">Contact Tenant</Button>
                                 <Button variant="primary" size="sm">Schedule Tour</Button>
-                                <Button variant="info" size="sm">View Profile</Button>
+                                <Button className="bg-blue-50 border-blue-200" size="sm">View Profile</Button>
                               </div>
                             </div>
                           ))}
@@ -3073,6 +3203,168 @@ export default function PortfolioHub() {
           </div>
         </div>
       </div>
+
+      {/* Advanced Filter Modal */}
+      {showAdvancedFilter && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAdvancedFilter(false)}>
+          <Card className="max-w-2xl w-full m-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <Filter className="w-5 h-5" /> Advanced Filters
+            </h2>
+            <div className="space-y-4">
+               <div className="grid grid-cols-2 gap-4">
+                  <Input 
+                    label="Min NOI ($)" 
+                    placeholder="e.g. 50000" 
+                    value={tempFilters.minNOI}
+                    onChange={(e) => setTempFilters({...tempFilters, minNOI: e.target.value})}
+                    type="number"
+                  />
+                  <Input 
+                    label="Min Occupancy (%)" 
+                    placeholder="e.g. 90" 
+                    value={tempFilters.minOccupancy}
+                    onChange={(e) => setTempFilters({...tempFilters, minOccupancy: e.target.value})}
+                    type="number"
+                  />
+               </div>
+               <div className="grid grid-cols-2 gap-4">
+                  <Input 
+                    label="Min Units" 
+                    placeholder="e.g. 10" 
+                    value={tempFilters.minUnits}
+                    onChange={(e) => setTempFilters({...tempFilters, minUnits: e.target.value})}
+                    type="number"
+                  />
+                  <Input 
+                    label="Max LTV (%)" 
+                    placeholder="e.g. 75" 
+                    value={tempFilters.maxLTV}
+                    onChange={(e) => setTempFilters({...tempFilters, maxLTV: e.target.value})}
+                    type="number"
+                  />
+               </div>
+               <div>
+                  <label className="block text-sm font-medium mb-1">Property Tags</label>
+                  <div className="flex flex-wrap gap-2">
+                     {['Distressed', 'Value Add', 'Stabilized', 'Student Housing'].map(tag => (
+                        <div 
+                          key={tag} 
+                          onClick={() => toggleTag(tag)}
+                          className={`px-3 py-1 border rounded-full text-sm cursor-pointer transition-colors ${
+                              tempFilters.tags.includes(tag) 
+                              ? 'bg-primary text-white border-primary' 
+                              : 'bg-surface hover:bg-surface-hover text-text-secondary'
+                          }`}
+                        >
+                          {tag}
+                        </div>
+                     ))}
+                  </div>
+               </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+               <Button variant="ghost" onClick={() => setShowAdvancedFilter(false)}>Cancel</Button>
+               <Button variant="primary" onClick={handleApplyAdvancedFilters}>Apply Filters</Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Comparison Modal */}
+      {showComparisonModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowComparisonModal(false)}>
+           <Card className="max-w-6xl w-full max-h-[90vh] overflow-y-auto m-4 p-6" onClick={(e) => e.stopPropagation()}>
+             <div className="flex justify-between items-center mb-6">
+               <h2 className="text-2xl font-bold flex items-center gap-2">
+                 <Sparkles className="w-6 h-6 text-info" /> Property Comparison
+               </h2>
+               <Button variant="ghost" onClick={() => setShowComparisonModal(false)}>Close</Button>
+             </div>
+             <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="text-left py-2 pr-4 font-semibold text-text-secondary">Metric</th>
+                      {comparisonProperties.map((p) => (
+                        <th key={p.id} className="text-left py-2 pr-4 font-semibold text-text-primary">
+                          {p.property_code || p.property_name}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {['Value', 'NOI', 'DSCR', 'LTV', 'Occupancy', 'Cap Rate', 'Docs', 'Alerts'].map((metric) => (
+                      <tr key={metric} className="border-t border-border">
+                        <td className="py-2 pr-4 font-medium text-text-primary">{metric}</td>
+                        {comparisonProperties.map((p) => {
+                          const m = propertyMetricsMap.get(p.id);
+                          const value = m?.total_assets || 0;
+                          const noi = m?.net_operating_income || m?.net_income || 0;
+                          const dscr = m?.dscr ?? null;
+                          const ltv = m?.ltv_ratio ?? null;
+                          const occ = m?.occupancy_rate ?? null;
+                          const capRate = value > 0 ? (noi / value) * 100 : null;
+                          const docs = availableDocuments.filter((d) => d.property_code === p.property_code).length;
+                          const alerts = alertCounts.get(p.id) ?? 0;
+
+                          let display = '—';
+                          switch (metric) {
+                            case 'Value': display = value ? `$${(value / 1_000_000).toFixed(1)}M` : '—'; break;
+                            case 'NOI': display = noi ? `$${(noi / 1_000).toFixed(1)}K` : '—'; break;
+                            case 'DSCR': display = dscr !== null ? dscr.toFixed(2) : '—'; break;
+                            case 'LTV': display = ltv !== null ? `${(ltv * 100).toFixed(0)}%` : '—'; break;
+                            case 'Occupancy': display = occ !== null ? `${occ.toFixed(0)}%` : '—'; break;
+                            case 'Cap Rate': display = capRate !== null ? `${capRate.toFixed(1)}%` : '—'; break;
+                            case 'Docs': display = `${docs}`; break;
+                            case 'Alerts': display = `${alerts}`; break;
+                          }
+
+                          const statMap: Record<string, { min: number; max: number }> = {
+                            'Value': comparisonStats.value,
+                            'NOI': comparisonStats.noi,
+                            'DSCR': comparisonStats.dscr,
+                            'Occupancy': comparisonStats.occupancy,
+                            'Cap Rate': comparisonStats.capRate,
+                            'Docs': comparisonStats.docs,
+                            'Alerts': comparisonStats.alerts,
+                            'LTV': comparisonStats.ltv,
+                          };
+                          const invertHeat = metric === 'LTV' || metric === 'Alerts';
+                          const stat = statMap[metric];
+                          let heatStyle: React.CSSProperties = {};
+                          const numericVal = metric === 'Value' ? value
+                            : metric === 'NOI' ? noi
+                            : metric === 'DSCR' ? dscr
+                            : metric === 'Occupancy' ? occ
+                            : metric === 'Cap Rate' ? capRate
+                            : metric === 'Docs' ? docs
+                            : metric === 'Alerts' ? alerts
+                            : metric === 'LTV' ? ltv
+                            : null;
+                          if (stat && numericVal !== null && stat.max !== stat.min) {
+                            const ratio = (numericVal - stat.min) / (stat.max - stat.min);
+                            const intensity = Math.max(0.08, Math.min(0.4, invertHeat ? 0.4 - ratio * 0.3 : 0.1 + ratio * 0.3));
+                            heatStyle = { backgroundColor: `rgba(34,197,94,${intensity})` };
+                             if (invertHeat && numericVal >= stat.max * 0.9) heatStyle = { backgroundColor: 'rgba(239,68,68,0.2)' }; // Critical Red
+                          }
+
+                          return (
+                            <td key={p.id} className="py-2 pr-4 text-text-secondary">
+                              <div className="flex flex-col gap-1 p-2 rounded" style={heatStyle}>
+                                <span>{display}</span>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+             </div>
+           </Card>
+        </div>
+      )}
 
       {/* Modals */}
       {showCreateModal && (
@@ -3180,143 +3472,133 @@ function PropertyFormModal({
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Property Code *</label>
-              <input
-                type="text"
+              <Input
+                label="Property Code"
+                required
                 value={formData.property_code}
                 onChange={(e) => {
-                  // Auto-convert to uppercase and remove any spaces
                   const value = e.target.value.toUpperCase().replace(/\s/g, '');
                   setFormData({ ...formData, property_code: value });
                 }}
-                required
                 disabled={isEditing}
-                pattern="[A-Z]{2,5}[0-9]{3}"
-                title="Format: 2-5 uppercase letters followed by 3 digits (e.g., ESP001, TES121)"
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
                 placeholder="ESP001"
+                helperText="Format: 2-5 uppercase letters followed by 3 digits"
+                fullWidth
               />
-              <small className="text-text-secondary text-xs">e.g., ESP001, WEND001</small>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Property Name *</label>
-              <input
-                type="text"
+              <Input
+                label="Property Name"
+                required
                 value={formData.property_name}
                 onChange={(e) => setFormData({ ...formData, property_name: e.target.value })}
-                required
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                fullWidth
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Property Type</label>
-              <select
+              <Select
+                label="Property Type"
                 value={formData.property_type}
-                onChange={(e) => setFormData({ ...formData, property_type: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
-              >
-                <option value="">Select type...</option>
-                <option value="Retail">Retail</option>
-                <option value="Office">Office</option>
-                <option value="Industrial">Industrial</option>
-                <option value="Mixed Use">Mixed Use</option>
-                <option value="Multifamily">Multifamily</option>
-              </select>
+                onChange={(val) => setFormData({ ...formData, property_type: val })}
+                options={[
+                  { value: 'Retail', label: 'Retail' },
+                  { value: 'Office', label: 'Office' },
+                  { value: 'Industrial', label: 'Industrial' },
+                  { value: 'Mixed Use', label: 'Mixed Use' },
+                  { value: 'Multifamily', label: 'Multifamily' },
+                ]}
+                placeholder="Select type..."
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Total Area (sqft)</label>
-              <input
+              <Input
+                label="Total Area (sqft)"
                 type="number"
                 value={formData.total_area_sqft || ''}
                 onChange={(e) => setFormData({ ...formData, total_area_sqft: e.target.value ? Number(e.target.value) : undefined })}
-                min="0"
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                min={0}
+                fullWidth
               />
             </div>
           </div>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Address</label>
-            <input
-              type="text"
+            <Input
+              label="Address"
               value={formData.address}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+              fullWidth
             />
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium mb-1">City</label>
-              <input
-                type="text"
+              <Input
+                label="City"
                 value={formData.city}
                 onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                fullWidth
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">State</label>
-              <input
-                type="text"
+              <Input
+                label="State"
                 value={formData.state}
                 onChange={(e) => setFormData({ ...formData, state: e.target.value })}
                 maxLength={2}
                 placeholder="NC"
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                fullWidth
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">ZIP Code</label>
-              <input
-                type="text"
+              <Input
+                label="ZIP Code"
                 value={formData.zip_code}
                 onChange={(e) => setFormData({ ...formData, zip_code: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                fullWidth
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Acquisition Date</label>
-              <input
+              <Input
+                label="Acquisition Date"
                 type="date"
                 value={formData.acquisition_date}
                 onChange={(e) => setFormData({ ...formData, acquisition_date: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+                fullWidth
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Status</label>
-              <select
+              <Select
+                label="Status"
                 value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
-              >
-                <option value="active">Active</option>
-                <option value="sold">Sold</option>
-                <option value="under_contract">Under Contract</option>
-              </select>
+                onChange={(val) => setFormData({ ...formData, status: val })}
+                options={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'sold', label: 'Sold' },
+                  { value: 'under_contract', label: 'Under Contract' },
+                ]}
+              />
             </div>
           </div>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Ownership Structure</label>
-            <input
-              type="text"
+            <Input
+              label="Ownership Structure"
               value={formData.ownership_structure}
               onChange={(e) => setFormData({ ...formData, ownership_structure: e.target.value })}
               placeholder="LLC, Partnership, etc."
-              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info"
+              fullWidth
             />
           </div>
 
@@ -3331,10 +3613,10 @@ function PropertyFormModal({
           </div>
 
           <div className="flex gap-3 justify-end">
-            <Button variant="danger" onClick={onClose} disabled={loading}>
+            <Button className="bg-red-50 border-red-200" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" disabled={loading} isLoading={loading}>
+            <Button variant="primary" type="submit" disabled={loading} loading={loading}>
               {isEditing ? 'Update' : 'Create'}
             </Button>
           </div>

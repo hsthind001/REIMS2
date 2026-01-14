@@ -11,6 +11,11 @@ export interface FilterState {
   status?: string[];
   city?: string[];
   state?: string[];
+  minNOI?: number;
+  minOccupancy?: number;
+  minUnits?: number;
+  maxLTV?: number;
+  tags?: string[];
 }
 
 export interface PortfolioStore {
@@ -49,6 +54,11 @@ const defaultFilters: FilterState = {
   status: undefined,
   city: undefined,
   state: undefined,
+  minNOI: undefined,
+  minOccupancy: undefined,
+  minUnits: undefined,
+  maxLTV: undefined,
+  tags: undefined,
 };
 
 export const usePortfolioStore = create<PortfolioStore>()(

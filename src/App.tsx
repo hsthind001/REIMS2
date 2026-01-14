@@ -147,7 +147,7 @@ function AppContent() {
     const loadPropertyCommands = async () => {
       if (!isPaletteOpen || !isAuthenticated) return;
       try {
-        const props = await propertyService.getAllProperties({ limit: 50, signal: controller.signal });
+        const props = await propertyService.getAllProperties({ limit: 50 });
         const sorted = props.sort((a, b) => a.property_name.localeCompare(b.property_name));
         setPropertySource(sorted);
       } catch (err) {
@@ -165,7 +165,7 @@ function AppContent() {
     const loadDocCommands = async () => {
       if (!isPaletteOpen || !isAuthenticated) return;
       try {
-        const docs = await documentService.getDocuments({ limit: 20, signal: controller.signal });
+        const docs = await documentService.getDocuments({ limit: 20 });
         const items = docs.items || [];
         setDocSource(items);
       } catch (err) {

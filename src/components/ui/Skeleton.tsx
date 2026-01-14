@@ -3,7 +3,7 @@ import './skeleton.css';
 
 type Variant = 'rect' | 'circle' | 'text';
 
-interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: Variant;
 }
 

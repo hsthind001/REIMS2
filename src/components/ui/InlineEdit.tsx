@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './inline-edit.css';
 
-interface InlineEditProps {
+export interface InlineEditProps {
   value: string;
   label?: string;
   placeholder?: string;

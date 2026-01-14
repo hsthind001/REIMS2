@@ -1,10 +1,10 @@
 import { afterEach, beforeAll, afterAll, vi, expect } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { toHaveNoViolations } from 'vitest-axe/matchers';
+import * as matchers from 'vitest-axe/matchers';
 
 // Extend Vitest matchers with axe-core accessibility matchers
-expect.extend(toHaveNoViolations);
+expect.extend(matchers);
 
 // Cleanup after each test
 afterEach(() => {
@@ -27,7 +27,7 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 // Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
+const IntersectionObserverMock = class IntersectionObserver {
   constructor() {}
   disconnect() {}
   observe() {}
@@ -36,14 +36,16 @@ global.IntersectionObserver = class IntersectionObserver {
   }
   unobserve() {}
 } as any;
+vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
 
 // Mock ResizeObserver
-global.ResizeObserver = class ResizeObserver {
+const ResizeObserverMock = class ResizeObserver {
   constructor() {}
   disconnect() {}
   observe() {}
   unobserve() {}
 } as any;
+vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
 // Mock localStorage
 const localStorageMock = {
@@ -55,10 +57,10 @@ const localStorageMock = {
   key: vi.fn(),
 };
 
-global.localStorage = localStorageMock as any;
+vi.stubGlobal('localStorage', localStorageMock);
 
 // Mock scrollTo
-global.scrollTo = vi.fn();
+vi.stubGlobal('scrollTo', vi.fn());
 
 // Suppress console errors in tests for known warnings
 const originalError = console.error;

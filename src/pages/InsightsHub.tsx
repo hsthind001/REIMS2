@@ -13,11 +13,15 @@ import {
   Play,
   Download
 } from 'lucide-react';
-import { ProgressBar } from '../components/design-system';
-import { Card as UICard } from '../components/ui/Card';
-import { MetricCard as UIMetricCard } from '../components/ui/MetricCard';
-import { Skeleton as UISkeleton } from '../components/ui/Skeleton';
-import { Button } from '../components/ui/Button';
+import { 
+  ProgressBar,
+  Card as UICard,
+  MetricCard as UIMetricCard,
+  Skeleton as UISkeleton,
+  Button,
+  Select,
+  type SelectOption
+} from '../components/ui';
 import { useToastContext } from '../hooks/ToastContext';
 import { PDFViewer } from '../components/PDFViewer';
 import { propertyService } from '../lib/property';
@@ -28,6 +32,8 @@ import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/e
 import { getMetricSource, getPDFViewerData } from '../lib/metrics_source';
 import { useAuth } from '../components/AuthContext';
 import type { Property } from '../types/api';
+import './insightsHub.css';
+
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
@@ -102,7 +108,7 @@ interface AIInsight {
   updated_at?: string;
 }
 
-export default function CommandCenter() {
+export default function InsightsHub() {
   const { user } = useAuth();
   const { success: toastSuccess, error: toastError, warning: toastWarning } = useToastContext();
   const [portfolioHealth, setPortfolioHealth] = useState<PortfolioHealth | null>(null);
@@ -491,7 +497,7 @@ export default function CommandCenter() {
             });
             
             // Calculate NOI (Net Operating Income) once - use for both DSCR and display
-            // Prefer net_operating_income over net_income for consistency with KPI cards
+            // Prefer net_operating_income over net_income for consistency with Key Indicators
             const noi = (metric.net_operating_income !== null && metric.net_operating_income !== undefined)
               ? metric.net_operating_income
               : (metric.net_income !== null && metric.net_income !== undefined)
@@ -614,7 +620,7 @@ export default function CommandCenter() {
       
       setPropertyPerformance(performance);
     } catch (err) {
-      console.error('Failed to load property performance:', err);
+      console.error('Failed to load property scorecard:', err);
     }
   };
 
@@ -868,7 +874,7 @@ export default function CommandCenter() {
         loadSparklineData() // Only call once
       ]);
 
-      // Load property performance (depends on properties being loaded)
+      // Load property scorecard (depends on properties being loaded)
       await loadPropertyPerformance(propertiesData);
 
       // Show success toast only on manual refresh (not on initial load)
@@ -896,7 +902,7 @@ export default function CommandCenter() {
   }, []);
 
   useEffect(() => {
-    // Reload portfolio health, property performance, and sparklines when property or year filter changes
+    // Reload portfolio health, property scorecard, and sparklines when property or year filter changes
     if (properties.length > 0) {
       loadPortfolioHealth(properties);
       loadPropertyPerformance(properties);
@@ -936,14 +942,14 @@ export default function CommandCenter() {
         setAnalysisDetails({
           title: 'Portfolio Health Analysis',
           summary: portfolioHealth ? 
-            `Portfolio Health Score: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
+            `Portfolio Vitals: ${portfolioHealth.score}/100 (${portfolioHealth.status.toUpperCase()})` :
             'Portfolio analysis unavailable',
           details: portfolioHealth ? [
             `Total Portfolio Value: $${((portfolioHealth.totalValue || 0) / 1000000).toFixed(1)}M`,
             `Total NOI: $${((portfolioHealth.totalNOI || 0) / 1000).toFixed(1)}K`,
             `Average Occupancy: ${(portfolioHealth.avgOccupancy || 0).toFixed(1)}%`,
             `Portfolio DSCR: ${(portfolioHealth.portfolioDSCR || 0).toFixed(2)}`,
-            `Critical Alerts: ${portfolioHealth.alertCount.critical}`,
+            `Priority Actions: ${portfolioHealth.alertCount.critical}`,
             `Warning Alerts: ${portfolioHealth.alertCount.warning}`
           ] : [],
           recommendations: portfolioHealth && portfolioHealth.score < 90 ? [
@@ -1189,11 +1195,10 @@ export default function CommandCenter() {
     // Get current user ID from auth context
     const currentUserId = user?.id || 1; // Fallback to 1 if not available
     
-    if (!currentUserId) {
-      window.alert('Please log in to acknowledge alerts');
-      return;
-    }
-
+    // Optimistic update - remove immediately
+    const prevAlerts = [...criticalAlerts];
+    setCriticalAlerts(prev => prev.filter(a => a.id !== criticalAlert.id));
+    
     try {
       const response = await fetch(`${API_BASE_URL}/risk-alerts/alerts/${criticalAlert.id}/acknowledge`, {
         method: 'POST',
@@ -1206,24 +1211,20 @@ export default function CommandCenter() {
       });
       
       if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Remove alert from list
-          setCriticalAlerts(prev => prev.filter(a => a.id !== criticalAlert.id));
-          // Show success message
-          window.alert('Alert acknowledged successfully');
-          // Refresh alerts to get updated list
-          await loadCriticalAlerts();
-        } else {
-          window.alert(`Failed to acknowledge alert: ${data.message || 'Unknown error'}`);
-        }
+        toastSuccess('Alert acknowledged');
+        // Refresh to ensure consistent state
+        loadCriticalAlerts();
       } else {
+        // Revert on failure
+        setCriticalAlerts(prevAlerts);
         const error = await response.json();
-        window.alert(`Failed to acknowledge alert: ${error.detail || 'Unknown error'}`);
+        toastError(`Failed to acknowledge: ${error.detail || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Failed to acknowledge alert:', err);
-      window.alert('Failed to acknowledge alert. Please try again.');
+      // Revert on failure
+      setCriticalAlerts(prevAlerts);
+      toastError('Failed to acknowledge alert');
     }
   };
 
@@ -1265,7 +1266,7 @@ export default function CommandCenter() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero Section - Portfolio Health Score */}
+      {/* Hero Section - Portfolio Vitals */}
       <div className="bg-hero-gradient text-white py-12 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
@@ -1394,41 +1395,36 @@ export default function CommandCenter() {
         <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Property and Year Filter */}
         <UICard variant="elevated" className="p-4 mb-6">
-          <div className="flex items-center gap-6 flex-wrap">
-            <div className="flex items-center gap-4 flex-1 min-w-[300px]">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-                Filter by Property:
-              </label>
-              <select
-                value={selectedPropertyFilter}
-                onChange={(e) => setSelectedPropertyFilter(e.target.value)}
-                className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">📊 All Properties (Portfolio Overview)</option>
-                {properties.map((property) => (
-                  <option key={property.id} value={property.property_code}>
-                    {property.property_code} - {property.property_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedPropertyFilter !== 'all' && (
-              <div className="flex items-center gap-4">
-                <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-                  Year:
-                </label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
+          <div className="flex items-center gap-6 flex-wrap w-full">
+              <div className="flex-1 min-w-[300px]">
+                <Select
+                  label="Filter by Property"
+                  value={selectedPropertyFilter}
+                  onChange={(val) => setSelectedPropertyFilter(val)}
+                  options={[
+                    { value: 'all', label: '📊 All Properties (Portfolio Overview)' },
+                    ...properties.map(p => ({
+                      value: p.property_code,
+                      label: `${p.property_code} - ${p.property_name}`
+                    }))
+                  ]}
+                  searchable
+                />
               </div>
-            )}
+
+              {selectedPropertyFilter !== 'all' && (
+                <div className="w-48">
+                  <Select
+                    label="Year"
+                    value={selectedYear.toString()}
+                    onChange={(val) => setSelectedYear(parseInt(val))}
+                    options={Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => ({
+                      value: year.toString(),
+                      label: year.toString()
+                    }))}
+                  />
+                </div>
+              )}
 
             <div className="text-sm text-gray-600">
               {selectedPropertyFilter === 'all'
@@ -1450,6 +1446,7 @@ export default function CommandCenter() {
             target={portfolioHealth?.percentageChanges?.total_value_change ?? undefined}
             comparison={selectedPropertyFilter === 'all' ? 'vs last period' : 'vs prior period'}
             loading={loading}
+            sparklineData={sparklineData.value}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('property_value') : undefined}
           />
           <UIMetricCard
@@ -1461,6 +1458,7 @@ export default function CommandCenter() {
             target={portfolioHealth?.percentageChanges?.noi_change ?? undefined}
             comparison="vs last period"
             loading={loading}
+            sparklineData={sparklineData.noi}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('net_operating_income') : undefined}
           />
           <UIMetricCard
@@ -1472,6 +1470,7 @@ export default function CommandCenter() {
             target={portfolioHealth?.percentageChanges?.occupancy_change ?? undefined}
             comparison="vs last period"
             loading={loading}
+            sparklineData={sparklineData.occupancy}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('occupancy_rate') : undefined}
           />
           <UIMetricCard
@@ -1485,6 +1484,7 @@ export default function CommandCenter() {
             target={portfolioHealth?.percentageChanges?.dscr_change ?? undefined}
             comparison="vs last period"
             loading={loading}
+            sparklineData={sparklineData.dscr}
             onClick={selectedPropertyFilter !== 'all' ? () => handleMetricClick('dscr') : undefined}
           />
         </div>
@@ -1585,53 +1585,54 @@ export default function CommandCenter() {
                     })()}
                   </div>
                 )}
-                <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Month</th>
+                <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 text-text-secondary">
+                    <tr className="border-b border-border">
+                      <th className="px-4 py-3 font-semibold">Month</th>
                       {documentMatrix.required_documents?.map((doc: string) => (
-                        <th key={doc} className="border border-gray-300 px-4 py-2 text-center font-semibold text-sm">
-                          {doc.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                        <th key={doc} className="px-4 py-3 text-center font-semibold text-xs uppercase tracking-wider">
+                          {doc.replace(/_/g, ' ')}
                         </th>
                       ))}
-                      <th className="border border-gray-300 px-4 py-2 text-center font-semibold">Status</th>
+                      <th className="px-4 py-3 text-center font-semibold">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border bg-surface">
                     {documentMatrix.months?.map((month: any) => (
                       <tr
                         key={month.period_id}
                         className={`
-                          ${month.all_available ? 'bg-green-50' : 'bg-white'}
-                          ${documentMatrix.latest_complete_period?.period_id === month.period_id ? 'ring-2 ring-blue-500' : ''}
-                          hover:bg-gray-50
+                          transition-colors
+                          ${month.all_available ? 'bg-success-light/5' : ''}
+                          ${documentMatrix.latest_complete_period?.period_id === month.period_id ? 'bg-primary-light/5 ring-1 ring-inset ring-primary/30' : ''}
+                          hover:bg-muted/30
                         `}
                       >
-                        <td className="border border-gray-300 px-4 py-2 font-medium">
+                        <td className="px-4 py-3 font-medium">
                           {month.month_name}
                           {documentMatrix.latest_complete_period?.period_id === month.period_id && (
-                            <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded">
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary text-white shadow-sm">
                               Latest Complete
                             </span>
                           )}
                         </td>
                         {documentMatrix.required_documents?.map((doc: string) => (
-                          <td key={doc} className="border border-gray-300 px-4 py-2 text-center">
+                          <td key={doc} className="px-4 py-3 text-center">
                             {month.documents?.[doc] ? (
-                              <CheckCircle className="w-5 h-5 text-green-600 mx-auto" />
+                              <CheckCircle className="w-5 h-5 text-success mx-auto" />
                             ) : (
-                              <span className="text-gray-300 text-2xl">✗</span>
+                              <span className="text-border text-lg">•</span>
                             )}
                           </td>
                         ))}
-                        <td className="border border-gray-300 px-4 py-2 text-center">
+                        <td className="px-4 py-3 text-center">
                           {month.all_available ? (
-                            <span className="inline-block px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-success-light text-success">
                               Complete
                             </span>
                           ) : (
-                            <span className="inline-block px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-semibold">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-warning-light text-warning">
                               Incomplete
                             </span>
                           )}
@@ -1809,69 +1810,82 @@ export default function CommandCenter() {
           </div>
         </UICard>
 
-        {/* Portfolio Performance Section - Added spacing from KPI cards */}
+        {/* Portfolio Performance Section - Added spacing from Key Indicators */}
         <div className="mt-10">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Portfolio Performance Grid */}
             <div className="lg:col-span-2">
-              <UICard variant="elevated" className="p-6">
-                <h2 className="text-2xl font-bold mb-4">Portfolio Performance</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-4 font-semibold">Property</th>
-                      <th className="text-right py-3 px-4 font-semibold">Value</th>
-                      <th className="text-right py-3 px-4 font-semibold">NOI</th>
-                      <th className="text-right py-3 px-4 font-semibold">DSCR</th>
-                      <th className="text-right py-3 px-4 font-semibold">LTV</th>
-                      <th className="text-right py-3 px-4 font-semibold">Trend</th>
-                      <th className="text-center py-3 px-4 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {propertyPerformance.map((prop) => (
-                      <tr
-                        key={prop.id}
-                        className={`border-b border-border hover:bg-background cursor-pointer ${
-                          prop.status === 'critical' ? 'bg-danger-light/10' :
-                          prop.status === 'warning' ? 'bg-warning-light/10' :
-                          'bg-success-light/10'
-                        }`}
-                      >
-                        <td className="py-3 px-4 font-medium">{prop.name}</td>
-                        <td className="py-3 px-4 text-right">
-                          ${prop.value ? (prop.value / 1000000).toFixed(1) : '0.0'}M
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          ${prop.noi ? (prop.noi / 1000).toFixed(1) : '0.0'}K
-                        </td>
-                        <td className="py-3 px-4 text-right">{prop.dscr ? prop.dscr.toFixed(2) : 'N/A'}</td>
-                        <td className="py-3 px-4 text-right">{prop.ltv ? (prop.ltv * 100).toFixed(1) : 'N/A'}%</td>
-                        <td className="py-3 px-4">
-                          <div className="h-6 w-24 flex items-end gap-0.5">
-                            {prop.trends.noi.slice(-12).map((val, i) => {
-                              const max = Math.max(...prop.trends.noi);
-                              const height = (val / max) * 100;
-                              return (
-                                <div
-                                  key={i}
-                                  className="flex-1 bg-info rounded-t"
-                                  style={{ height: `${Math.max(height, 10)}%` }}
-                                />
-                              );
-                            })}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {prop.status === 'critical' ? '🔴' :
-                           prop.status === 'warning' ? '🟡' : '🟢'}
-                        </td>
+              <UICard variant="elevated" className="p-0 overflow-hidden">
+                <div className="p-6 border-b border-border">
+                  <h2 className="text-2xl font-bold">Portfolio Performance</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-muted/50 text-text-secondary">
+                      <tr className="border-b border-border">
+                        <th className="py-3 px-4 font-semibold">Property</th>
+                        <th className="text-right py-3 px-4 font-semibold">Value</th>
+                        <th className="text-right py-3 px-4 font-semibold">NOI</th>
+                        <th className="text-right py-3 px-4 font-semibold">DSCR</th>
+                        <th className="text-right py-3 px-4 font-semibold">LTV</th>
+                        <th className="text-right py-3 px-4 font-semibold">Trend (NOI)</th>
+                        <th className="text-center py-3 px-4 font-semibold">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {propertyPerformance.map((prop) => (
+                        <tr
+                          key={prop.id}
+                          className={`hover:bg-muted/30 transition-colors cursor-pointer ${
+                            prop.status === 'critical' ? 'bg-danger-light/5' :
+                            prop.status === 'warning' ? 'bg-warning-light/5' :
+                            ''
+                          }`}
+                        >
+                          <td className="py-3 px-4 font-medium">{prop.name}</td>
+                          <td className="py-3 px-4 text-right">
+                            ${prop.value ? (prop.value / 1000000).toFixed(1) : '0.0'}M
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            ${prop.noi ? (prop.noi / 1000).toFixed(1) : '0.0'}K
+                          </td>
+                          <td className={`py-3 px-4 text-right font-medium ${
+                            (prop.dscr || 0) < 1.25 ? 'text-danger' : 
+                            (prop.dscr || 0) < 1.35 ? 'text-warning' : 'text-success'
+                          }`}>
+                            {prop.dscr ? prop.dscr.toFixed(2) : 'N/A'}
+                          </td>
+                          <td className="py-3 px-4 text-right">{prop.ltv ? (prop.ltv * 100).toFixed(1) : 'N/A'}%</td>
+                          <td className="py-3 px-4">
+                            <div className="h-8 w-24 flex items-end gap-0.5 ml-auto">
+                              {prop.trends.noi.slice(-12).map((val, i) => {
+                                const max = Math.max(...prop.trends.noi, 1);
+                                const height = (val / max) * 100;
+                                return (
+                                  <div
+                                    key={i}
+                                    className="flex-1 bg-info rounded-t opacity-80 hover:opacity-100 transition-opacity"
+                                    style={{ height: `${Math.max(height, 15)}%` }}
+                                    title={`$${val.toFixed(1)}M`}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {prop.status === 'critical' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger-light text-danger">Critical</span>
+                            ) : prop.status === 'warning' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-light text-warning">Warning</span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-light text-success">Good</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
             </UICard>
           </div>
 
@@ -1880,7 +1894,7 @@ export default function CommandCenter() {
             <UICard variant="glass" className="p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-6 h-6 text-premium" />
-                <h2 className="text-2xl font-bold">AI Portfolio Insights</h2>
+                <h2 className="text-2xl font-bold">AI Advisor</h2>
               </div>
               <p className="text-sm text-text-secondary mb-4">Powered by Claude AI</p>
 
@@ -1955,7 +1969,7 @@ export default function CommandCenter() {
           </div>
         </div>
 
-        {/* PDF Viewer - Inline at bottom after AI Portfolio Insights */}
+        {/* PDF Viewer - Inline at bottom after AI Advisor */}
         {showPDFViewer && pdfViewerData && (
           <div className="mt-8">
             <PDFViewer

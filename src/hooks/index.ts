@@ -16,3 +16,6 @@ export type {
   UseVariableVirtualScrollOptions,
   VirtualItem
 } from './useVirtualScroll';
+
+// WebSocket Hook
+export { useWebSocket } from './useWebSocket';

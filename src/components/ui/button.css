@@ -13,7 +13,11 @@
 
 .ui-btn-primary {
   color: var(--color-text-inverse);
-  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--brand-primary) 0%,
+    var(--brand-primary-dark) 100%
+  );
   box-shadow: var(--shadow-sm);
 }
 
@@ -38,9 +42,39 @@
   border-color: var(--color-border-default);
 }
 
-.ui-btn-danger {
-  background: var(--color-danger);
+.ui-btn-danger:hover {
+  background: #dc2626;
+}
+
+.ui-btn-success {
+  background: var(--color-success);
   color: var(--color-text-inverse);
+}
+
+.ui-btn-warning {
+  background: var(--color-warning);
+  color: var(--color-text-inverse);
+}
+
+.ui-btn-info {
+  background: var(--color-info);
+  color: var(--color-text-inverse);
+}
+
+.ui-btn-premium {
+  background: var(--brand-gradient);
+  color: var(--color-text-inverse);
+  box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.39);
+}
+
+.ui-btn-outline {
+  background: transparent;
+  border-color: var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.ui-btn-outline:hover {
+  background: var(--color-bg-secondary);
 }
 
 .ui-btn-sm {
