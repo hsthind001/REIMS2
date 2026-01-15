@@ -55,6 +55,10 @@ export interface ForensicMatch {
   reviewed_at?: string;
   review_notes?: string;
   created_at?: string;
+  source_coordinates?: any;
+  target_coordinates?: any;
+  reasons?: string[];
+  prior_period_amount?: number;
 }
 
 export interface ForensicDiscrepancy {

@@ -9,6 +9,8 @@ import { createPortal } from 'react-dom';
 import { X, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../design-system';
 import type { ForensicMatch } from '../../lib/forensic_reconciliation';
+import PDFSnippetViewer from './PDFSnippetViewer';
+import WhyFlaggedCard from './WhyFlaggedCard';
 
 interface MatchDetailModalProps {
   match: ForensicMatch;
@@ -91,7 +93,15 @@ export default function MatchDetailModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+          {/* AI Explainability */}
+          <WhyFlaggedCard
+            reasons={match.reasons || []}
+            matchType={match.match_type}
+            confidence={match.confidence_score}
+            amountDifference={match.amount_difference}
+          />
+          
           {/* Match Information */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -130,6 +140,15 @@ export default function MatchDetailModal({
           <div className="grid grid-cols-2 gap-6">
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-500 mb-2">Source Document</h3>
+              {(match as any).source_coordinates ? (
+                <PDFSnippetViewer
+                  uploadId={(match as any).source_coordinates.upload_id}
+                  bbox={(match as any).source_coordinates.bbox}
+                  page={(match as any).source_coordinates.page}
+                  label="Source Snippet"
+                  className="bg-gray-50 mb-4"
+                />
+              ) : null}
               <div className="space-y-2">
                 <div>
                   <span className="text-xs text-gray-500">Type:</span>
@@ -139,11 +158,11 @@ export default function MatchDetailModal({
                   <span className="text-xs text-gray-500">Record ID:</span>
                   <span className="ml-2 font-medium">{match.source_record_id}</span>
                 </div>
-                {match.amount_difference !== undefined && (
+                {match.source_amount !== undefined && (
                   <div>
                     <span className="text-xs text-gray-500">Amount:</span>
                     <span className="ml-2 font-semibold text-lg">
-                      ${match.amount_difference !== undefined ? 'N/A' : 'N/A'}
+                      ${match.source_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 )}
@@ -152,6 +171,15 @@ export default function MatchDetailModal({
 
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-500 mb-2">Target Document</h3>
+              {(match as any).target_coordinates ? (
+                <PDFSnippetViewer
+                  uploadId={(match as any).target_coordinates.upload_id}
+                  bbox={(match as any).target_coordinates.bbox}
+                  page={(match as any).target_coordinates.page}
+                  label="Target Snippet"
+                  className="bg-gray-50 mb-4"
+                />
+              ) : null}
               <div className="space-y-2">
                 <div>
                   <span className="text-xs text-gray-500">Type:</span>
@@ -161,11 +189,11 @@ export default function MatchDetailModal({
                   <span className="text-xs text-gray-500">Record ID:</span>
                   <span className="ml-2 font-medium">{match.target_record_id}</span>
                 </div>
-                {match.amount_difference !== undefined && (
+                {match.target_amount !== undefined && (
                   <div>
                     <span className="text-xs text-gray-500">Amount:</span>
                     <span className="ml-2 font-semibold text-lg">
-                      ${match.amount_difference !== undefined ? 'N/A' : 'N/A'}
+                      ${match.target_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 )}

@@ -5,7 +5,6 @@ from app.utils.engines.pdfplumber_engine import PDFPlumberEngine
 from app.utils.engines.base_extractor import ExtractionResult
 from app.utils.pdf_classifier import PDFClassifier, DocumentType
 from app.utils.quality_validator import QualityValidator
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 if TYPE_CHECKING:
@@ -14,33 +13,6 @@ if TYPE_CHECKING:
 # Optional engines with heavy dependencies - import gracefully
 logger = logging.getLogger(__name__)
 
-try:
-    from app.utils.engines.camelot_engine import CamelotEngine
-    CAMELOT_AVAILABLE = True
-except ImportError:
-    CAMELOT_AVAILABLE = False
-    logger.warning("Camelot engine not available")
-
-try:
-    from app.utils.engines.ocr_engine import OCREngine
-    OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
-    logger.warning("OCR engine not available")
-
-try:
-    from app.utils.engines.layoutlm_engine import LayoutLMEngine
-    LAYOUTLM_AVAILABLE = True
-except ImportError:
-    LAYOUTLM_AVAILABLE = False
-    logger.warning("LayoutLM engine not available")
-
-try:
-    from app.utils.engines.easyocr_engine import EasyOCREngine
-    EASYOCR_AVAILABLE = True
-except ImportError:
-    EASYOCR_AVAILABLE = False
-    logger.warning("EasyOCR engine not available")
 
 
 class MultiEngineExtractor:
@@ -59,11 +31,13 @@ class MultiEngineExtractor:
         self.pymupdf = PyMuPDFEngine()
         self.pdfplumber = PDFPlumberEngine()
 
-        # Initialize optional engines if available
-        self.camelot = CamelotEngine() if CAMELOT_AVAILABLE else None
-        self.ocr = OCREngine() if OCR_AVAILABLE else None
-        self.layoutlm = LayoutLMEngine() if LAYOUTLM_AVAILABLE else None
-        self.easyocr = EasyOCREngine() if EASYOCR_AVAILABLE else None
+        # Initialize optional engines via ModelManager (Singleton)
+        from app.utils.model_manager import model_manager
+        
+        self.camelot = model_manager.camelot_engine
+        self.ocr = model_manager.ocr_engine
+        self.layoutlm = model_manager.layoutlm_engine
+        self.easyocr = model_manager.easyocr_engine
 
         # Initialize utilities
         self.classifier = PDFClassifier()

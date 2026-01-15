@@ -14,6 +14,8 @@ import json
 import logging
 import joblib
 import io
+from app.db.minio_client import upload_file, download_file
+from sqlalchemy.orm import defer
 
 logger = logging.getLogger(__name__)
 
@@ -111,27 +113,54 @@ class ModelCacheService:
         cache_key = self._generate_cache_key(property_id, account_code, model_type, config)
         
         # Check cache
-        cached_model = self.db.query(AnomalyModelCache).filter(
+        cached_model = self.db.query(AnomalyModelCache).options(
+            defer(AnomalyModelCache.model_binary)
+        ).filter(
             and_(
                 AnomalyModelCache.model_key == cache_key,
-                AnomalyModelCache.is_active == True,
+                AnomalyModelCache.is_active,
                 AnomalyModelCache.expires_at > datetime.now()
             )
         ).first()
         
-        if cached_model and cached_model.model_binary:
+        if cached_model:
             try:
-                # Deserialize model
-                model_bytes = io.BytesIO(cached_model.model_binary)
-                model = joblib.load(model_bytes)
+                # Retrieve from MinIO
+                minio_key = f"models/{cached_model.model_key}.joblib"
                 
-                # Update usage stats
-                cached_model.last_used_at = datetime.now()
-                cached_model.use_count += 1
-                self.db.commit()
+                # Check if we have it in MinIO
+                model_bytes_data = download_file(minio_key, settings.MINIO_BUCKET_NAME)
                 
-                logger.info(f"Cache HIT for model {cache_key[:16]}... (use_count={cached_model.use_count})")
-                return model, True
+                if not model_bytes_data and cached_model.model_binary:
+                    # FALLBACK: Check DB if migration pending
+                    # If we find it in DB but not in MinIO, we should migrate it?
+                    # For now just use it.
+                    model_bytes_data = cached_model.model_binary
+                    
+                    # Async migrate to MinIO (fire and forget for now, or just do it)
+                    try:
+                        upload_file(
+                            io.BytesIO(model_bytes_data),
+                            settings.MINIO_BUCKET_NAME,
+                            minio_key,
+                            "application/octet-stream"
+                        )
+                    except Exception as upload_err:
+                        logger.warning(f"Failed to migrate model to MinIO: {upload_err}")
+
+                if model_bytes_data:
+                    model_bytes = io.BytesIO(model_bytes_data)
+                    model = joblib.load(model_bytes)
+                    
+                    # Update usage stats
+                    cached_model.last_used_at = datetime.now()
+                    cached_model.use_count += 1
+                    self.db.commit()
+                    
+                    logger.info(f"Cache HIT for model {cache_key[:16]}... (use_count={cached_model.use_count})")
+                    return model, True
+                else:
+                    logger.warning(f"Cached model {cache_key[:16]} not found in storage")
             
             except Exception as e:
                 logger.warning(f"Error loading cached model {cache_key[:16]}...: {str(e)} - will retrain")
@@ -198,7 +227,22 @@ class ModelCacheService:
         # Serialize model
         model_bytes = io.BytesIO()
         joblib.dump(model, model_bytes, compress=3)  # Level 3 compression
-        model_binary = model_bytes.getvalue()
+        model_bytes_value = model_bytes.getvalue()
+        
+        # Upload to MinIO
+        minio_key = f"models/{cache_key}.joblib"
+        try:
+            upload_file(
+                io.BytesIO(model_bytes_value),
+                settings.MINIO_BUCKET_NAME,
+                minio_key,
+                "application/octet-stream"
+            )
+            # We explicitly set model_binary to None to stop using Postgres for storage
+            model_binary = None 
+        except Exception as e:
+            logger.error(f"Failed to upload model to MinIO: {e}")
+            return None
         
         # Calculate expiration
         expires_at = datetime.now() + timedelta(days=self.cache_ttl_days)
@@ -340,7 +384,7 @@ class ModelCacheService:
         """
         total_models = self.db.query(AnomalyModelCache).count()
         active_models = self.db.query(AnomalyModelCache).filter(
-            AnomalyModelCache.is_active == True
+            AnomalyModelCache.is_active
         ).count()
         
         total_uses = self.db.query(AnomalyModelCache).with_entities(
@@ -349,7 +393,7 @@ class ModelCacheService:
         
         expired_models = self.db.query(AnomalyModelCache).filter(
             and_(
-                AnomalyModelCache.is_active == True,
+                AnomalyModelCache.is_active,
                 AnomalyModelCache.expires_at < datetime.now()
             )
         ).count()

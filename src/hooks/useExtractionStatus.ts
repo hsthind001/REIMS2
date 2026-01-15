@@ -31,7 +31,7 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
 
       const fetchStatus = async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/v1/documents/uploads?upload_id=${uploadId}`, {
+          const response = await fetch(`${API_BASE_URL}/documents/uploads?upload_id=${uploadId}`, {
             credentials: 'include'
           });
           

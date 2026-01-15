@@ -45,6 +45,26 @@ export default function ResolutionSuggestions({
       });
     }
 
+    // Ignore small differences (< $10 but > $1)
+    if (match.amount_difference && Math.abs(parseFloat(match.amount_difference.toString())) < 10 && Math.abs(parseFloat(match.amount_difference.toString())) >= 1) {
+      displaySuggestions.push({
+        type: 'ignore_variance',
+        description: `Small variance of $${Math.abs(parseFloat(match.amount_difference.toString())).toFixed(2)}`,
+        suggested_action: 'Ignore (Immaterial)',
+        confidence: 90
+      });
+    }
+
+    // Suggest Journal Entry for significant differences
+    if (match.amount_difference && Math.abs(parseFloat(match.amount_difference.toString())) >= 10) {
+       displaySuggestions.push({
+        type: 'journal_entry',
+        description: `Unresolved difference of $${Math.abs(parseFloat(match.amount_difference.toString())).toFixed(2)}`,
+        suggested_action: 'Create Adjusting Journal Entry',
+        confidence: 85
+      });
+    }
+
     if (match.exception_tier === 'tier_1_auto_suggest') {
       displaySuggestions.push({
         type: 'auto_suggest',

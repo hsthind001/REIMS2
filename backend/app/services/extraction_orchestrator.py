@@ -666,14 +666,18 @@ class ExtractionOrchestrator:
         items = parsed_data.get("line_items", [])
         records_inserted = 0
         
-        # DELETE all existing balance sheet data for this property+period
-        deleted_count = self.db.query(BalanceSheetData).filter(
-            BalanceSheetData.property_id == upload.property_id,
-            BalanceSheetData.period_id == upload.period_id
-        ).delete(synchronize_session=False)
+        # Fetch existing records to attempt update instead of blind delete
+        # This preserves IDs and attached data (reviews/notes) when re-extracting
+        existing_records = {
+            r.account_code: r
+            for r in self.db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == upload.property_id,
+                BalanceSheetData.period_id == upload.period_id
+            ).all()
+        }
         
-        if deleted_count > 0:
-            print(f"🗑️  Deleted {deleted_count} existing balance sheet records for property {upload.property_id}, period {upload.period_id}")
+        existing_codes = set(existing_records.keys())
+        processed_codes = set()
         
         # INTELLIGENT DEDUPLICATION - Prevents duplicate constraint violations
         # Constraint: (property_id, period_id, account_code)
@@ -743,27 +747,57 @@ class ExtractionOrchestrator:
             line_number = item.get("line_number")
             page_number = item.get("page_number") or item.get("page")
             
-            # Insert new entry (no longer check for existing since we deleted all)
-            bs_data = BalanceSheetData(
-                property_id=upload.property_id,
-                period_id=upload.period_id,
-                upload_id=upload.id,
-                account_id=account_id,
-                account_code=account_code,
-                account_name=account_name,
-                amount=Decimal(str(amount)),
-                extraction_confidence=Decimal(str(final_confidence)),
-                match_confidence=Decimal(str(match_confidence)) if match_confidence else None,
-                needs_review=needs_review,
-                page_number=page_number,
-                extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
-                extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
-                extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
-                extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None,
-                line_number=line_number
-            )
-            self.db.add(bs_data)
-            records_inserted += 1
+            processed_codes.add(account_code)
+
+            if account_code in existing_records:
+                # UPDATE existing record
+                existing_record = existing_records[account_code]
+                existing_record.upload_id = upload.id
+                existing_record.account_id = account_id
+                existing_record.account_name = account_name
+                existing_record.amount = Decimal(str(amount))
+                existing_record.extraction_confidence = Decimal(str(final_confidence))
+                existing_record.match_confidence = Decimal(str(match_confidence)) if match_confidence else None
+                existing_record.needs_review = needs_review
+                existing_record.page_number = page_number
+                existing_record.extraction_x0 = Decimal(str(extraction_x0)) if extraction_x0 is not None else None
+                existing_record.extraction_y0 = Decimal(str(extraction_y0)) if extraction_y0 is not None else None
+                existing_record.extraction_x1 = Decimal(str(extraction_x1)) if extraction_x1 is not None else None
+                existing_record.extraction_y1 = Decimal(str(extraction_y1)) if extraction_y1 is not None else None
+                existing_record.line_number = line_number
+                # updated_at is handled automatically by SQLA
+                records_inserted += 1 # Count as processed
+            else:
+                # INSERT new entry
+                bs_data = BalanceSheetData(
+                    property_id=upload.property_id,
+                    period_id=upload.period_id,
+                    upload_id=upload.id,
+                    account_id=account_id,
+                    account_code=account_code,
+                    account_name=account_name,
+                    amount=Decimal(str(amount)),
+                    extraction_confidence=Decimal(str(final_confidence)),
+                    match_confidence=Decimal(str(match_confidence)) if match_confidence else None,
+                    needs_review=needs_review,
+                    page_number=page_number,
+                    extraction_x0=Decimal(str(extraction_x0)) if extraction_x0 is not None else None,
+                    extraction_y0=Decimal(str(extraction_y0)) if extraction_y0 is not None else None,
+                    extraction_x1=Decimal(str(extraction_x1)) if extraction_x1 is not None else None,
+                    extraction_y1=Decimal(str(extraction_y1)) if extraction_y1 is not None else None,
+                    line_number=line_number
+                )
+                self.db.add(bs_data)
+                records_inserted += 1
+
+        # Delete records that are no longer present in the new extraction
+        codes_to_delete = existing_codes - processed_codes
+        if codes_to_delete:
+             self.db.query(BalanceSheetData).filter(
+                BalanceSheetData.property_id == upload.property_id,
+                BalanceSheetData.period_id == upload.period_id,
+                BalanceSheetData.account_code.in_(codes_to_delete)
+            ).delete(synchronize_session=False)
         
         self.db.commit()
         return records_inserted

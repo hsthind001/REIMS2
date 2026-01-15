@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Body
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union, Any
 from sqlalchemy.orm import Session
 import hashlib
 from app.utils.extraction_engine import MultiEngineExtractor
@@ -10,6 +10,9 @@ from app.models.extraction_log import ExtractionLog
 from app.models.document_upload import DocumentUpload
 from app.db.minio_client import download_file
 from app.core.config import settings
+from app.tasks.extraction_tasks import analyze_pdf_async, get_extraction_status
+from app.db.minio_client import minio_client
+import io
 
 router = APIRouter()
 
@@ -54,8 +57,19 @@ class QualityReportResponse(BaseModel):
     recommendations: List[str]
     needs_review: bool
 
+class AsyncExtractionResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
 
-@router.post("/extract/analyze", response_model=ExtractionResponse)
+
+class AsyncStatusResponse(BaseModel):
+    state: str
+    result: Optional[Union[ExtractionResponse, Dict[str, Any]]] = None
+    error: Optional[str] = None
+
+
+@router.post("/extract/analyze", response_model=AsyncExtractionResponse)
 async def analyze_pdf(
     file: UploadFile = File(...),
     strategy: str = Query("auto", description="Extraction strategy: auto, fast, accurate, multi_engine"),
@@ -64,9 +78,10 @@ async def analyze_pdf(
     db: Session = Depends(get_db)
 ):
     """
-    Analyze and extract PDF with quality validation
+    Analyze and extract PDF with quality validation (ASYNC)
     
-    This is the primary endpoint for production-grade extraction with full validation
+    Offloads processing to background workers.
+    Returns a job_id to poll status at /extract/status/{job_id}
     """
     if not file.content_type or file.content_type != "application/pdf":
         raise HTTPException(
@@ -75,91 +90,71 @@ async def analyze_pdf(
         )
     
     try:
-        # Read PDF
-        pdf_data = await file.read()
+        # Read file content
+        file_content = await file.read()
+        file_size = len(file_content)
         
-        # Calculate file hash
-        file_hash = hashlib.sha256(pdf_data).hexdigest()
+        # Determine bucket and path
+        bucket_name = settings.MINIO_BUCKET_NAME
+        file_hash = hashlib.sha256(file_content).hexdigest()
+        file_path = f"temp/{file_hash}.pdf"
         
-        # Extract with validation
-        result = extractor.extract_with_validation(
-            pdf_data,
-            strategy=strategy,
-            lang=lang
+        # Upload to MinIO
+        minio_client.put_object(
+            bucket_name,
+            file_path,
+            io.BytesIO(file_content),
+            file_size,
+            content_type="application/pdf"
         )
         
-        if not result["success"]:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result.get("error", "Extraction failed")
-            )
+        # Trigger Celery Task
+        task = analyze_pdf_async.delay(
+            file_path=file_path,
+            bucket_name=bucket_name,
+            strategies=[strategy]  # Pass strategy
+        )
         
-        extraction = result["extraction"]
-        validation = result["validation"]
-        classification = result["classification"]
-        
-        # Store in database if requested
-        extraction_id = None
-        if store_results:
-            log_entry = ExtractionLog(
-                filename=file.filename,
-                file_size=len(pdf_data),
-                file_hash=file_hash,
-                document_type=classification.get("document_type", "unknown"),
-                total_pages=extraction.get("total_pages", 0),
-                strategy_used=strategy,
-                engines_used=extraction.get("engines_used", [extraction.get("engine")]),
-                primary_engine=extraction.get("engine", "unknown"),
-                confidence_score=validation["confidence_score"],
-                quality_level=validation["overall_quality"],
-                passed_checks=validation["passed_checks"],
-                total_checks=validation["total_checks"],
-                processing_time_seconds=result["processing_time_seconds"],
-                validation_issues=validation["issues"],
-                validation_warnings=validation["warnings"],
-                recommendations=validation.get("recommendations", []),
-                text_preview=extraction.get("text", "")[:500],
-                total_words=extraction.get("total_words", 0),
-                total_chars=extraction.get("total_chars", 0),
-                tables_found=0,  # TODO: Add table counting
-                images_found=0,  # TODO: Add image counting
-                needs_review=result["needs_review"],
-                metadata=classification.get("characteristics", {})
-            )
-            
-            db.add(log_entry)
-            db.commit()
-            db.refresh(log_entry)
-            extraction_id = log_entry.id
-        
-        # Build response
         return {
-            "text": extraction.get("text", ""),
-            "total_pages": extraction.get("total_pages", 0),
-            "total_words": extraction.get("total_words", 0),
-            "total_chars": extraction.get("total_chars", 0),
-            "confidence_score": validation["confidence_score"],
-            "quality_level": validation["overall_quality"],
-            "document_type": classification.get("document_type", "unknown"),
-            "needs_review": result["needs_review"],
-            "processing_time_seconds": result["processing_time_seconds"],
-            "engines_used": extraction.get("engines_used", [extraction.get("engine")]),
-            "validation_summary": {
-                "passed_checks": validation["passed_checks"],
-                "total_checks": validation["total_checks"],
-                "issues": validation["issues"],
-                "warnings": validation["warnings"],
-                "recommendations": validation.get("recommendations", [])
-            },
-            "extraction_id": extraction_id
+            "job_id": task.id,
+            "status": "processing",
+            "message": "Extraction job submitted"
         }
     
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error analyzing PDF: {str(e)}"
+            detail=f"Error submitting job: {str(e)}"
+        )
+
+
+@router.get("/extract/status/{job_id}", response_model=AsyncStatusResponse)
+async def get_async_extraction_status(job_id: str):
+    """
+    Get status of async extraction job
+    """
+    try:
+        status_info = get_extraction_status(job_id)
+        
+        response = {
+            "state": status_info["state"],
+            "error": None,
+            "result": None
+        }
+        
+        if status_info["failed"]:
+            response["error"] = str(status_info.get("info"))
+        
+        elif status_info["successful"]:
+            # Task returns the raw result dict
+            response["result"] = status_info["info"]
+            
+        return response
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error checking status: {str(e)}"
         )
 
 
@@ -324,7 +319,7 @@ async def get_extraction_stats(db: Session = Depends(get_db)):
         ).scalar() or 0
         
         needs_review_count = db.query(sql_func.count(ExtractionLog.id)).filter(
-            ExtractionLog.needs_review == True
+            ExtractionLog.needs_review
         ).scalar()
         
         # Quality distribution

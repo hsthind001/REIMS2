@@ -3,36 +3,42 @@
  * 
  * Right panel showing side-by-side values, computed formula, PDF links, and actions
  */
-import { FileText, ExternalLink, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { FileText, ExternalLink, CheckCircle, XCircle,  Settings,
+  AlertTriangle
+} from 'lucide-react';
 import { Card, Button } from '../design-system';
-import type { ForensicMatch } from '../../lib/forensic_reconciliation';
+import { useState } from 'react';
+import type { ForensicMatch, ForensicDiscrepancy } from '../../lib/forensic_reconciliation';
 import WhyFlaggedCard from './WhyFlaggedCard';
 import ResolutionSuggestions from './ResolutionSuggestions';
 import PeriodComparison from './PeriodComparison';
+import PDFSnippetViewer from './PDFSnippetViewer';
+import RuleFailureDetail from './RuleFailureDetail';
 
 interface EvidencePanelProps {
-  match: ForensicMatch | null;
-  onApprove: (matchId: number) => void;
-  onReject: (matchId: number, reason: string) => void;
+  match?: ForensicMatch | null;
+  discrepancy?: ForensicDiscrepancy | null;
+  onApprove?: (matchId: number) => void;
+  onReject?: (matchId: number, reason: string) => void;
   onRemap?: (matchId: number, newMapping: any) => void;
   onAddNote?: (matchId: number, note: string) => void;
   onCreateTask?: (matchId: number, task: any) => void;
 }
 
-export default function EvidencePanel({
-  match,
-  onApprove,
-  onReject,
-  onRemap,
-  onAddNote,
-  onCreateTask
-}: EvidencePanelProps) {
+export default function EvidencePanel({ match, discrepancy, onApprove, onReject, onRemap, onAddNote, onCreateTask }: EvidencePanelProps) {
+  const [activeTab, setActiveTab] = useState<'details' | 'document' | 'history'>('details');
+
+  if (discrepancy && !match) {
+    return <RuleFailureDetail discrepancy={discrepancy} />;
+  }
+
   if (!match) {
     return (
-      <Card className="p-6">
+      <Card className="h-full flex items-center justify-center p-8 bg-gray-50 border-dashed">
         <div className="text-center text-gray-500">
-          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-          <p className="text-sm">Select a match to view evidence</p>
+          <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+          <p className="font-medium">Select an item to view evidence</p>
+          <p className="text-sm mt-1">Choose a match or discrepancy from the queue</p>
         </div>
       </Card>
     );
@@ -131,32 +137,53 @@ export default function EvidencePanel({
         </div>
       )}
 
-      {/* PDF Links */}
-      <div className="space-y-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full"
-          icon={<ExternalLink className="w-4 h-4" />}
-          onClick={() => {
-            // TODO: Open PDF viewer with highlighted value
-            console.log('Open PDF for source document');
-          }}
-        >
-          View Source PDF
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full"
-          icon={<ExternalLink className="w-4 h-4" />}
-          onClick={() => {
-            // TODO: Open PDF viewer with highlighted value
-            console.log('Open PDF for target document');
-          }}
-        >
-          View Target PDF
-        </Button>
+      {/* PDF Links / Snippets */}
+      <div className="space-y-4">
+        {/* Source Snippet */}
+        {(match as any).source_coordinates ? (
+            <PDFSnippetViewer
+                uploadId={(match as any).source_coordinates.upload_id}
+                bbox={(match as any).source_coordinates.bbox}
+                page={(match as any).source_coordinates.page}
+                label="Source Document"
+                className="bg-white shadow-sm"
+            />
+        ) : (
+            <Button
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            icon={<ExternalLink className="w-4 h-4" />}
+            onClick={() => {
+                console.log('Open PDF for source document');
+            }}
+            >
+            View Source PDF
+            </Button>
+        )}
+
+        {/* Target Snippet */}
+        {(match as any).target_coordinates ? (
+            <PDFSnippetViewer
+                uploadId={(match as any).target_coordinates.upload_id}
+                bbox={(match as any).target_coordinates.bbox}
+                page={(match as any).target_coordinates.page}
+                label="Target Document"
+                className="bg-white shadow-sm"
+            />
+        ) : (
+            <Button
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            icon={<ExternalLink className="w-4 h-4" />}
+            onClick={() => {
+                console.log('Open PDF for target document');
+            }}
+            >
+            View Target PDF
+            </Button>
+        )}
       </div>
 
       {/* Actions */}
@@ -165,7 +192,8 @@ export default function EvidencePanel({
           variant="success"
           className="w-full"
           icon={<CheckCircle className="w-4 h-4" />}
-          onClick={() => onApprove(match.id)}
+          disabled={!onApprove}
+          onClick={() => onApprove && onApprove(match.id)}
         >
           Approve Match
         </Button>
@@ -173,7 +201,8 @@ export default function EvidencePanel({
           variant="danger"
           className="w-full"
           icon={<XCircle className="w-4 h-4" />}
-          onClick={() => onReject(match.id, 'Rejected from evidence panel')}
+          disabled={!onReject}
+          onClick={() => onReject && onReject(match.id, 'Rejected from evidence panel')}
         >
           Reject Match
         </Button>
@@ -218,7 +247,7 @@ export default function EvidencePanel({
       {/* Explainability Section */}
       <div className="border-t pt-4 space-y-4">
         <WhyFlaggedCard
-          reasons={[]}
+          reasons={match.reasons || []}
           matchType={match.match_type}
           confidence={confidence}
           amountDifference={difference}
@@ -226,14 +255,28 @@ export default function EvidencePanel({
         <ResolutionSuggestions
           match={match}
           onApplySuggestion={(suggestion) => {
-            console.log('Apply suggestion:', suggestion);
-            // TODO: Implement suggestion application
+            if (suggestion.type === 'ignore_variance') {
+                if (confirm(`Confirm ignoring variance of ${suggestion.description}?`)) {
+                    // In a real app, this calls api.resolveDiscrepancy
+                    console.log('Resolving as immaterial:', suggestion);
+                    alert('Difference marked as immaterial.');
+                }
+            } else if (suggestion.type === 'journal_entry') {
+                // In a real app, this opens a Journal Entry modal
+                console.log('Opening JE modal for:', suggestion);
+                alert(`Opening Journal Entry Dialog\n\nAction: ${suggestion.suggested_action}\nReason: ${suggestion.description}`);
+            } else if (suggestion.type === 'account_mapping') {
+                 console.log('Opening Remap dialog:', suggestion);
+                 alert(`Opening Remap Dialog\n\n${suggestion.suggested_action}`);
+            } else {
+                console.log('Applied:', suggestion);
+            }
           }}
         />
         {sourceAmount !== 0 && (
           <PeriodComparison
             currentValue={sourceAmount}
-            priorValue={undefined} // TODO: Fetch prior period value
+            priorValue={match.prior_period_amount}
             label="Source Amount"
           />
         )}

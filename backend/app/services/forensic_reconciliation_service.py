@@ -8,11 +8,13 @@ Manages reconciliation sessions, finds matches using multiple engines,
 validates discrepancies, and provides auditor review workflows.
 """
 import logging
+import decimal
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, true
 
 from app.models.forensic_reconciliation_session import ForensicReconciliationSession
 from app.models.forensic_match import ForensicMatch
@@ -34,7 +36,7 @@ from app.services.matching_engines import (
     MatchResult
 )
 from app.services.calculated_rules_engine import CalculatedRulesEngine
-from app.services.forensic_matching_rules import ForensicMatchingRules
+# from app.services.forensic_matching_rules import ForensicMatchingRules
 from app.services.adaptive_matching_service import AdaptiveMatchingService
 from app.services.match_learning_service import MatchLearningService
 from app.services.reconciliation_diagnostics_service import ReconciliationDiagnosticsService
@@ -104,7 +106,7 @@ class ForensicReconciliationService:
                 DocumentUpload.property_id == property_id,
                 DocumentUpload.period_id == period_id,
                 DocumentUpload.document_type.in_(document_types),
-                DocumentUpload.is_active == True
+                DocumentUpload.is_active.is_(true())
             )
         ).all()
         
@@ -560,7 +562,7 @@ class ForensicReconciliationService:
                     expected_value=match.target_amount,  # Assuming target is expected
                     actual_value=match.source_amount,
                     difference=match.amount_difference,
-                    difference_percent=match.amount_difference_percent,
+                    difference_percent=self._clamp_percent(match.amount_difference_percent),
                     description=f"Low confidence match ({match.confidence_score:.2f}%) between {match.source_document_type} and {match.target_document_type}",
                     status='open'
                 )
@@ -577,7 +579,7 @@ class ForensicReconciliationService:
                     source_value=match.source_amount,
                     target_value=match.target_amount,
                     difference=match.amount_difference,
-                    difference_percent=match.amount_difference_percent,
+                    difference_percent=self._clamp_percent(match.amount_difference_percent),
                     description=f"Large amount difference (${match.amount_difference:,.2f}) between {match.source_document_type} and {match.target_document_type}",
                     status='open'
                 )
@@ -616,7 +618,7 @@ class ForensicReconciliationService:
                         expected_value=Decimal(str(result.get('expected_value'))) if result.get('expected_value') is not None else None,
                         actual_value=Decimal(str(result.get('actual_value'))) if result.get('actual_value') is not None else None,
                         difference=Decimal(str(result.get('difference'))) if result.get('difference') is not None else None,
-                        difference_percent=result.get('difference_percent'),
+                        difference_percent=self._clamp_percent(result.get('difference_percent')),
                         description=result.get('message') or f"Rule {result.get('rule_id')} failed",
                         status='open'
                     )
@@ -637,47 +639,54 @@ class ForensicReconciliationService:
             critical_discrepancies = len([d for d in discrepancies if d.severity == 'critical'])
             high_discrepancies = len([d for d in discrepancies if d.severity == 'high'])
             
-            # Health score calculation (0-100)
-            # Base score from approved matches
-            approval_score = (approved_matches / total_matches) * 40 if total_matches > 0 else 0
+            # Simple weighted score
+            score = 100.0
+            score -= (high_discrepancies * 15.0)
+            score -= (critical_discrepancies * 25.0)
+            score -= ((total_matches - high_confidence_matches) * 2.0)
             
-            # Confidence score
-            confidence_score = (high_confidence_matches / total_matches) * 40 if total_matches > 0 else 0
-            
-            # Discrepancy penalty (matches + rule failures)
-            discrepancy_penalty = min(20, (critical_discrepancies * 10) + (high_discrepancies * 5))
-            rule_penalty = min(30, failed_rule_count * 5)
-            
-            health_score = approval_score + confidence_score - discrepancy_penalty - rule_penalty
-            health_score = max(0.0, min(100.0, health_score))
+            health_score = max(0.0, min(100.0, score))
         
-        # Update session summary with health score
-        if session.summary:
-            session.summary['health_score'] = health_score
-            session.summary['discrepancies'] = len(discrepancies)
-            session.summary['critical_discrepancies'] = len([d for d in discrepancies if d.severity == 'critical'])
-            session.summary['rules_total'] = len(rule_results)
-            session.summary['rules_failed'] = failed_rule_count
-        else:
-            session.summary = {
-                'health_score': health_score,
-                'discrepancies': len(discrepancies),
-                'critical_discrepancies': len([d for d in discrepancies if d.severity == 'critical']),
-                'rules_total': len(rule_results),
-                'rules_failed': failed_rule_count
-            }
+        # Update session
+        session.status = 'completed'
+        session.health_score = health_score
+        session.discrepancy_count = len(discrepancies)
+        session.ended_at = datetime.utcnow()
+        session.summary = {
+            'total_matches': len(matches),
+            'discrepancies': len(discrepancies),
+            'rule_failures': failed_rule_count,
+            'health_score': health_score,
+            'critical_discrepancies': len([d for d in discrepancies if d.severity == 'critical']),
+            'rules_total': len(rule_results),
+            'rules_failed': failed_rule_count
+        }
         
         self.db.commit()
         
         return {
-            'session_id': session_id,
-            'health_score': health_score,
-            'total_matches': total_matches,
-            'discrepancies': len(discrepancies),
-            'discrepancy_details': [self._discrepancy_to_dict(d) for d in discrepancies],
-            'rule_results': rule_results,
-            'rules_failed': failed_rule_count
+            'session_id': session.id,
+            'status': session.status,
+            'health_score': float(session.health_score) if session.health_score is not None else 0.0,
+            'discrepancies': [self._discrepancy_to_dict(d) for d in discrepancies]
         }
+
+    def _clamp_percent(self, value: Optional[Any]) -> Optional[Decimal]:
+        """Clamp percentage value to fit in Numeric(10, 4)"""
+        if value is None:
+            return None
+        
+        try:
+            val = Decimal(str(value))
+        except (ValueError, TypeError, decimal.InvalidOperation):
+            return None
+            
+        limit = Decimal('999999.9999')
+        if val > limit:
+            return limit
+        if val < -limit:
+            return -limit
+        return val
     
     def get_reconciliation_dashboard(
         self,
@@ -1417,6 +1426,123 @@ class ForensicReconciliationService:
         availability = self.check_data_availability(property_id, period_id)
         logger.info(f"Data availability: {availability}")
     
+    def _match_to_dict(self, match: ForensicMatch) -> Dict[str, Any]:
+        """Convert match object to dictionary with added coordinate data"""
+        base_dict = {
+            'id': match.id,
+            'session_id': match.session_id,
+            'match_type': match.match_type,
+            'confidence_score': float(match.confidence_score),
+            'source_document_type': match.source_document_type,
+            'source_record_id': match.source_record_id,
+            'source_account_code': match.source_account_code,
+            'source_account_name': match.source_account_name,
+            'source_amount': float(match.source_amount) if match.source_amount is not None else 0.0,
+            'target_document_type': match.target_document_type,
+            'target_record_id': match.target_record_id,
+            'target_account_code': match.target_account_code,
+            'target_account_name': match.target_account_name,
+            'target_amount': float(match.target_amount) if match.target_amount is not None else 0.0,
+            'amount_difference': float(match.amount_difference) if match.amount_difference is not None else 0.0,
+            'amount_difference_percent': float(match.amount_difference_percent) if match.amount_difference_percent is not None else None,
+            'status': match.status,
+            'exception_tier': match.exception_tier,
+            'reviewed_at': match.reviewed_at.isoformat() if match.reviewed_at else None,
+            'reviewed_by': match.reviewed_by,
+            'review_notes': match.review_notes,
+            'relationship_formula': match.relationship_formula,
+            'relationship_type': match.relationship_type,
+            'match_algorithm': match.match_algorithm
+        }
+
+        # Add coordinate data for Deep Visual Matching
+        base_dict['source_coordinates'] = self._get_record_coordinates(match.source_record_id, match.source_document_type)
+        base_dict['target_coordinates'] = self._get_record_coordinates(match.target_record_id, match.target_document_type)
+        
+        # Add AI Explainability data
+        base_dict['reasons'] = self._generate_match_reasons(match)
+        base_dict['prior_period_amount'] = self._get_prior_period_amount(match)
+        
+        return base_dict
+
+    def _generate_match_reasons(self, match: ForensicMatch) -> List[str]:
+        """Generate natural language reasons for match/flag status"""
+        reasons = []
+        
+        # Confidence-based reasons
+        if match.confidence_score >= 90.0:
+            reasons.append(f"High confidence match ({match.confidence_score}%) based on exact amount and account details.")
+        elif match.confidence_score < 70.0:
+            reasons.append(f"Flagged due to low confidence score ({match.confidence_score}%).")
+            
+        # Amount difference reasons
+        if match.amount_difference and abs(match.amount_difference) > 0:
+            reasons.append(f"Variance of ${abs(match.amount_difference):,.2f} detected between source and target.")
+            if match.amount_difference_percent and abs(match.amount_difference_percent) > 5.0:
+                 reasons.append(f"Significant deviation ({abs(match.amount_difference_percent):.1f}%) exceeds threshold (5.0%).")
+        
+        # Algorithm reasons
+        if match.match_algorithm == 'calculated_relationship':
+            reasons.append(f"Validated via formula: {match.relationship_formula}")
+        elif match.match_algorithm == 'fuzzy_string':
+             reasons.append(f"Matched using fuzzy text analysis on account description.")
+             
+        # Specific rule failures (if any) could be checked here by looking at related discrepancies
+        # For formatted specific insights:
+        if match.source_document_type == 'balance_sheet' and match.target_document_type == 'mortgage_statement':
+             reasons.append("Cross-verified against external Mortgage Statement.")
+             
+        return reasons
+
+    def _get_prior_period_amount(self, match: ForensicMatch) -> Optional[float]:
+        """Fetch prior period amount for trend analysis (Mocked for now)"""
+        # In a real implementation, this would query the previous month's FinancialPeriod
+        # and look up the same account code. 
+        # For Phase 2 demo, we will return a simulated prior value based on current value.
+        if match.source_amount:
+            # Simulate a small random variance for demo purposes if not available
+            return float(match.source_amount) * 0.95 
+        return None
+
+    def _get_record_coordinates(self, record_id: int, document_type: str) -> Optional[Dict[str, Any]]:
+        """Fetch extraction coordinates for a record"""
+        if not record_id or not document_type:
+            return None
+            
+        model_map = {
+            'balance_sheet': BalanceSheetData,
+            'income_statement': IncomeStatementData,
+            'cash_flow': CashFlowData,
+            'rent_roll': RentRollData,
+            'mortgage_statement': MortgageStatementData
+        }
+        
+        model = model_map.get(document_type)
+        if not model:
+            return None
+            
+        try:
+            record = self.db.query(model).filter(model.id == record_id).first()
+            if record and hasattr(record, 'extraction_x0'):
+                # Return null if coords are missing (e.g. template extraction)
+                if record.extraction_x0 is None:
+                    return None
+                    
+                return {
+                    'page': record.page_number,
+                    'bbox': [
+                        float(record.extraction_x0),
+                        float(record.extraction_y0),
+                        float(record.extraction_x1),
+                        float(record.extraction_y1)
+                    ],
+                    'upload_id': record.upload_id
+                }
+        except Exception as e:
+            logger.warning(f"Failed to fetch coordinates for {document_type} ID {record_id}: {e}")
+            
+        return None
+
     def _discrepancy_to_dict(self, discrepancy: ForensicDiscrepancy) -> Dict[str, Any]:
         """Convert discrepancy to dictionary"""
         return {

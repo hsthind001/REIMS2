@@ -903,6 +903,128 @@ def seed_calculated_rules():
             "tolerance_percent": Decimal("10.0"),
             "severity": "info",
             "property_scope": {"all": True}
+        },
+        # ==================== SPECIFIC RULES (FROM MARKDOWN) ====================
+        {
+            "rule_id": "BS_SPECIFIC_002_CASH_OP",
+            "rule_name": "Specific: Cash Operating Constant",
+            "formula": "BS.0122-0000 = 3375.45",
+            "description": "Cash - Operating must be constant at $3,375.45 (Rule BS-2)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("0.05"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "high",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_006_LAND",
+            "rule_name": "Specific: Land Value Constant",
+            "formula": "BS.0510-0000 = 3100438.76",
+            "description": "Land value must be constant at $3,100,438.76 (Rule BS-6)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("1.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "high",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_007_BUILDINGS",
+            "rule_name": "Specific: Buildings Value Constant",
+            "formula": "BS.0610-0000 = 21912631.00",
+            "description": "Buildings value must be constant at $21,912,631.00 (Rule BS-7)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("1.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "high",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_010_DEPR_5YR",
+            "rule_name": "Specific: 5Yr Impr Fully Depreciated",
+            "formula": "BS.1071-0000 = -1025187.00",
+            "description": "Accum. Depr. 5 Year Impr. constant at -$1,025,187.00 (Rule BS-10)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("1.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "info",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_014_DEPOSITS",
+            "rule_name": "Specific: Deposits Constant",
+            "formula": "BS.1210-0000 = 20900.00",
+            "description": "Deposits constant at $20,900.00 (Rule BS-14)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("0.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "info",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_015_LOAN_COSTS",
+            "rule_name": "Specific: Loan Costs Constant",
+            "formula": "BS.1920-0000 = 268752.01",
+            "description": "Loan Costs constant at $268,752.01 (Rule BS-15)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("1.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "info",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_030_PARTNERS",
+            "rule_name": "Specific: Partners Contribution",
+            "formula": "BS.3050-0000 = 5684514.69",
+            "description": "Partners Contribution constant at $5,684,514.69 (Rule BS-30)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("1.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "high",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "BS_SPECIFIC_031_BEG_EQUITY",
+            "rule_name": "Specific: Beginning Equity",
+            "formula": "BS.3910-0000 = 1786413.82",
+            "description": "Beginning Equity constant at $1,786,413.82 (Rule BS-31)",
+            "doc_scope": ["balance_sheet"],
+            "tolerance_absolute": Decimal("1.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "high",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "IS_SPECIFIC_012_OFFSITE_MGMT",
+            "rule_name": "Specific: Off-Site Mgmt Fee",
+            "formula": "IS.6010-0000 = IS.4990-0000 * 0.04",
+            "description": "Off-Site Management must be 4.00% of Total Income (Rule IS-12)",
+            "doc_scope": ["income_statement"],
+            "tolerance_absolute": Decimal("5.00"),
+            "tolerance_percent": Decimal("0.5"),
+            "severity": "warning",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "IS_SPECIFIC_013_ASSET_MGMT",
+            "rule_name": "Specific: Asset Mgmt Fee",
+            "formula": "IS.6020-6000 = IS.4990-0000 * 0.01",
+            "description": "Asset Management Fee must be 1.00% of Total Income (Rule IS-13)",
+            "doc_scope": ["income_statement"],
+            "tolerance_absolute": Decimal("5.00"),
+            "tolerance_percent": Decimal("0.5"),
+            "severity": "warning",
+            "property_scope": {"all": True}
+        },
+        {
+            "rule_id": "IS_SPECIFIC_016_RM_LIGHTING",
+            "rule_name": "Specific: R&M Lighting Constant",
+            "formula": "IS.5356-0000 = 4758.00",
+            "description": "R&M Lighting constant monthly charge of $4,758.00 (Rule IS-16)",
+            "doc_scope": ["income_statement"],
+            "tolerance_absolute": Decimal("0.00"),
+            "tolerance_percent": Decimal("0.0"),
+            "severity": "info",
+            "property_scope": {"all": True}
         }
     ]
 

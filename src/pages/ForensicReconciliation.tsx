@@ -54,6 +54,7 @@ export default function ForensicReconciliation() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<ForensicMatch | null>(null);
+  const [selectedDiscrepancy, setSelectedDiscrepancy] = useState<ForensicDiscrepancy | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'discrepancies' | 'cockpit' | 'rules'>('overview');
   
   // Cockpit filters
@@ -365,6 +366,18 @@ export default function ForensicReconciliation() {
     } catch (err: any) {
       console.error('Failed to resolve discrepancy:', err);
       setError(err.response?.data?.detail || 'Failed to resolve discrepancy');
+    }
+  };
+
+
+  const handleViewDetails = (item: ForensicMatch | ForensicDiscrepancy) => {
+    // Check if it's a match (has source_document_type) or discrepancy
+    if ('source_document_type' in item) {
+      setSelectedMatch(item as ForensicMatch);
+      setSelectedDiscrepancy(null);
+    } else {
+      setSelectedDiscrepancy(item as ForensicDiscrepancy);
+      setSelectedMatch(null);
     }
   };
 
@@ -730,7 +743,7 @@ export default function ForensicReconciliation() {
                     discrepancies={discrepancies}
                     onApprove={handleApproveMatch}
                     onReject={handleRejectMatch}
-                    onViewDetails={setSelectedMatch}
+                    onViewDetails={handleViewDetails}
                     filters={{
                       severity: cockpitSeverityFilter !== 'all' ? cockpitSeverityFilter : undefined,
                       tier: cockpitTierFilter !== 'all' ? cockpitTierFilter : undefined,
@@ -744,6 +757,7 @@ export default function ForensicReconciliation() {
                 <div className="col-span-3">
                   <EvidencePanel
                     match={selectedMatch}
+                    discrepancy={selectedDiscrepancy}
                     onApprove={handleApproveMatch}
                     onReject={handleRejectMatch}
                   />

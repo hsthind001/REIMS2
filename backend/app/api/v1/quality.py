@@ -17,7 +17,9 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.rent_roll_data import RentRollData
+from app.models.rent_roll_data import RentRollData
 from app.models.mortgage_statement_data import MortgageStatementData
+from app.core.redis_client import cached
 
 
 router = APIRouter()
@@ -234,6 +236,7 @@ async def get_document_quality(
 
 
 @router.get("/quality/summary")
+@cached(key_prefix="quality:summary", ttl=300)
 async def get_quality_summary(
     property_code: Optional[str] = Query(None, description="Filter by property code"),
     db: Session = Depends(get_db)
@@ -396,6 +399,7 @@ async def get_quality_summary(
 
 
 @router.get("/quality/statistics/yearly")
+@cached(key_prefix="quality:stats:yearly", ttl=3600)
 async def get_yearly_statistics(
     db: Session = Depends(get_db)
 ):

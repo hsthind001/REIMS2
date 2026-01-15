@@ -22,7 +22,7 @@ interface ReconciliationWorkQueueProps {
   discrepancies: ForensicDiscrepancy[];
   onApprove: (matchId: number) => void;
   onReject: (matchId: number, reason: string) => void;
-  onViewDetails: (match: ForensicMatch) => void;
+  onViewDetails: (item: ForensicMatch | ForensicDiscrepancy) => void;
   onRouteToCommittee?: (matchId: number, committeeId: number) => void;
   filters?: {
     severity?: string;
@@ -206,12 +206,12 @@ export default function ReconciliationWorkQueue({
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            {exception.match && (
+            {exception.match ? (
               <>
                 <Button
                   variant="success"
                   size="sm"
-                  onClick={() => onApprove(exception.id)}
+                  onClick={() => onApprove(exception.match!.id)}
                   icon={<CheckCircle className="w-4 h-4" />}
                 >
                   Approve
@@ -219,7 +219,7 @@ export default function ReconciliationWorkQueue({
                 <Button
                   variant="danger"
                   size="sm"
-                  onClick={() => onReject(exception.id, 'Rejected from work queue')}
+                  onClick={() => onReject(exception.match!.id, 'Rejected from work queue')}
                   icon={<XCircle className="w-4 h-4" />}
                 >
                   Reject
@@ -227,12 +227,20 @@ export default function ReconciliationWorkQueue({
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => exception.match && onViewDetails(exception.match)}
+                  onClick={() => onViewDetails(exception.match!)}
                 >
                   View
                 </Button>
               </>
-            )}
+            ) : exception.discrepancy ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onViewDetails(exception.discrepancy!)}
+              >
+                View Details
+              </Button>
+            ) : null}
           </div>
         </td>
       </tr>

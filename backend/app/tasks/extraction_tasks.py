@@ -372,3 +372,44 @@ def get_extraction_status(task_id: str):
         "failed": task_result.failed() if task_result.ready() else None
     }
 
+
+@celery_app.task(
+    name="app.tasks.extraction_tasks.analyze_pdf_async",
+    bind=True,
+    time_limit=300,  # 5 minutes
+)
+def analyze_pdf_async(self, file_path: str, bucket_name: str = "reims", strategies: list = None):
+    """
+    Async task to analyze a PDF without full database ingestion.
+    Useful for 'Test Extraction' or temporary analysis.
+    """
+    from app.utils.extraction_engine import MultiEngineExtractor
+    from app.db.minio_client import minio_client
+
+    logger.info(f"Starting async analysis for {file_path}")
+    
+    self.update_state(state="PROCESSING", meta={"status": "Downloading file"})
+    
+    try:
+        # Download file from MinIO
+        response = minio_client.get_object(bucket_name, file_path)
+        pdf_data = response.read()
+        response.close()
+        response.release_conn()
+        
+        # Initialize extractor
+        extractor = MultiEngineExtractor()
+        
+        self.update_state(state="PROCESSING", meta={"status": "Extracting content"})
+        
+        # Extract
+        # Note: We rely on default strategies if not provided
+        result = extractor.extract_with_validation(pdf_data)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Async analysis failed: {e}")
+        self.update_state(state="FAILURE", meta={"error": str(e)})
+        raise e
+
