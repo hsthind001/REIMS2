@@ -1,67 +1,152 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, List, Union
 from pydantic import field_validator
+import os
+import secrets
+
+
+def _get_env_or_generate(key: str, default_dev_value: str) -> str:
+    """Get value from environment or return development default.
+    In production (ENVIRONMENT=production), raises error if not set."""
+    env_value = os.environ.get(key)
+    if env_value:
+        return env_value
+
+    # Check if we're in production
+    environment = os.environ.get('ENVIRONMENT', 'development').lower()
+    if environment == 'production':
+        raise ValueError(
+            f"SECURITY ERROR: {key} must be set via environment variable in production. "
+            f"Set ENVIRONMENT=development for local development with defaults."
+        )
+
+    return default_dev_value
 
 
 class Settings(BaseSettings):
+    # Environment - MUST be set to 'production' in production deployments
+    ENVIRONMENT: str = "development"
+
     # API Settings
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "REIMS API"
-    
-    # Database Settings
-    POSTGRES_USER: str = "reims"
-    POSTGRES_PASSWORD: str = "reims"
+
+    # Database Settings - credentials loaded from environment
+    # In development: defaults to 'reims', in production: MUST be set via env vars
+    POSTGRES_USER: str = ""
+    POSTGRES_PASSWORD: str = ""
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: str = "5433"
     POSTGRES_DB: str = "reims"
-    
+
+    @field_validator('POSTGRES_USER', mode='before')
+    @classmethod
+    def get_postgres_user(cls, v):
+        return _get_env_or_generate('POSTGRES_USER', 'reims')
+
+    @field_validator('POSTGRES_PASSWORD', mode='before')
+    @classmethod
+    def get_postgres_password(cls, v):
+        return _get_env_or_generate('POSTGRES_PASSWORD', 'reims')
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-    
+
     # Redis Settings
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    
+
     @property
     def REDIS_URL(self) -> str:
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-    
-    # MinIO Settings
+
+    # MinIO Settings - credentials loaded from environment
     MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
-    MINIO_SECURE: bool = False
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_SECURE: bool = True  # Default to secure in production
     MINIO_BUCKET_NAME: str = "reims"
-    
+
+    @field_validator('MINIO_ACCESS_KEY', mode='before')
+    @classmethod
+    def get_minio_access_key(cls, v):
+        return _get_env_or_generate('MINIO_ACCESS_KEY', 'minioadmin')
+
+    @field_validator('MINIO_SECRET_KEY', mode='before')
+    @classmethod
+    def get_minio_secret_key(cls, v):
+        return _get_env_or_generate('MINIO_SECRET_KEY', 'minioadmin')
+
+    @field_validator('MINIO_SECURE', mode='before')
+    @classmethod
+    def get_minio_secure(cls, v):
+        # Default to False only in development
+        environment = os.environ.get('ENVIRONMENT', 'development').lower()
+        if environment == 'development':
+            return os.environ.get('MINIO_SECURE', 'false').lower() == 'true'
+        # In production, default to True (HTTPS)
+        return os.environ.get('MINIO_SECURE', 'true').lower() == 'true'
+
     # CORS Settings
     BACKEND_CORS_ORIGINS: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
-    
+
     @field_validator('BACKEND_CORS_ORIGINS', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(',')]
         return v
-    
-    # Security
-    # IMPORTANT: Set SECRET_KEY environment variable in production!
-    SECRET_KEY: str = "CHANGE-THIS-IN-PRODUCTION-USE-ENV-VAR"
+
+    # Security - SECRET_KEY MUST be set via environment variable
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # Session security settings
+    SESSION_HTTPS_ONLY: bool = True  # True in production
+    SESSION_SAME_SITE: str = "strict"  # "strict", "lax", or "none"
+    SESSION_MAX_AGE_SECONDS: int = 86400  # 1 day default
 
     @field_validator('SECRET_KEY', mode='before')
     @classmethod
     def validate_secret_key(cls, v):
-        if v in ["your-secret-key-change-this-in-production", "CHANGE-THIS-IN-PRODUCTION-USE-ENV-VAR"]:
-            import os
-            env_key = os.environ.get('SECRET_KEY')
-            if env_key:
-                return env_key
-            import warnings
-            warnings.warn("SECRET_KEY not set! Using default value. Set SECRET_KEY environment variable in production!")
-        return v
+        env_key = os.environ.get('SECRET_KEY')
+        if env_key:
+            # Validate key strength
+            if len(env_key) < 32:
+                raise ValueError(
+                    "SECRET_KEY must be at least 32 characters long for security"
+                )
+            return env_key
+
+        # Check if we're in production
+        environment = os.environ.get('ENVIRONMENT', 'development').lower()
+        if environment == 'production':
+            raise ValueError(
+                "SECURITY ERROR: SECRET_KEY must be set via environment variable in production. "
+                "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+            )
+
+        # Development only: generate a random key (not for production!)
+        import warnings
+        warnings.warn(
+            "WARNING: Using auto-generated SECRET_KEY for development. "
+            "Set SECRET_KEY environment variable for production!",
+            UserWarning
+        )
+        return secrets.token_urlsafe(64)
+
+    @field_validator('SESSION_HTTPS_ONLY', mode='before')
+    @classmethod
+    def get_session_https_only(cls, v):
+        # Default to False only in development
+        environment = os.environ.get('ENVIRONMENT', 'development').lower()
+        if environment == 'development':
+            return os.environ.get('SESSION_HTTPS_ONLY', 'false').lower() == 'true'
+        # In production, default to True
+        return os.environ.get('SESSION_HTTPS_ONLY', 'true').lower() == 'true'
 
     # LLM API Settings
     OPENAI_API_KEY: Optional[str] = None

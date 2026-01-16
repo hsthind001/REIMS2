@@ -7,11 +7,50 @@ No JWT - simpler session management with Starlette middleware
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Header
 from sqlalchemy.orm import Session
 from typing import Optional
+import re
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserResponse, PasswordChange
 from app.core.security import get_password_hash, verify_password
 from app.core.config import settings
+
+
+def validate_password_strength(password: str) -> None:
+    """
+    Validate password meets security requirements.
+
+    Requirements:
+    - At least 8 characters long
+    - Contains at least one uppercase letter
+    - Contains at least one lowercase letter
+    - Contains at least one digit
+    - Contains at least one special character
+
+    Raises:
+        HTTPException: If password doesn't meet requirements
+    """
+    errors = []
+
+    if len(password) < 8:
+        errors.append("Password must be at least 8 characters long")
+
+    if not re.search(r'[A-Z]', password):
+        errors.append("Password must contain at least one uppercase letter")
+
+    if not re.search(r'[a-z]', password):
+        errors.append("Password must contain at least one lowercase letter")
+
+    if not re.search(r'\d', password):
+        errors.append("Password must contain at least one digit")
+
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;\'`~]', password):
+        errors.append("Password must contain at least one special character")
+
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"password_errors": errors, "message": "Password does not meet security requirements"}
+        )
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -21,15 +60,19 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user
-    
+
+    - Validates password strength (8+ chars, uppercase, lowercase, digit, special char)
     - Validates email is unique
-    - Validates username is unique  
+    - Validates username is unique
     - Hashes password with bcrypt
     - Creates user in database
-    
+
     Returns:
         UserResponse: Created user data (without password)
     """
+    # Validate password strength first
+    validate_password_strength(user_data.password)
+
     # Check if email already exists
     existing_email = db.query(User).filter(User.email == user_data.email).first()
     if existing_email:
@@ -37,7 +80,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Check if username already exists
     existing_username = db.query(User).filter(User.username == user_data.username).first()
     if existing_username:
@@ -45,7 +88,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already taken"
         )
-    
+
     # Create new user
     user = User(
         email=user_data.email,

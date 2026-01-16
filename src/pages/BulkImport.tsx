@@ -703,8 +703,11 @@ export default function BulkImport() {
                 maxHeight: '300px',
                 overflowY: 'auto'
               }}>
-                {result.results.map((fileResult: any, index: number) => (
-                  <div key={index} style={{
+                {result.results.map((fileResult: any) => {
+                  // Use unique key: prefer upload_id, then filename, then fallback
+                  const fileKey = fileResult.upload_id || fileResult.filename || `${fileResult.document_type}-${fileResult.month}`;
+                  return (
+                  <div key={fileKey} style={{
                     padding: '0.75rem',
                     marginBottom: '0.5rem',
                     backgroundColor: fileResult.status === 'success' ? '#e8f5e9' : '#ffebee',
@@ -720,15 +723,15 @@ export default function BulkImport() {
                     </div>
                     {fileResult.warning && (
                       <div style={{ fontSize: '0.85rem', color: '#ff9800', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fff3e0', borderRadius: '4px' }}>
-                        <strong>⚠️ Warning:</strong> {fileResult.warning}
+                        <strong>Warning:</strong> {fileResult.warning}
                       </div>
                     )}
                     {fileResult.anomalies && fileResult.anomalies.length > 0 && (
                       <div style={{ fontSize: '0.85rem', color: '#f57c00', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fff3e0', borderRadius: '4px' }}>
-                        <strong>🔍 Anomalies Detected:</strong>
+                        <strong>Anomalies Detected:</strong>
                         <ul style={{ margin: '0.25rem 0 0 1.25rem', paddingLeft: 0 }}>
-                          {fileResult.anomalies.map((anomaly: string, idx: number) => (
-                            <li key={idx} style={{ marginTop: '0.15rem' }}>{anomaly}</li>
+                          {fileResult.anomalies.map((anomaly: string, anomalyIdx: number) => (
+                            <li key={`${fileKey}-anomaly-${anomalyIdx}`} style={{ marginTop: '0.15rem' }}>{anomaly}</li>
                           ))}
                         </ul>
                       </div>
@@ -744,7 +747,8 @@ export default function BulkImport() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

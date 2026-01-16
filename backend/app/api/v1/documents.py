@@ -1,7 +1,7 @@
 """
 Document Upload API - Complete workflow for financial document management
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Form, Body
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Form, Body, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sql_func
 from typing import Optional, List
@@ -43,11 +43,20 @@ from app.schemas.document import (
     DocumentDownloadResponse
 )
 
+# Import rate limiter from main app
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+# Create limiter instance for this router
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter()
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")  # Rate limit: 10 uploads per minute per IP
 async def upload_document(
+    request: Request,  # Required for rate limiter
     property_code: str = Form(..., description="Property code (e.g., WEND001)"),
     period_year: int = Form(..., ge=2000, le=2100, description="Financial period year"),
     period_month: int = Form(..., ge=1, le=12, description="Financial period month (1-12)"),
@@ -81,7 +90,7 @@ async def upload_document(
     - task_id: Celery task ID for extraction status
     - file_path: Storage path in MinIO
     """
-    # Validate file type
+    # Validate file type (MIME type check)
     if not file.content_type or file.content_type != "application/pdf":
         # Capture issue for learning
         try:
@@ -97,22 +106,50 @@ async def upload_document(
             )
         except Exception:
             pass  # Don't fail upload if issue capture fails
-        
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be a PDF (application/pdf)"
         )
-    
+
     # Validate file size (max 50MB)
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
     file.file.seek(0, 2)  # Seek to end
     file_size = file.file.tell()
     file.file.seek(0)  # Reset to beginning
-    
+
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="File size exceeds 50MB limit"
+        )
+
+    # SECURITY: Validate PDF magic bytes to prevent file spoofing
+    # PDF files must start with %PDF (magic bytes: 0x25 0x50 0x44 0x46)
+    PDF_MAGIC_BYTES = b'%PDF'
+    file_header = file.file.read(8)  # Read first 8 bytes for signature
+    file.file.seek(0)  # Reset to beginning
+
+    if not file_header.startswith(PDF_MAGIC_BYTES):
+        # Capture issue for learning
+        try:
+            from app.services.issue_capture_service import IssueCaptureService
+            capture_service = IssueCaptureService(db)
+            capture_service.capture_frontend_error(
+                error_message="File content does not match PDF format (invalid magic bytes)",
+                api_endpoint="/documents/upload",
+                context={
+                    "filename": file.filename,
+                    "content_type": file.content_type,
+                    "magic_bytes_hex": file_header[:4].hex() if file_header else "empty"
+                }
+            )
+        except Exception:
+            pass
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid PDF file: file content does not match PDF format"
         )
     
     try:
@@ -1119,7 +1156,9 @@ async def reprocess_single_upload(
 
 
 @router.delete("/documents/uploads/delete-all-history", status_code=status.HTTP_200_OK)
+@limiter.limit("1/minute")  # Rate limit: 1 destructive operation per minute per IP
 async def delete_all_upload_history(
+    request: Request,  # Required for rate limiter
     db: Session = Depends(get_db)
 ):
     """
@@ -1153,31 +1192,46 @@ async def delete_all_upload_history(
         ).rowcount
         if orphaned_count > 0:
             logger.info(f"Deleted {orphaned_count} orphaned anomaly_detections records")
-        
-        # Step 2: Get all document uploads
-        all_uploads = db.query(DocumentUpload).all()
-        deleted_count = len(all_uploads)
-        
-        # Step 3: Delete files from MinIO and database records
-        for upload in all_uploads:
-            # Delete file from MinIO if file_path exists
-            if upload.file_path:
-                try:
-                    delete_file(upload.file_path)
-                except Exception as e:
-                    # Log error but continue deletion
-                    logger.warning(f"Failed to delete file from MinIO: {upload.file_path}, error: {str(e)}")
-            
-            # Delete database record (cascade will handle related data)
-            db.delete(upload)
-        
-        # Step 4: Commit all deletions
-        db.commit()
-        
+
+        # Step 2: Delete document uploads in batches to prevent memory exhaustion
+        # PERFORMANCE FIX: Process in batches instead of loading all records at once
+        BATCH_SIZE = 100
+        deleted_count = 0
+        batch_number = 0
+
+        while True:
+            batch_number += 1
+            # Fetch a batch of uploads (limit prevents loading entire table into memory)
+            batch = db.query(DocumentUpload).limit(BATCH_SIZE).all()
+
+            if not batch:
+                break  # No more records to delete
+
+            logger.info(f"Processing batch {batch_number} with {len(batch)} records...")
+
+            # Step 3: Delete files from MinIO and database records for this batch
+            for upload in batch:
+                # Delete file from MinIO if file_path exists
+                if upload.file_path:
+                    try:
+                        delete_file(upload.file_path)
+                    except Exception as e:
+                        # Log error but continue deletion
+                        logger.warning(f"Failed to delete file from MinIO: {upload.file_path}, error: {str(e)}")
+
+                # Delete database record (cascade will handle related data)
+                db.delete(upload)
+
+            # Commit this batch to free memory and ensure progress is saved
+            db.commit()
+            deleted_count += len(batch)
+            logger.info(f"Batch {batch_number} committed. Total deleted so far: {deleted_count}")
+
         return {
             "message": f"Successfully deleted {deleted_count} document upload records",
             "deleted_count": deleted_count,
-            "orphaned_anomalies_deleted": orphaned_count
+            "orphaned_anomalies_deleted": orphaned_count,
+            "batches_processed": batch_number - 1
         }
     
     except Exception as e:
@@ -1190,7 +1244,9 @@ async def delete_all_upload_history(
 
 
 @router.delete("/documents/anomalies-warnings-alerts/delete-all", status_code=status.HTTP_200_OK)
+@limiter.limit("1/minute")  # Rate limit: 1 destructive operation per minute per IP
 async def delete_all_anomalies_warnings_alerts(
+    request: Request,  # Required for rate limiter
     db: Session = Depends(get_db)
 ):
     """

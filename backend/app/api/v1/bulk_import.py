@@ -3,7 +3,7 @@ Bulk Import API Endpoints
 
 CSV and Excel file imports for budgets, forecasts, financial data, and chart of accounts
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from fastapi.responses import Response
 from typing import Optional
@@ -14,12 +14,20 @@ from app.services.bulk_import_service import BulkImportService
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 
+# Import rate limiter
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter(prefix="/bulk-import", tags=["bulk_import"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("/budgets")
+@limiter.limit("5/minute")  # Rate limit: 5 bulk imports per minute per IP
 async def import_budgets(
+    request: Request,  # Required for rate limiter
     file: UploadFile = File(...),
     property_id: int = Form(...),
     financial_period_id: int = Form(...),

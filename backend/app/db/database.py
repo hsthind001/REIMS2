@@ -19,11 +19,39 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-# Dependency to get database session
+# Dependency to get database session with proper transaction handling
 def get_db():
+    """
+    FastAPI dependency that provides a database session.
+
+    Transaction handling:
+    - On successful request: commits are handled by the endpoint
+    - On exception: automatically rolls back to prevent partial commits
+    - Always closes the session to return connection to pool
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # Rollback on any exception to prevent partial commits
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def get_db_with_autocommit():
+    """
+    Database session that auto-commits on success.
+    Use for simple CRUD operations that don't need explicit transaction control.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

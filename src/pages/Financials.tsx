@@ -1220,16 +1220,18 @@ export default function Financials() {
                                   </tr>
                                </thead>
                                <tbody className="divide-y divide-border">
-                                  {financialData?.items?.map((item: any, idx: number) => {
+                                  {financialData?.items?.map((item: any) => {
                                      const isHeader = item.account_name?.toLowerCase().includes('total') || item.account_name?.toLowerCase().includes('net');
                                      const amount = item.amounts?.amount || 0;
                                      // Simulation of prior/delta - normally would match by account code from comparePeriod data
                                      const priorAmount = amount * (0.9 + Math.random() * 0.2); // Stubbed for visual
                                      const delta = amount - priorAmount;
                                      const deltaPercent = (delta / priorAmount) * 100;
-                                     
+                                     // Use unique key: prefer id, then account_code, fallback to account_name
+                                     const itemKey = item.id || item.account_code || `${item.account_name}-${amount}`;
+
                                      return (
-                                        <tr key={idx} className={`hover:bg-surface-hover transition-colors group ${isHeader ? 'bg-surface/50 font-semibold' : ''}`}>
+                                        <tr key={itemKey} className={`hover:bg-surface-hover transition-colors group ${isHeader ? 'bg-surface/50 font-semibold' : ''}`}>
                                            <td className="px-4 py-2.5">
                                               <div className="flex items-center gap-2">
                                                  {/* Indentation logic would go here */}

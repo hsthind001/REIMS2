@@ -2,7 +2,9 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, D
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Union, Any
 from sqlalchemy.orm import Session
+from enum import Enum
 import hashlib
+import re
 from app.utils.extraction_engine import MultiEngineExtractor
 from app.services.model_scoring_service import ScoringFactors
 from app.db.database import get_db
@@ -13,6 +15,39 @@ from app.core.config import settings
 from app.tasks.extraction_tasks import analyze_pdf_async, get_extraction_status
 from app.db.minio_client import minio_client
 import io
+
+
+# Validated extraction strategies
+class ExtractionStrategy(str, Enum):
+    """Valid extraction strategies for PDF analysis"""
+    auto = "auto"
+    fast = "fast"
+    accurate = "accurate"
+    multi_engine = "multi_engine"
+
+
+# Valid language codes (ISO 639-3 format)
+VALID_LANGUAGE_CODES = frozenset([
+    "eng", "deu", "fra", "spa", "ita", "por", "nld", "pol", "rus",
+    "jpn", "kor", "chi_sim", "chi_tra", "ara", "hin", "tha", "vie"
+])
+
+
+def validate_language_code(lang: str) -> str:
+    """Validate language code format and value"""
+    # Check format: must be 3 lowercase letters or underscore-separated
+    if not re.match(r'^[a-z]{3}(_[a-z]+)?$', lang):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid language code format: {lang}. Use ISO 639-3 format (e.g., 'eng', 'deu')"
+        )
+    if lang not in VALID_LANGUAGE_CODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported language code: {lang}. Supported: {', '.join(sorted(VALID_LANGUAGE_CODES))}"
+        )
+    return lang
+
 
 router = APIRouter()
 
@@ -72,17 +107,31 @@ class AsyncStatusResponse(BaseModel):
 @router.post("/extract/analyze", response_model=AsyncExtractionResponse)
 async def analyze_pdf(
     file: UploadFile = File(...),
-    strategy: str = Query("auto", description="Extraction strategy: auto, fast, accurate, multi_engine"),
-    lang: str = Query("eng", description="Language for OCR"),
+    strategy: ExtractionStrategy = Query(
+        ExtractionStrategy.auto,
+        description="Extraction strategy: auto, fast, accurate, multi_engine"
+    ),
+    lang: str = Query("eng", description="Language for OCR (ISO 639-3 format)"),
     store_results: bool = Query(True, description="Store extraction results in database"),
     db: Session = Depends(get_db)
 ):
     """
     Analyze and extract PDF with quality validation (ASYNC)
-    
+
     Offloads processing to background workers.
     Returns a job_id to poll status at /extract/status/{job_id}
+
+    **Strategies:**
+    - auto: Automatically select best strategy based on document
+    - fast: Quick extraction for simple documents
+    - accurate: Thorough extraction with OCR fallback
+    - multi_engine: Use multiple extraction engines for best accuracy
+
+    **Language codes:** eng, deu, fra, spa, ita, por, nld, pol, rus, jpn, kor, chi_sim, chi_tra, ara, hin, tha, vie
     """
+    # Validate language code
+    lang = validate_language_code(lang)
+
     if not file.content_type or file.content_type != "application/pdf":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

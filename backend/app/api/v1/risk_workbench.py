@@ -227,40 +227,51 @@ async def get_unified_risk_items(
             unified_query = anomalies_query.union_all(alerts_query)
         
         # Create subquery for ordering and pagination
-        # Apply sorting - default to created_at if sort_by is not in the result set
-        valid_sort_fields = ['id', 'type', 'severity', 'property', 'age_seconds', 'impact', 'status', 'created_at', 'account_name']
-        if sort_by not in valid_sort_fields:
+        # Apply sorting - whitelist validation to prevent SQL injection
+        # Only allow exact matches from this whitelist
+        VALID_SORT_FIELDS = frozenset([
+            'id', 'type', 'severity', 'property', 'age_seconds',
+            'impact', 'status', 'created_at', 'account_name'
+        ])
+
+        # Strict validation - reject any field not in whitelist
+        if sort_by not in VALID_SORT_FIELDS:
             sort_by = 'created_at'
-        
+
+        # Validate sort_order to prevent injection
+        if sort_order.lower() not in ('asc', 'desc'):
+            sort_order = 'desc'
+
         # Create subquery from union
         subquery = unified_query.subquery()
-        
+
         # Pagination
         offset = (page - 1) * page_size
         try:
             # Count total
             count_query = db.query(func.count()).select_from(subquery)
             total = count_query.scalar() or 0
-            
-            # Get paginated results with ordering
-            # Use text() for dynamic column ordering on subquery
-            if sort_order == "desc":
-                order_sql = f"{sort_by} DESC"
+
+            # Get paginated results with ordering using safe column reference
+            # Use getattr on subquery.c to get actual column object - prevents SQL injection
+            sort_column = getattr(subquery.c, sort_by, subquery.c.created_at)
+            if sort_order.lower() == "desc":
+                order_clause = sort_column.desc()
             else:
-                order_sql = f"{sort_by} ASC"
-            
-            # Query subquery with ordering
-            items_query = db.query(subquery).order_by(text(order_sql)).offset(offset).limit(page_size)
+                order_clause = sort_column.asc()
+
+            # Query subquery with safe ordering
+            items_query = db.query(subquery).order_by(order_clause).offset(offset).limit(page_size)
             items = items_query.all()
         except Exception as e:
             logger.warning(f"Error with sort field {sort_by}, trying default: {e}")
-            # Fallback to default sorting
+            # Fallback to default sorting using safe column reference
             try:
-                items_query = db.query(subquery).order_by(text("created_at DESC")).offset(offset).limit(page_size)
+                items_query = db.query(subquery).order_by(subquery.c.created_at.desc()).offset(offset).limit(page_size)
                 items = items_query.all()
             except Exception as e2:
                 logger.error(f"Error executing unified query even with fallback: {e2}", exc_info=True)
-                raise HTTPException(status_code=500, detail=f"Database error: {str(e2)}")
+                raise HTTPException(status_code=500, detail="Database error occurred")
         
         # Format results
         results = []

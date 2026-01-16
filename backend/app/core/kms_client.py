@@ -48,11 +48,35 @@ class KMSClient:
             import keyring
             self.keyring = keyring
             self.service_name = "reims-dev"
-            logger.info("✅ Local keyring initialized for development")
+            logger.info("Local keyring initialized for development")
         except ImportError:
             logger.warning("keyring not available. Using environment variable fallback.")
             self.keyring = None
-            self._fallback_key = os.getenv("REIMS_ENCRYPTION_KEY", "dev-key-change-in-production")
+            # SECURITY: Encryption key MUST be set via environment variable
+            fallback_key = os.getenv("REIMS_ENCRYPTION_KEY")
+            environment = os.getenv("ENVIRONMENT", "development").lower()
+
+            if not fallback_key:
+                if environment == "production":
+                    raise ValueError(
+                        "SECURITY ERROR: REIMS_ENCRYPTION_KEY must be set via environment variable in production. "
+                        "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                    )
+                # Development only: generate a random key
+                import secrets
+                import warnings
+                warnings.warn(
+                    "WARNING: REIMS_ENCRYPTION_KEY not set. Generating temporary key for development. "
+                    "This key will change on restart! Set REIMS_ENCRYPTION_KEY for persistent encryption.",
+                    UserWarning
+                )
+                fallback_key = secrets.token_urlsafe(32)
+
+            # Validate key strength
+            if len(fallback_key) < 32:
+                raise ValueError("REIMS_ENCRYPTION_KEY must be at least 32 characters long")
+
+            self._fallback_key = fallback_key
     
     def encrypt(self, plaintext: str, context: Optional[Dict[str, str]] = None) -> str:
         """

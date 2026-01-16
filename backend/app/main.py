@@ -103,13 +103,14 @@ app.add_middleware(
 
 # Configure Session Middleware (add second, executes first)
 # IMPORTANT: Must be added AFTER CORS middleware
+# Security settings are environment-aware via config.py
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     session_cookie="reims_session",
-    max_age=86400 * 7,  # 7 days
-    same_site="lax",
-    https_only=False  # Set to True in production with HTTPS
+    max_age=settings.SESSION_MAX_AGE_SECONDS,  # Default 1 day, configurable
+    same_site=settings.SESSION_SAME_SITE,  # "strict" in production
+    https_only=settings.SESSION_HTTPS_ONLY,  # True in production with HTTPS
 )
 
 # Include routers

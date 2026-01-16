@@ -336,8 +336,8 @@ class VannaTextToSQL:
         self,
         question: str,
         context: Optional[Dict]
-    ) -> Tuple[str, float]:
-        """Fallback SQL generation using templates"""
+    ) -> Tuple[str, float, Dict]:
+        """Fallback SQL generation using templates - returns (sql, confidence, params)"""
 
         # Extract temporal info
         temporal_info = temporal_processor.extract_temporal_info(question)
@@ -347,34 +347,34 @@ class VannaTextToSQL:
 
         # Cash position query
         if "cash position" in question_lower or "cash" in question_lower:
-            sql = self._template_cash_position(temporal_info, context)
-            return sql, 0.7
+            sql, params = self._template_cash_position(temporal_info, context)
+            return sql, 0.7, params
 
         # Revenue query
         elif "revenue" in question_lower:
-            sql = self._template_revenue(temporal_info, context)
-            return sql, 0.7
+            sql, params = self._template_revenue(temporal_info, context)
+            return sql, 0.7, params
 
         # Expenses query
         elif "expense" in question_lower:
-            sql = self._template_expenses(temporal_info, context)
-            return sql, 0.7
+            sql, params = self._template_expenses(temporal_info, context)
+            return sql, 0.7, params
 
         # Generic balance sheet
         elif "balance sheet" in question_lower or "assets" in question_lower:
-            sql = self._template_balance_sheet(temporal_info, context)
-            return sql, 0.6
+            sql, params = self._template_balance_sheet(temporal_info, context)
+            return sql, 0.6, params
 
         # Generic income statement
         elif "income statement" in question_lower or "net income" in question_lower:
-            sql = self._template_income_statement(temporal_info, context)
-            return sql, 0.6
+            sql, params = self._template_income_statement(temporal_info, context)
+            return sql, 0.6, params
 
         # Default: return empty
-        return "", 0.0
+        return "", 0.0, {}
 
-    def _template_cash_position(self, temporal_info: Dict, context: Optional[Dict]) -> str:
-        """Template for cash position queries"""
+    def _template_cash_position(self, temporal_info: Dict, context: Optional[Dict]) -> Tuple[str, Dict]:
+        """Template for cash position queries - returns (sql, params) tuple"""
         sql = """
             SELECT
                 p.property_code,
@@ -387,24 +387,29 @@ class VannaTextToSQL:
             WHERE b.account_code = '1010'
         """
 
-        # Add temporal filters
+        # Add temporal filters using parameterized queries
+        params = {}
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
+                sql += " AND fp.period_year = :year AND fp.period_month = :month"
+                params['year'] = int(filters['year'])
+                params['month'] = int(filters['month'])
             elif "year" in filters:
-                sql += f" AND fp.period_year = {filters['year']}"
+                sql += " AND fp.period_year = :year"
+                params['year'] = int(filters['year'])
 
-        # Add property filter
+        # Add property filter using parameterized query
         if context and context.get("property_code"):
-            sql += f" AND p.property_code = '{context['property_code']}'"
+            sql += " AND p.property_code = :property_code"
+            params['property_code'] = str(context['property_code'])
 
         sql += " ORDER BY fp.period_year DESC, fp.period_month DESC LIMIT 1"
 
-        return sql
+        return sql, params
 
-    def _template_revenue(self, temporal_info: Dict, context: Optional[Dict]) -> str:
-        """Template for revenue queries"""
+    def _template_revenue(self, temporal_info: Dict, context: Optional[Dict]) -> Tuple[str, Dict]:
+        """Template for revenue queries - returns (sql, params) tuple"""
         sql = """
             SELECT
                 p.property_code,
@@ -417,24 +422,29 @@ class VannaTextToSQL:
             WHERE i.account_category = 'Revenue'
         """
 
-        # Add temporal filters
+        # Add temporal filters using parameterized queries
+        params = {}
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
+                sql += " AND fp.period_year = :year AND fp.period_month = :month"
+                params['year'] = int(filters['year'])
+                params['month'] = int(filters['month'])
             elif "year" in filters:
-                sql += f" AND fp.period_year = {filters['year']}"
+                sql += " AND fp.period_year = :year"
+                params['year'] = int(filters['year'])
 
-        # Add property filter
+        # Add property filter using parameterized query
         if context and context.get("property_code"):
-            sql += f" AND p.property_code = '{context['property_code']}'"
+            sql += " AND p.property_code = :property_code"
+            params['property_code'] = str(context['property_code'])
 
         sql += " GROUP BY p.property_code, fp.period_year, fp.period_month ORDER BY fp.period_year DESC, fp.period_month DESC"
 
-        return sql
+        return sql, params
 
-    def _template_expenses(self, temporal_info: Dict, context: Optional[Dict]) -> str:
-        """Template for expense queries"""
+    def _template_expenses(self, temporal_info: Dict, context: Optional[Dict]) -> Tuple[str, Dict]:
+        """Template for expense queries - returns (sql, params) tuple"""
         sql = """
             SELECT
                 p.property_code,
@@ -447,24 +457,29 @@ class VannaTextToSQL:
             WHERE i.account_category = 'Operating Expenses'
         """
 
-        # Add temporal filters
+        # Add temporal filters using parameterized queries
+        params = {}
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
+                sql += " AND fp.period_year = :year AND fp.period_month = :month"
+                params['year'] = int(filters['year'])
+                params['month'] = int(filters['month'])
             elif "year" in filters:
-                sql += f" AND fp.period_year = {filters['year']}"
+                sql += " AND fp.period_year = :year"
+                params['year'] = int(filters['year'])
 
-        # Add property filter
+        # Add property filter using parameterized query
         if context and context.get("property_code"):
-            sql += f" AND p.property_code = '{context['property_code']}'"
+            sql += " AND p.property_code = :property_code"
+            params['property_code'] = str(context['property_code'])
 
         sql += " GROUP BY p.property_code, fp.period_year, fp.period_month ORDER BY fp.period_year DESC, fp.period_month DESC"
 
-        return sql
+        return sql, params
 
-    def _template_balance_sheet(self, temporal_info: Dict, context: Optional[Dict]) -> str:
-        """Template for balance sheet queries"""
+    def _template_balance_sheet(self, temporal_info: Dict, context: Optional[Dict]) -> Tuple[str, Dict]:
+        """Template for balance sheet queries - returns (sql, params) tuple"""
         sql = """
             SELECT
                 p.property_code,
@@ -478,24 +493,29 @@ class VannaTextToSQL:
             WHERE 1=1
         """
 
-        # Add temporal filters
+        # Add temporal filters using parameterized queries
+        params = {}
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
+                sql += " AND fp.period_year = :year AND fp.period_month = :month"
+                params['year'] = int(filters['year'])
+                params['month'] = int(filters['month'])
             elif "year" in filters:
-                sql += f" AND fp.period_year = {filters['year']}"
+                sql += " AND fp.period_year = :year"
+                params['year'] = int(filters['year'])
 
-        # Add property filter
+        # Add property filter using parameterized query
         if context and context.get("property_code"):
-            sql += f" AND p.property_code = '{context['property_code']}'"
+            sql += " AND p.property_code = :property_code"
+            params['property_code'] = str(context['property_code'])
 
         sql += " ORDER BY b.account_category, b.account_code"
 
-        return sql
+        return sql, params
 
-    def _template_income_statement(self, temporal_info: Dict, context: Optional[Dict]) -> str:
-        """Template for income statement queries"""
+    def _template_income_statement(self, temporal_info: Dict, context: Optional[Dict]) -> Tuple[str, Dict]:
+        """Template for income statement queries - returns (sql, params) tuple"""
         sql = """
             SELECT
                 p.property_code,
@@ -509,21 +529,26 @@ class VannaTextToSQL:
             WHERE 1=1
         """
 
-        # Add temporal filters
+        # Add temporal filters using parameterized queries
+        params = {}
         if temporal_info.get("has_temporal"):
             filters = temporal_info.get("filters", {})
             if "year" in filters and "month" in filters:
-                sql += f" AND fp.period_year = {filters['year']} AND fp.period_month = {filters['month']}"
+                sql += " AND fp.period_year = :year AND fp.period_month = :month"
+                params['year'] = int(filters['year'])
+                params['month'] = int(filters['month'])
             elif "year" in filters:
-                sql += f" AND fp.period_year = {filters['year']}"
+                sql += " AND fp.period_year = :year"
+                params['year'] = int(filters['year'])
 
-        # Add property filter
+        # Add property filter using parameterized query
         if context and context.get("property_code"):
-            sql += f" AND p.property_code = '{context['property_code']}'"
+            sql += " AND p.property_code = :property_code"
+            params['property_code'] = str(context['property_code'])
 
         sql += " ORDER BY i.account_category, i.account_code"
 
-        return sql
+        return sql, params
 
 
 # Singleton instance
