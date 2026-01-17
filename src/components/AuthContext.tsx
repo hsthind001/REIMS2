@@ -8,6 +8,7 @@ import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { authService } from '../lib/auth';
 import type { User, UserLogin, UserCreate } from '../types/api';
+import { useAuthStore } from '../store/authStore';
 
 interface AuthContextType {
   user: User | null;
@@ -28,6 +29,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const lastCheckRef = useRef<number>(0);
   const isCheckingRef = useRef<boolean>(false);
+
+  // Sync with store
+  const setStoreUser = useAuthStore((state) => state.setUser);
+  const setStoreLogout = useAuthStore((state) => state.logout);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -64,10 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       console.log('✅ AuthContext: User authenticated:', currentUser?.username);
       setUser(currentUser);
+      setStoreUser(currentUser); // Sync store
       setError(null);
     } catch (err: any) {
       console.log('ℹ️ AuthContext: Not authenticated or error:', err.status || err.message);
       setUser(null);
+      setStoreLogout(); // Sync store
       // Don't set error on initial check if not authenticated, timeout, or network error
       // Network errors during initial check are expected if backend is starting up
       if (err.status !== 401 && 
@@ -90,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
       const userData = await authService.login(credentials);
       setUser(userData);
+      setStoreUser(userData); // Sync store
     } catch (err: any) {
       setError(err.message || 'Login failed');
       throw err;
@@ -105,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const newUser = await authService.register(userData);
       // Auto-login after registration
       setUser(newUser);
+      setStoreUser(newUser); // Sync store
     } catch (err: any) {
       setError(err.message || 'Registration failed');
       throw err;
@@ -118,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       await authService.logout();
       setUser(null);
+      setStoreLogout(); // Sync store
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Logout failed');

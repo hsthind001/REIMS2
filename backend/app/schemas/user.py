@@ -24,6 +24,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for user registration"""
     password: str = Field(..., min_length=8, max_length=100)
+    organization_name: Optional[str] = None
     
     @field_validator('password')
     @classmethod
@@ -47,12 +48,23 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+
+from typing import List
+# Forward reference or import if no circular dependency
+# Since organization.py doesn't import user.py, we can import it here
+try:
+    from app.schemas.organization import OrganizationMemberResponse
+except ImportError:
+    # Handle circular if structure changes later
+    pass
+
 class UserResponse(UserBase):
     """Schema for user data in responses"""
     id: int
     is_active: bool
     is_superuser: bool
     created_at: datetime
+    organization_memberships: List['OrganizationMemberResponse'] = []
     
     class Config:
         from_attributes = True

@@ -103,6 +103,15 @@ export function extractErrorMessage(error: ErrorLike, fallback: string = "An err
       }
       // If detail is an object, try to extract message from it
       if (typeof error.detail === "object") {
+        // Special handling for password_errors array
+        if (Array.isArray((error.detail as any).password_errors)) {
+          const errors = (error.detail as any).password_errors;
+          const mainMsg = (error.detail as any).message || "";
+          return mainMsg 
+            ? `${mainMsg}: ${errors.join(", ")}`
+            : errors.join(", ");
+        }
+
         const detailMessage = extractErrorMessage(error.detail, "");
         if (detailMessage) {
           return detailMessage;

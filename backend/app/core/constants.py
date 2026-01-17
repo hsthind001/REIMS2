@@ -280,6 +280,160 @@ class CacheConstants(BaseSettings):
         case_sensitive = False
 
 
+class MarketDataDefaults:
+    """Default values for market data calculations"""
+    # Crime and safety metrics (0-100 scale)
+    CRIME_INDEX_AVERAGE = 50.0
+    CRIME_INDEX_SAFE = 30.0
+    CRIME_INDEX_RISKY = 70.0
+
+    # School ratings (0-10 scale)
+    SCHOOL_RATING_AVERAGE = 7.0
+    SCHOOL_RATING_GOOD = 8.0
+    SCHOOL_RATING_EXCELLENT = 9.0
+
+    # Distance radii in meters
+    RADIUS_1_MILE_METERS = 1609
+    RADIUS_2_MILES_METERS = 3218
+    RADIUS_5_MILES_METERS = 8047
+    RADIUS_QUARTER_MILE_METERS = 402
+
+
+class ConfidenceThresholds:
+    """Confidence score thresholds for matching and tiering"""
+    # Exception tiering thresholds (BR-003)
+    TIER_0_AUTO_CLOSE = 98.0    # Auto-close: very high confidence
+    TIER_1_AUTO_SUGGEST = 90.0  # Auto-suggest: high confidence
+    TIER_2_COMMITTEE = 70.0     # Route to committee: moderate confidence
+    # Below 70.0 = Tier 3: escalate to manual review
+
+    # Matching confidence levels
+    HIGH_CONFIDENCE = 90.0
+    MEDIUM_CONFIDENCE = 70.0
+    LOW_CONFIDENCE = 50.0
+    MINIMUM_MATCH = 30.0
+
+    # Extraction confidence
+    EXTRACTION_RELIABLE = 90.0
+    EXTRACTION_NEEDS_REVIEW = 70.0
+    EXTRACTION_FALLBACK = 50.0
+
+
+class AnomalyDetectionThresholds:
+    """Thresholds for anomaly detection service"""
+    # Percentage change that triggers alerts
+    PERCENTAGE_CHANGE_THRESHOLD = 50.0
+
+    # Variance scoring (for impact calculation)
+    MAX_VARIANCE_SCORE = 40.0
+    VARIANCE_DENOMINATOR = 250.0  # $10K variance = 40 points
+
+    # Z-score thresholds
+    Z_SCORE_MAX_COMPONENT = 50.0
+    Z_SCORE_MULTIPLIER = 10.0  # 5.0 Z-score = 50 points
+
+
+class DataQualityThresholds:
+    """Thresholds for data quality scoring"""
+    QUALITY_GOOD = 80.0
+    QUALITY_WARNING = 70.0
+    QUALITY_DEFAULT = 50.0
+
+    # Timeliness scoring
+    TIMELINESS_PERFECT = 100.0
+    TIMELINESS_THRESHOLD_DAYS = 30
+    TIMELINESS_DECAY_RATE = 50.0  # Points lost per 30 days
+
+
+class TenantRiskThresholds:
+    """Thresholds for tenant risk analysis"""
+    # Concentration risk
+    CONCENTRATION_TOP3_HIGH = 50.0  # Top 3 tenants > 50% = moderate risk
+    CONCENTRATION_TOP3_CRITICAL = 70.0  # Top 3 tenants > 70% = high risk
+
+    # Lease rollover risk
+    ROLLOVER_24MO_HIGH = 50.0  # > 50% expiring in 24 months = moderate risk
+    ROLLOVER_24MO_CRITICAL = 70.0
+
+    # Occupancy thresholds
+    OCCUPANCY_EXCELLENT = 95.0
+    OCCUPANCY_GOOD = 90.0
+    OCCUPANCY_WARNING = 85.0
+    OCCUPANCY_CRITICAL = 80.0
+
+
+class CovenantThresholds:
+    """Loan covenant compliance thresholds"""
+    # Debt Service Coverage Ratio
+    DSCR_MINIMUM = 1.0
+    DSCR_COMFORTABLE = 1.25
+    DSCR_STRONG = 1.5
+
+    # Loan-to-Value
+    LTV_MAXIMUM = 80.0
+    LTV_WARNING = 70.0
+    LTV_SAFE = 60.0
+
+
+class CollectionsThresholds:
+    """Accounts receivable and collections thresholds"""
+    # Days Sales Outstanding
+    DSO_GOOD = 45.0
+    DSO_WARNING = 60.0
+    DSO_CRITICAL = 90.0
+
+
+class CapRateDefaults:
+    """Default cap rates by market condition"""
+    # Strong market (low cap rates)
+    CAP_RATE_STRONG_MARKET = Decimal("0.055")  # 5.5%
+    CAP_RATE_STRONG_MAX = Decimal("0.070")     # 7.0%
+
+    # Average market
+    CAP_RATE_AVERAGE = Decimal("0.070")        # 7.0%
+    CAP_RATE_AVERAGE_MAX = Decimal("0.085")    # 8.5%
+
+    # Weak market (high cap rates)
+    CAP_RATE_WEAK_MIN = Decimal("0.070")       # 7.0%
+    CAP_RATE_WEAK_MARKET = Decimal("0.085")    # 8.5%
+
+
+class AlertSeverityWeights:
+    """Weights for alert prioritization scoring"""
+    CRITICAL = 90.0
+    HIGH = 75.0
+    MEDIUM = 50.0
+    LOW = 25.0
+    INFO = 10.0
+    DEFAULT = 50.0
+
+
+class BatchProcessingLimits:
+    """Limits for batch processing operations"""
+    BULK_DELETE_BATCH_SIZE = 100
+    BULK_IMPORT_BATCH_SIZE = 50
+    EXTRACTION_BATCH_SIZE = 10
+    QUERY_PAGE_SIZE_DEFAULT = 50
+    QUERY_PAGE_SIZE_MAX = 500
+
+
+class FileUploadLimits:
+    """Limits for file uploads"""
+    MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
+    MAX_FILE_SIZE_MB = 50
+    ALLOWED_EXTENSIONS = frozenset({'pdf', 'xlsx', 'xls', 'csv'})
+    PDF_MAGIC_BYTES = b'%PDF'
+
+
+class RateLimitDefaults:
+    """Default rate limits for API endpoints"""
+    UPLOAD_PER_MINUTE = 10
+    BULK_UPLOAD_PER_MINUTE = 5
+    DESTRUCTIVE_OPS_PER_MINUTE = 1
+    AUTH_ATTEMPTS_PER_MINUTE = 5
+    EXTRACTION_PER_MINUTE = 10
+
+
 # Singleton instances
 financial_thresholds = FinancialThresholds()
 extraction_constants = ExtractionConstants()
@@ -297,6 +451,18 @@ __all__ = [
     'AlertConstants',
     'PaginationConstants',
     'CacheConstants',
+    'MarketDataDefaults',
+    'ConfidenceThresholds',
+    'AnomalyDetectionThresholds',
+    'DataQualityThresholds',
+    'TenantRiskThresholds',
+    'CovenantThresholds',
+    'CollectionsThresholds',
+    'CapRateDefaults',
+    'AlertSeverityWeights',
+    'BatchProcessingLimits',
+    'FileUploadLimits',
+    'RateLimitDefaults',
     'financial_thresholds',
     'extraction_constants',
     'account_codes',

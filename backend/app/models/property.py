@@ -4,7 +4,9 @@ from sqlalchemy.sql import func
 from app.db.database import Base
 
 
-class Property(Base):
+from app.models.mixins import TenantMixin
+
+class Property(Base, TenantMixin):
     """Master property information"""
     
     __tablename__ = "properties"
@@ -39,6 +41,9 @@ class Property(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     created_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    
+    # SaaS: Organization relationship handled by TenantMixin
+    # Properties back_populates needs to be handled in Organization model or here if Mixin is generic
     
     # Relationships (lazy loading to avoid issues with tests and missing tables)
     financial_periods = relationship("FinancialPeriod", back_populates="property", cascade="all, delete-orphan", lazy="noload")

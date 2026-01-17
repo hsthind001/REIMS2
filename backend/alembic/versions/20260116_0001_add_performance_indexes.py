@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20260116_0001_perf_indexes'
-down_revision = '20260111_0001_add_ai_insights_embeddings_table'
+down_revision = '20260111_0001_ai_embeddings'
 branch_labels = None
 depends_on = None
 
@@ -30,7 +30,7 @@ def upgrade() -> None:
     # Property code is the primary lookup field for all property queries
     op.create_index(
         'ix_property_property_code',
-        'property',
+        'properties',
         ['property_code'],
         unique=False,
         if_not_exists=True
@@ -39,7 +39,7 @@ def upgrade() -> None:
     # Property status for filtering active/inactive properties
     op.create_index(
         'ix_property_status',
-        'property',
+        'properties',
         ['status'],
         unique=False,
         if_not_exists=True
@@ -51,7 +51,7 @@ def upgrade() -> None:
     # Extraction status is frequently filtered (pending, processing, completed, failed)
     op.create_index(
         'ix_document_upload_extraction_status',
-        'document_upload',
+        'document_uploads',
         ['extraction_status'],
         unique=False,
         if_not_exists=True
@@ -60,7 +60,7 @@ def upgrade() -> None:
     # Composite index for common query pattern: get documents for a property/period
     op.create_index(
         'ix_document_upload_property_period_status',
-        'document_upload',
+        'document_uploads',
         ['property_id', 'period_id', 'extraction_status'],
         unique=False,
         if_not_exists=True
@@ -69,7 +69,7 @@ def upgrade() -> None:
     # Document type filtering
     op.create_index(
         'ix_document_upload_document_type',
-        'document_upload',
+        'document_uploads',
         ['document_type'],
         unique=False,
         if_not_exists=True
@@ -117,9 +117,9 @@ def upgrade() -> None:
 
     # Account category for filtering revenue vs expenses
     op.create_index(
-        'ix_income_statement_data_account_category',
+        'ix_income_statement_data_line_category',
         'income_statement_data',
-        ['account_category'],
+        ['line_category'],
         unique=False,
         if_not_exists=True
     )
@@ -149,39 +149,14 @@ def upgrade() -> None:
     # ==========================================================================
     # ANOMALY DETECTION INDEXES
     # ==========================================================================
-    # Status filtering for active anomalies
-    op.create_index(
-        'ix_anomaly_detection_status',
-        'anomaly_detection',
-        ['status'],
-        unique=False,
-        if_not_exists=True
-    )
 
-    # Property-based anomaly lookups
-    op.create_index(
-        'ix_anomaly_detection_property_id',
-        'anomaly_detection',
-        ['property_id'],
-        unique=False,
-        if_not_exists=True
-    )
-
-    # Composite for property + status queries
-    op.create_index(
-        'ix_anomaly_detection_property_status',
-        'anomaly_detection',
-        ['property_id', 'status'],
-        unique=False,
-        if_not_exists=True
-    )
 
     # ==========================================================================
     # COMMITTEE ALERT INDEXES
     # ==========================================================================
     op.create_index(
         'ix_committee_alert_status',
-        'committee_alert',
+        'committee_alerts',
         ['status'],
         unique=False,
         if_not_exists=True
@@ -189,7 +164,7 @@ def upgrade() -> None:
 
     op.create_index(
         'ix_committee_alert_property_id',
-        'committee_alert',
+        'committee_alerts',
         ['property_id'],
         unique=False,
         if_not_exists=True
@@ -212,7 +187,7 @@ def upgrade() -> None:
     # Year/month lookups for temporal queries
     op.create_index(
         'ix_financial_period_year_month',
-        'financial_period',
+        'financial_periods',
         ['period_year', 'period_month'],
         unique=False,
         if_not_exists=True
@@ -221,22 +196,20 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Remove all indexes in reverse order
-    op.drop_index('ix_financial_period_year_month', table_name='financial_period', if_exists=True)
+    op.drop_index('ix_financial_period_year_month', table_name='financial_periods', if_exists=True)
     op.drop_index('ix_financial_metrics_property_period', table_name='financial_metrics', if_exists=True)
-    op.drop_index('ix_committee_alert_property_id', table_name='committee_alert', if_exists=True)
-    op.drop_index('ix_committee_alert_status', table_name='committee_alert', if_exists=True)
-    op.drop_index('ix_anomaly_detection_property_status', table_name='anomaly_detection', if_exists=True)
-    op.drop_index('ix_anomaly_detection_property_id', table_name='anomaly_detection', if_exists=True)
-    op.drop_index('ix_anomaly_detection_status', table_name='anomaly_detection', if_exists=True)
+    op.drop_index('ix_committee_alert_property_id', table_name='committee_alerts', if_exists=True)
+    op.drop_index('ix_committee_alert_status', table_name='committee_alerts', if_exists=True)
+    op.drop_index('ix_anomaly_detection_property_id', table_name='anomaly_detections', if_exists=True)
     op.drop_index('ix_rent_roll_data_property_period', table_name='rent_roll_data', if_exists=True)
     op.drop_index('ix_cash_flow_data_property_period', table_name='cash_flow_data', if_exists=True)
-    op.drop_index('ix_income_statement_data_account_category', table_name='income_statement_data', if_exists=True)
+    op.drop_index('ix_income_statement_data_line_category', table_name='income_statement_data', if_exists=True)
     op.drop_index('ix_income_statement_data_account_code', table_name='income_statement_data', if_exists=True)
     op.drop_index('ix_income_statement_data_property_period', table_name='income_statement_data', if_exists=True)
     op.drop_index('ix_balance_sheet_data_account_code', table_name='balance_sheet_data', if_exists=True)
     op.drop_index('ix_balance_sheet_data_property_period', table_name='balance_sheet_data', if_exists=True)
-    op.drop_index('ix_document_upload_document_type', table_name='document_upload', if_exists=True)
-    op.drop_index('ix_document_upload_property_period_status', table_name='document_upload', if_exists=True)
-    op.drop_index('ix_document_upload_extraction_status', table_name='document_upload', if_exists=True)
-    op.drop_index('ix_property_status', table_name='property', if_exists=True)
-    op.drop_index('ix_property_property_code', table_name='property', if_exists=True)
+    op.drop_index('ix_document_upload_document_type', table_name='document_uploads', if_exists=True)
+    op.drop_index('ix_document_upload_property_period_status', table_name='document_uploads', if_exists=True)
+    op.drop_index('ix_document_upload_extraction_status', table_name='document_uploads', if_exists=True)
+    op.drop_index('ix_property_status', table_name='properties', if_exists=True)
+    op.drop_index('ix_property_property_code', table_name='properties', if_exists=True)

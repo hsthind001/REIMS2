@@ -6,6 +6,21 @@
 
 // ===== User & Authentication =====
 
+export interface Organization {
+  id: number;
+  name: string;
+  slug: string;
+  stripe_customer_id?: string;
+  subscription_status?: string;
+}
+
+export interface OrganizationMember {
+  id: number;
+  organization_id: number;
+  role: string;
+  organization: Organization;
+}
+
 export interface User {
   id: number;
   email: string;
@@ -13,12 +28,14 @@ export interface User {
   is_active: boolean;
   is_superuser: boolean;
   created_at: string;
+  organization_memberships: OrganizationMember[];
 }
 
 export interface UserCreate {
   email: string;
   username: string;
   password: string;
+  organization_name?: string;
 }
 
 export interface UserLogin {

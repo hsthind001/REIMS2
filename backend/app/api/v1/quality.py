@@ -13,10 +13,11 @@ from app.db.database import get_db
 from app.models.document_upload import DocumentUpload
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
+from app.models.organization import Organization
+from app.api.dependencies import get_current_organization
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
-from app.models.rent_roll_data import RentRollData
 from app.models.rent_roll_data import RentRollData
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.core.redis_client import cached
@@ -239,7 +240,8 @@ async def get_document_quality(
 @cached(key_prefix="quality:summary", ttl=300)
 async def get_quality_summary(
     property_code: Optional[str] = Query(None, description="Filter by property code"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get aggregate quality summary across all documents
@@ -258,10 +260,29 @@ async def get_quality_summary(
         
         if property_code:
             property_obj = db.query(Property).filter(
-                Property.property_code == property_code
+                Property.property_code == property_code,
+                Property.organization_id == current_org.id
             ).first()
             if property_obj:
                 query = query.filter(DocumentUpload.property_id == property_obj.id)
+            else:
+                 # If property not found or belongs to another org, return empty
+                 return {
+                    "total_documents": 0,
+                    "total_records": 0,
+                    "overall_match_rate": 0.0,
+                    "overall_avg_confidence": 0.0,
+                    "critical_count": 0,
+                    "warning_count": 0,
+                    "info_count": 0,
+                    "needs_review_count": 0,
+                    "by_document_type": {}
+                }
+        else:
+             # Filter by all properties in organization
+             query = query.join(Property).filter(
+                 Property.organization_id == current_org.id
+             )
         
         # Get all completed uploads
         uploads = query.filter(
@@ -401,7 +422,8 @@ async def get_quality_summary(
 @router.get("/quality/statistics/yearly")
 @cached(key_prefix="quality:stats:yearly", ttl=3600)
 async def get_yearly_statistics(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get yearly statistics for match rates and confidence scores
@@ -449,6 +471,12 @@ async def get_yearly_statistics(
             sql_func.sum(sql_func.cast(BalanceSheetData.needs_review, Integer)).label('needs_review_count')
         ).join(
             FinancialPeriod, BalanceSheetData.period_id == FinancialPeriod.id
+        ).join(
+            DocumentUpload, BalanceSheetData.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         ).group_by(
             FinancialPeriod.period_year
         ).all()
@@ -475,6 +503,12 @@ async def get_yearly_statistics(
             sql_func.sum(sql_func.cast(IncomeStatementData.needs_review, Integer)).label('needs_review_count')
         ).join(
             FinancialPeriod, IncomeStatementData.period_id == FinancialPeriod.id
+        ).join(
+            DocumentUpload, IncomeStatementData.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         ).group_by(
             FinancialPeriod.period_year
         ).all()
@@ -501,6 +535,12 @@ async def get_yearly_statistics(
             sql_func.sum(sql_func.cast(CashFlowData.needs_review, Integer)).label('needs_review_count')
         ).join(
             FinancialPeriod, CashFlowData.period_id == FinancialPeriod.id
+        ).join(
+            DocumentUpload, CashFlowData.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         ).group_by(
             FinancialPeriod.period_year
         ).all()
@@ -531,6 +571,12 @@ async def get_yearly_statistics(
             sql_func.sum(sql_func.cast(RentRollData.needs_review, Integer)).label('needs_review_count')
         ).join(
             FinancialPeriod, RentRollData.period_id == FinancialPeriod.id
+        ).join(
+            DocumentUpload, RentRollData.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         ).group_by(
             FinancialPeriod.period_year
         ).all()

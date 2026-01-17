@@ -8,12 +8,22 @@ from app.schemas.user import UserCreate, UserUpdate, UserResponse
 router = APIRouter()
 
 
+from app.models.organization import OrganizationMember, Organization
+from app.api.dependencies import get_current_organization
+
 @router.get("/users", response_model=List[UserResponse])
-def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_users(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
+):
     """
-    Retrieve all users
+    Retrieve all users in the current organization
     """
-    users = db.query(UserModel).offset(skip).limit(limit).all()
+    users = db.query(UserModel).join(OrganizationMember).filter(
+        OrganizationMember.organization_id == current_org.id
+    ).offset(skip).limit(limit).all()
     return users
 
 

@@ -617,7 +617,8 @@ class DocumentService:
                 'last_modified': stat.last_modified.isoformat(),
                 'etag': stat.etag
             }
-        except:
+        except Exception:
+            # Object doesn't exist or MinIO error
             return None
     
     def _get_next_version(

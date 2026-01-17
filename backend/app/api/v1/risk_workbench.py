@@ -21,6 +21,8 @@ from app.models.document_upload import DocumentUpload
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.chart_of_accounts import ChartOfAccounts
+from app.models.organization import Organization
+from app.api.dependencies import get_current_organization
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +101,12 @@ async def get_unified_risk_items(
     page_size: int = Query(50, ge=1, le=1000),
     sort_by: str = Query("created_at", description="Column to sort by"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get unified view of anomalies, alerts, and review items.
+    Scoped to current organization.
     
     Returns columns: type, severity, property, age, impact, status, assignee, due_date
     """
@@ -146,6 +150,8 @@ async def get_unified_risk_items(
             DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id
         ).join(
             Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         ).outerjoin(
             ChartOfAccounts, ChartOfAccounts.account_code == AnomalyDetection.field_name
         )
@@ -171,6 +177,8 @@ async def get_unified_risk_items(
             CommitteeAlert.description.label('alert_description')
         ).join(
             Property, CommitteeAlert.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         )
         
         # Apply filters

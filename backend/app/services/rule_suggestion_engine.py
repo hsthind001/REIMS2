@@ -57,6 +57,6 @@ class RuleSuggestionEngine:
         try:
             float(value.replace(",", "").replace("$", ""))
             return True
-        except:
+        except (ValueError, AttributeError):
             return False
 

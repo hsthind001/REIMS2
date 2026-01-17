@@ -95,8 +95,8 @@ class VectorStoreManager:
             try:
                 self.client.get_collection(collection_name)
                 logger.debug(f"Collection {collection_name} already exists")
-            except:
-                # Create collection
+            except Exception:
+                # Collection doesn't exist, create it
                 self.client.create_collection(
                     collection_name=collection_name,
                     vectors_config=VectorParams(

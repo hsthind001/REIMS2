@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 from sqlalchemy.orm import Session
+from PIL import Image
 
 from app.core.config import settings
 from app.core.feature_flags import FeatureFlags

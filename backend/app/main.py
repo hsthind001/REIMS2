@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 import logging
 from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, self_learning, extraction_learning, market_intelligence
+from app.api.v2 import router as v2_router, documents as documents_v2
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
 import app.models  # noqa: F401
@@ -97,7 +98,7 @@ app.add_middleware(
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Cookie"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Cookie", "X-Organization-ID"],
     expose_headers=["Set-Cookie"],
 )
 
@@ -188,6 +189,12 @@ app.include_router(model_optimization.router, prefix=settings.API_V1_STR, tags=[
 # Portfolio Analytics (Phase 7: Cross-Property Intelligence)
 app.include_router(portfolio_analytics.router, prefix=settings.API_V1_STR, tags=["portfolio-analytics"])
 
+# ============================================================================
+# API v2 Routes (Standardized responses, improved RBAC, better error handling)
+# ============================================================================
+app.include_router(v2_router.router, tags=["v2-core"])
+app.include_router(documents_v2.router, prefix="/api/v2", tags=["v2-documents"])
+
 
 @app.get("/")
 async def root():
@@ -195,5 +202,7 @@ async def root():
     return {
         "message": "Welcome to REIMS API",
         "docs": "/docs",
+        "v1_api": settings.API_V1_STR,
+        "v2_api": "/api/v2",
         "openapi": f"{settings.API_V1_STR}/openapi.json"
     }

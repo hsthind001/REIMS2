@@ -106,12 +106,24 @@ class Settings(BaseSettings):
 
     # Session security settings
     SESSION_HTTPS_ONLY: bool = True  # True in production
-    SESSION_SAME_SITE: str = "strict"  # "strict", "lax", or "none"
+    SESSION_SAME_SITE: str = "lax"  # "strict", "lax", or "none"
     SESSION_MAX_AGE_SECONDS: int = 86400  # 1 day default
 
     @field_validator('SECRET_KEY', mode='before')
     @classmethod
     def validate_secret_key(cls, v):
+        # Prioritize the value passed by Pydantic (from .env or env var)
+        if isinstance(v, str) and v:
+            if len(v) < 32:
+                 # Warning only in dev? Or error? Config says raise ValueError.
+                 # Let's keep existing logic but apply to v
+                 if len(v) < 32:
+                    raise ValueError(
+                        "SECRET_KEY must be at least 32 characters long for security"
+                    )
+            return v
+            
+        # Fallback to os.environ if v is empty
         env_key = os.environ.get('SECRET_KEY')
         if env_key:
             # Validate key strength
@@ -124,6 +136,7 @@ class Settings(BaseSettings):
         # Check if we're in production
         environment = os.environ.get('ENVIRONMENT', 'development').lower()
         if environment == 'production':
+            # ... (existing production check)
             raise ValueError(
                 "SECURITY ERROR: SECRET_KEY must be set via environment variable in production. "
                 "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
@@ -141,6 +154,13 @@ class Settings(BaseSettings):
     @field_validator('SESSION_HTTPS_ONLY', mode='before')
     @classmethod
     def get_session_https_only(cls, v):
+        # Prioritize the value passed by Pydantic (from .env or env var)
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() == 'true'
+            
+        # Fallback to environment variable if v is None/Empty for some reason
         # Default to False only in development
         environment = os.environ.get('ENVIRONMENT', 'development').lower()
         if environment == 'development':

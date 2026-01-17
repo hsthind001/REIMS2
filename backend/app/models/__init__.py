@@ -112,6 +112,9 @@ from app.models.market_intelligence import MarketIntelligence
 from app.models.market_data_lineage import MarketDataLineage, ForecastModel
 from app.models.ai_insights_embedding import AIInsightsEmbedding
 
+# SaaS Models
+from app.models.organization import Organization, OrganizationMember
+
 __all__ = [
     "User",
     "ExtractionLog",
@@ -223,4 +226,7 @@ __all__ = [
     "MarketDataLineage",
     "ForecastModel",
     "AIInsightsEmbedding",
+    # SaaS
+    "Organization",
+    "OrganizationMember",
 ]

@@ -8,8 +8,9 @@ from typing import List, Optional
 from datetime import datetime, date
 import json
 
+from app.models.organization import Organization
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
 from app.services.anomaly_detection_service import AnomalyDetectionService
 from app.services.xai_explanation_service import XAIExplanationService
@@ -84,10 +85,12 @@ class AnomalyDetectionRequest(BaseModel):
 async def trigger_anomaly_detection(
     upload_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Manually trigger anomaly detection for an existing document upload.
+    Restricted to documents owned by the current organization.
     
     Useful for:
     - Re-running anomaly detection after threshold changes
@@ -108,6 +111,15 @@ async def trigger_anomaly_detection(
     if not upload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload {upload_id} not found"
+        )
+    
+    # Check tenancy
+    from app.models.property import Property
+    upload_property = db.query(Property).filter(Property.id == upload.property_id).first()
+    if not upload_property or upload_property.organization_id != current_org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, # 404 to hide existence
             detail=f"Upload {upload_id} not found"
         )
     
@@ -192,10 +204,12 @@ async def list_anomalies(
     document_type: Optional[str] = Query(None, description="Filter by document type (income_statement, balance_sheet, cash_flow, rent_roll)"),
     year: Optional[int] = Query(None, description="Filter by period year (e.g., 2023)"),
     limit: int = Query(100, le=1000),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     List detected anomalies with optional filters.
+    Scoped to current organization.
     
     Query Parameters:
     - property_id: Filter by property
@@ -247,9 +261,10 @@ async def list_anomalies(
         LEFT JOIN chart_of_accounts coa ON coa.account_code = ad.field_name
         LEFT JOIN financial_metrics fm ON fm.property_id = p.id AND fm.period_id = fp.id
         WHERE 1=1
+        AND p.organization_id = :org_id
     """
     
-    params = {}
+    params = {'org_id': current_org.id}
     
     if property_id:
         sql += " AND du.property_id = :property_id"
@@ -328,7 +343,8 @@ async def list_anomalies(
 async def get_anomaly(
     anomaly_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """Get detailed information about a specific anomaly."""
     from sqlalchemy.orm import load_only
@@ -396,7 +412,8 @@ async def get_anomaly(
 async def get_anomaly_detailed(
     anomaly_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get comprehensive detailed information about a specific anomaly.
@@ -465,6 +482,23 @@ async def get_anomaly_detailed(
     document_type = metadata.get("document_type")
     if document_type is None and document:
         document_type = document.document_type
+
+    # Enforce tenancy
+    from app.models.property import Property
+    if property_id:
+        prop = db.query(Property).filter(Property.id == property_id).first()
+        if not prop or prop.organization_id != current_org.id:
+             raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Anomaly {anomaly_id} not found"
+            )
+    elif document:
+        prop = db.query(Property).filter(Property.id == document.property_id).first()
+        if not prop or prop.organization_id != current_org.id:
+             raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Anomaly {anomaly_id} not found"
+            )
 
     account_code = metadata.get("account_code") or anomaly.field_name
     account_name = metadata.get("account_name")

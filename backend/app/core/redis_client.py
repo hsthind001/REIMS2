@@ -14,6 +14,7 @@ import json
 import logging
 from typing import Any, Optional
 from functools import wraps
+import inspect
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -178,13 +179,13 @@ def invalidate_portfolio_cache():
 
 def cached(key_prefix: str, ttl: int = 300):
     """
-    Decorator for caching function results
+    Decorator for caching function results - supports both sync and async functions
 
     Usage:
         @cached("portfolio:summary", ttl=300)
-        def get_portfolio_summary(skip: int, limit: int):
+        async def get_portfolio_summary(skip: int, limit: int):
             # Key will be: portfolio:summary:{skip}:{limit}
-            return expensive_query()
+            return await expensive_query()
 
     Args:
         key_prefix: Prefix for cache key
@@ -194,33 +195,61 @@ def cached(key_prefix: str, ttl: int = 300):
         Decorated function with caching
     """
     def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Build cache key from function name and arguments
-            # Convert args/kwargs to string representation
-            args_str = ":".join(str(arg) for arg in args)
-            kwargs_str = ":".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
-            cache_key = f"{key_prefix}:{args_str}:{kwargs_str}".rstrip(":")
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                # Build cache key from function name and arguments
+                # Convert args/kwargs to string representation
+                args_str = ":".join(str(arg) for arg in args)
+                kwargs_str = ":".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
+                cache_key = f"{key_prefix}:{args_str}:{kwargs_str}".rstrip(":")
 
-            # Try cache first
-            cached_result = cache_get(cache_key)
-            if cached_result is not None:
-                logger.debug(f"Cache HIT: {cache_key}")
-                return cached_result
+                # Try cache first
+                cached_result = cache_get(cache_key)
+                if cached_result is not None:
+                    logger.debug(f"Cache HIT: {cache_key}")
+                    return cached_result
 
-            # Cache miss - execute function
-            logger.debug(f"Cache MISS: {cache_key}")
-            result = func(*args, **kwargs)
+                # Cache miss - execute function
+                logger.debug(f"Cache MISS: {cache_key}")
+                result = await func(*args, **kwargs)
 
-            # Store in cache
-            cache_set(cache_key, result, ttl)
+                # Store in cache
+                cache_set(cache_key, result, ttl)
 
-            return result
+                return result
+            
+            # Add cache invalidation method
+            wrapper.invalidate_cache = lambda: cache_delete_pattern(f"{key_prefix}:*")
+            return wrapper
+        else:
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                # Build cache key from function name and arguments
+                # Convert args/kwargs to string representation
+                args_str = ":".join(str(arg) for arg in args)
+                kwargs_str = ":".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
+                cache_key = f"{key_prefix}:{args_str}:{kwargs_str}".rstrip(":")
 
-        # Add cache invalidation method
-        wrapper.invalidate_cache = lambda: cache_delete_pattern(f"{key_prefix}:*")
+                # Try cache first
+                cached_result = cache_get(cache_key)
+                if cached_result is not None:
+                    logger.debug(f"Cache HIT: {cache_key}")
+                    return cached_result
 
-        return wrapper
+                # Cache miss - execute function
+                logger.debug(f"Cache MISS: {cache_key}")
+                result = func(*args, **kwargs)
+
+                # Store in cache
+                cache_set(cache_key, result, ttl)
+
+                return result
+
+            # Add cache invalidation method
+            wrapper.invalidate_cache = lambda: cache_delete_pattern(f"{key_prefix}:*")
+            return wrapper
+            
     return decorator
 
 

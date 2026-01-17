@@ -6,6 +6,7 @@
  */
 
 import { extractErrorMessage } from '../utils/errorHandling';
+import { useAuthStore } from '../store/authStore';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_PREFIX = '/api/v1';
@@ -94,12 +95,20 @@ export class ApiClient {
     
     const defaultOptions: RequestInit = {
       credentials: 'include', // Important for session cookies
+      redirect: 'follow', // Follow redirects (307 from FastAPI trailing slash)
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
       ...options,
     };
+
+    // Inject Organization ID if available
+    const currentOrg = useAuthStore.getState().currentOrganization;
+    if (currentOrg) {
+        // @ts-ignore
+        defaultOptions.headers['X-Organization-ID'] = currentOrg.id.toString();
+    }
 
     let lastError: ApiError | null = null;
 
@@ -111,11 +120,11 @@ export class ApiClient {
         if (!response.ok) {
           let error: ApiError;
           
-          try {
+            try {
             const errorData = await response.json();
             const categorized = this.categorizeError(response.status, errorData);
             error = {
-              message: errorData.detail || errorData.message || categorized.message,
+              message: extractErrorMessage(errorData.detail || errorData.message || categorized.message),
               status: response.status,
               detail: errorData,
               category: categorized.category,
@@ -124,7 +133,7 @@ export class ApiClient {
           } catch {
             const categorized = this.categorizeError(response.status);
             error = {
-              message: response.statusText || categorized.message,
+              message: categorized.message,
               status: response.status,
               category: categorized.category,
               retryable: categorized.retryable,

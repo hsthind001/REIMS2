@@ -123,7 +123,8 @@ async def websocket_extraction_status(websocket: WebSocket, upload_id: int):
                 "status": "error",
                 "error": str(e)
             })
-        except:
+        except (WebSocketDisconnect, RuntimeError):
+            # Client already disconnected, ignore send failure
             pass
     finally:
         db.close()
@@ -268,7 +269,8 @@ async def websocket_batch_job_status(websocket: WebSocket, job_id: int):
                 "status": "error",
                 "error": str(e)
             })
-        except:
+        except (WebSocketDisconnect, RuntimeError):
+            # Client already disconnected, ignore send failure
             pass
     finally:
         # Remove this connection from active connections

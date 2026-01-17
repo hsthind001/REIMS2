@@ -23,7 +23,8 @@ export class PropertyService {
     limit?: number;
     status?: string;
   }): Promise<Property[]> {
-    const properties = await api.get<Property[]>('/properties', params);
+    // Use trailing slash to avoid 307 redirect which can cause credential issues
+    const properties = await api.get<Property[]>('/properties/', params);
     return properties.map((property) => this.withDisplayName(property));
   }
 
@@ -39,7 +40,8 @@ export class PropertyService {
    * Create new property
    */
   async createProperty(propertyData: PropertyCreate): Promise<Property> {
-    const property = await api.post<Property>('/properties', propertyData);
+    // Use trailing slash to avoid 307 redirect
+    const property = await api.post<Property>('/properties/', propertyData);
     return this.withDisplayName(property);
   }
 

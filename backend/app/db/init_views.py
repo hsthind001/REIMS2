@@ -76,7 +76,8 @@ def create_database_views(engine: Engine) -> dict:
                         # Rollback transaction on error
                         try:
                             conn.rollback()
-                        except:
+                        except Exception:
+                            # Rollback may fail if connection is invalid; log and continue
                             pass
                         error_msg = f"Failed to create view {view_name if 'view_name' in locals() else 'unknown'}: {str(e)[:100]}"
                         errors.append(error_msg)

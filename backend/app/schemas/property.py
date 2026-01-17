@@ -86,6 +86,7 @@ class Property(PropertyBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    organization_id: Optional[int] = None
 
     class Config:
         from_attributes = True

@@ -396,7 +396,8 @@ class ExitStrategyService:
         try:
             irr = np.irr(cash_flows)
             return float(irr) if not np.isnan(irr) else 0.0
-        except:
+        except (ValueError, RuntimeWarning, FloatingPointError):
+            # IRR calculation can fail with invalid cash flows
             return 0.0
 
     def _calculate_npv(self, cash_flows: List[float], discount_rate: Decimal) -> float:
@@ -408,7 +409,8 @@ class ExitStrategyService:
         try:
             npv = np.npv(float(discount_rate), cash_flows)
             return float(npv)
-        except:
+        except (ValueError, TypeError, ZeroDivisionError):
+            # NPV calculation can fail with invalid inputs
             return 0.0
 
     def _calculate_mortgage_payment(

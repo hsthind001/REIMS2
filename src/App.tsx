@@ -13,6 +13,7 @@ import { propertyService } from './lib/property'
 import { documentService } from './lib/document'
 import { BottomNav } from './components/ui/BottomNav'
 import './components/ui/BottomNav.css'
+import { OrganizationSwitcher } from './components/OrganizationSwitcher';
 
 // Lazy load pages for better initial bundle size
 const InsightsHub = lazy(() => import('./pages/InsightsHub'))
@@ -55,7 +56,7 @@ const PageLoader = () => (
   </div>
 )
 
-type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register'
+type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register' | 'ai'
 
 function AppContent() {
   console.log('🎨 AppContent: Component rendering');
@@ -111,6 +112,15 @@ function AppContent() {
       }
       if (routeName.startsWith('anomaly-details') && currentPage !== 'risk') {
         setCurrentPage('risk')
+      }
+      if (routeName === 'nlq-search' && currentPage !== 'ai') {
+        setCurrentPage('ai')
+      }
+      if (routeName === 'register' && currentPage !== 'register') {
+        setCurrentPage('register')
+      }
+      if (routeName === 'login' && currentPage !== 'login') {
+        setCurrentPage('login')
       }
     }
 
@@ -271,7 +281,10 @@ function AppContent() {
           if (hashRoute === 'alert-rules') {
             return <AlertRules />
           }
+
           return <RiskIntelligence />
+        case 'ai':
+          return <NaturalLanguageQueryNew />
         default:
           return <InsightsHub />
       }
@@ -285,12 +298,12 @@ function AppContent() {
   }
 
   const commandActions = [
-    { id: 'nav-dashboard', label: 'Go to Insights Hub', section: 'Navigation', shortcut: 'Ctrl/Cmd + 1', handler: () => setCurrentPage('dashboard') },
-    { id: 'nav-properties', label: 'Go to Properties', section: 'Navigation', shortcut: 'Ctrl/Cmd + 2', handler: () => setCurrentPage('properties') },
-    { id: 'nav-financials', label: 'Go to Financials', section: 'Navigation', shortcut: 'Ctrl/Cmd + 3', handler: () => setCurrentPage('reports') },
-    { id: 'nav-quality', label: 'Go to Quality Control', section: 'Navigation', shortcut: 'Ctrl/Cmd + 4', handler: () => setCurrentPage('operations') },
-    { id: 'nav-admin', label: 'Go to Administration', section: 'Navigation', shortcut: 'Ctrl/Cmd + 5', handler: () => setCurrentPage('users') },
-    { id: 'nav-risk', label: 'Go to Risk Intelligence', section: 'Navigation', shortcut: 'Ctrl/Cmd + 6', handler: () => setCurrentPage('risk') },
+    { id: 'nav-dashboard', label: 'Go to Insights Hub', section: 'Navigation', shortcut: 'Ctrl/Cmd + 1', handler: () => { setCurrentPage('dashboard'); window.location.hash = ''; } },
+    { id: 'nav-properties', label: 'Go to Properties', section: 'Navigation', shortcut: 'Ctrl/Cmd + 2', handler: () => { setCurrentPage('properties'); window.location.hash = ''; } },
+    { id: 'nav-financials', label: 'Go to Financials', section: 'Navigation', shortcut: 'Ctrl/Cmd + 3', handler: () => { setCurrentPage('reports'); window.location.hash = ''; } },
+    { id: 'nav-quality', label: 'Go to Quality Control', section: 'Navigation', shortcut: 'Ctrl/Cmd + 4', handler: () => { setCurrentPage('operations'); window.location.hash = ''; } },
+    { id: 'nav-admin', label: 'Go to Administration', section: 'Navigation', shortcut: 'Ctrl/Cmd + 5', handler: () => { setCurrentPage('users'); window.location.hash = ''; } },
+    { id: 'nav-risk', label: 'Go to Risk Intelligence', section: 'Navigation', shortcut: 'Ctrl/Cmd + 6', handler: () => { setCurrentPage('risk'); window.location.hash = ''; } },
     { id: 'nav-ai', label: 'Open AI Assistant', section: 'Navigation', shortcut: 'Ctrl/Cmd + 7', handler: () => { window.location.hash = 'nlq-search'; setHashRoute('nlq-search'); } },
     { id: 'nav-financials-variance', label: 'Open Variance Analysis', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'variance'; setHashRoute('variance'); } },
     { id: 'nav-financials-statements', label: 'Open Financial Statements', section: 'Financials', handler: () => { setCurrentPage('reports'); window.location.hash = 'statements'; setHashRoute('statements'); } },
@@ -307,6 +320,7 @@ function AppContent() {
   const handleLogout = async () => {
     try {
       await logout()
+      window.location.hash = ''
       setCurrentPage('login')
     } catch (err) {
       console.error('Logout failed:', err)
@@ -337,8 +351,11 @@ function AppContent() {
           >
             {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
           </Button>
+
+
           {isAuthenticated ? (
             <>
+              <OrganizationSwitcher />
               <NotificationCenter />
               <span className="user-info">👤 {user?.username}</span>
               <button className="btn-logout" onClick={handleLogout}>Logout</button>
@@ -347,13 +364,13 @@ function AppContent() {
             <>
               <button 
                 className={`btn-link ${currentPage === 'login' ? 'active' : ''}`}
-                onClick={() => setCurrentPage('login')}
+                onClick={() => { setCurrentPage('login'); window.location.hash = 'login'; }}
               >
                 Login
               </button>
               <button 
                 className={`btn-link ${currentPage === 'register' ? 'active' : ''}`}
-                onClick={() => setCurrentPage('register')}
+                onClick={() => { setCurrentPage('register'); window.location.hash = 'register'; }}
               >
                 Register
               </button>
@@ -376,33 +393,41 @@ function AppContent() {
                 (route.path === '/quality' && currentPage === 'operations') ||
                 (route.path === '/admin' && currentPage === 'users') ||
                 (route.path === '/risk' && currentPage === 'risk') ||
-                (route.path === '/ai' && hashRoute === 'nlq-search');
+                (route.path === '/ai' && currentPage === 'ai');
 
-              const handleClick = () => {
+          const handleClick = () => {
                 switch (route.path) {
                   case '/':
                     setCurrentPage('dashboard');
+                    window.location.hash = '';
                     break;
                   case '/properties':
                     setCurrentPage('properties');
+                    window.location.hash = '';
                     break;
                   case '/financials':
                     setCurrentPage('reports');
+                    window.location.hash = '';
                     break;
                   case '/quality':
                     setCurrentPage('operations');
+                    window.location.hash = '';
                     break;
                   case '/admin':
                     setCurrentPage('users');
+                    window.location.hash = '';
                     break;
                   case '/risk':
                     setCurrentPage('risk');
+                    window.location.hash = '';
                     break;
                   case '/ai':
+                    setCurrentPage('ai');
                     window.location.hash = 'nlq-search';
                     break;
                   default:
                     setCurrentPage('dashboard');
+                    window.location.hash = '';
                 }
               };
 
@@ -499,10 +524,6 @@ function AppContent() {
           ) : hashRoute === 'audit-history' ? (
             <Suspense fallback={<PageLoader />}>
               <AuditHistoryDashboard />
-            </Suspense>
-          ) : hashRoute === 'nlq-search' ? (
-            <Suspense fallback={<PageLoader />}>
-              <NaturalLanguageQueryNew />
             </Suspense>
           ) : hashRoute === 'anomaly-dashboard' ? (
             <Suspense fallback={<PageLoader />}>

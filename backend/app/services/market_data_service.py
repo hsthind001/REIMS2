@@ -375,9 +375,11 @@ class MarketDataService:
                             response.json()  # Validate JSON response
                             logger.info(f"Latest Census ACS5 vintage detected: {test_year}")
                             return test_year
-                        except:
+                        except (ValueError, TypeError):
+                            # Invalid JSON response, try next year
                             continue
-                except:
+                except (requests.RequestException, requests.Timeout):
+                    # Network error, try next year
                     continue
 
             # Fallback to a safe default (2022 is stable and widely available)
@@ -590,7 +592,8 @@ class MarketDataService:
                                 confidence=90.0,
                                 extra_metadata={'state': state_fips, 'county': county_fips}
                             )
-                except:
+                except (requests.RequestException, ValueError, KeyError):
+                    # Network error or invalid data, try next year
                     continue
 
             logger.warning("Could not fetch recent population estimates")

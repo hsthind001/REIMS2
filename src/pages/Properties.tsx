@@ -15,6 +15,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { usePortfolioStore } from '../store';
+import { useAuth } from '../components/AuthContext';
 import { 
   Button,
   Card,
@@ -184,6 +185,8 @@ export default function Properties() {
     clearComparison
   } = usePortfolioStore();
 
+  const { logout } = useAuth();
+
   // Local state - Non-persistent
   const [properties, setProperties] = useState<Property[]>([]);
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
@@ -195,8 +198,8 @@ export default function Properties() {
   const [loadingMarketIntel, setLoadingMarketIntel] = useState(false);
   const [tenantMatches, setTenantMatches] = useState<TenantMatch[]>([]);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
-  const [, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [financialStatements, setFinancialStatements] = useState<any>(null);
   const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow' | 'mortgage'>('income');
@@ -210,6 +213,8 @@ export default function Properties() {
   const [tenantDetails, setTenantDetails] = useState<any[]>([]);
   const [loadingTenants, setLoadingTenants] = useState(false);
   const [alertCounts, setAlertCounts] = useState<Map<number, number>>(new Map());
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Convert selectedForComparison Set to comparisonSet for backward compatibility
   const comparisonSet = selectedForComparison;
@@ -336,19 +341,29 @@ export default function Properties() {
 
   const loadProperties = async () => {
     try {
-      setLoading(true);
+      setIsLoading(true);
+      setLoadError(null);
       const data = await propertyService.getAllProperties();
       setProperties(data);
       if (data.length > 0 && !selectedProperty) {
         setSelectedProperty(data[0]);
+      } else if (data.length === 0) {
+        setSelectedProperty(null);
       }
 
       // Load metrics for all properties for sorting
-      loadAllPropertyMetrics(data);
-    } catch (err) {
+      await loadAllPropertyMetrics(data);
+    } catch (err: any) {
       console.error('Failed to load properties:', err);
+      if (err?.status === 401) {
+        setLoadError('Session expired. Please sign in again.');
+      } else {
+        setLoadError(err?.message || 'Unable to load properties. Please try again.');
+      }
+      setProperties([]);
+      setSelectedProperty(null);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -371,43 +386,33 @@ export default function Properties() {
 
         setPropertyMetricsMap(metricsMap);
         
-        // Fetch DSCR for all properties using the actual API endpoint
-        const dscrMap = new Map<number, number | null>();
-        const dec2024PeriodIdMap: Record<string, number> = {
-          'ESP001': 2,
-          'HMND001': 4,
-          'TCSH001': 9,
-          'WEND001': 6
-        };
+        setPropertyMetricsMap(metricsMap);
         
-        // Fetch DSCR for each property in parallel
-        const dscrPromises = props.map(async (prop) => {
-          try {
-            const periodIdToUse = dec2024PeriodIdMap[prop.property_code] || metricsMap.get(prop.id)?.period_id;
-            const periodIdParam = periodIdToUse ? `?financial_period_id=${periodIdToUse}` : '';
-            
-            const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/properties/${prop.id}/dscr/calculate${periodIdParam}`, {
-              method: 'POST',
-              credentials: 'include'
-            });
-            
-            if (dscrResponse.ok) {
-              const dscrData = await dscrResponse.json();
-              if (dscrData.success && dscrData.dscr !== null && dscrData.dscr !== undefined) {
-                dscrMap.set(prop.id, dscrData.dscr);
-                return;
-              }
+        // Fetch DSCR for all properties using the batch API endpoint
+        const propertyIds = props.map(p => p.id);
+        if (propertyIds.length === 0) return;
+
+        try {
+          const dscrResponse = await fetch(`${API_BASE_URL}/risk-alerts/dscr/batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ property_ids: propertyIds })
+          });
+          
+          if (dscrResponse.ok) {
+            const dscrData = await dscrResponse.json();
+            if (dscrData.success && dscrData.results) {
+              const dscrMap = new Map<number, number | null>();
+              Object.entries(dscrData.results).forEach(([pid, val]) => {
+                dscrMap.set(Number(pid), val as number | null);
+              });
+              setPropertyDscrMap(dscrMap);
             }
-            // If API fails, set to null (don't show DSCR)
-            dscrMap.set(prop.id, null);
-          } catch (err) {
-            console.error(`Failed to fetch DSCR for ${prop.property_code}:`, err);
-            dscrMap.set(prop.id, null);
           }
-        });
-        
-        await Promise.all(dscrPromises);
-        setPropertyDscrMap(dscrMap);
+        } catch (err) {
+          console.error('Failed to batch fetch DSCR:', err);
+        }
       }
     } catch (err) {
       console.error('Failed to load property metrics for sorting:', err);
@@ -1225,6 +1230,15 @@ export default function Properties() {
     .filter(matchesQuickFilter)
     .filter(matchesAdvancedFilter);
 
+  const filtersApplied = Boolean(searchTerm.trim()) ||
+    quickFilter !== 'all' ||
+    filters.minNOI !== undefined ||
+    filters.minOccupancy !== undefined ||
+    filters.minUnits !== undefined ||
+    filters.maxLTV !== undefined ||
+    (filters.tags && filters.tags.length > 0);
+
+  // Prefetch alert counts for visible properties (up to 20 to avoid heavy load)
   // Prefetch alert counts for visible properties (up to 20 to avoid heavy load)
   useEffect(() => {
     const visible = filteredProperties.slice(0, 20);
@@ -1234,19 +1248,31 @@ export default function Properties() {
     }
     let cancelled = false;
     const loadAlerts = async () => {
-      const entries = await Promise.all(
-        visible.map(async (p) => {
-          try {
-            const summary = await AlertService.getSummary({ property_id: p.id, days: 90 });
-            return [p.id, summary?.active_alerts ?? summary?.total_alerts ?? 0] as const;
-          } catch (err) {
-            console.error('Failed to load alerts for property', p.id, err);
-            return [p.id, 0] as const;
-          }
-        })
-      );
-      if (!cancelled) {
-        setAlertCounts(new Map(entries));
+      try {
+        const propertyIds = visible.map(p => p.id);
+        const res = await fetch(`${API_BASE_URL}/risk-alerts/summary/batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ property_ids: propertyIds, lookback_days: 90 })
+        });
+
+        if (!cancelled && res.ok) {
+            const data = await res.json();
+            if (data.success && data.results) {
+                const entries: [number, number][] = [];
+                Object.entries(data.results).forEach(([pid, counts]: [string, any]) => {
+                    // Use active or total based on previous logic preference
+                    const count = counts.active_alerts ?? counts.total_alerts ?? 0;
+                    entries.push([Number(pid), count]);
+                });
+                setAlertCounts(new Map(entries));
+            }
+        }
+      } catch (err) {
+        if (!cancelled) {
+             console.error('Failed to load batch alerts', err);
+        }
       }
     };
     loadAlerts();
@@ -1380,6 +1406,28 @@ export default function Properties() {
           </div>
         </div>
 
+        {loadError && (
+          <Card className="p-4 mb-4 border border-danger/30 bg-red-50 text-danger">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="font-medium">{loadError}</div>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={loadProperties}>
+                  Retry
+                </Button>
+                {loadError?.includes('Session expired') ? (
+                  <Button variant="primary" size="sm" onClick={() => logout()}>
+                    Sign In
+                  </Button>
+                ) : (
+                  <Button variant="primary" size="sm" onClick={() => window.location.reload()}>
+                    Refresh App
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
           {/* Left Panel - Property List (30%) */}
           <div className="lg:col-span-3 space-y-4">
@@ -1473,7 +1521,29 @@ export default function Properties() {
             {/* Property Gallery (List View) */}
             {viewMode === 'list' && (
             <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto">
-              {sortedProperties.map((property) => {
+              {isLoading ? (
+                <Card className="p-6 text-center text-text-secondary">Loading properties…</Card>
+              ) : sortedProperties.length === 0 ? (
+                <Card className="p-6 text-center">
+                  <div className="font-semibold text-text-primary mb-2">
+                    {filtersApplied ? 'No properties match the current filters' : 'No properties available yet'}
+                  </div>
+                  <p className="text-text-secondary mb-3">
+                    {filtersApplied ? 'Try clearing filters or search to see your properties.' : 'Add a property to get started.'}
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    {filtersApplied && (
+                      <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+                        Clear Filters
+                      </Button>
+                    )}
+                    <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>
+                      Add Property
+                    </Button>
+                  </div>
+                </Card>
+              ) : (
+              sortedProperties.map((property) => {
                 const isSelected = selectedProperty?.id === property.id;
                 const isCompared = comparisonSet.has(property.id);
                 const propertyMetric = propertyMetricsMap.get(property.id);
@@ -1615,7 +1685,8 @@ export default function Properties() {
                     </div>
                   </Card>
                 );
-              })}
+              })
+              )}
             </div>
             )}
 
@@ -2066,10 +2137,36 @@ export default function Properties() {
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="primary" size="sm" icon={<Edit className="w-4 h-4" />}>
+                      <Button 
+                        variant="primary" 
+                        size="sm" 
+                        icon={<Edit className="w-4 h-4" />}
+                        onClick={() => {
+                          setEditingProperty(selectedProperty);
+                          setShowCreateModal(true);
+                        }}
+                      >
                         Edit
                       </Button>
-                      <Button className="bg-red-50 border-red-200" size="sm" icon={<Trash2 className="w-4 h-4" />}>
+                      <Button 
+                        className="bg-red-50 border-red-200 hover:bg-red-100/80 text-danger" 
+                        size="sm" 
+                        icon={<Trash2 className="w-4 h-4" />}
+                        onClick={async () => {
+                          if (window.confirm(`Are you sure you want to delete ${selectedProperty.property_name}? This action cannot be undone.`)) {
+                             try {
+                               await propertyService.deleteProperty(selectedProperty.id);
+                               // Remove from local state
+                               setProperties(prev => prev.filter(p => p.id !== selectedProperty.id));
+                               // Select first available or null
+                               const remaining = properties.filter(p => p.id !== selectedProperty.id);
+                               setSelectedProperty(remaining.length > 0 ? remaining[0] : null);
+                             } catch (err: any) {
+                               alert(`Failed to delete property: ${err.message || 'Unknown error'}`);
+                             }
+                          }
+                        }}
+                      >
                         Delete
                       </Button>
                     </div>
@@ -3193,11 +3290,24 @@ export default function Properties() {
             ) : (
               <Card className="p-12 text-center">
                 <Building2 className="w-16 h-16 mx-auto mb-4 text-text-secondary" />
-                <h3 className="text-xl font-semibold mb-2">No Property Selected</h3>
-                <p className="text-text-secondary mb-4">Select a property from the list to view details</p>
-                <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setShowCreateModal(true)}>
-                  Add Your First Property
-                </Button>
+                <h3 className="text-xl font-semibold mb-2">
+                  {properties.length === 0 ? 'No Properties Found' : 'No Property Selected'}
+                </h3>
+                <p className="text-text-secondary mb-4">
+                  {properties.length === 0
+                    ? 'Add a property to start managing your portfolio.'
+                    : 'Select a property from the list to view details.'}
+                </p>
+                <div className="flex justify-center gap-2">
+                  {filtersApplied && properties.length > 0 && (
+                    <Button variant="ghost" onClick={handleClearFilters}>
+                      Clear Filters
+                    </Button>
+                  )}
+                  <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setShowCreateModal(true)}>
+                    Add Property
+                  </Button>
+                </div>
               </Card>
             )}
           </div>
@@ -3369,9 +3479,14 @@ export default function Properties() {
       {/* Modals */}
       {showCreateModal && (
         <PropertyFormModal
-          onClose={() => setShowCreateModal(false)}
+          property={editingProperty || undefined}
+          onClose={() => {
+            setShowCreateModal(false);
+            setEditingProperty(null);
+          }}
           onSuccess={() => {
             setShowCreateModal(false);
+            setEditingProperty(null);
             loadProperties();
           }}
         />

@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db.database import get_db
 from app.models.property import Property
+# Import Organization model for type checking if needed, but dependency returns object
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -13,21 +14,30 @@ router = APIRouter(prefix="/properties", tags=["properties"])
 async def create_property(
     property_data: PropertyCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    current_org = Depends(get_current_organization)
 ):
     """
-    Create a new property with unique property_code
+    Create a new property with unique property_code within organization
     """
-    # Check if property_code already exists
-    existing = db.query(Property).filter(Property.property_code == property_data.property_code).first()
+    # Check if property_code already exists IN THIS ORGANIZATION
+    # (Optional: property_code could be globally unique or per-org. Assuming per-org is better for SaaS)
+    query = db.query(Property)
+    existing = Property.filter_by_org(query, current_org.id)\
+        .filter(Property.property_code == property_data.property_code).first()
+        
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Property with code {property_data.property_code} already exists"
+            detail=f"Property with code {property_data.property_code} already exists in this organization"
         )
     
-    # Create property
-    db_property = Property(**property_data.model_dump(), created_by=current_user.id)
+    # Create property with organization_id
+    db_property = Property(
+        **property_data.model_dump(), 
+        created_by=current_user.id,
+        organization_id=current_org.id
+    )
     db.add(db_property)
     db.commit()
     db.refresh(db_property)
@@ -40,12 +50,16 @@ async def list_properties(
     limit: int = Query(100, ge=1, le=1000),
     status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    current_org = Depends(get_current_organization)
 ):
     """
-    List all properties with optional filtering by status
+    List all properties for the current organization
     """
     query = db.query(Property)
+    # Enforce Tenancy
+    query = Property.filter_by_org(query, current_org.id)
+    
     if status:
         query = query.filter(Property.status == status)
     return query.offset(skip).limit(limit).all()
@@ -55,12 +69,16 @@ async def list_properties(
 async def get_property(
     property_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    current_org = Depends(get_current_organization)
 ):
     """
-    Get property by property_code
+    Get property by property_code (scoped to organization)
     """
-    property = db.query(Property).filter(Property.property_code == property_code).first()
+    query = db.query(Property)
+    property = Property.filter_by_org(query, current_org.id)\
+        .filter(Property.property_code == property_code).first()
+        
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
     return property
@@ -71,12 +89,16 @@ async def update_property(
     property_code: str,
     property_data: PropertyUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    current_org = Depends(get_current_organization)
 ):
     """
-    Update property information
+    Update property information (scoped to organization)
     """
-    property = db.query(Property).filter(Property.property_code == property_code).first()
+    query = db.query(Property)
+    property = Property.filter_by_org(query, current_org.id)\
+        .filter(Property.property_code == property_code).first()
+        
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
     
@@ -92,12 +114,16 @@ async def update_property(
 async def delete_property(
     property_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    current_org = Depends(get_current_organization)
 ):
     """
-    Delete property (will cascade to all related data)
+    Delete property (scoped to organization)
     """
-    property = db.query(Property).filter(Property.property_code == property_code).first()
+    query = db.query(Property)
+    property = Property.filter_by_org(query, current_org.id)\
+        .filter(Property.property_code == property_code).first()
+        
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
     

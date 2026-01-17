@@ -5,14 +5,46 @@ Session-based authentication using HTTP-only cookies
 No JWT - simpler session management with Starlette middleware
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Header
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 import re
 from app.db.database import get_db
 from app.models.user import User
+from app.models.organization import OrganizationMember
 from app.schemas.user import UserCreate, UserLogin, UserResponse, PasswordChange
 from app.core.security import get_password_hash, verify_password
 from app.core.config import settings
+
+router = APIRouter(prefix="/auth", tags=["authentication"])
+
+# ... (omitted lines)
+
+
+# ... (omitted lines)
+
+@router.get("/me", response_model=UserResponse)
+def get_current_user_info(request: Request, db: Session = Depends(get_db)):
+    """
+    Get current logged-in user information
+    
+    - Reads user ID from session
+    - Returns user data
+    
+    Returns:
+        UserResponse: Current user data
+    """
+    user_id = request.session.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
+    # Eagerly load organization memberships
+    user = db.query(User).options(
+         joinedload(User.organization_memberships).joinedload(OrganizationMember.organization)
+    ).filter(User.id == user_id).first()
 
 
 def validate_password_strength(password: str) -> None:
@@ -53,7 +85,7 @@ def validate_password_strength(password: str) -> None:
         )
 
 
-router = APIRouter(prefix="/auth", tags=["authentication"])
+
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -99,6 +131,28 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     )
     
     db.add(user)
+    db.flush() # Flush to get user ID
+    
+    # Create Organization for the new user
+    from app.models.organization import Organization, OrganizationMember
+    
+    org_name = user_data.organization_name if user_data.organization_name else f"{user_data.username}'s Organization"
+    
+    organization = Organization(
+        name=org_name,
+        slug=re.sub(r'[^a-zA-Z0-9]', '-', org_name.lower()) + f"-{user.id}" # Ensure unique slug
+    )
+    db.add(organization)
+    db.flush() # Flush to get org ID
+    
+    # Add user as admin of the organization
+    member = OrganizationMember(
+        user_id=user.id,
+        organization_id=organization.id,
+        role="admin"
+    )
+    db.add(member)
+    
     db.commit()
     db.refresh(user)
     
@@ -179,7 +233,10 @@ def get_current_user_info(request: Request, db: Session = Depends(get_db)):
             detail="Not authenticated"
         )
     
-    user = db.query(User).filter(User.id == user_id).first()
+    from app.models.organization import OrganizationMember
+    user = db.query(User).options(
+         joinedload(User.organization_memberships).joinedload(OrganizationMember.organization)
+    ).filter(User.id == user_id).first()
     
     if not user:
         # Session exists but user doesn't - clear session
