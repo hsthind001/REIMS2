@@ -7,7 +7,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 import logging
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, self_learning, extraction_learning, market_intelligence
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, self_learning, extraction_learning, market_intelligence, document_intelligence
+from app.api.v1.endpoints import onboarding
 from app.api.v2 import router as v2_router, documents as documents_v2
 from app.db.database import engine, Base
 from app.db.init_views import create_database_views
@@ -182,12 +183,20 @@ app.include_router(batch_reprocessing.router, prefix=settings.API_V1_STR, tags=[
 
 # PDF Coordinate Prediction (Phase 5: LayoutLM Integration)
 app.include_router(pdf_coordinates.router, prefix=settings.API_V1_STR, tags=["pdf-coordinates"])
+app.include_router(document_intelligence.router, prefix=settings.API_V1_STR + "/document-intelligence", tags=["document-intelligence"])
 
 # Model Optimization (Phase 6: GPU & Incremental Learning)
 app.include_router(model_optimization.router, prefix=settings.API_V1_STR, tags=["model-optimization"])
 
 # Portfolio Analytics (Phase 7: Cross-Property Intelligence)
 app.include_router(portfolio_analytics.router, prefix=settings.API_V1_STR, tags=["portfolio-analytics"])
+
+# SaaS Onboarding (Phase 5: Self-Service)
+app.include_router(onboarding.router, prefix=settings.API_V1_STR + "/onboarding", tags=["onboarding"])
+
+# Webhooks
+from app.api.webhooks import stripe_webhook
+app.include_router(stripe_webhook.router, prefix="/api/webhooks", tags=["webhooks"])
 
 # ============================================================================
 # API v2 Routes (Standardized responses, improved RBAC, better error handling)

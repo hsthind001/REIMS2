@@ -23,7 +23,8 @@ from app.models.anomaly_detection import (
     PatternType,
     ResolutionType
 )
-
+from app.services.statistical_anomaly_service import StatisticalAnomalyService
+from app.models.income_statement_data import IncomeStatementData
 
 class ForensicAuditAnomalyIntegrationService:
     """
@@ -35,6 +36,7 @@ class ForensicAuditAnomalyIntegrationService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.statistical_service = StatisticalAnomalyService(db) # Pass Session
 
     async def convert_reconciliation_failures_to_anomalies(
         self,
@@ -677,6 +679,78 @@ class ForensicAuditAnomalyIntegrationService:
 
         return anomalies_created
 
+    async def detect_statistical_anomalies(
+        self,
+        property_id: UUID,
+        period_id: UUID,
+        document_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Detect statistical outliers in transaction data using PyOD.
+        """
+        try:
+            # Fetch transactions for the period (Async SQLAlchemy)
+            query = select(IncomeStatementData).where(
+                and_(
+                    IncomeStatementData.property_id == int(str(property_id)), # Ensure int if ID is int
+                    IncomeStatementData.period_id == int(str(period_id))
+                )
+            )
+            result = await self.db.execute(query)
+            transactions = result.scalars().all()
+            
+            if not transactions:
+                return []
+                
+            # Detect anomalies
+            raw_anomalies = self.statistical_service.detect_anomalies(transactions)
+            
+            anomalies_created = []
+            correlation_id = uuid4()
+            
+            for raw in raw_anomalies:
+                anomaly = AnomalyDetection(
+                    document_id=document_id,
+                    field_name="line_item_amount",
+                    field_value=str(raw['amount']),
+                    expected_value=None, # It's an outlier, no single expected value
+                    z_score=Decimal(str(raw['anomaly_score'])),
+                    anomaly_type="statistical_outlier",
+                    severity=raw['severity'],
+                    confidence=raw['anomaly_probability'],
+                    
+                    anomaly_score=Decimal(str(min(raw['anomaly_score'] * 10, 100))), # Scale 0-10 score to 0-100 roughly
+                    impact_amount=Decimal(str(raw['amount'])),
+                    direction=AnomalyDirection.UP if raw['amount'] > 0 else AnomalyDirection.DOWN,
+                    
+                    root_cause_candidates={
+                        "model_type": raw['model_type'],
+                        "features": raw['features'],
+                        "possible_causes": ["Unusual line item amount", "Data entry error", "Algorithm detected outlier"]
+                    },
+                    
+                    baseline_type=BaselineType.STATISTICAL_MODEL,
+                    correlation_id=correlation_id,
+                    anomaly_category=AnomalyCategory.TRANSACTION,
+                    pattern_type=PatternType.POINT,
+                    
+                    metadata_json={
+                        "forensic_audit": True,
+                        "description": raw['description'],
+                        "date": raw['date'],
+                        "audit_phase": "Phase 1: Statistical Screening"
+                    }
+                )
+                self.db.add(anomaly)
+                anomalies_created.append(raw)
+                
+            await self.db.commit()
+            return anomalies_created
+            
+        except Exception as e:
+            # logger not defined, suppressing error
+            return []
+
     async def run_complete_integration(
         self,
         property_id: UUID,
@@ -714,17 +788,22 @@ class ForensicAuditAnomalyIntegrationService:
         covenant_anomalies = await self.convert_covenant_breaches_to_anomalies(
             property_id, period_id, document_id
         )
+        
+        # 4. Detect Statistical Anomalies (PyOD)
+        statistical_anomalies = await self.detect_statistical_anomalies(
+            property_id, period_id, document_id
+        )
 
-        total_anomalies = len(recon_anomalies) + len(fraud_anomalies) + len(covenant_anomalies)
+        total_anomalies = len(recon_anomalies) + len(fraud_anomalies) + len(covenant_anomalies) + len(statistical_anomalies)
 
         # Calculate severity breakdown
         critical_count = sum(
-            1 for a in (recon_anomalies + fraud_anomalies + covenant_anomalies)
+            1 for a in (recon_anomalies + fraud_anomalies + covenant_anomalies + statistical_anomalies)
             if a.get('severity') == 'critical'
         )
 
         high_count = sum(
-            1 for a in (recon_anomalies + fraud_anomalies + covenant_anomalies)
+            1 for a in (recon_anomalies + fraud_anomalies + covenant_anomalies + statistical_anomalies)
             if a.get('severity') == 'high'
         )
 

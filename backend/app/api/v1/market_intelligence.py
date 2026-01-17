@@ -22,6 +22,8 @@ from app.models.market_intelligence import MarketIntelligence
 from app.models.market_data_lineage import MarketDataLineage
 from app.services.market_data_service import MarketDataService
 from app.core.config import settings
+from app.models.financial_metrics import FinancialMetrics
+from app.models.financial_period import FinancialPeriod
 
 logger = logging.getLogger(__name__)
 
@@ -609,13 +611,35 @@ async def get_forecasts(
             # Get market data service
             market_data_service = get_market_data_service(db)
 
+            # Fetch latest financial metrics
+            latest_metrics = db.query(FinancialMetrics).join(FinancialPeriod).filter(
+                FinancialMetrics.property_id == property_obj.id
+            ).order_by(FinancialPeriod.period_end_date.desc()).first()
+
             # Prepare property data for forecasting
+            avg_rent = 1500  # Default fallback
+            if latest_metrics and latest_metrics.total_monthly_rent and latest_metrics.occupied_units:
+                avg_rent = float(latest_metrics.total_monthly_rent / latest_metrics.occupied_units)
+            
+            occupancy_rate = 95.0 # Default fallback
+            if latest_metrics and latest_metrics.occupancy_rate:
+                occupancy_rate = float(latest_metrics.occupancy_rate)
+
+            noi = 500000 # Default fallback
+            if latest_metrics and latest_metrics.net_operating_income:
+                # Annualize if monthly
+                noi = float(latest_metrics.net_operating_income) * 12
+
+            market_value = 10000000 # Default fallback
+            if property_obj.purchase_price:
+                 market_value = float(property_obj.purchase_price)
+
             property_data = {
                 'property_code': property_code,
-                'avg_rent': 1500,  # TODO: Get from actual property metrics
-                'occupancy_rate': 95.0,  # TODO: Get from actual property metrics
-                'noi': 500000,  # TODO: Get from financial data
-                'market_value': 10000000  # TODO: Get from property valuation
+                'avg_rent': avg_rent,
+                'occupancy_rate': occupancy_rate,
+                'noi': noi,
+                'market_value': market_value
             }
 
             # TODO: Fetch historical data for better forecasting
@@ -708,12 +732,31 @@ async def get_competitive_analysis(
             # Get market data service
             market_data_service = get_market_data_service(db)
 
+            # Fetch latest financial metrics
+            latest_metrics = db.query(FinancialMetrics).join(FinancialPeriod).filter(
+                FinancialMetrics.property_id == property_obj.id
+            ).order_by(FinancialPeriod.period_end_date.desc()).first()
+
             # Prepare property data
+            avg_rent = 1500
+            if latest_metrics and latest_metrics.total_monthly_rent and latest_metrics.occupied_units:
+                avg_rent = float(latest_metrics.total_monthly_rent / latest_metrics.occupied_units)
+            
+            occupancy_rate = 95.0
+            if latest_metrics and latest_metrics.occupancy_rate:
+                occupancy_rate = float(latest_metrics.occupancy_rate)
+            
+            total_units = 100
+            if latest_metrics and latest_metrics.total_units:
+                total_units = latest_metrics.total_units
+            elif hasattr(property_obj, 'total_units'):
+                 total_units = property_obj.total_units
+
             property_data = {
                 'property_code': property_code,
-                'avg_rent': 1500,  # TODO: Get from actual property metrics
-                'occupancy_rate': 95.0,  # TODO: Get from actual property metrics
-                'total_units': property_obj.total_units if hasattr(property_obj, 'total_units') else 100,
+                'avg_rent': avg_rent,
+                'occupancy_rate': occupancy_rate,
+                'total_units': total_units,
                 'property_type': property_obj.property_type,
                 'submarket': property_obj.city  # Simplified - use city as submarket
             }

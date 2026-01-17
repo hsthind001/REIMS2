@@ -3602,42 +3602,102 @@ class ExtractionOrchestrator:
         
         return enhanced_items
     
-    def _fallback_extraction(self, text: str, document_type: str) -> Dict:
+    def _parse_amount(self, amount_str: str) -> float:
         """
-        Basic fallback extraction when template matching fails
-        
-        Simple regex-based extraction as last resort
+        Parses an amount string into a float, handling various formats.
         """
-        lines = text.split("\n")
-        line_items = []
+        if not amount_str:
+            return 0.0
         
-        # Very basic pattern matching
-        for line in lines:
-            # Look for patterns like: "Account Name 1,234.56" or "1234-0000 Account Name 1,234.56"
-            pattern = r'([\d-]+)?\s*([A-Za-z\s&,.-]+)\s+([\d,.-]+)'
-            match = re.search(pattern, line)
-            
-            if match:
-                account_code = match.group(1) or ""
-                account_name = match.group(2).strip()
-                amount_str = match.group(3).replace(",", "")
-                
-                try:
-                    amount = float(amount_str)
-                    line_items.append({
-                        "account_code": account_code,
-                        "account_name": account_name,
-                        "amount": amount,
-                        "period_amount": amount
-                    })
-                except ValueError:
-                    continue
+        # Remove currency symbols, commas, and spaces
+        cleaned_str = amount_str.replace('$', '').replace('€', '').replace('£', '').replace(',', '').strip()
         
-        return {
-            "success": len(line_items) > 0,
-            "line_items": line_items,
-            "confidence": 50.0  # Low confidence for fallback
+        # Handle parentheses for negative numbers
+        if cleaned_str.startswith('(') and cleaned_str.endswith(')'):
+            cleaned_str = '-' + cleaned_str[1:-1]
+        
+        try:
+            return float(cleaned_str)
+        except ValueError:
+            return 0.0 # Or raise an error, depending on desired behavior
+
+    async def _fallback_extraction(self, text: str, document_type: str) -> Dict:
+        """
+        Fallback extraction using simple regex patterns AND Local LLM.
+        """
+        result = {
+            "success": False,
+            "line_items": [],
+            "extraction_method": "fallback_regex"
         }
+        
+        # 1. Try Regex Fallback First (Faster)
+        regex_items = []
+        if document_type == "balance_sheet":
+             # Simple pattern: Look for "Account Name      $1,234.56"
+             matches = re.findall(r'([A-Za-z\s]+)\s+(\$?-?[\d,]+\.?\d*)', text)
+             for name, amount in matches:
+                 if len(name.strip()) > 3:
+                     regex_items.append({
+                         "account_name": name.strip(),
+                         "amount": self._parse_amount(amount),
+                         "confidence": 0.4
+                     })
+        
+        if regex_items:
+             result["success"] = True
+             result["line_items"] = regex_items
+             return result
+
+        # 2. Try LLM Fallback (Smarter, Slower)
+        # Only if regex failed to find anything substantial
+        try:
+             # Check if LLM service is available
+             from app.services.llm_extraction_service import LLMExtractionService
+             # We need to instantiate it here or in __init__. 
+             # Instantiating here to avoid circular imports in __init__ if any.
+             llm_extractor = LLMExtractionService(self.db)
+             
+             print(f"🤖 Regex failed. Attempting LLM Fallback for {document_type}...")
+             
+             llm_result = await llm_extractor.extract_financial_data(
+                 text_content=text, 
+                 document_type=document_type
+             )
+             
+             if llm_result.get("success") and llm_result.get("data"):
+                 data = llm_result["data"]
+                 
+                 # Helper to convert LLM output to internal line_item format
+                 llm_items = []
+                 extracted_items = data.get("line_items") or data.get("units") or [] # Handle units for rent roll
+                 
+                 for item in extracted_items:
+                     # Normalizing keys
+                     account_name = item.get("account_name") or item.get("tenant_name") or item.get("unit_id")
+                     amount = item.get("amount") or item.get("monthly_rent")
+                     
+                     if account_name and amount is not None:
+                         llm_items.append({
+                             "account_name": str(account_name),
+                             "amount": float(amount) if amount else 0.0,
+                             "confidence": 0.7, # Higher confidence than regex
+                             "metadata": item   # Store original LLM item as metadata
+                         })
+                 
+                 if llm_items:
+                     result["success"] = True
+                     result["line_items"] = llm_items
+                     result["extraction_method"] = "llm_fallback"
+                     print(f"✅ LLM Extraction successful: {len(llm_items)} items found.")
+                     return result
+                     
+        except ImportError:
+             print("⚠️ LLM Extraction Service not found or dependencies missing.")
+        except Exception as e:
+             print(f"⚠️ LLM Fallback failed: {e}")
+
+        return result
     
     def _run_validations(self, upload: DocumentUpload) -> Dict:
         """

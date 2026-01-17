@@ -166,7 +166,7 @@ async def get_portfolio_analytics(
         from sqlalchemy import func
         
         # Get total properties
-        total_properties = db.query(Property).filter(Property.is_active == True).count()
+        total_properties = db.query(Property).filter(Property.status == 'active').count()
         
         # Get total anomalies
         total_anomalies = db.query(AnomalyDetection).filter(
@@ -183,13 +183,15 @@ async def get_portfolio_analytics(
         
         anomalies_by_severity = {severity: count for severity, count in severity_counts}
         
+        from app.models.document_upload import DocumentUpload
+
         # Get top accounts with anomalies
         top_accounts = db.query(
-            AnomalyDetection.account_code,
+            AnomalyDetection.field_name.label('account_code'),
             func.count(AnomalyDetection.id).label('anomaly_count')
         ).filter(
             AnomalyDetection.context_suppressed == False
-        ).group_by(AnomalyDetection.account_code).order_by(
+        ).group_by(AnomalyDetection.field_name).order_by(
             func.count(AnomalyDetection.id).desc()
         ).limit(10).all()
         
@@ -203,11 +205,13 @@ async def get_portfolio_analytics(
         
         # Get properties with most anomalies
         properties_with_anomalies = db.query(
-            AnomalyDetection.property_id,
+            DocumentUpload.property_id,
             func.count(AnomalyDetection.id).label('anomaly_count')
+        ).join(
+            AnomalyDetection, DocumentUpload.id == AnomalyDetection.document_id
         ).filter(
             AnomalyDetection.context_suppressed == False
-        ).group_by(AnomalyDetection.property_id).order_by(
+        ).group_by(DocumentUpload.property_id).order_by(
             func.count(AnomalyDetection.id).desc()
         ).limit(10).all()
         

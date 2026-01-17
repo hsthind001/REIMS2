@@ -238,6 +238,33 @@ class DocumentService:
         type_detection = detector.detect_document_type(file_content)
         detected_type = type_detection.get("detected_type", "unknown")
         type_confidence = type_detection.get("confidence", 0)
+
+        # ---------------------------------------------------------------------
+        # PHASE 7: Semantic Classification Fallback
+        # If regex/keyword detection is weak or unknown, ask the LLM
+        # ---------------------------------------------------------------------
+        if detected_type == "unknown" or type_confidence < 50:
+            try:
+                print(f"🤖 Basic detection weak ({detected_type}, {type_confidence}%). Attempting LLM classification...")
+                from app.services.llm_extraction_service import LLMExtractionService
+                # We need to extract text from PDF bytes first for the LLM
+                # MultiEngineExtractor already has a helper or we can use PyMuPDF directly
+                # Re-using detector instance which has pymupdf
+                text_result = detector.pymupdf.extract_text(file_content)
+                if text_result.get("success"):
+                     raw_text = text_result.get("pages", [{}])[0].get("text", "")
+                     
+                     llm_service = LLMExtractionService(self.db)
+                     llm_result = await llm_service.classify_document(raw_text)
+                     
+                     if llm_result.get("document_type") and llm_result.get("document_type") != "unknown":
+                         detected_type = llm_result["document_type"]
+                         type_confidence = float(llm_result.get("confidence", 0.0)) * 100 # Normalize 0-1 to 0-100
+                         type_detection["keywords_found"] = ["LLM_SEMANTIC_MATCH"]
+                         print(f"✅ LLM Classification Success: {detected_type} (confidence: {type_confidence}%)")
+            except Exception as e:
+                print(f"⚠️  LLM Classification failed: {e}")
+        # ---------------------------------------------------------------------
         
         # Detect year and period
         period_detection = detector.detect_year_and_period(file_content)

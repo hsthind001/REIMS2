@@ -76,7 +76,7 @@ class FinancialMetrics(Base):
     # ==================== INCOME STATEMENT METRICS ====================
     total_revenue = Column(DECIMAL(15, 2))
     total_expenses = Column(DECIMAL(15, 2))
-    net_operating_income = Column(DECIMAL(15, 2))
+    net_operating_income = Column(DECIMAL(15, 2), index=True)
     net_income = Column(DECIMAL(15, 2))
     operating_margin = Column(DECIMAL(10, 4))  # NOI / Revenue
     profit_margin = Column(DECIMAL(10, 4))  # Net Income / Revenue
@@ -93,7 +93,7 @@ class FinancialMetrics(Base):
     total_units = Column(Integer)
     occupied_units = Column(Integer)
     vacant_units = Column(Integer)
-    occupancy_rate = Column(DECIMAL(5, 2))  # %
+    occupancy_rate = Column(DECIMAL(5, 2), index=True)  # %
     total_leasable_sqft = Column(DECIMAL(12, 2))
     occupied_sqft = Column(DECIMAL(12, 2))
     total_monthly_rent = Column(DECIMAL(12, 2))
@@ -110,7 +110,7 @@ class FinancialMetrics(Base):
     weighted_avg_interest_rate = Column(DECIMAL(6, 4))  # Weighted average interest rate
     total_monthly_debt_service = Column(DECIMAL(12, 2))  # Total monthly P+I payments
     total_annual_debt_service = Column(DECIMAL(15, 2))  # Total annual P+I payments
-    dscr = Column(DECIMAL(10, 4))  # Debt Service Coverage Ratio (NOI / Annual Debt Service)
+    dscr = Column(DECIMAL(10, 4), index=True)  # Debt Service Coverage Ratio (NOI / Annual Debt Service)
     interest_coverage_ratio = Column(DECIMAL(10, 4))  # EBIT / Interest Expense
     debt_yield = Column(DECIMAL(10, 4))  # NOI / Total Loan Amount * 100
     break_even_occupancy = Column(DECIMAL(5, 2))  # (Operating Expenses + Debt Service) / Gross Potential Rent * 100

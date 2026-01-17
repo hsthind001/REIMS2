@@ -211,8 +211,10 @@ export default function EvidencePanel({ match, discrepancy, onApprove, onReject,
             variant="secondary"
             className="w-full"
             onClick={() => {
-              // TODO: Open remap dialog
-              console.log('Remap account');
+              const newCode = window.prompt("Enter new target account code:");
+              if (newCode) {
+                 onRemap(match.id, { target_account_code: newCode });
+              }
             }}
           >
             Remap Account
@@ -223,8 +225,10 @@ export default function EvidencePanel({ match, discrepancy, onApprove, onReject,
             variant="secondary"
             className="w-full"
             onClick={() => {
-              // TODO: Open note dialog
-              console.log('Add note');
+              const note = window.prompt("Enter note:");
+              if (note) {
+                  onAddNote(match.id, note);
+              }
             }}
           >
             Add Note
@@ -235,8 +239,10 @@ export default function EvidencePanel({ match, discrepancy, onApprove, onReject,
             variant="secondary"
             className="w-full"
             onClick={() => {
-              // TODO: Open task creation dialog
-              console.log('Create task');
+              const title = window.prompt("Enter task title:");
+              if (title) {
+                  onCreateTask(match.id, { title, status: 'pending' });
+              }
             }}
           >
             Create Task

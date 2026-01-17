@@ -23,7 +23,7 @@ class FinancialPeriod(Base):
     fiscal_quarter = Column(Integer)  # 1-4
     
     # Status
-    is_closed = Column(Boolean, default=False)  # Locked for editing
+    is_closed = Column(Boolean, default=False, index=True)  # Locked for editing
     closed_date = Column(DateTime(timezone=True))
     closed_by = Column(Integer, ForeignKey('users.id'))
     

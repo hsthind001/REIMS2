@@ -18,9 +18,9 @@ class Property(Base, TenantMixin):
     
     # Address
     address = Column(Text)
-    city = Column(String(100))
-    state = Column(String(50))
-    zip_code = Column(String(20))
+    city = Column(String(100), index=True)
+    state = Column(String(50), index=True)
+    zip_code = Column(String(20), index=True)
     country = Column(String(50), default='USA')
     
     # Property details

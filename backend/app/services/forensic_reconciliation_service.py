@@ -9,12 +9,11 @@ validates discrepancies, and provides auditor review workflows.
 """
 import logging
 import decimal
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from decimal import Decimal
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, true
+from sqlalchemy import and_, true
 
 from app.models.forensic_reconciliation_session import ForensicReconciliationSession
 from app.models.forensic_match import ForensicMatch
@@ -22,26 +21,10 @@ from app.models.forensic_discrepancy import ForensicDiscrepancy
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.document_upload import DocumentUpload
-from app.models.balance_sheet_data import BalanceSheetData
-from app.models.income_statement_data import IncomeStatementData
-from app.models.cash_flow_data import CashFlowData
-from app.models.rent_roll_data import RentRollData
-from app.models.mortgage_statement_data import MortgageStatementData
 
-from app.services.matching_engines import (
-    ExactMatchEngine,
-    FuzzyMatchEngine,
-    CalculatedMatchEngine,
-    InferredMatchEngine,
-    MatchResult
-)
-from app.services.calculated_rules_engine import CalculatedRulesEngine
-# from app.services.forensic_matching_rules import ForensicMatchingRules
-from app.services.adaptive_matching_service import AdaptiveMatchingService
-from app.services.match_learning_service import MatchLearningService
-from app.services.reconciliation_diagnostics_service import ReconciliationDiagnosticsService
-from app.services.relationship_discovery_service import RelationshipDiscoveryService
-from app.services.exception_tiering_service import ExceptionTieringService
+if TYPE_CHECKING:
+    from app.services.forensic.match_processor import ForensicMatchProcessor
+    from app.services.forensic.discrepancy_validator import ForensicDiscrepancyValidator
 
 logger = logging.getLogger(__name__)
 
@@ -49,23 +32,45 @@ logger = logging.getLogger(__name__)
 class ForensicReconciliationService:
     """Service for forensic reconciliation across all document types"""
     
-    def __init__(self, db: Session):
+    def __init__(
+        self, 
+        db: Session,
+        match_processor: Optional['ForensicMatchProcessor'] = None,
+        discrepancy_validator: Optional['ForensicDiscrepancyValidator'] = None
+    ):
         """
-        Initialize forensic reconciliation service
+        Initialize forensic reconciliation service with injected dependencies.
         
         Args:
             db: Database session
+            match_processor: Logic for matching execution
+            discrepancy_validator: Logic for validation
         """
         self.db = db
-        self.exact_engine = ExactMatchEngine()
-        self.fuzzy_engine = FuzzyMatchEngine()
-        self.calculated_engine = CalculatedMatchEngine()
-        self.inferred_engine = InferredMatchEngine()
-        self.matching_rules = AdaptiveMatchingService(db)  # Use adaptive matching
-        self.learning_service = MatchLearningService(db)
-        self.diagnostics_service = ReconciliationDiagnosticsService(db)
-        self.relationship_service = RelationshipDiscoveryService(db)
-        self.tiering_service = ExceptionTieringService(db)
+        
+        # Lazy load these to avoid circular imports if necessary, or better yet, assume they are passed construction
+        # For now, we instantiate them if not provided, but they are lighter weight.
+        # Ideally, main.py/dependency overrides should provide these.
+        
+        if not match_processor:
+            from app.services.forensic.match_processor import ForensicMatchProcessor
+            from app.services.adaptive_matching_service import AdaptiveMatchingService
+            from app.services.exception_tiering_service import ExceptionTieringService
+            
+            # These are still hard deps if not injected, but at least we moved the logic
+            self.match_processor = ForensicMatchProcessor(
+                db, 
+                AdaptiveMatchingService(db),
+                ExceptionTieringService(db)
+            )
+        else:
+            self.match_processor = match_processor
+
+        if not discrepancy_validator:
+            from app.services.forensic.discrepancy_validator import ForensicDiscrepancyValidator
+            self.discrepancy_validator = ForensicDiscrepancyValidator(db)
+        else:
+            self.discrepancy_validator = discrepancy_validator
     
     def start_reconciliation_session(
         self,
@@ -142,533 +147,50 @@ class ForensicReconciliationService:
         use_rules: bool = True
     ) -> Dict[str, Any]:
         """
-        Execute all matching engines and find matches across documents
-        
-        Args:
-            session_id: Reconciliation session ID
-            use_exact: Use exact matching engine
-            use_fuzzy: Use fuzzy matching engine
-            use_calculated: Use calculated matching engine
-            use_inferred: Use inferred matching engine
-            use_rules: Use cross-document matching rules
-            
-        Returns:
-            Dict with matches grouped by type and summary statistics
+        Execute all matching engines - Orchestrator Method.
         """
         session = self.db.query(ForensicReconciliationSession).filter(
             ForensicReconciliationSession.id == session_id
         ).first()
-        
+
         if not session:
-            logger.error(f"Session {session_id} not found")
-            return {'error': 'Session not found'}
+             return {'error': 'Session not found'}
+
+        # Delegate to processor
+        result = self.match_processor.process_matches(
+            session_id,
+            session.property_id,
+            session.period_id,
+            use_exact, use_fuzzy, use_calculated, use_inferred, use_rules
+        )
         
-        property_id = session.property_id
-        period_id = session.period_id
+        # Summary update and other orchestration logic could happen here
+        # Note: We do NOT commit here. The API route calling this should handle the commit.
         
-        all_matches = []
-        
-        # Get prior period for reconciliation rules
-        period = self.db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id).first()
-        prior_period_id = None
-        if period:
-            # Find prior period (same property, previous month)
-            prior_period = self.db.query(FinancialPeriod).filter(
-                and_(
-                    FinancialPeriod.property_id == property_id,
-                    FinancialPeriod.period_year == period.period_year,
-                    FinancialPeriod.period_month == period.period_month - 1
-                )
-            ).first()
-            if not prior_period and period.period_month == 1:
-                # Check previous year
-                prior_period = self.db.query(FinancialPeriod).filter(
-                    and_(
-                        FinancialPeriod.property_id == property_id,
-                        FinancialPeriod.period_year == period.period_year - 1,
-                        FinancialPeriod.period_month == 12
-                    )
-                ).first()
-            if prior_period:
-                prior_period_id = prior_period.id
-        
-        # 1. Execute cross-document matching rules (now uses adaptive matching)
-        if use_rules:
-            # Log available data for debugging
-            logger.info(f"Checking available data for property {property_id}, period {period_id}")
-            self._log_available_data(property_id, period_id)
-            
-            # Use adaptive matching which discovers codes and uses learned patterns
-            rule_matches = self.matching_rules.find_all_matches(
-                property_id=property_id,
-                period_id=period_id,
-                prior_period_id=prior_period_id
-            )
-            logger.info(f"Found {len(rule_matches)} rule-based matches (adaptive + hard-coded)")
-            all_matches.extend(rule_matches)
-            
-            # Learn from matches after reconciliation completes
-            # This will be done in a background task
-        
-        # 2. Execute matching engines for document-to-document comparisons
-        # Note: Most cross-document matching is handled by rules above
-        # Engines are primarily for same-document-type matching or specific use cases
-        # For now, we'll focus on rules-based matching which covers most scenarios
-        
-        # Store matches in database with robust error handling
-        stored_matches = []
-        failed_matches = []
-        
-        for match in all_matches:
-            try:
-                # Determine source and target document types from records
-                source_doc_type = self._get_document_type_from_record_id(match.source_record_id, property_id, period_id)
-                target_doc_type = self._get_document_type_from_record_id(match.target_record_id, property_id, period_id)
-                
-                # Skip if document types are unknown (can't store without knowing document types)
-                if source_doc_type == 'unknown' or target_doc_type == 'unknown':
-                    logger.warning(
-                        f"Skipping match: unknown document type (source_id={match.source_record_id}, "
-                        f"target_id={match.target_record_id}, source_type={source_doc_type}, target_type={target_doc_type})"
-                    )
-                    failed_matches.append({
-                        'match': match,
-                        'reason': f'Unknown document type (source: {source_doc_type}, target: {target_doc_type})'
-                    })
-                    continue
-                
-                # Get source and target record details for storage (with fallback)
-                source_record_details = self._get_record_details(match.source_record_id, source_doc_type) or {}
-                target_record_details = self._get_record_details(match.target_record_id, target_doc_type) or {}
-                
-                # Convert MatchResult to database record (use minimal data if details unavailable)
-                match_record = ForensicMatch(
-                    session_id=session_id,
-                    source_document_type=source_doc_type,
-                    source_table_name=self._get_table_name(source_doc_type),
-                    source_record_id=match.source_record_id,
-                    source_account_code=source_record_details.get('account_code'),
-                    source_account_name=source_record_details.get('account_name') or 'Unknown',
-                    source_amount=source_record_details.get('amount'),
-                    source_field_name=source_record_details.get('field_name'),
-                    target_document_type=target_doc_type,
-                    target_table_name=self._get_table_name(target_doc_type),
-                    target_record_id=match.target_record_id,
-                    target_account_code=target_record_details.get('account_code'),
-                    target_account_name=target_record_details.get('account_name') or 'Unknown',
-                    target_amount=target_record_details.get('amount'),
-                    target_field_name=target_record_details.get('field_name'),
-                    match_type=match.match_type,
-                    confidence_score=Decimal(str(match.confidence_score)),
-                    amount_difference=match.amount_difference,
-                    amount_difference_percent=Decimal(str(match.amount_difference_percent)) if match.amount_difference_percent else None,
-                    match_algorithm=match.match_algorithm or 'adaptive',
-                    relationship_type=match.relationship_type,
-                    relationship_formula=match.relationship_formula,
-                    status='pending'
-                )
-                
-                self.db.add(match_record)
-                stored_matches.append(match_record)
-                
-            except Exception as e:
-                logger.warning(
-                    f"Failed to store match (source_id={match.source_record_id}, target_id={match.target_record_id}): {e}",
-                    exc_info=True
-                )
-                failed_matches.append({
-                    'match': match,
-                    'reason': str(e)
-                })
-                # Continue processing other matches even if one fails
-                continue
-        
-        # Commit all successfully stored matches
-        if stored_matches:
-            try:
-                self.db.commit()
-                logger.info(f"Successfully stored {len(stored_matches)} matches for session {session_id}")
-            except Exception as e:
-                logger.error(f"Failed to commit matches: {e}", exc_info=True)
-                self.db.rollback()
-                # Try to store matches individually if batch commit fails
-                individual_stored = []
-                for match_record in stored_matches:
-                    try:
-                        self.db.add(match_record)
-                        self.db.commit()
-                        individual_stored.append(match_record)
-                    except Exception as commit_error:
-                        logger.error(f"Failed to commit individual match: {commit_error}")
-                        self.db.rollback()
-                stored_matches = individual_stored
-        
-        if failed_matches:
-            logger.warning(f"Failed to store {len(failed_matches)} matches out of {len(all_matches)} total matches")
-        
-        # Apply exception tiering to all matches (with proper transaction isolation)
-        # Tiering is optional - if it fails, we continue without it
-        tiering_results = []
-        tiering_failures = []
-        
-        try:
-            # Clear any stale object state before tiering
-            self.db.expire_all()
-            
-            for match in stored_matches:
-                try:
-                    # Ensure we're in a clean transaction state - rollback any failed transaction first
-                    try:
-                        self.db.rollback()
-                    except Exception:
-                        pass  # Ignore rollback errors if already clean
-                    
-                    # Get fresh match object from database to avoid stale state
-                    fresh_match = self.db.query(ForensicMatch).filter(
-                        ForensicMatch.id == match.id
-                    ).first()
-                    
-                    if not fresh_match:
-                        logger.warning(f"Match {match.id} not found in database, skipping tiering")
-                        continue
-                    
-                    # Now apply tiering in a fresh transaction
-                    try:
-                        tiering_result = self.tiering_service.classify_and_apply_tiering(
-                            fresh_match,
-                            auto_resolve=True  # Auto-resolve tier 0 matches
-                        )
-                        tiering_results.append(tiering_result)
-                        # Commit tiering changes for this match
-                        self.db.commit()
-                    except Exception as tiering_error:
-                        logger.error(f"Error applying tiering to match {match.id}: {tiering_error}", exc_info=True)
-                        # Rollback this match's tiering attempt
-                        try:
-                            self.db.rollback()
-                        except Exception:
-                            pass
-                        tiering_failures.append({'match_id': match.id, 'error': str(tiering_error)})
-                        # Continue with other matches even if one fails
-                        continue
-                except Exception as e:
-                    logger.error(f"Error in tiering loop for match {match.id}: {e}", exc_info=True)
-                    # Rollback and continue
-                    try:
-                        self.db.rollback()
-                    except Exception:
-                        pass
-                    tiering_failures.append({'match_id': match.id, 'error': str(e)})
-                    # Continue with other matches even if one fails
-                    continue
-        except Exception as e:
-            logger.error(f"Critical error in tiering process: {e}", exc_info=True)
-            # Rollback everything and continue - tiering is optional
-            try:
-                self.db.rollback()
-            except Exception:
-                pass
-            # Don't fail the entire reconciliation if tiering fails
-        
-        # Re-query all matches from database to get fresh state (after tiering)
-        # This ensures we have the latest data and avoids stale transaction state
-        try:
-            # Clear any stale object state
-            self.db.expire_all()
-            
-            # Ensure clean transaction
-            try:
-                self.db.rollback()
-            except Exception:
-                pass
-            
-            # Re-query all matches for this session
-            fresh_matches = self.db.query(ForensicMatch).filter(
-                ForensicMatch.session_id == session_id
-            ).all()
-            
-            # Update stored_matches with fresh data
-            stored_matches = fresh_matches
-            logger.info(f"Re-queried {len(stored_matches)} matches after tiering")
-        except Exception as e:
-            logger.warning(f"Failed to re-query matches after tiering: {e}", exc_info=True)
-            # Use stored_matches as-is if re-query fails
-            try:
-                self.db.rollback()
-            except Exception:
-                pass
-        
-        # Group matches by type (using fresh data)
-        matches_by_type = {
-            'exact': [m for m in stored_matches if m.match_type == 'exact'],
-            'fuzzy': [m for m in stored_matches if m.match_type == 'fuzzy'],
-            'calculated': [m for m in stored_matches if m.match_type == 'calculated'],
-            'inferred': [m for m in stored_matches if m.match_type == 'inferred']
-        }
-        
-        # Calculate summary with tiering breakdown (using fresh data)
-        tier_breakdown = {
-            'tier_0_auto_close': len([m for m in stored_matches if m.exception_tier == 'tier_0_auto_close']),
-            'tier_1_auto_suggest': len([m for m in stored_matches if m.exception_tier == 'tier_1_auto_suggest']),
-            'tier_2_route': len([m for m in stored_matches if m.exception_tier == 'tier_2_route']),
-            'tier_3_escalate': len([m for m in stored_matches if m.exception_tier == 'tier_3_escalate'])
-        }
-        
-        summary = {
-            'total_matches': len(stored_matches),
-            'exact_matches': len(matches_by_type['exact']),
-            'fuzzy_matches': len(matches_by_type['fuzzy']),
-            'calculated_matches': len(matches_by_type['calculated']),
-            'inferred_matches': len(matches_by_type['inferred']),
-            'pending_review': len([m for m in stored_matches if m.status == 'pending']),
-            'approved': len([m for m in stored_matches if m.status == 'approved']),
-            'rejected': len([m for m in stored_matches if m.status == 'rejected']),
-            'tier_breakdown': tier_breakdown
-        }
-        
-        # Update session summary (with transaction safety)
-        try:
-            # Ensure clean transaction state before updating session
-            try:
-                self.db.rollback()  # Rollback any failed transaction
-            except Exception:
-                pass
-            
-            # Re-query session to get fresh state (don't use refresh on potentially stale object)
-            session = self.db.query(ForensicReconciliationSession).filter(
-                ForensicReconciliationSession.id == session_id
-            ).first()
-            
-            if session:
-                session.summary = summary
-                self.db.commit()
-            else:
-                logger.error(f"Session {session_id} not found when updating summary")
-        except Exception as e:
-            logger.error(f"Failed to update session summary: {e}", exc_info=True)
-            # Rollback and try again
-            try:
-                self.db.rollback()
-                # Re-query session to get fresh state
-                session = self.db.query(ForensicReconciliationSession).filter(
-                    ForensicReconciliationSession.id == session_id
-                ).first()
-                if session:
-                    session.summary = summary
-                    self.db.commit()
-            except Exception as retry_error:
-                logger.error(f"Failed to update session summary on retry: {retry_error}")
-                try:
-                    self.db.rollback()
-                except Exception:
-                    pass
-                # Continue anyway - matches are stored
-        
-        logger.info(f"Found {len(stored_matches)} matches for session {session_id} (failed: {len(failed_matches)}, tiering failures: {len(tiering_failures)})")
-        
-        # Build response with diagnostic information
-        # Use fresh matches from database (already re-queried above)
-        try:
-            # Final safety check - ensure we have clean transaction state
-            try:
-                self.db.rollback()
-            except Exception:
-                pass
-            
-            # Build response from fresh match objects
-            response = {
-                'session_id': session_id,
-                'matches': [self._match_to_dict(m) for m in stored_matches],
-                'matches_by_type': {
-                    k: [self._match_to_dict(m) for m in v] for k, v in matches_by_type.items()
-                },
-                'summary': summary
+        return {
+            'session_id': session_id,
+            'matches_count': len(result['stored_matches']),
+            'diagnostic': {
+                'failed': len(result['failed_matches'])
             }
-            
-            # Add diagnostic information if there were failures
-            diagnostic_info = {}
-            if failed_matches:
-                diagnostic_info['matches_failed'] = len(failed_matches)
-                diagnostic_info['failure_reasons'] = [f['reason'] for f in failed_matches[:5]]  # First 5 reasons
-            
-            if tiering_failures:
-                diagnostic_info['tiering_failures'] = len(tiering_failures)
-                diagnostic_info['tiering_warning'] = f"Tiering failed for {len(tiering_failures)} matches but matches were still stored"
-            
-            if diagnostic_info:
-                diagnostic_info['total_matches_found'] = len(all_matches)
-                diagnostic_info['matches_stored'] = len(stored_matches)
-                response['diagnostic'] = diagnostic_info
-            
-            return response
-        except Exception as e:
-            logger.error(f"Error building response: {e}", exc_info=True)
-            # Even if response building fails, return what we have
-            try:
-                self.db.rollback()
-            except Exception:
-                pass
-            
-            # Return minimal response with matches
-            return {
-                'session_id': session_id,
-                'matches': [self._match_to_dict(m) for m in stored_matches] if stored_matches else [],
-                'matches_by_type': {},
-                'summary': summary,
-                'warning': f'Error building full response: {str(e)}'
-            }
+        }
     
     def validate_matches(
         self,
         session_id: int
     ) -> Dict[str, Any]:
         """
-        Validate all matches and identify discrepancies
-        
-        Runs validation rules and calculates reconciliation health score.
-        
-        Args:
-            session_id: Reconciliation session ID
-            
-        Returns:
-            Dict with validation results and health score
+        Validate matches and identify discrepancies - Orchestrator Method.
         """
-        session = self.db.query(ForensicReconciliationSession).filter(
-            ForensicReconciliationSession.id == session_id
-        ).first()
+        # Delegate
+        result = self.discrepancy_validator.validate_session(session_id)
         
-        if not session:
-            return {'error': 'Session not found'}
-        
-        # Get all matches
-        matches = self.db.query(ForensicMatch).filter(
-            ForensicMatch.session_id == session_id
-        ).all()
-        
-        discrepancies = []
-        validation_results = []
-        
-        for match in matches:
-            # Check for discrepancies based on confidence and amount differences
-            if match.confidence_score < 70.0:
-                # Low confidence - potential discrepancy
-                discrepancy = ForensicDiscrepancy(
-                    session_id=session_id,
-                    match_id=match.id,
-                    discrepancy_type='amount_mismatch',
-                    severity='medium' if match.confidence_score >= 50.0 else 'high',
-                    source_value=match.source_amount,
-                    target_value=match.target_amount,
-                    expected_value=match.target_amount,  # Assuming target is expected
-                    actual_value=match.source_amount,
-                    difference=match.amount_difference,
-                    difference_percent=self._clamp_percent(match.amount_difference_percent),
-                    description=f"Low confidence match ({match.confidence_score:.2f}%) between {match.source_document_type} and {match.target_document_type}",
-                    status='open'
-                )
-                discrepancies.append(discrepancy)
-                self.db.add(discrepancy)
-            
-            # Check for large amount differences
-            if match.amount_difference and match.amount_difference > Decimal('1000'):
-                discrepancy = ForensicDiscrepancy(
-                    session_id=session_id,
-                    match_id=match.id,
-                    discrepancy_type='amount_mismatch',
-                    severity='high' if match.amount_difference > Decimal('10000') else 'medium',
-                    source_value=match.source_amount,
-                    target_value=match.target_amount,
-                    difference=match.amount_difference,
-                    difference_percent=self._clamp_percent(match.amount_difference_percent),
-                    description=f"Large amount difference (${match.amount_difference:,.2f}) between {match.source_document_type} and {match.target_document_type}",
-                    status='open'
-                )
-                discrepancies.append(discrepancy)
-                self.db.add(discrepancy)
-        
-        # ==================== CALCULATED RULE VALIDATION ====================
-        rule_results = []
-        failed_rule_count = 0
-        try:
-            engine = CalculatedRulesEngine(self.db)
-            rule_results = engine.evaluate_rules(
-                property_id=session.property_id,
-                period_id=session.period_id
-            )
-
-            for result in rule_results:
-                if result.get('status') == 'FAIL':
-                    failed_rule_count += 1
-                    severity_map = {
-                        'critical': 'critical',
-                        'high': 'high',
-                        'warning': 'medium',
-                        'info': 'low',
-                        'low': 'low',
-                        'medium': 'medium'
-                    }
-                    severity = severity_map.get(result.get('severity', '').lower(), 'medium')
-                    discrepancy = ForensicDiscrepancy(
-                        session_id=session_id,
-                        match_id=None,
-                        discrepancy_type='rule_failure',
-                        severity=severity,
-                        source_value=Decimal(str(result.get('expected_value'))) if result.get('expected_value') is not None else None,
-                        target_value=Decimal(str(result.get('actual_value'))) if result.get('actual_value') is not None else None,
-                        expected_value=Decimal(str(result.get('expected_value'))) if result.get('expected_value') is not None else None,
-                        actual_value=Decimal(str(result.get('actual_value'))) if result.get('actual_value') is not None else None,
-                        difference=Decimal(str(result.get('difference'))) if result.get('difference') is not None else None,
-                        difference_percent=self._clamp_percent(result.get('difference_percent')),
-                        description=result.get('message') or f"Rule {result.get('rule_id')} failed",
-                        status='open'
-                    )
-                    discrepancies.append(discrepancy)
-                    self.db.add(discrepancy)
-        except Exception as rule_error:
-            logger.warning(f"Calculated rule evaluation failed: {rule_error}")
-        
-        self.db.commit()
-        
-        # Calculate health score
-        total_matches = len(matches)
-        if total_matches == 0:
-            health_score = 0.0
-        else:
-            approved_matches = len([m for m in matches if m.status == 'approved'])
-            high_confidence_matches = len([m for m in matches if m.confidence_score >= 90.0])
-            critical_discrepancies = len([d for d in discrepancies if d.severity == 'critical'])
-            high_discrepancies = len([d for d in discrepancies if d.severity == 'high'])
-            
-            # Simple weighted score
-            score = 100.0
-            score -= (high_discrepancies * 15.0)
-            score -= (critical_discrepancies * 25.0)
-            score -= ((total_matches - high_confidence_matches) * 2.0)
-            
-            health_score = max(0.0, min(100.0, score))
-        
-        # Update session
-        session.status = 'completed'
-        session.health_score = health_score
-        session.discrepancy_count = len(discrepancies)
-        session.ended_at = datetime.utcnow()
-        session.summary = {
-            'total_matches': len(matches),
-            'discrepancies': len(discrepancies),
-            'rule_failures': failed_rule_count,
-            'health_score': health_score,
-            'critical_discrepancies': len([d for d in discrepancies if d.severity == 'critical']),
-            'rules_total': len(rule_results),
-            'rules_failed': failed_rule_count
-        }
-        
-        self.db.commit()
-        
+        # Response builder (simplified)
         return {
-            'session_id': session.id,
-            'status': session.status,
-            'health_score': float(session.health_score) if session.health_score is not None else 0.0,
-            'discrepancies': [self._discrepancy_to_dict(d) for d in discrepancies]
+            'session_id': session_id,
+            'status': 'completed',
+            'health_score': result['health_score'],
+            'discrepancies': [self._discrepancy_to_dict(d) for d in result['discrepancies']]
         }
 
     def _clamp_percent(self, value: Optional[Any]) -> Optional[Decimal]:
@@ -1014,17 +536,6 @@ class ForensicReconciliationService:
         
         return []
     
-    def _get_table_name(self, document_type: str) -> str:
-        """Get table name for document type"""
-        mapping = {
-            'balance_sheet': 'balance_sheet_data',
-            'income_statement': 'income_statement_data',
-            'cash_flow': 'cash_flow_data',
-            'rent_roll': 'rent_roll_data',
-            'mortgage_statement': 'mortgage_statement_data'
-        }
-        return mapping.get(document_type, document_type)
-    
     def _get_document_type_from_table(self, document_type: str) -> str:
         """Get table name from document type"""
         mapping = {
@@ -1035,81 +546,6 @@ class ForensicReconciliationService:
             'mortgage_statement': 'mortgage_statement_data'
         }
         return mapping.get(document_type, document_type)
-    
-    def _get_document_type_from_record_id(
-        self,
-        record_id: int,
-        property_id: int,
-        period_id: int
-    ) -> str:
-        """Determine document type from record ID by checking all tables"""
-        if record_id is None or record_id == 0:
-            return 'unknown'
-        
-        try:
-            # Check each document type (with property/period filters for efficiency)
-            if self.db.query(BalanceSheetData).filter(
-                and_(
-                    BalanceSheetData.id == record_id,
-                    BalanceSheetData.property_id == property_id,
-                    BalanceSheetData.period_id == period_id
-                )
-            ).first():
-                return 'balance_sheet'
-            
-            if self.db.query(IncomeStatementData).filter(
-                and_(
-                    IncomeStatementData.id == record_id,
-                    IncomeStatementData.property_id == property_id,
-                    IncomeStatementData.period_id == period_id
-                )
-            ).first():
-                return 'income_statement'
-            
-            if self.db.query(CashFlowData).filter(
-                and_(
-                    CashFlowData.id == record_id,
-                    CashFlowData.property_id == property_id,
-                    CashFlowData.period_id == period_id
-                )
-            ).first():
-                return 'cash_flow'
-            
-            if self.db.query(RentRollData).filter(
-                and_(
-                    RentRollData.id == record_id,
-                    RentRollData.property_id == property_id,
-                    RentRollData.period_id == period_id
-                )
-            ).first():
-                return 'rent_roll'
-            
-            if self.db.query(MortgageStatementData).filter(
-                and_(
-                    MortgageStatementData.id == record_id,
-                    MortgageStatementData.property_id == property_id,
-                    MortgageStatementData.period_id == period_id
-                )
-            ).first():
-                return 'mortgage_statement'
-            
-            # Fallback: check without property/period filters (slower but more reliable)
-            if self.db.query(BalanceSheetData).filter(BalanceSheetData.id == record_id).first():
-                return 'balance_sheet'
-            if self.db.query(IncomeStatementData).filter(IncomeStatementData.id == record_id).first():
-                return 'income_statement'
-            if self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first():
-                return 'cash_flow'
-            if self.db.query(RentRollData).filter(RentRollData.id == record_id).first():
-                return 'rent_roll'
-            if self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first():
-                return 'mortgage_statement'
-            
-        except Exception as e:
-            logger.warning(f"Error determining document type for record {record_id}: {e}")
-            return 'unknown'
-        
-        return 'unknown'
     
     def _get_amount_from_record_id(
         self,
@@ -1137,67 +573,6 @@ class ForensicReconciliationService:
             return record.principal_balance if record else None
         
         return None
-    
-    def _get_record_details(
-        self,
-        record_id: int,
-        document_type: str
-    ) -> Dict[str, Any]:
-        """Get full record details including account code, name, and amount"""
-        if record_id is None or record_id == 0:
-            return {}
-        
-        try:
-            if document_type == 'balance_sheet':
-                record = self.db.query(BalanceSheetData).filter(BalanceSheetData.id == record_id).first()
-                if record:
-                    return {
-                        'account_code': record.account_code,
-                        'account_name': record.account_name,
-                        'amount': record.amount,
-                        'field_name': 'amount'
-                    }
-            elif document_type == 'income_statement':
-                record = self.db.query(IncomeStatementData).filter(IncomeStatementData.id == record_id).first()
-                if record:
-                    return {
-                        'account_code': record.account_code,
-                        'account_name': record.account_name,
-                        'amount': record.period_amount,
-                        'field_name': 'period_amount'
-                    }
-            elif document_type == 'cash_flow':
-                record = self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first()
-                if record:
-                    return {
-                        'account_code': record.account_code,
-                        'account_name': record.account_name,
-                        'amount': record.period_amount,
-                        'field_name': 'period_amount'
-                    }
-            elif document_type == 'rent_roll':
-                record = self.db.query(RentRollData).filter(RentRollData.id == record_id).first()
-                if record:
-                    return {
-                        'account_code': None,
-                        'account_name': record.tenant_name or 'Unknown Tenant',
-                        'amount': record.annual_rent or 0,
-                        'field_name': 'annual_rent'
-                    }
-            elif document_type == 'mortgage_statement':
-                record = self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first()
-                if record:
-                    return {
-                        'account_code': record.loan_number,
-                        'account_name': f"Loan {record.loan_number}",
-                        'amount': record.principal_balance or 0,
-                        'field_name': 'principal_balance'
-                    }
-        except Exception as e:
-            logger.warning(f"Error getting record details for {document_type} record {record_id}: {e}")
-            return {}
-        
-        return {}
     
     def _match_to_dict(self, match: ForensicMatch) -> Dict[str, Any]:
         """Convert match to dictionary"""

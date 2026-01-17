@@ -31,6 +31,10 @@ class LLMModel(str, Enum):
     # Fast, lightweight models (2-8GB VRAM)
     LLAMA_3_2_3B = "llama3.2:3b-instruct-q4_K_M"
     QWEN_2_5_7B = "qwen2.5:7b-instruct-q4_K_M"
+    
+    # Mid-range models (available on system)
+    QWEN_2_5_14B = "qwen2.5:14b"
+    DEEPSEEK_R1_14B = "deepseek-r1:14b"
 
     # Balanced models (16-24GB VRAM)
     QWEN_2_5_32B = "qwen2.5:32b-instruct-q4_K_M"
@@ -43,6 +47,7 @@ class LLMModel(str, Enum):
     # Vision models
     LLAVA_13B = "llava:13b-v1.6-vicuna-q4_K_M"
     LLAVA_34B = "llava:34b-v1.6-vicuna-q4_K_M"
+    MOONDREAM = "moondream"  # Lightweight vision model (available)
 
     # Groq cloud models (fallback)
     GROQ_LLAMA_3_3_70B = "llama-3.3-70b-versatile"
@@ -60,7 +65,7 @@ class LLMTaskType(str, Enum):
 class LLMConfig(BaseModel):
     """LLM configuration"""
     provider: LLMProvider = LLMProvider.OLLAMA
-    model: str = LLMModel.LLAMA_3_2_3B  # Default to available model
+    model: str = LLMModel.QWEN_2_5_14B  # Default to available system model
     temperature: float = 0.3
     max_tokens: int = 4000
     top_p: float = 0.9
@@ -98,13 +103,11 @@ class LocalLLMService:
         default_model = self.config.model
         self.model_selector = {
             LLMTaskType.SUMMARY: default_model,  # Fast summaries
-            LLMTaskType.ANALYSIS: default_model,  # Analysis (use larger model when available)
+            LLMTaskType.ANALYSIS: LLMModel.DEEPSEEK_R1_14B,  # Use Reasoning model for deep analysis
             LLMTaskType.NARRATIVE: default_model,  # Narratives (use larger model when available)
-            LLMTaskType.VISION: LLMModel.LLAVA_13B,  # Vision tasks
+            LLMTaskType.VISION: LLMModel.MOONDREAM,  # Use Moondream (installed) for Vision
             LLMTaskType.CHAT: default_model,  # Chat
         }
-
-        logger.info(f"Initialized LocalLLMService with provider: {self.config.provider}")
 
     async def _check_ollama_health(self) -> bool:
         """Check if Ollama service is available"""
@@ -387,28 +390,42 @@ class LocalLLMService:
 
     async def analyze_image(
         self,
-        image_path: str,
-        prompt: str,
+        image_path: str = None, # Make optional to support direct base64 if needed, but keeping signature
+        prompt: str = "Describe this image",
         system_prompt: Optional[str] = None,
+        image_b64: Optional[str] = None, # Added to support direct base64 injection
         **kwargs
     ) -> str:
         """
         Analyze an image using vision-language model
 
         Args:
-            image_path: Path to image file
+            image_path: Path to image file (optional if image_b64 provided)
             prompt: Analysis prompt
             system_prompt: Optional system prompt
+            image_b64: Optional base64 string (data URI or raw)
             **kwargs: Additional parameters
 
         Returns:
             Analysis text
         """
         import base64
+        
+        # Determine model dynamically
+        model = self.select_model(LLMTaskType.VISION)
 
-        # Read and encode image
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
+        # Get base64 data
+        if image_b64:
+            # If it's a data URI (data:image/jpeg;base64,...), strip the prefix
+            if "," in image_b64:
+                image_data = image_b64.split(",")[1]
+            else:
+                image_data = image_b64
+        elif image_path:
+            with open(image_path, "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
+        else:
+            raise ValueError("Must provide either image_path or image_b64")
 
         messages = []
         if system_prompt:
@@ -421,7 +438,7 @@ class LocalLLMService:
         })
 
         payload = {
-            "model": LLMModel.LLAVA_13B,
+            "model": model, # DYNAMIC MODEL SELECTION
             "messages": messages,
             "stream": False,
         }
@@ -439,6 +456,7 @@ class LocalLLMService:
         except Exception as e:
             logger.error(f"Image analysis failed: {e}")
             raise
+
 
     async def close(self):
         """Close HTTP client"""

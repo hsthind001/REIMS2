@@ -34,7 +34,7 @@ Levenshtein==0.27.3
 Mako==1.3.10
 MarkupSafe==3.0.3
 minio==7.2.18
-numpy>=1.23.5,<2.0  # Compatible with langchain and other ML libraries  # Note: Prophet may fail with NumPy 2.0+, but it's handled gracefully with lazy loading
+numpy>=1.23.5,<2.0  # Compatible with langchain and other ML libraries
 opencv-python-headless>=4.9,<4.10  # Compatible with numpy<2
 openpyxl==3.1.5
 packaging>=23.2,<25.0  # Required by langfuse
@@ -52,7 +52,7 @@ pydantic==2.12.3
 pydantic-settings==2.11.0
 pydantic_core==2.41.4
 PyMuPDF==1.26.5
-pypdf>=3.17,<4.0  # Compatible with camelot-py for Python 3.11
+pypdf>=4.0  # Required by camelot-py 1.0.9+
 pypdfium2==5.0.0
 reportlab==4.2.5
 pytesseract==0.3.13
@@ -194,7 +194,7 @@ parsedatetime==2.6  # Additional date/time parsing
 python-dateutil==2.9.0.post0  # Already present, ensure version
 
 # LLM Observability & Monitoring
-# phoenix-ai==4.51.0  # LLM tracing and observability (version doesn't exist, latest is 0.2.8.0)
+# phoenix-ai  # LLM tracing (version 4.51.0 does not exist, keeping commented out until valid version found)
 loguru==0.7.3  # Better structured logging
 
 # Retrieval & Search Utilities
@@ -207,7 +207,7 @@ langfuse==2.56.1  # LLM engineering platform (optional)
 
 # Caching & Performance
 gptcache==0.1.44  # Semantic caching for LLM responses
-redis==5.2.1  # Already present for caching
+# redis==5.2.1  # Already present for caching
 
 # Multi-modal & Document Understanding
 unstructured==0.16.13  # Document parsing and chunking
