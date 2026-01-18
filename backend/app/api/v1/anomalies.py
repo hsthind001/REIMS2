@@ -82,6 +82,74 @@ class AnomalyDetectionRequest(BaseModel):
     method: str = "statistical"  # statistical or ml
 
 
+@router.post("/detect/all", response_model=dict)
+async def trigger_all_anomaly_detection(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """
+    Trigger anomaly detection for ALL completed documents in the current organization.
+    Runs in the background.
+    """
+    from app.models.document_upload import DocumentUpload
+    from app.services.extraction_orchestrator import ExtractionOrchestrator
+    
+    # Get all completed uploads for this org
+    uploads = db.query(DocumentUpload).join(
+        Property, DocumentUpload.property_id == Property.id
+    ).filter(
+        Property.organization_id == current_org.id,
+        DocumentUpload.extraction_status == 'completed'
+    ).all()
+    
+    if not uploads:
+        return {
+            "success": True,
+            "message": "No completed documents found."
+        }
+        
+    # Define background task function
+    def run_bulk_detection(upload_ids: List[int], org_id: int):
+        # Create new session for background task
+        from app.db.database import SessionLocal
+        db_bg = SessionLocal()
+        try:
+            orchestrator = ExtractionOrchestrator(db_bg)
+            success_count = 0
+            
+            for upload_id in upload_ids:
+                try:
+                    upload = db_bg.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+                    if not upload:
+                        continue
+                        
+                    # Re-detect
+                    orchestrator._detect_anomalies_for_document(upload)
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"Failed bulk detection for doc {upload_id}: {e}")
+                    continue
+            
+            logger.info(f"Bulk anomaly detection completed. Success: {success_count}/{len(upload_ids)}")
+            
+        except Exception as e:
+            logger.error(f"Bulk detection task failed: {e}")
+        finally:
+            db_bg.close()
+
+    # Queue the task
+    upload_ids = [u.id for u in uploads]
+    background_tasks.add_task(run_bulk_detection, upload_ids, current_org.id)
+    
+    return {
+        "success": True,
+        "message": f"Queued {len(uploads)} documents for anomaly detection.",
+        "document_count": len(uploads)
+    }
+
+
 @router.post("/detect/{upload_id}", response_model=dict)
 async def trigger_anomaly_detection(
     upload_id: int,
@@ -196,74 +264,6 @@ async def trigger_anomaly_detection(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Anomaly detection failed: {str(e)}"
         )
-
-
-@router.post("/detect/all", response_model=dict)
-async def trigger_all_anomaly_detection(
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
-    current_org: Organization = Depends(get_current_organization)
-):
-    """
-    Trigger anomaly detection for ALL completed documents in the current organization.
-    Runs in the background.
-    """
-    from app.models.document_upload import DocumentUpload
-    from app.services.extraction_orchestrator import ExtractionOrchestrator
-    
-    # Get all completed uploads for this org
-    uploads = db.query(DocumentUpload).join(
-        Property, DocumentUpload.property_id == Property.id
-    ).filter(
-        Property.organization_id == current_org.id,
-        DocumentUpload.extraction_status == 'completed'
-    ).all()
-    
-    if not uploads:
-        return {
-            "success": True,
-            "message": "No completed documents found."
-        }
-        
-    # Define background task function
-    def run_bulk_detection(upload_ids: List[int], org_id: int):
-        # Create new session for background task
-        from app.db.database import SessionLocal
-        db_bg = SessionLocal()
-        try:
-            orchestrator = ExtractionOrchestrator(db_bg)
-            success_count = 0
-            
-            for upload_id in upload_ids:
-                try:
-                    upload = db_bg.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
-                    if not upload:
-                        continue
-                        
-                    # Re-detect
-                    orchestrator._detect_anomalies_for_document(upload)
-                    success_count += 1
-                except Exception as e:
-                    logger.error(f"Failed bulk detection for doc {upload_id}: {e}")
-                    continue
-            
-            logger.info(f"Bulk anomaly detection completed. Success: {success_count}/{len(upload_ids)}")
-            
-        except Exception as e:
-            logger.error(f"Bulk detection task failed: {e}")
-        finally:
-            db_bg.close()
-
-    # Queue the task
-    upload_ids = [u.id for u in uploads]
-    background_tasks.add_task(run_bulk_detection, upload_ids, current_org.id)
-    
-    return {
-        "success": True,
-        "message": f"Queued {len(uploads)} documents for anomaly detection.",
-        "document_count": len(uploads)
-    }
 
 
 @router.get("/", response_model=List[AnomalyResponse])

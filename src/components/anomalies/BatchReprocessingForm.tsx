@@ -211,7 +211,7 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
         </div>
         <button
           onClick={() => setShowCreateForm(!showCreateForm)}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all flex items-center gap-2"
+          className="px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-all flex items-center gap-2 shadow-sm"
         >
           <Play size={18} />
           Create New Job
@@ -300,10 +300,10 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
               type="submit"
               disabled={creating}
               className={`
-                px-4 py-2 rounded-lg font-medium transition-all
+                px-4 py-2 rounded-lg font-medium transition-all shadow-sm
                 ${creating
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-500 text-white hover:bg-blue-600'
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-slate-900 text-white hover:bg-slate-800'
                 }
               `}
             >
