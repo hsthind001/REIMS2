@@ -6,6 +6,10 @@ from app.models.property import Property
 # Import Organization model for type checking if needed, but dependency returns object
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
 from app.api.dependencies import get_current_user, get_current_organization
+from app.core.redis_client import invalidate_portfolio_cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -41,6 +45,8 @@ async def create_property(
     db.add(db_property)
     db.commit()
     db.refresh(db_property)
+    # Invalidate cache for new property
+    invalidate_portfolio_cache()
     return db_property
 
 
@@ -107,6 +113,8 @@ async def update_property(
     
     db.commit()
     db.refresh(property)
+    # Invalidate cache for updated property
+    invalidate_portfolio_cache()
     return property
 
 
@@ -129,4 +137,10 @@ async def delete_property(
     
     db.delete(property)
     db.commit()
+    
+    # Invalidate portfolio cache to remove deleted property from dashboards
+    invalidate_portfolio_cache()
+    # logger is not defined at module level yet, but I will add it or use print if simple. 
+    # Actually I should add logger definition to be safe.
+    
     return None

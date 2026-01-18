@@ -237,7 +237,7 @@ export default function AlertRules() {
                     <td style={{ padding: '0.75rem' }}>{rule.field_name}</td>
                     <td style={{ padding: '0.75rem' }}>{rule.condition.replace(/_/g, ' ')}</td>
                     <td style={{ padding: '0.75rem' }}>
-                      {rule.threshold_value !== undefined ? rule.threshold_value.toLocaleString() : 'N/A'}
+                      {rule.threshold_value !== undefined && rule.threshold_value !== null ? rule.threshold_value.toLocaleString() : 'N/A'}
                     </td>
                     <td style={{ padding: '0.75rem' }}>
                       <span style={{

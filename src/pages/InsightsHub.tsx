@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   AlertTriangle,
   CheckCircle,
@@ -19,8 +19,7 @@ import {
   MetricCard as UIMetricCard,
   Skeleton as UISkeleton,
   Button,
-  Select,
-  type SelectOption
+  Select
 } from '../components/ui';
 import { useToastContext } from '../hooks/ToastContext';
 import { PDFViewer } from '../components/PDFViewer';
@@ -29,7 +28,7 @@ import { mortgageService } from '../lib/mortgage';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
-import { getMetricSource, getPDFViewerData } from '../lib/metrics_source';
+import { getMetricSource } from '../lib/metrics_source';
 import { useAuth } from '../components/AuthContext';
 import type { Property } from '../types/api';
 import './insightsHub.css';
@@ -131,6 +130,7 @@ export default function InsightsHub() {
   const [selectedYear, setSelectedYear] = useState<number>(2023);
   const [documentMatrix, setDocumentMatrix] = useState<any>(null);
   const [loadingDocMatrix, setLoadingDocMatrix] = useState(false);
+  const [showHeroMenu, setShowHeroMenu] = useState(false);
   const [latestCompleteDSCR, setLatestCompleteDSCR] = useState<any>(null);
   const [sparklineData, setSparklineData] = useState<{
     value: number[];
@@ -156,7 +156,7 @@ export default function InsightsHub() {
   // For now, use a placeholder that will be updated
   const loadDashboardDataRef = useRef<(() => Promise<void>) | undefined>(undefined);
   
-  const { isRefreshing, isPaused, lastRefresh, pause, resume, toggle, refresh } = useAutoRefresh({
+  const { isRefreshing, isPaused, lastRefresh, toggle, refresh } = useAutoRefresh({
     interval: 300000, // 5 minutes
     enabled: true,
     onRefresh: () => loadDashboardDataRef.current?.() || Promise.resolve(),
@@ -324,11 +324,23 @@ export default function InsightsHub() {
       }
 
       // Calculate health score (0-100)
+      // Calculate health score (0-100)
       let score = 85; // Base score
-      if (avgOccupancy < 85) score -= 15;
-      if (avgOccupancy < 80) score -= 10;
-      if (criticalAlerts > 0) score -= criticalAlerts * 5;
-      if (warningAlerts > 0) score -= warningAlerts * 2;
+
+      // If no properties, consider it a clean slate (100)
+      if (_properties.length === 0) {
+        score = 100;
+      } else {
+        // Only penalize occupancy if we actually have properties
+        if (occupancyCount > 0 || _properties.length > 0) {
+           if (avgOccupancy < 85) score -= 15;
+           if (avgOccupancy < 80) score -= 10;
+        }
+        
+        if (criticalAlerts > 0) score -= criticalAlerts * 5;
+        if (warningAlerts > 0) score -= warningAlerts * 2;
+      }
+
       score = Math.max(0, Math.min(100, score));
 
       const status = score >= 90 ? 'excellent' : score >= 75 ? 'good' : score >= 60 ? 'fair' : 'poor';
@@ -1267,7 +1279,7 @@ export default function InsightsHub() {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section - Portfolio Vitals */}
-      <div className="bg-hero-gradient text-white py-12 px-6">
+      <div className="bg-hero-gradient text-white py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
             <div className="space-y-3">
@@ -1356,21 +1368,59 @@ export default function InsightsHub() {
                 <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => { window.location.hash = 'alert-rules'; }}
-                    className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                    className="px-3 py-1.5 rounded-lg bg-white text-blue-600 hover:bg-blue-50 font-semibold transition-colors shadow-sm"
                   >
                     View Priority Actions
                   </button>
-                  <button
-                    onClick={() => setShowQuickActions(true)}
-                    className="px-3 py-1.5 rounded-lg border border-white/30 text-white hover:bg-white/20 transition-colors"
-                  >
-                    Quick Actions
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowHeroMenu(!showHeroMenu)}
+                      className="px-3 py-1.5 rounded-lg bg-white text-blue-600 hover:bg-blue-50 font-semibold transition-colors shadow-sm flex items-center gap-2"
+                    >
+                      Quick Actions
+                    </button>
+                    {showHeroMenu && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowHeroMenu(false)} />
+                        <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                          <button
+                            onClick={() => { setShowUploadModal(true); setShowHeroMenu(false); }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                          >
+                            <Upload className="w-4 h-4 text-blue-500" />
+                            Upload Document
+                          </button>
+                          <button
+                            onClick={() => { setShowPropertyModal(true); setShowHeroMenu(false); }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                          >
+                            <Building2 className="w-4 h-4 text-green-500" />
+                            Add Property
+                          </button>
+                          <button
+                            onClick={() => { setShowHeroMenu(false); alert('Navigate to "Ask AI" from the sidebar menu'); }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                          >
+                            <MessageSquare className="w-4 h-4 text-purple-500" />
+                            Ask AI
+                          </button>
+                          <button
+                            onClick={() => { setShowHeroMenu(false); alert('Navigate to "Reports" from the sidebar menu'); }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                          >
+                            <FileText className="w-4 h-4 text-orange-500" />
+                            Generate Report
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="flex justify-end">
-              <div className="relative w-56 h-56">
+            
+            <div className="flex justify-center lg:justify-end mt-8 lg:mt-0">
+              <div className="relative w-48 h-48">
                 <div
                   className="absolute inset-0 rounded-full"
                   style={{

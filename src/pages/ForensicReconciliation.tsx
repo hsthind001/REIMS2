@@ -31,7 +31,6 @@ import EvidencePanel from '../components/forensic/EvidencePanel';
 import ReconciliationDiagnostics from '../components/forensic/ReconciliationDiagnostics';
 import ReconciliationRulesPanel from '../components/forensic/ReconciliationRulesPanel';
 import {
-  useForensicDataAvailability,
   useForensicDashboard,
   useForensicSession,
   useForensicMatches,
@@ -98,7 +97,7 @@ export default function ForensicReconciliation() {
       setLastSelectedPropertyForPeriod(selectedPropertyId);
   }
 
-  const { data: dataAvailability } = useForensicDataAvailability(selectedPropertyId, selectedPeriodId);
+  // const { data: dataAvailability } = useForensicDataAvailability(selectedPropertyId, selectedPeriodId);
   
   const { 
     data: dashboardData, 
@@ -133,7 +132,6 @@ export default function ForensicReconciliation() {
     runReconciliation, 
     approveMatch, 
     rejectMatch, 
-    resolveDiscrepancy,
     completeSession
   } = useForensicMutations();
 
@@ -288,7 +286,7 @@ export default function ForensicReconciliation() {
           />
         )}
 
-        {healthScore !== null && (
+        {typeof healthScore === 'number' && (
           <div className="mb-6">
             <ReconciliationHealthGauge healthScore={healthScore} />
           </div>

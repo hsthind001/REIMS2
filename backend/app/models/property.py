@@ -46,38 +46,38 @@ class Property(Base, TenantMixin):
     # Properties back_populates needs to be handled in Organization model or here if Mixin is generic
     
     # Relationships (lazy loading to avoid issues with tests and missing tables)
-    financial_periods = relationship("FinancialPeriod", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    document_uploads = relationship("DocumentUpload", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    balance_sheet_data = relationship("BalanceSheetData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    income_statement_data = relationship("IncomeStatementData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    income_statement_headers = relationship("IncomeStatementHeader", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    cash_flow_headers = relationship("CashFlowHeader", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    cash_flow_data = relationship("CashFlowData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    rent_roll_data = relationship("RentRollData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    mortgage_statements = relationship("MortgageStatementData", back_populates="property", cascade="all, delete-orphan", lazy="noload")
-    financial_metrics = relationship("FinancialMetrics", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    financial_periods = relationship("FinancialPeriod", back_populates="property", cascade="all, delete-orphan")
+    document_uploads = relationship("DocumentUpload", back_populates="property", cascade="all, delete-orphan")
+    balance_sheet_data = relationship("BalanceSheetData", back_populates="property", cascade="all, delete-orphan")
+    income_statement_data = relationship("IncomeStatementData", back_populates="property", cascade="all, delete-orphan")
+    income_statement_headers = relationship("IncomeStatementHeader", back_populates="property", cascade="all, delete-orphan")
+    cash_flow_headers = relationship("CashFlowHeader", back_populates="property", cascade="all, delete-orphan")
+    cash_flow_data = relationship("CashFlowData", back_populates="property", cascade="all, delete-orphan")
+    cash_flow_adjustments = relationship("CashFlowAdjustment", back_populates="property", cascade="all, delete-orphan")
+    cash_account_reconciliations = relationship("CashAccountReconciliation", back_populates="property", cascade="all, delete-orphan")
+    rent_roll_data = relationship("RentRollData", back_populates="property", cascade="all, delete-orphan")
+    mortgage_statements = relationship("MortgageStatementData", back_populates="property", cascade="all, delete-orphan")
+    financial_metrics = relationship("FinancialMetrics", back_populates="property", cascade="all, delete-orphan")
 
     # Next-level AI features relationships
-    research_data = relationship("PropertyResearch", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
-    tenant_recommendations = relationship("TenantRecommendation", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
-    tenant_history = relationship("TenantPerformanceHistory", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
+    research_data = relationship("PropertyResearch", back_populates="property_obj", cascade="all, delete-orphan")
+    tenant_recommendations = relationship("TenantRecommendation", back_populates="property_obj", cascade="all, delete-orphan")
+    tenant_history = relationship("TenantPerformanceHistory", back_populates="property_obj", cascade="all, delete-orphan")
 
     # Risk management relationships
-    committee_alerts = relationship("CommitteeAlert", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    committee_alerts = relationship("CommitteeAlert", back_populates="property", cascade="all, delete-orphan")
     workflow_locks = relationship("WorkflowLock", back_populates="property", cascade="all, delete-orphan", lazy="noload")
 
     # Self-learning pattern recognition
-    filename_patterns = relationship("FilenamePeriodPattern", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
+    filename_patterns = relationship("FilenamePeriodPattern", back_populates="property_obj", cascade="all, delete-orphan")
 
     # Market intelligence relationships
-    market_intelligence = relationship("MarketIntelligence", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
-    market_data_lineage = relationship("MarketDataLineage", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload")
-    forecast_models = relationship("ForecastModel", back_populates="property_obj", cascade="all, delete-orphan", lazy="noload", foreign_keys="ForecastModel.property_id")
+    market_intelligence = relationship("MarketIntelligence", back_populates="property_obj", cascade="all, delete-orphan")
+    market_data_lineage = relationship("MarketDataLineage", back_populates="property_obj", cascade="all, delete-orphan")
+    forecast_models = relationship("ForecastModel", back_populates="property_obj", cascade="all, delete-orphan", foreign_keys="ForecastModel.property_id")
 
     # Document completeness tracking
-    document_completeness = relationship("PeriodDocumentCompleteness", back_populates="property", cascade="all, delete-orphan", lazy="noload")
+    document_completeness = relationship("PeriodDocumentCompleteness", back_populates="property", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"

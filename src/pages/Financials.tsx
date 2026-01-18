@@ -968,28 +968,10 @@ export default function Financials() {
           {/* Quick Access Links */}
           <button
             onClick={() => {
-              window.location.hash = 'chart-of-accounts';
-            }}
-            className="ml-auto px-4 py-2 font-medium text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-            title="View and manage chart of accounts"
-          >
-            📊 Accounts
-          </button>
-          <button
-            onClick={() => {
-              window.location.hash = 'reconciliation';
-            }}
-            className="px-4 py-2 font-medium text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
-            title="Period reconciliation dashboard"
-          >
-            🔄 Reconciliation
-          </button>
-          <button
-            onClick={() => {
               window.location.hash = 'forensic-reconciliation';
             }}
-            className="px-4 py-2 font-medium text-sm border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center gap-2"
-            title="Open Forensic Reconciliation Elite System - Advanced matching, materiality-based thresholds, tiered exception management"
+            className="ml-auto px-4 py-2 font-medium text-sm text-text-secondary hover:text-text-primary transition-colors flex items-center gap-2"
+            title="Open Forensic Reconciliation Elite System"
           >
             🔍 Forensic Reconciliation
           </button>

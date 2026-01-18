@@ -5,7 +5,7 @@ Represents detected anomalies in financial data extracted from documents.
 """
 
 from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, Text, Enum as SQLEnum
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY, UUID
 import enum
@@ -136,7 +136,7 @@ class AnomalyDetection(Base):
     metadata_json = Column('metadata', JSONB, nullable=True)  # Flexible JSON storage for additional data
     
     # Relationships
-    document = relationship("DocumentUpload", backref="anomaly_detections")
+    document = relationship("DocumentUpload", backref=backref("anomaly_detections", cascade="all, delete-orphan"))
     feedback = relationship("AnomalyFeedback", back_populates="anomaly_detection", cascade="all, delete-orphan")
     
     def __repr__(self):

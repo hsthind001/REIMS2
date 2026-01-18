@@ -3,7 +3,7 @@ Alert History Model
 Tracks all state changes and actions on alerts
 """
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 
@@ -43,7 +43,7 @@ class AlertHistory(Base):
     action_metadata = Column(JSONB, nullable=True)  # Action-specific data (renamed from metadata to avoid SQLAlchemy reserved word)
     
     # Relationships
-    alert = relationship("CommitteeAlert", backref="history")
+    alert = relationship("CommitteeAlert", backref=backref("history", cascade="all, delete-orphan"))
     
     def __repr__(self):
         return f"<AlertHistory(id={self.id}, alert_id={self.alert_id}, action={self.action_type})>"

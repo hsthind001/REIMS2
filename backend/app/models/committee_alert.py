@@ -139,7 +139,7 @@ class CommitteeAlert(Base):
     acknowledged_user = relationship("User", foreign_keys=[acknowledged_by], backref="acknowledged_alerts")
     resolved_user = relationship("User", foreign_keys=[resolved_by], backref="resolved_alerts")
     dismissed_user = relationship("User", foreign_keys=[dismissed_by], backref="dismissed_alerts")
-    workflow_locks = relationship("WorkflowLock", back_populates="alert", cascade="all, delete-orphan")
+    workflow_locks = relationship("WorkflowLock", back_populates="alert", cascade="all, delete-orphan", lazy="noload")
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

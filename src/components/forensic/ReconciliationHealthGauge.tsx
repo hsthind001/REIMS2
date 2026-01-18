@@ -11,7 +11,7 @@ interface ReconciliationHealthGaugeProps {
   healthScore: number;
 }
 
-export default function ReconciliationHealthGauge({ healthScore }: ReconciliationHealthGaugeProps) {
+export default function ReconciliationHealthGauge({ healthScore = 0 }: ReconciliationHealthGaugeProps) {
   const getHealthColor = (score: number) => {
     if (score >= 80) return 'text-green-600';
     if (score >= 60) return 'text-amber-600';

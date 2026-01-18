@@ -1149,8 +1149,8 @@ export default function QualityControl() {
             onClick={() => {
               window.location.hash = 'forensic-reconciliation';
             }}
-            className="ml-auto px-4 py-2 font-medium text-sm border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center gap-2"
-            title="Open Forensic Reconciliation Elite System - Advanced matching, materiality-based thresholds, tiered exception management"
+            className="ml-auto px-4 py-2 font-medium text-sm text-text-secondary hover:text-text-primary transition-colors flex items-center gap-2"
+            title="Open Forensic Reconciliation Elite System"
           >
             🔍 Forensic Reconciliation
           </button>
@@ -1160,8 +1160,8 @@ export default function QualityControl() {
             onClick={() => {
               window.location.hash = 'forensic-audit-dashboard';
             }}
-            className="px-4 py-2 font-medium text-sm bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-colors flex items-center gap-2 shadow-lg"
-            title="Big 5 Forensic Audit Framework - CEO Dashboard, Fraud Detection, Covenant Compliance"
+            className="px-4 py-2 font-medium text-sm text-text-secondary hover:text-text-primary transition-colors flex items-center gap-2"
+            title="Big 5 Forensic Audit Framework"
           >
             🛡️ Forensic Audit
           </button>
