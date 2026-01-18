@@ -57,10 +57,10 @@ export class PropertyService {
   }
 
   /**
-   * Delete property
+   * Delete property by property code
    */
-  async deleteProperty(propertyId: number): Promise<void> {
-    await api.delete<void>(`/properties/${propertyId}`);
+  async deleteProperty(propertyCode: string): Promise<void> {
+    await api.delete<void>(`/properties/${propertyCode}`);
   }
 
   /**

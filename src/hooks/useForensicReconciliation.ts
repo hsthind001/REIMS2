@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { forensicReconciliationService } from '../lib/forensic_reconciliation';
-import type { ForensicReconciliationSession, ForensicMatch, ForensicDiscrepancy } from '../lib/forensic_reconciliation';
+import type { ForensicMatch, ForensicDiscrepancy } from '../lib/forensic_reconciliation';
 
 // Query Keys
 export const forensicKeys = {
@@ -111,7 +111,7 @@ export function useForensicMutations() {
 
   const approveMatchMutation = useMutation({
     mutationFn: (params: { matchId: number; notes?: string }) =>
-      forensicReconciliationService.approveMatch(params.matchId, params.notes),
+      forensicReconciliationService.approveMatch(params.matchId, { notes: params.notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: forensicKeys.all });
     },
@@ -119,7 +119,7 @@ export function useForensicMutations() {
 
   const rejectMatchMutation = useMutation({
     mutationFn: (params: { matchId: number; reason: string }) =>
-      forensicReconciliationService.rejectMatch(params.matchId, params.reason),
+      forensicReconciliationService.rejectMatch(params.matchId, { reason: params.reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: forensicKeys.all });
     },
@@ -127,7 +127,7 @@ export function useForensicMutations() {
 
   const resolveDiscrepancyMutation = useMutation({
     mutationFn: (params: { discrepancyId: number; notes: string; newValue?: number }) =>
-      forensicReconciliationService.resolveDiscrepancy(params.discrepancyId, params.notes, params.newValue),
+      forensicReconciliationService.resolveDiscrepancy(params.discrepancyId, { resolution_notes: params.notes, new_value: params.newValue }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: forensicKeys.all });
     },

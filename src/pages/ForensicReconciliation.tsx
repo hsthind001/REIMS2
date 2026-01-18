@@ -23,7 +23,6 @@ import { financialPeriodsService } from '../lib/financial_periods';
 import type { Property } from '../types/api';
 import ReconciliationDashboard from '../components/forensic/ReconciliationDashboard';
 import MatchTable from '../components/forensic/MatchTable';
-import DiscrepancyPanel from '../components/forensic/DiscrepancyPanel';
 import MatchDetailModal from '../components/forensic/MatchDetailModal';
 import ReconciliationHealthGauge from '../components/forensic/ReconciliationHealthGauge';
 import ReconciliationWorkQueue from '../components/forensic/ReconciliationWorkQueue';
@@ -65,29 +64,39 @@ export default function ForensicReconciliation() {
   const { data: properties = [] } = useQuery<Property[]>({
     queryKey: ['properties'],
     queryFn: () => propertyService.getAllProperties(),
-    onSuccess: (data) => {
-      if (data.length > 0 && !selectedPropertyId) {
-        setSelectedPropertyId(data[0].id);
-      }
-    }
   });
+
+  // Effect to select first property
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const [initialPropertySet, setInitialPropertySet] = useState(false);
+  if (properties.length > 0 && !selectedPropertyId && !initialPropertySet) {
+      setSelectedPropertyId(properties[0].id);
+      setInitialPropertySet(true);
+  }
 
   const { data: periods = [], isLoading: periodsLoading } = useQuery<any[]>({
     queryKey: ['periods', selectedPropertyId],
     queryFn: () => financialPeriodsService.listPeriods({ property_id: selectedPropertyId! }),
     enabled: !!selectedPropertyId,
-    onSuccess: (data) => {
-        if (data.length > 0) {
-             const sorted = [...data].sort((a, b) => {
-               if (a.period_year !== b.period_year) return b.period_year - a.period_year;
-               return b.period_month - a.period_month;
-             });
-             if (!selectedPeriodId) setSelectedPeriodId(sorted[0].id);
-        } else {
-             setSelectedPeriodId(null);
-        }
-    }
   });
+
+  // Effect to select first period
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const [lastSelectedPropertyForPeriod, setLastSelectedPropertyForPeriod] = useState<number | null>(null);
+  if (periods.length > 0 && selectedPropertyId && lastSelectedPropertyForPeriod !== selectedPropertyId) {
+       const sorted = [...periods].sort((a, b) => {
+         if (a.period_year !== b.period_year) return b.period_year - a.period_year;
+         return b.period_month - a.period_month;
+       });
+       if (sorted.length > 0) {
+           setSelectedPeriodId(sorted[0].id);
+       }
+       setLastSelectedPropertyForPeriod(selectedPropertyId);
+  } else if (periods.length === 0 && selectedPropertyId && lastSelectedPropertyForPeriod !== selectedPropertyId && !periodsLoading) {
+      // If loaded and empty, clear selection
+      setSelectedPeriodId(null);
+      setLastSelectedPropertyForPeriod(selectedPropertyId);
+  }
 
   const { data: dataAvailability } = useForensicDataAvailability(selectedPropertyId, selectedPeriodId);
   
@@ -132,24 +141,6 @@ export default function ForensicReconciliation() {
   const handleStartSession = async () => {
     if (!selectedPropertyId || !selectedPeriodId) return;
     try {
-      await createSession.mutateAsync({
-        property_id: selectedPropertyId,
-        period_id: selectedPeriodId,
-        session_type: 'full_reconciliation'
-      });
-      // The queries will auto-updates via invalidation, but we might want to trigger a run immediately
-      // However, usually creation returns the session, and then we run it.
-      // Wait for session query to verify existence before running? 
-      // Actually creating a session returns it.
-      // But query invalidation updates the sessionId.
-      // Let's rely on standard flow: Start creates session -> Dashboard updates -> User sees "Run" or we auto-run?
-      // The original code did create AND run.
-      // To simulate that we can await and then run.
-      // But we need the new session ID.
-      // Let's let the user run it from dashboard or do it in onSuccess of create if needed.
-      // For now, let's just create. The dashboard will update showing a new session.
-      // Original logic: await create -> await run.
-      // To do this with hooks:
       const newSession = await createSession.mutateAsync({
          property_id: selectedPropertyId,
          period_id: selectedPeriodId,
@@ -188,11 +179,6 @@ export default function ForensicReconciliation() {
   const handleRejectMatch = (matchId: number, reason: string) => {
     rejectMatch.mutate({ matchId, reason });
     if (selectedMatch?.id === matchId) setSelectedMatch(null);
-  };
-
-  const handleResolveDiscrepancy = (discrepancyId: number, notes: string, newValue?: number) => {
-    resolveDiscrepancy.mutate({ discrepancyId, notes, newValue });
-    if (selectedDiscrepancy?.id === discrepancyId) setSelectedDiscrepancy(null);
   };
 
   const handleViewDetails = (item: ForensicMatch | ForensicDiscrepancy) => {

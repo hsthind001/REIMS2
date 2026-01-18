@@ -16,6 +16,8 @@ export interface MetricCardProps {
   loading?: boolean;
   sparklineData?: number[];
   onClick?: () => void;
+  icon?: React.ReactNode;
+  className?: string; // Add className prop
 }
 
 export const MetricCard: React.FC<MetricCardProps> = ({
@@ -29,10 +31,12 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   loading = false,
   sparklineData,
   onClick,
+  icon,
+  className,
 }) => {
   if (loading) {
     return (
-      <Card className="ui-metric-card">
+      <Card className={`ui-metric-card ${className || ''}`}>
         <Skeleton className="ui-metric-title" variant="text" />
         <Skeleton className="ui-metric-value" variant="text" />
         <Skeleton className="ui-metric-bar" />
@@ -80,13 +84,16 @@ export const MetricCard: React.FC<MetricCardProps> = ({
 
   return (
     <Card
-      className="ui-metric-card"
+      className={`ui-metric-card ${className || ''}`}
       hoverable
       interactive={Boolean(onClick)}
       onClick={onClick}
     >
       <div className="ui-metric-head">
-        <span className="ui-metric-title">{title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+           {icon && <div className="ui-metric-icon">{icon}</div>}
+           <span className="ui-metric-title">{title}</span>
+        </div>
         {status && <span className={`ui-metric-dot ui-status-${status}`} aria-hidden />}
       </div>
       <div className="ui-metric-content-wrapper" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>

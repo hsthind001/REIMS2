@@ -17,35 +17,6 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
-# ... (omitted lines)
-
-
-# ... (omitted lines)
-
-@router.get("/me", response_model=UserResponse)
-def get_current_user_info(request: Request, db: Session = Depends(get_db)):
-    """
-    Get current logged-in user information
-    
-    - Reads user ID from session
-    - Returns user data
-    
-    Returns:
-        UserResponse: Current user data
-    """
-    user_id = request.session.get("user_id")
-    
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-    
-    # Eagerly load organization memberships
-    user = db.query(User).options(
-         joinedload(User.organization_memberships).joinedload(OrganizationMember.organization)
-    ).filter(User.id == user_id).first()
-
 
 def validate_password_strength(password: str) -> None:
     """
@@ -168,33 +139,35 @@ def login(
 ):
     """
     Login with username and password
-    
+
     - Verifies credentials
     - Creates session cookie (HTTP-only, secure)
     - Returns user data
-    
+
     Returns:
         UserResponse: Logged in user data
     """
-    # Find user by username
-    user = db.query(User).filter(User.username == login_data.username).first()
-    
+    # Find user by username with eager loading of organization memberships
+    user = db.query(User).options(
+        joinedload(User.organization_memberships).joinedload(OrganizationMember.organization)
+    ).filter(User.username == login_data.username).first()
+
     if not user or not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password"
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
+
     # Set session cookie (Starlette session middleware handles this)
     request.session["user_id"] = user.id
     request.session["username"] = user.username
-    
+
     return user
 
 

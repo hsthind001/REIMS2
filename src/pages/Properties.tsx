@@ -185,7 +185,7 @@ export default function Properties() {
     clearComparison
   } = usePortfolioStore();
 
-  const { logout } = useAuth();
+  const { logout, refreshUser } = useAuth();
 
   // Local state - Non-persistent
   const [properties, setProperties] = useState<Property[]>([]);
@@ -199,6 +199,7 @@ export default function Properties() {
   const [tenantMatches, setTenantMatches] = useState<TenantMatch[]>([]);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [financialStatements, setFinancialStatements] = useState<any>(null);
@@ -357,6 +358,11 @@ export default function Properties() {
       console.error('Failed to load properties:', err);
       if (err?.status === 401) {
         setLoadError('Session expired. Please sign in again.');
+        // Trigger a re-check of authentication status
+        // If truly expired, the auth context will handle logout
+        refreshUser().catch(console.error);
+      } else if (err?.status === 403) {
+        setLoadError('Access Denied: You do not have permission to view properties.');
       } else {
         setLoadError(err?.message || 'Unable to load properties. Please try again.');
       }
@@ -2152,20 +2158,7 @@ export default function Properties() {
                         className="bg-red-50 border-red-200 hover:bg-red-100/80 text-danger" 
                         size="sm" 
                         icon={<Trash2 className="w-4 h-4" />}
-                        onClick={async () => {
-                          if (window.confirm(`Are you sure you want to delete ${selectedProperty.property_name}? This action cannot be undone.`)) {
-                             try {
-                               await propertyService.deleteProperty(selectedProperty.id);
-                               // Remove from local state
-                               setProperties(prev => prev.filter(p => p.id !== selectedProperty.id));
-                               // Select first available or null
-                               const remaining = properties.filter(p => p.id !== selectedProperty.id);
-                               setSelectedProperty(remaining.length > 0 ? remaining[0] : null);
-                             } catch (err: any) {
-                               alert(`Failed to delete property: ${err.message || 'Unknown error'}`);
-                             }
-                          }
-                        }}
+                        onClick={() => setPropertyToDelete(selectedProperty)}
                       >
                         Delete
                       </Button>
@@ -3492,6 +3485,25 @@ export default function Properties() {
         />
       )}
 
+      {/* Delete Confirmation Modal */}
+      {propertyToDelete && (
+        <DeletePropertyModal
+          property={propertyToDelete}
+          onClose={() => setPropertyToDelete(null)}
+          onSuccess={() => {
+            // Remove from local state
+            setProperties(prev => prev.filter(p => p.id !== propertyToDelete.id));
+            
+            // Select first available or null logic
+            // We need to act on the *next* state, but here we calculate based on current
+            const remaining = properties.filter(p => p.id !== propertyToDelete.id);
+            setSelectedProperty(remaining.length > 0 ? remaining[0] : null);
+            
+            setPropertyToDelete(null);
+          }}
+        />
+      )}
+
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowUploadModal(false)}>
           <div className="bg-surface rounded-xl p-6 max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -3736,6 +3748,88 @@ function PropertyFormModal({
             </Button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Delete Confirmation Modal Component
+function DeletePropertyModal({
+  property,
+  onClose,
+  onSuccess,
+}: {
+  property: Property;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { logout } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDelete = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await propertyService.deleteProperty(property.property_code);
+      onSuccess();
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      if (err?.status === 401) {
+        setError('Session expired. Redirecting to login...');
+        setTimeout(() => logout(), 1500); // Give user a moment to see the message
+      } else if (err?.status === 403) {
+         setError('Access Denied: You do not have permission to delete this property.');
+      } else {
+         setError(err?.message || 'Failed to delete property. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto w-full h-full p-4" onClick={onClose} aria-labelledby="modal-title" role="dialog" aria-modal="true">
+      <div className="bg-surface rounded-xl p-6 max-w-md w-full mx-auto shadow-2xl scale-100 transform transition-transform" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-danger flex items-center gap-2" id="modal-title">
+             <Trash2 className="w-5 h-5" /> Delete Property
+          </h2>
+          <button className="text-text-secondary hover:text-text-primary text-xl" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        <div className="relative">
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-danger rounded-lg text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                <span className="mt-0.5">⚠️</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <p className="text-text-primary mb-2">
+                Are you sure you want to delete <span className="font-semibold text-text-primary bg-surface-hover px-1 rounded">{property.property_name}</span>?
+              </p>
+              <p className="text-sm text-text-secondary bg-warning-light/30 p-3 rounded-lg border border-warning/20">
+                <strong className="text-warning-dark block mb-1">Warning:</strong>
+                This action cannot be undone. All associated data including financial records, tenant information, and documents will be permanently removed.
+              </p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2">
+              <Button variant="ghost" onClick={onClose} disabled={loading}>
+                Cancel
+              </Button>
+              <Button 
+                className="bg-danger text-white hover:bg-danger-hover border-danger focus:ring-danger/30" 
+                onClick={handleDelete} 
+                disabled={loading} 
+                loading={loading}
+              >
+                {loading ? 'Deleting...' : 'Delete Property'}
+              </Button>
+            </div>
+        </div>
       </div>
     </div>
   );

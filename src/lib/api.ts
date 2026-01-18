@@ -48,11 +48,19 @@ export class ApiClient {
       };
     }
     
-    if (status === 401 || status === 403) {
+    if (status === 401) {
       return {
         category: 'auth',
         retryable: false,
         message: 'Authentication required - please log in again'
+      };
+    }
+
+    if (status === 403) {
+      return {
+        category: 'client', // Use client category or add new 'forbidden' category
+        retryable: false,
+        message: 'Access denied - you do not have permission to perform this action'
       };
     }
     
