@@ -8,13 +8,17 @@ import {
   XCircle,
   FileText,
   Search,
-  Filter
+  Filter,
+  CreditCard
 } from 'lucide-react';
 import { Card, Button } from '../components/design-system';
+import { SubscriptionOverview } from '../components/billing/SubscriptionOverview';
+import { BillingHistory } from '../components/billing/BillingHistory';
+import { PlanManagement } from '../components/billing/PlanManagement';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1';
 
-type AdminTab = 'users' | 'roles' | 'audit' | 'settings';
+type AdminTab = 'users' | 'roles' | 'audit' | 'settings' | 'billing';
 
 interface User {
   id: number;
@@ -53,6 +57,7 @@ interface AuditLog {
 
 export default function AdminHub() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
+  const [billingTab, setBillingTab] = useState<'overview' | 'history' | 'plans'>('overview');
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
@@ -138,7 +143,7 @@ export default function AdminHub() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border mb-6">
-          {(['users', 'roles', 'audit', 'settings'] as AdminTab[]).map((tab) => (
+          {(['users', 'roles', 'audit', 'billing', 'settings'] as AdminTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -148,6 +153,7 @@ export default function AdminHub() {
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
+              {tab === 'billing' && <CreditCard className="w-4 h-4 inline mr-2" />}
               {tab}
             </button>
           ))}
@@ -435,6 +441,49 @@ export default function AdminHub() {
               <Button variant="primary">Save Settings</Button>
             </div>
           </Card>
+        )}
+
+        {activeTab === 'billing' && (
+          <div className="space-y-6">
+            {/* Sub-tabs for Billing */}
+            <div className="flex gap-2 border-b border-border">
+              <button
+                onClick={() => setBillingTab('overview')}
+                className={`px-4 py-2 font-medium text-sm transition-colors ${
+                  billingTab === 'overview'
+                    ? 'text-info border-b-2 border-info'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setBillingTab('history')}
+                className={`px-4 py-2 font-medium text-sm transition-colors ${
+                  billingTab === 'history'
+                    ? 'text-info border-b-2 border-info'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Billing History
+              </button>
+              <button
+                onClick={() => setBillingTab('plans')}
+                className={`px-4 py-2 font-medium text-sm transition-colors ${
+                  billingTab === 'plans'
+                    ? 'text-info border-b-2 border-info'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Plans
+              </button>
+            </div>
+
+            {/* Billing Content */}
+            {billingTab === 'overview' && <SubscriptionOverview />}
+            {billingTab === 'history' && <BillingHistory />}
+            {billingTab === 'plans' && <PlanManagement />}
+          </div>
         )}
       </div>
     </div>

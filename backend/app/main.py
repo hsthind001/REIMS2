@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 import logging
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, self_learning, extraction_learning, market_intelligence, document_intelligence
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, self_learning, extraction_learning, market_intelligence, document_intelligence, billing
 from app.api.v1.endpoints import onboarding
 from app.api.v2 import router as v2_router, documents as documents_v2
 from app.db.database import engine, Base
@@ -193,6 +193,9 @@ app.include_router(portfolio_analytics.router, prefix=settings.API_V1_STR, tags=
 
 # SaaS Onboarding (Phase 5: Self-Service)
 app.include_router(onboarding.router, prefix=settings.API_V1_STR + "/onboarding", tags=["onboarding"])
+
+# Billing and Subscription Management
+app.include_router(billing.router, prefix=settings.API_V1_STR + "/billing", tags=["billing"])
 
 # Webhooks
 from app.api.webhooks import stripe_webhook

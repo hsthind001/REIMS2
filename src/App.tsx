@@ -14,6 +14,8 @@ import { documentService } from './lib/document'
 import { BottomNav } from './components/ui/BottomNav'
 import './components/ui/BottomNav.css'
 import { OrganizationSwitcher } from './components/OrganizationSwitcher';
+import { SubscriptionStatusBadge } from './components/SubscriptionStatusBadge';
+
 
 // Lazy load pages for better initial bundle size
 const InsightsHub = lazy(() => import('./pages/InsightsHub'))
@@ -355,6 +357,7 @@ function AppContent() {
 
           {isAuthenticated ? (
             <>
+              <SubscriptionStatusBadge />
               <OrganizationSwitcher />
               <NotificationCenter />
               <span className="user-info">👤 {user?.username}</span>
