@@ -12,7 +12,8 @@ import {
   Pause,
   Play,
   Download,
-  Activity
+  Activity,
+  TrendingUp
 } from 'lucide-react';
 import { 
   ProgressBar,
@@ -127,9 +128,15 @@ export default function InsightsHub() {
   const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
   const [analysisDetails, setAnalysisDetails] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
-  const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>('all'); // 'all' or property_code
-  // Default to 2023 (year with actual data)
-  const [selectedYear, setSelectedYear] = useState<number>(2023);
+  // Load filters from localStorage or use defaults
+  const [selectedPropertyFilter, setSelectedPropertyFilter] = useState<string>(() => {
+    const saved = localStorage.getItem('insightsHub_selectedProperty');
+    return saved || 'all';
+  });
+  const [selectedYear, setSelectedYear] = useState<number>(() => {
+    const saved = localStorage.getItem('insightsHub_selectedYear');
+    return saved ? parseInt(saved) : 2025;
+  });
   const [documentMatrix, setDocumentMatrix] = useState<any>(null);
   const [loadingDocMatrix, setLoadingDocMatrix] = useState(false);
   const [showHeroMenu, setShowHeroMenu] = useState(false);
@@ -778,6 +785,12 @@ export default function InsightsHub() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPropertyFilter, selectedYear]);
 
+  // Save filters to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('insightsHub_selectedProperty', selectedPropertyFilter);
+    localStorage.setItem('insightsHub_selectedYear', selectedYear.toString());
+  }, [selectedPropertyFilter, selectedYear]);
+
   useEffect(() => {
     // Load document matrix and DSCR when property filter or year changes
     if (selectedPropertyFilter !== 'all' && properties.length > 0) {
@@ -1323,7 +1336,7 @@ export default function InsightsHub() {
                     label="Year"
                     value={selectedYear.toString()}
                     onChange={(val) => setSelectedYear(parseInt(val))}
-                    options={Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => ({
+                    options={[2026, 2025, 2024, 2023, 2022].map(year => ({
                       value: year.toString(),
                       label: year.toString()
                     }))}
@@ -1356,7 +1369,11 @@ export default function InsightsHub() {
           />
           <UIMetricCard
             title={selectedPropertyFilter === 'all' ? "Portfolio NOI" : "Property NOI"}
-            value={portfolioHealth?.totalNOI ? `$${(portfolioHealth.totalNOI / 1_000_000).toFixed(1)}M` : '$0'}
+            value={
+              selectedPropertyFilter === 'all'
+                ? (portfolioHealth?.totalNOI ? `$${(portfolioHealth.totalNOI / 1_000_000).toFixed(1)}M` : '$0')
+                : (portfolioHealth?.totalNOI ? `$${(portfolioHealth.totalNOI / 1_000).toFixed(1)}K` : '$0')
+            }
             delta={Number.isFinite(noiChange) ? Number(noiChange.toFixed(1)) : 0}
             trend={noiChange >= 0 ? "up" : "down"}
             status="info"
@@ -1468,23 +1485,6 @@ export default function InsightsHub() {
                             <div className="text-xl font-semibold text-text-primary">{missingDocs}</div>
                             <div className="text-sm text-text-secondary">Across all periods</div>
                           </div>
-                          <div className="p-4 rounded-xl border border-border bg-surface">
-                            <div className="text-sm text-text-secondary mb-1">Timeline</div>
-                            <div className="flex flex-wrap gap-2">
-                              {documentMatrix.months.map((month: any) => (
-                                <span
-                                  key={month.period_id}
-                                  className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                                    month.all_available
-                                      ? 'bg-green-50 text-green-700 border-green-200'
-                                      : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                  } ${documentMatrix.latest_complete_period?.period_id === month.period_id ? 'ring-2 ring-blue-400' : ''}`}
-                                >
-                                  {month.month_name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
                         </div>
                       );
                     })()}
@@ -1546,20 +1546,6 @@ export default function InsightsHub() {
                     ))}
                   </tbody>
                 </table>
-                </div>
-
-                <div className="mt-4">
-                  <div className="text-sm font-semibold text-text-primary mb-2">Heatmap</div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {documentMatrix.months?.map((month: any) => (
-                      <div key={month.period_id} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-50 border border-border">
-                        <span className={`inline-block h-3 w-3 rounded-full ${
-                          month.all_available ? 'bg-success' : 'bg-warning'
-                        }`} />
-                        <span>{month.month_name}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
                 {!documentMatrix.latest_complete_period && (
@@ -1681,7 +1667,7 @@ export default function InsightsHub() {
                           max={100}
                           variant={tone.bar as any}
                           showLabel
-                          label={`${Math.round((alert.metric.current / alert.metric.threshold) * 100)}% of threshold (${Math.round(((alert.metric.threshold - alert.metric.current) / alert.metric.threshold) * 100)}% below compliance)`}
+                          label={`${((alert.metric.current / alert.metric.threshold) * 100).toFixed(2)}% of threshold (${(((alert.metric.threshold - alert.metric.current) / alert.metric.threshold) * 100).toFixed(2)}% below compliance)`}
                         />
                       </div>
                       <div className="ml-4 flex flex-col gap-2 shrink-0">
@@ -1794,83 +1780,6 @@ export default function InsightsHub() {
             </UICard>
           </div>
 
-          {/* AI Insights Widget */}
-          <div>
-            <UICard variant="glass" className="p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-6 h-6 text-premium" />
-                <h2 className="text-2xl font-bold">AI Advisor</h2>
-              </div>
-              <p className="text-sm text-text-secondary mb-4">Powered by Claude AI</p>
-
-              {/* AI Insights */}
-              <div className="space-y-4">
-                {loadingAIInsights ? (
-                  [...Array(3)].map((_, idx) => (
-                    <div key={idx} className="space-y-2">
-                      <UISkeleton variant="text" style={{ width: '50%', height: '1rem' }} />
-                      <UISkeleton style={{ width: '100%', height: '0.5rem' }} />
-                      <UISkeleton style={{ width: '80%', height: '0.5rem' }} />
-                    </div>
-                  ))
-                ) : aiInsights.length === 0 ? (
-                  <div className="bg-success-light/20 p-4 rounded-lg border border-success/30">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle className="w-6 h-6 text-success" />
-                      <div>
-                        <p className="font-medium text-success">Portfolio Health Strong</p>
-                        <p className="text-sm text-text-secondary mt-1">
-                          No critical issues detected - portfolio performing within normal parameters
-                        </p>
-                        <p className="text-xs text-text-secondary mt-2">
-                          AI monitors: DSCR stress, vacancy trends, lease expirations, NOI patterns
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  aiInsights.map((insight) => (
-                  <div key={insight.id} className="bg-premium-light/20 p-3 rounded-lg border border-premium/30">
-                    <div className="flex items-start gap-3">
-                      <span className="text-premium">🟣</span>
-                      <div className="flex-1 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-medium text-sm">{insight.title}</p>
-                      <span className="text-xs px-2 py-1 rounded-full bg-white/30 text-white">
-                        {Math.round(insight.confidence)}% confidence
-                      </span>
-                    </div>
-                    <p className="text-xs text-text-secondary">{insight.description}</p>
-                    <div className="flex gap-2 flex-wrap text-xs">
-                      <span className="px-2 py-1 rounded bg-white/10 text-white">
-                        Impact: {insight.type === 'risk' ? 'High' : insight.type === 'opportunity' ? 'Medium' : 'Low'}
-                      </span>
-                      <span className="px-2 py-1 rounded bg-white/10 text-white">
-                        Updated: {insight.updated_at ? new Date(insight.updated_at).toLocaleTimeString() : 'just now'}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex gap-2 flex-wrap">
-                      <Button 
-                        variant="premium" 
-                        size="sm"
-                        onClick={async () => {
-                              setSelectedInsight(insight);
-                              setShowAnalysisModal(true);
-                              await loadInsightAnalysis(insight);
-                            }}
-                          >
-                            View Analysis
-                          </Button>
-                          <Button variant="ghost" size="sm">Acknowledge</Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  ))
-                )}
-              </div>
-            </UICard>
-          </div>
           </div>
         </div>
 

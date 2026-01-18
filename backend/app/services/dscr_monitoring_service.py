@@ -64,18 +64,23 @@ class DSCRMonitoringService:
             if not property:
                 return {"success": False, "error": "Property not found"}
 
-            # Get financial period (latest if not specified)
+            # Get financial period (latest COMPLETE period if not specified)
             if financial_period_id:
                 period = self.db.query(FinancialPeriod).filter(
                     FinancialPeriod.id == financial_period_id
                 ).first()
             else:
-                period = self.db.query(FinancialPeriod).filter(
-                    FinancialPeriod.property_id == property_id
-                ).order_by(FinancialPeriod.period_end_date.desc()).first()
+                # Get latest COMPLETE period (all required documents uploaded)
+                # This prevents calculating DSCR for incomplete periods
+                from app.services.metrics_service import MetricsService
+                metrics_service = MetricsService(self.db)
+                period = metrics_service.get_latest_complete_period(property_id)
 
             if not period:
-                return {"success": False, "error": "No financial period found"}
+                return {
+                    "success": False, 
+                    "error": "No complete financial period found - upload all required documents first"
+                }
 
             # Calculate NOI
             noi = self._calculate_noi(property_id, period.id)
@@ -264,8 +269,9 @@ class DSCRMonitoringService:
         
         DSCR = NOI / (Principal + Interest)
         
-        PREFERRED: Use mortgage statement data when available (most accurate)
-        FALLBACK: Use income statement interest + estimated principal
+        PREFERRED: Use pre-calculated value from FinancialMetrics table (most reliable)
+        FALLBACK 1: Use mortgage statement data when available (most accurate)
+        FALLBACK 2: Use income statement interest + estimated principal
         
         IMPORTANT: Only include actual debt service payments:
         - Mortgage Interest (7010-0000) - YES
@@ -273,7 +279,20 @@ class DSCRMonitoringService:
         - Depreciation (7020-0000) - NO (non-cash expense)
         - Amortization (7030-0000) - NO (non-cash expense)
         """
-        # PREFERRED: Try to get debt service from mortgage statement data first
+        # PREFERRED: Try to get pre-calculated debt service from FinancialMetrics first
+        # This ensures consistency with centralized metrics storage
+        metrics = self.db.query(FinancialMetrics).filter(
+            FinancialMetrics.property_id == property_id,
+            FinancialMetrics.period_id == financial_period_id
+        ).first()
+        
+        if metrics and metrics.total_annual_debt_service is not None:
+            debt_service = Decimal(str(metrics.total_annual_debt_service))
+            if debt_service > 0:
+                logger.debug(f"Using pre-calculated debt service from FinancialMetrics: {debt_service}")
+                return debt_service
+        
+        # FALLBACK 1: Try to get debt service from mortgage statement data
         mortgage_data = self.db.query(MortgageStatementData).filter(
             MortgageStatementData.property_id == property_id,
             MortgageStatementData.period_id == financial_period_id
@@ -299,7 +318,7 @@ class DSCRMonitoringService:
                 logger.debug(f"Using mortgage statement data for debt service: {total_annual_debt_service}")
                 return total_annual_debt_service
         
-        # FALLBACK: Get ONLY Mortgage Interest (7010-0000) - this is the interest portion of debt service
+        # FALLBACK 2: Get ONLY Mortgage Interest (7010-0000) - this is the interest portion of debt service
         from app.models.income_statement_header import IncomeStatementHeader
         mortgage_interest = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
@@ -423,13 +442,8 @@ class DSCRMonitoringService:
                 estimated_principal = interest_payment * Decimal("0.5")
                 total_debt_service = interest_payment + estimated_principal
         
-        # If still zero, fallback to estimated calculation based on NOI
-        if total_debt_service == 0:
-            noi = self._calculate_noi(property_id, financial_period_id)
-            # Estimate: Assume debt service is ~60-70% of NOI (typical for commercial real estate)
-            # This ensures DSCR will be around 1.4-1.6 if NOI is healthy
-            total_debt_service = noi * Decimal("0.65") if noi > 0 else Decimal("0")
-
+        # DO NOT estimate from NOI - return 0 if no data found
+        # This prevents creating misleading DSCR values
         return total_debt_service
 
     def _create_dscr_alert(

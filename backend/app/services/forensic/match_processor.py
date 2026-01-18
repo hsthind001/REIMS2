@@ -215,6 +215,12 @@ class ForensicMatchProcessor:
         # Check Cash Flow
         if self.db.query(CashFlowData).filter(CashFlowData.id == record_id).first():
             return 'cash_flow'
+        # Check Rent Roll
+        if self.db.query(RentRollData).filter(RentRollData.id == record_id).first():
+            return 'rent_roll'
+        # Check Mortgage Statement
+        if self.db.query(MortgageStatementData).filter(MortgageStatementData.id == record_id).first():
+            return 'mortgage_statement'
             
         return 'unknown'
 
@@ -245,8 +251,26 @@ class ForensicMatchProcessor:
         if not record:
             return None
             
-        return {
-            'account_code': getattr(record, 'account_code', None), # Assuming standardized fields or needs adaptation
-            'account_name': getattr(record, 'line_item', None) or getattr(record, 'description', None),
-            'amount': getattr(record, 'amount', getattr(record, 'current_period', 0))
-        }
+        # Map fields based on document type
+        if doc_type == 'rent_roll':
+            return {
+                'account_code': None,
+                'account_name': getattr(record, 'tenant_name', 'Unknown Tenant'),
+                'amount': getattr(record, 'annual_rent', 0) or getattr(record, 'monthly_rent', 0) * 12,
+                'field_name': 'annual_rent'
+            }
+        elif doc_type == 'mortgage_statement':
+            return {
+                'account_code': getattr(record, 'loan_number', None),
+                'account_name': f"Loan {getattr(record, 'loan_number', 'Unknown')}",
+                'amount': getattr(record, 'principal_balance', 0),
+                'field_name': 'principal_balance'
+            }
+        else:
+            # Standard financial statements
+            return {
+                'account_code': getattr(record, 'account_code', None),
+                'account_name': getattr(record, 'line_item', None) or getattr(record, 'description', None),
+                'amount': getattr(record, 'amount', getattr(record, 'current_period', 0)),
+                'field_name': 'amount' if hasattr(record, 'amount') else 'current_period'
+            }

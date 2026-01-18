@@ -178,6 +178,7 @@ export default function QualityControl() {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessingAll, setReprocessingAll] = useState(false);
   const [rerunningAnomalies, setRerunningAnomalies] = useState<number | null>(null);
   const [rerunningExtraction, setRerunningExtraction] = useState<number | null>(null);
   
@@ -724,6 +725,34 @@ export default function QualityControl() {
       alert('Failed to reprocess document. Please try again.');
     } finally {
       setRerunningExtraction(null);
+    }
+  };
+
+  const handleRerunAllAnomalies = async () => {
+    if (!confirm('Are you sure you want to re-run anomaly detection for ALL completed documents in this organization? This may take some time to process in the background.')) {
+      return;
+    }
+
+    try {
+      setReprocessingAll(true);
+      const response = await fetch(`${API_BASE_URL}/anomalies/detect/all`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(result.message);
+        loadData(); // Reload stats
+      } else {
+        const error = await response.json();
+        alert(`Failed to trigger bulk detection: ${formatErrorMessage(error)}`);
+      }
+    } catch (error) {
+      console.error('Failed to trigger bulk detection:', error);
+      alert('Failed to trigger bulk detection. Please try again.');
+    } finally {
+      setReprocessingAll(false);
     }
   };
 
@@ -2359,6 +2388,14 @@ export default function QualityControl() {
                     Last updated: {lastUpdated.toLocaleTimeString()}
                   </div>
                   <div className="flex gap-2">
+                    <Button 
+                      className="bg-purple-50 border-purple-200 text-purple-700" 
+                      icon={<RefreshCw className={`w-4 h-4 ${reprocessingAll ? 'animate-spin' : ''}`} />} 
+                      onClick={handleRerunAllAnomalies}
+                      disabled={reprocessingAll || deleting}
+                    >
+                      {reprocessingAll ? 'Queueing...' : 'Re-run All Anomalies'}
+                    </Button>
                     {statusCounts.failed > 0 && (
                       <Button 
                         className="bg-amber-50 border-amber-200" 

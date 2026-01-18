@@ -35,7 +35,6 @@ import { AlertService } from '../lib/alerts';
 import { financialDataService } from '../lib/financial_data';
 import { financialPeriodsService } from '../lib/financial_periods';
 import { DocumentUpload } from '../components/DocumentUpload';
-import { MortgageMetricsWidget } from '../components/mortgage/MortgageMetricsWidget';
 import { MortgageStatementDetails } from '../components/mortgage/MortgageStatementDetails';
 import { InlineEdit } from '../components/ui/InlineEdit';
 import { exportPropertyListToCSV, exportPropertyListToExcel } from '../lib/exportUtils';
@@ -166,6 +165,7 @@ interface TenantMatch {
 type DetailTab = 'overview' | 'financials' | 'market' | 'tenants' | 'docs';
 
 export default function Properties() {
+  const detailsRef = useRef<HTMLDivElement>(null);
   // Portfolio Store - Persistent state
   const {
     selectedProperty,
@@ -1570,7 +1570,7 @@ export default function Properties() {
                   <Card
                     key={property.id}
                     variant={isSelected ? 'elevated' : 'default'}
-                    className={`group relative p-4 cursor-pointer transition-all duration-200 overflow-hidden ${
+                    className={`group relative p-5 cursor-pointer transition-all duration-200 overflow-hidden ${
                       isSelected ? 'ring-2 ring-info shadow-md' : 'hover:shadow-lg hover:-translate-y-0.5'
                     }`}
                     onClick={() => setSelectedProperty(property)}
@@ -1611,9 +1611,9 @@ export default function Properties() {
                           ${(displayValue / 1000000).toFixed(1)}M
                         </div>
                         <div className="text-xs text-text-secondary font-medium">
-                          NOI <span className={displayNoi > 0 ? 'text-success' : ''}>${(displayNoi / 1000).toFixed(0)}K</span>
+                          NOI <span className={displayNoi > 0 ? 'text-success' : ''}>${(displayNoi / 1000).toFixed(1)}K</span>
                           <span className="mx-1 text-border">|</span>
-                          LTV {ltv ? `${(ltv * 100).toFixed(0)}%` : '-'}
+                          LTV {ltv ? `${(ltv * 100).toFixed(1)}%` : '-'}
                         </div>
                       </div>
                     </div>
@@ -1673,20 +1673,24 @@ export default function Properties() {
                     </div>
 
                     {/* Hover Quick Actions Overlay */}
-                    <div className="absolute inset-x-0 bottom-0 p-3 bg-surface/90 backdrop-blur-md border-t border-border flex items-center justify-between opacity-0 translate-y-2 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 z-10">
-                        <div className="text-xs text-text-secondary font-medium">
-                            {ltv ? `LTV: ${(ltv * 100).toFixed(0)}%` : 'No LTV'}
+                    <div className="absolute inset-x-0 bottom-0 p-4 bg-surface/95 backdrop-blur-md border-t border-border flex items-center justify-between opacity-0 translate-y-2 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 z-10">
+                        <div className="text-sm text-text-secondary font-medium">
+                            {ltv ? `LTV: ${(ltv * 100).toFixed(1)}%` : 'No LTV'}
                         </div>
                         <Button 
-                            variant="ghost" 
+                            variant="primary" 
                             size="sm" 
-                            className="h-8 text-xs hover:bg-primary/10 hover:text-primary p-0 px-2"
+                            className="h-9 text-sm font-medium shadow-sm"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedProperty(property);
+                                // Scroll to details section on mobile or if needed
+                                setTimeout(() => {
+                                  detailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 100);
                             }}
                         >
-                            View Details <ArrowRight className="ml-1 w-3 h-3" />
+                            View Details <ArrowRight className="ml-1 w-4 h-4" />
                         </Button>
                     </div>
                   </Card>
@@ -2119,7 +2123,7 @@ export default function Properties() {
           </div>
 
           {/* Right Panel - Asset Details (70%) */}
-          <div className="lg:col-span-7">
+          <div className="lg:col-span-7" ref={detailsRef}>
             {selectedProperty ? (
               <div className="space-y-6">
                 {/* Property Header */}
@@ -2256,55 +2260,6 @@ export default function Properties() {
                           status="success"
                           comparison="NOI / Value"
                         />
-                      </div>
-                    </Card>
-
-                    {/* Financial Health */}
-                    <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4">Financial Health</h3>
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex justify-between mb-1">
-                            <span className="text-sm text-text-secondary">NOI Performance</span>
-                            <span className="text-sm font-medium">
-                              ${((metrics?.noi || 0) / 1000).toFixed(1)}K / ${(((metrics?.noi || 0) * 1.25) / 1000).toFixed(1)}K target
-                            </span>
-                          </div>
-                          <ProgressBar
-                            value={metrics?.noi && metrics.noi > 0 ? ((metrics.noi / (metrics.noi * 1.25)) * 100) : 0}
-                            max={100}
-                            className="bg-green-50 border-green-200"
-                            height="md"
-                          />
-                        </div>
-                        <div>
-                          <div className="flex justify-between mb-1">
-                            <span className="text-sm text-text-secondary">DSCR</span>
-                            <span className="text-sm font-medium">
-                              {(metrics?.dscr !== null && metrics?.dscr !== undefined) ? metrics.dscr.toFixed(2) : '0.00'} / 1.25 min
-                            </span>
-                          </div>
-                          <ProgressBar
-                            value={((metrics?.dscr || 0) / 1.25) * 100}
-                            max={100}
-                            variant={metrics?.dscr && metrics.dscr < 1.25 ? 'danger' : 'success'}
-                            height="md"
-                          />
-                        </div>
-                        <div>
-                          <div className="flex justify-between mb-1">
-                            <span className="text-sm text-text-secondary">Occupancy</span>
-                            <span className="text-sm font-medium">
-                              {unitInfo?.occupiedUnits || 0} / {unitInfo?.totalUnits || 0} units
-                            </span>
-                          </div>
-                          <ProgressBar
-                            value={((unitInfo?.occupiedUnits || 0) / (unitInfo?.totalUnits || 1)) * 100}
-                            max={100}
-                            className="bg-green-50 border-green-200"
-                            height="md"
-                          />
-                        </div>
                       </div>
                     </Card>
 
@@ -2535,16 +2490,7 @@ export default function Properties() {
                       </div>
 
                       {/* Mortgage Metrics Section */}
-                      {selectedProperty && (
-                        <div className="mb-6">
-                          <h3 className="text-lg font-semibold mb-4">🏦 Mortgage Metrics</h3>
-                          <MortgageMetricsWidget
-                            propertyId={selectedProperty.id}
-                            periodYear={selectedYear}
-                            periodMonth={selectedMonth}
-                          />
-                        </div>
-                      )}
+
 
                       {/* Financial Data Display */}
                       {selectedStatement === 'mortgage' ? (

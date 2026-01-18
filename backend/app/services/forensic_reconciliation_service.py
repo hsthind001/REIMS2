@@ -21,10 +21,16 @@ from app.models.forensic_discrepancy import ForensicDiscrepancy
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.document_upload import DocumentUpload
+from app.models.balance_sheet_data import BalanceSheetData
+from app.models.income_statement_data import IncomeStatementData
+from app.models.cash_flow_data import CashFlowData
+from app.models.rent_roll_data import RentRollData
+from app.models.mortgage_statement_data import MortgageStatementData
 
 if TYPE_CHECKING:
     from app.services.forensic.match_processor import ForensicMatchProcessor
     from app.services.forensic.discrepancy_validator import ForensicDiscrepancyValidator
+    from app.services.reconciliation_diagnostics_service import ReconciliationDiagnosticsService
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +42,8 @@ class ForensicReconciliationService:
         self, 
         db: Session,
         match_processor: Optional['ForensicMatchProcessor'] = None,
-        discrepancy_validator: Optional['ForensicDiscrepancyValidator'] = None
+        discrepancy_validator: Optional['ForensicDiscrepancyValidator'] = None,
+        diagnostics_service: Optional['ReconciliationDiagnosticsService'] = None
     ):
         """
         Initialize forensic reconciliation service with injected dependencies.
@@ -71,6 +78,12 @@ class ForensicReconciliationService:
             self.discrepancy_validator = ForensicDiscrepancyValidator(db)
         else:
             self.discrepancy_validator = discrepancy_validator
+
+        if not diagnostics_service:
+            from app.services.reconciliation_diagnostics_service import ReconciliationDiagnosticsService
+            self.diagnostics_service = ReconciliationDiagnosticsService(db)
+        else:
+            self.diagnostics_service = diagnostics_service
     
     def start_reconciliation_session(
         self,

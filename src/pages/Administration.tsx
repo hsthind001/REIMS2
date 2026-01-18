@@ -78,13 +78,32 @@ export default function AdminHub() {
   const loadData = async () => {
     try {
 
-      // Load users
-      const usersRes = await fetch(`${API_BASE_URL}/users`, {
+      // Load users - Use admin endpoint to get ALL users across all organizations
+      // This endpoint is only accessible to superusers
+      const usersRes = await fetch(`${API_BASE_URL}/admin/users`, {
         credentials: 'include'
       });
       if (usersRes.ok) {
         const usersData = await usersRes.json();
-        setUsers(usersData.users || usersData || []);
+        // Map the admin API response to the expected User interface
+        const mappedUsers = (usersData || []).map((u: any) => ({
+          id: u.id,
+          username: u.username,
+          email: u.email,
+          role: u.is_superuser ? 'Superuser' : (u.organizations?.join(', ') || 'No Organization'),
+          is_active: u.is_active,
+          created_at: u.created_at
+        }));
+        setUsers(mappedUsers);
+      } else {
+        // Fallback to organization-scoped users if admin endpoint is not accessible
+        const fallbackRes = await fetch(`${API_BASE_URL}/users`, {
+          credentials: 'include'
+        });
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          setUsers(fallbackData.users || fallbackData || []);
+        }
       }
 
       // Load roles
