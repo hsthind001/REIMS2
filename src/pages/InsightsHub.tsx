@@ -11,7 +11,8 @@ import {
   RefreshCw,
   Pause,
   Play,
-  Download
+  Download,
+  Activity
 } from 'lucide-react';
 import { 
   ProgressBar,
@@ -27,6 +28,7 @@ import { propertyService } from '../lib/property';
 import { mortgageService } from '../lib/mortgage';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { usePortfolioMetrics } from '../hooks/usePortfolioMetrics';
 import { exportPortfolioHealthToPDF, exportToCSV, exportToExcel } from '../lib/exportUtils';
 import { getMetricSource } from '../lib/metrics_source';
 import { useAuth } from '../components/AuthContext';
@@ -166,204 +168,57 @@ export default function InsightsHub() {
   // Initial load effect - will be updated after loadDashboardData is defined
   const initialLoadRef = useRef(false);
 
-  const loadPortfolioHealth = async (_properties: Property[]) => {
-    try {
-      // Calculate portfolio health from properties and metrics
-      // Include year parameter to filter metrics by selected year
-      const summaryUrl = `${API_BASE_URL}/metrics/summary?year=${selectedYear}`;
-      let metricsSummary = await fetch(summaryUrl, {
-        credentials: 'include'
-      }).then(r => r.ok ? r.json() : []);
+  // Use centralized metrics hook - replaces loadPortfolioHealth function
+  const { metrics: portfolioMetrics, loading: loadingMetrics, error: metricsError } = usePortfolioMetrics(
+    selectedPropertyFilter,
+    selectedYear
+  );
 
-      // Filter by selected property if not "all"
-      if (selectedPropertyFilter !== 'all') {
-        metricsSummary = metricsSummary.filter((m: any) =>
-          m.property_code === selectedPropertyFilter
-        );
-      }
-
-      let totalValue = 0;
-      let totalNOI = 0;
-      let totalOccupancy = 0;
-      let occupancyCount = 0;
-      let criticalAlerts = 0;
-      let warningAlerts = 0;
-
-      // Use only latest period per property (API now filters, but double-check)
-      const propertyMap = new Map<string, any>();
-      metricsSummary.forEach((m: any) => {
-        const existing = propertyMap.get(m.property_code);
-        if (!existing) {
-          propertyMap.set(m.property_code, m);
-        } else {
-          // Prefer later period if duplicate
-          if (m.period_year > existing.period_year || 
-              (m.period_year === existing.period_year && m.period_month > existing.period_month)) {
-            propertyMap.set(m.property_code, m);
-          }
-        }
-      });
-
-      // Sum values from unique properties only
-      propertyMap.forEach((m: any) => {
-        if (m.total_assets) totalValue += m.total_assets;
-        // Use NOI (Net Operating Income) instead of net_income for portfolio NOI
-        if (m.net_operating_income !== null && m.net_operating_income !== undefined) {
-          totalNOI += m.net_operating_income;
-        } else if (m.net_income !== null && m.net_income !== undefined) {
-          // Fallback to net_income if NOI not available
-          totalNOI += m.net_income;
-        }
-        if (m.occupancy_rate !== null && m.occupancy_rate !== undefined) {
-          totalOccupancy += m.occupancy_rate;
-          occupancyCount++;
-        }
-      });
-
-      const avgOccupancy = occupancyCount > 0 ? totalOccupancy / occupancyCount : 0;
-
-      // Fetch DSCR - property-specific if single property selected, portfolio if "all"
-      let portfolioDSCR = 0;
-      let dscrChange = 0;
-      
-      if (selectedPropertyFilter === 'all') {
-        // Fetch Portfolio DSCR from API
-        try {
-          const dscrResponse = await fetch(`${API_BASE_URL}/exit-strategy/portfolio-dscr`, {
-            credentials: 'include'
-          });
-          if (dscrResponse.ok) {
-            const dscrData = await dscrResponse.json();
-            portfolioDSCR = dscrData.dscr || 0;
-            dscrChange = dscrData.yoy_change || 0;
-          }
-        } catch (dscrErr) {
-          console.error('Failed to fetch portfolio DSCR:', dscrErr);
-        }
-      } else {
-        // Get property-specific DSCR from metrics summary (already calculated)
-        const metric = propertyMap.get(selectedPropertyFilter);
-        if (metric) {
-          // Use DSCR from metrics summary
-          portfolioDSCR = metric.dscr !== null && metric.dscr !== undefined ? metric.dscr : 0;
-
-          // TODO: Calculate dscrChange by comparing with previous period's metrics
-          // For now, we'll leave dscrChange as 0 until we implement historical DSCR comparison
-          dscrChange = 0;
-        }
-      }
-
-      // Fetch percentage changes from API
-      let percentageChanges = {
-        total_value_change: 0,
-        noi_change: 0,
-        occupancy_change: 0,
-        dscr_change: 0
-      };
-      
-      if (selectedPropertyFilter === 'all') {
-        try {
-          const changesResponse = await fetch(`${API_BASE_URL}/metrics/portfolio-changes`, {
-            credentials: 'include'
-          });
-          if (changesResponse.ok) {
-            const changesData = await changesResponse.json();
-            percentageChanges = {
-              total_value_change: changesData.total_value_change || 0,
-              noi_change: changesData.noi_change || 0,
-              occupancy_change: changesData.occupancy_change || 0,
-              dscr_change: changesData.dscr_change || dscrChange
-            };
-          }
-        } catch (changesErr) {
-          console.error('Failed to fetch percentage changes:', changesErr);
-        }
-      } else {
-        // Calculate property-specific percentage changes
-        const metric = propertyMap.get(selectedPropertyFilter);
-        if (metric) {
-          // Get previous period data for comparison
-          const prevYear = metric.period_year;
-          const prevMonth = metric.period_month - 1;
-          const prevYearFinal = prevMonth < 1 ? prevYear - 1 : prevYear;
-          const prevMonthFinal = prevMonth < 1 ? 12 : prevMonth;
-          
-          // Fetch previous period metrics (for calculating changes)
-          // Note: This should fetch previous year's data for year-over-year comparison
-          try {
-            const prevYear = selectedYear - 1;
-            const prevMetricsResponse = await fetch(`${API_BASE_URL}/metrics/summary?year=${prevYear}`, {
-              credentials: 'include'
-            });
-            if (prevMetricsResponse.ok) {
-              const prevMetrics = await prevMetricsResponse.json();
-              const prevMetric = prevMetrics.find((m: any) => 
-                m.property_code === selectedPropertyFilter && 
-                m.period_year === prevYearFinal && 
-                m.period_month === prevMonthFinal
-              );
-              
-              if (prevMetric) {
-                const calcChange = (current: number, previous: number) => {
-                  if (!previous || previous === 0) return 0;
-                  return ((current - previous) / previous) * 100;
-                };
-                
-                percentageChanges = {
-                  total_value_change: calcChange(metric.total_assets || 0, prevMetric.total_assets || 0),
-                  noi_change: calcChange(metric.net_operating_income || 0, prevMetric.net_operating_income || 0),
-                  occupancy_change: calcChange(metric.occupancy_rate || 0, prevMetric.occupancy_rate || 0),
-                  dscr_change: dscrChange
-                };
-              }
-            }
-          } catch (prevErr) {
-            console.warn('Failed to fetch previous period metrics for comparison:', prevErr);
-          }
-        }
-      }
-
-      // Calculate health score (0-100)
-      // Calculate health score (0-100)
+  // Transform centralized metrics to portfolioHealth state
+  useEffect(() => {
+    if (portfolioMetrics) {
+      // Calculate health score based on metrics
       let score = 85; // Base score
 
-      // If no properties, consider it a clean slate (100)
-      if (_properties.length === 0) {
-        score = 100;
-      } else {
-        // Only penalize occupancy if we actually have properties
-        if (occupancyCount > 0 || _properties.length > 0) {
-           if (avgOccupancy < 85) score -= 15;
-           if (avgOccupancy < 80) score -= 10;
-        }
+      if (properties.length === 0) {
+        score = 100; // Clean slate\n      } else {
+        // Penalize for low occupancy
+        if (portfolioMetrics.avgOccupancy < 85) score -= 15;
+        if (portfolioMetrics.avgOccupancy < 80) score -= 10;
         
-        if (criticalAlerts > 0) score -= criticalAlerts * 5;
-        if (warningAlerts > 0) score -= warningAlerts * 2;
+        // Penalize for critical alerts
+        if (criticalAlerts.length > 0) score -= criticalAlerts.length * 5;
       }
 
       score = Math.max(0, Math.min(100, score));
-
       const status = score >= 90 ? 'excellent' : score >= 75 ? 'good' : score >= 60 ? 'fair' : 'poor';
 
       setPortfolioHealth({
         score,
         status,
-        totalValue,
-        totalNOI,
-        avgOccupancy,
-        portfolioDSCR,
-        percentageChanges, // Store percentage changes
+        totalValue: portfolioMetrics.totalValue,
+        totalNOI: portfolioMetrics.totalNOI,
+        avgOccupancy: portfolioMetrics.avgOccupancy,
+        portfolioDSCR: portfolioMetrics.portfolioDSCR,
+        percentageChanges: portfolioMetrics.percentageChanges,
         alertCount: {
-          critical: criticalAlerts,
-          warning: warningAlerts,
+          critical: criticalAlerts.length,
+          warning: 0,
           info: 0
         },
         lastUpdated: new Date()
       });
-    } catch (err) {
-      console.error('Failed to load portfolio health:', err);
     }
-  };
+  }, [portfolioMetrics, properties.length, criticalAlerts.length]);
+
+  // Display metrics error if present
+  useEffect(() => {
+    if (metricsError) {
+      console.error('Failed to load portfolio metrics:', metricsError);
+      toastError(`Failed to load metrics: ${metricsError}`);
+    }
+  }, [metricsError, toastError]);
+
 
   const loadCriticalAlerts = async () => {
     setLoadingCriticalAlerts(true);
@@ -880,7 +735,7 @@ export default function InsightsHub() {
 
       // Parallelize independent API calls for better performance
       await Promise.all([
-        loadPortfolioHealth(propertiesData),
+        // Portfolio health is now managed by usePortfolioMetrics hook
         loadCriticalAlerts(),
         loadAIInsights(),
         loadSparklineData() // Only call once
@@ -914,9 +769,9 @@ export default function InsightsHub() {
   }, []);
 
   useEffect(() => {
-    // Reload portfolio health, property scorecard, and sparklines when property or year filter changes
+    // Reload property scorecard and sparklines when property or year filter changes
+    // Portfolio health is now managed by usePortfolioMetrics hook
     if (properties.length > 0) {
-      loadPortfolioHealth(properties);
       loadPropertyPerformance(properties);
       loadSparklineData();
     }
@@ -1120,7 +975,7 @@ export default function InsightsHub() {
     switch (status) {
       case 'excellent': return <CheckCircle className="w-5 h-5 text-success" />;
       case 'good': return <CheckCircle className="w-5 h-5 text-info" />;
-      case 'fair': return <AlertTriangle className="w-5 h-5 text-warning" />;
+      case 'fair': return <Activity className="w-5 h-5 text-white" />;
       case 'poor': return <AlertTriangle className="w-5 h-5 text-danger" />;
       default: return null;
     }
@@ -1279,9 +1134,9 @@ export default function InsightsHub() {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section - Portfolio Vitals */}
-      <div className="bg-hero-gradient text-white py-16 px-6">
+      <div className="bg-hero-gradient text-white px-6" style={{ paddingTop: '2.5rem', paddingBottom: '3rem' }}>
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <h1 className="text-4xl font-bold">
                 {selectedPropertyFilter === 'all'
@@ -1362,7 +1217,7 @@ export default function InsightsHub() {
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-danger/20 text-white font-semibold">{criticalCount}</span>
                   <div>
                     <div className="font-semibold text-white">Priority Actions</div>
-                    <div className="text-white/80">Critical: {criticalCount} • Warnings: {warningCount} • Insights: {insightCount}</div>
+
                   </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
@@ -1419,21 +1274,21 @@ export default function InsightsHub() {
               </div>
             </div>
             
-            <div className="flex justify-center lg:justify-end mt-8 lg:mt-0">
-              <div className="relative w-48 h-48">
+            <div className="flex justify-center md:justify-end mt-6 md:mt-0 z-10 relative">
+              <div className="relative w-32 h-32 shrink-0">
                 <div
                   className="absolute inset-0 rounded-full"
                   style={{
                     background: `conic-gradient(#22c55e ${Math.min(portfolioHealth?.score || 0, 100)}%, rgba(255,255,255,0.1) ${Math.min(portfolioHealth?.score || 0, 100)}%)`
                   }}
                 />
-                <div className="absolute inset-3 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center text-center">
-                  <div className="text-sm uppercase tracking-wide text-white/70">Health</div>
-                  <div className="text-5xl font-bold">{portfolioHealth?.score || 0}</div>
-                  <div className="text-sm text-white/80">of 100</div>
-                  <div className="mt-2 flex items-center gap-2 text-lg">
+                <div className="absolute inset-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center text-center">
+                  <div className="text-xs uppercase tracking-wide text-white/70">Health</div>
+                  <div className="text-3xl font-bold">{portfolioHealth?.score || 0}</div>
+                  <div className="text-[10px] text-white/80">of 100</div>
+                  <div className="mt-1 flex items-center gap-1 text-sm">
                     {getStatusIcon(portfolioHealth?.status || 'fair')}
-                    <span className="uppercase font-semibold">{portfolioHealth?.status || 'FAIR'}</span>
+                    <span className="uppercase font-semibold text-xs">{portfolioHealth?.status || 'FAIR'}</span>
                   </div>
                 </div>
               </div>

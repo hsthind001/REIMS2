@@ -1406,7 +1406,7 @@ export default function Properties() {
             >
               Excel
             </Button>
-            <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setShowCreateModal(true)}>
+            <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => window.location.hash = 'add-property'}>
               Add Property
             </Button>
           </div>
@@ -1543,7 +1543,7 @@ export default function Properties() {
                         Clear Filters
                       </Button>
                     )}
-                    <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>
+                    <Button variant="primary" size="sm" onClick={() => window.location.hash = 'add-property'}>
                       Add Property
                     </Button>
                   </div>
@@ -3297,7 +3297,7 @@ export default function Properties() {
                       Clear Filters
                     </Button>
                   )}
-                  <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setShowCreateModal(true)}>
+                  <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => window.location.hash = 'add-property'}>
                     Add Property
                   </Button>
                 </div>
@@ -3637,6 +3637,7 @@ function PropertyFormModal({
                   { value: 'Industrial', label: 'Industrial' },
                   { value: 'Mixed Use', label: 'Mixed Use' },
                   { value: 'Multifamily', label: 'Multifamily' },
+                  { value: 'Commercial', label: 'Commercial' },
                 ]}
                 placeholder="Select type..."
               />
@@ -3663,7 +3664,7 @@ function PropertyFormModal({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-4 gap-4 mb-4">
             <div>
               <Input
                 label="City"
@@ -3689,6 +3690,16 @@ function PropertyFormModal({
                 label="ZIP Code"
                 value={formData.zip_code}
                 onChange={(e) => setFormData({ ...formData, zip_code: e.target.value })}
+                fullWidth
+              />
+            </div>
+
+            <div>
+              <Input
+                label="Country"
+                value={formData.country}
+                onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                placeholder="USA"
                 fullWidth
               />
             </div>

@@ -583,45 +583,53 @@ class DSCRMonitoringService:
 
     def _has_financial_data(self, property_id: int, period_id: int) -> bool:
         """
-        Check if property has actual uploaded financial documents for the period
+        Check if property has COMPLETE financial data for the period
         
-        Returns True if property has:
-        - Income statement data, OR
-        - Mortgage statement data, OR
-        - Document uploads with extraction_status='completed'
+        STRICT REQUIREMENT: Returns True ONLY if property has ALL 3 documents:
+        - Balance Sheet data, AND
+        - Income Statement data, AND
+        - Cash Flow data
         
-        This prevents creating alerts for properties without uploaded data.
+        This ensures DSCR calculations only use complete financial periods.
+        Prevents alerts/calculations for incomplete data.
         """
+        from app.models.balance_sheet_data import BalanceSheetData
+        from app.models.cash_flow_data import CashFlowData
+        
+        # Check for balance sheet data
+        balance_sheet = self.db.query(BalanceSheetData).filter(
+            BalanceSheetData.property_id == property_id,
+            BalanceSheetData.period_id == period_id
+        ).first()
+        
         # Check for income statement data
-        income_data = self.db.query(IncomeStatementData).filter(
+        income_statement = self.db.query(IncomeStatementData).filter(
             IncomeStatementData.property_id == property_id,
             IncomeStatementData.period_id == period_id
         ).first()
         
-        if income_data:
-            return True
-        
-        # Check for mortgage statement data
-        mortgage_data = self.db.query(MortgageStatementData).filter(
-            MortgageStatementData.property_id == property_id,
-            MortgageStatementData.period_id == period_id
+        # Check for cash flow data
+        cash_flow = self.db.query(CashFlowData).filter(
+            CashFlowData.property_id == property_id,
+            CashFlowData.period_id == period_id
         ).first()
         
-        if mortgage_data:
-            return True
+        # STRICT: Require ALL 3 documents
+        has_complete_data = (
+            balance_sheet is not None and
+            income_statement is not None and
+            cash_flow is not None
+        )
         
-        # Check for completed document uploads
-        from app.models.document_upload import DocumentUpload
-        completed_upload = self.db.query(DocumentUpload).filter(
-            DocumentUpload.property_id == property_id,
-            DocumentUpload.period_id == period_id,
-            DocumentUpload.extraction_status == 'completed'
-        ).first()
+        if not has_complete_data:
+            logger.debug(
+                f"Incomplete financial data for property {property_id}, period {period_id}: "
+                f"Balance Sheet: {balance_sheet is not None}, "
+                f"Income Statement: {income_statement is not None}, "
+                f"Cash Flow: {cash_flow is not None}"
+            )
         
-        if completed_upload:
-            return True
-        
-        return False
+        return has_complete_data
 
     def monitor_all_properties(self, lookback_days: int = 90) -> Dict:
         """

@@ -33,6 +33,7 @@ const NotificationCenter = lazy(() => import('./components/notifications/Notific
 const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
 const MarketIntelligenceDashboard = lazy(() => import('./pages/MarketIntelligenceDashboard'))
 const AnomalyDetailPage = lazy(() => import('./pages/AnomalyDetailPage'))
+const AddProperty = lazy(() => import('./pages/AddProperty'))
 
 // Forensic Audit Framework Pages
 const ForensicAuditDashboard = lazy(() => import('./pages/ForensicAuditDashboard'))
@@ -58,7 +59,7 @@ const PageLoader = () => (
   </div>
 )
 
-type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register' | 'ai'
+type Page = 'dashboard' | 'properties' | 'reports' | 'operations' | 'users' | 'risk' | 'login' | 'register' | 'ai' | 'add-property'
 
 function AppContent() {
   console.log('🎨 AppContent: Component rendering');
@@ -111,6 +112,9 @@ function AppContent() {
       // If navigating to market-intelligence, ensure we're on properties page
       if (routeName.startsWith('market-intelligence') && currentPage !== 'properties') {
         setCurrentPage('properties')
+      }
+      if (routeName === 'add-property' && currentPage !== 'add-property') {
+        setCurrentPage('add-property')
       }
       if (routeName.startsWith('anomaly-details') && currentPage !== 'risk') {
         setCurrentPage('risk')
@@ -272,6 +276,8 @@ function AppContent() {
           return <InsightsHub />
         case 'properties':
           return <Properties />
+        case 'add-property':
+          return <AddProperty />
         case 'reports':
           return <Financials />
         case 'operations':
