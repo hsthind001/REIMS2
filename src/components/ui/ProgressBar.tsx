@@ -8,6 +8,7 @@ export interface ProgressBarProps {
   variant?: 'success' | 'warning' | 'danger' | 'info' | 'primary' | 'purple';
   showLabel?: boolean;
   label?: string;
+  showValueLabel?: boolean;
   height?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -18,6 +19,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   variant = 'success',
   showLabel = false,
   label,
+  showValueLabel = false,
   height = 'md',
   className = '',
 }) => {
@@ -38,7 +40,9 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       {showLabel && (
         <div className="flex justify-between items-center mb-1">
           <span className="text-sm text-gray-500">{label || `${Math.round(percentage)}%`}</span>
-          <span className="text-sm font-medium text-gray-900">{value} / {max}</span>
+          {showValueLabel && (
+            <span className="text-sm font-medium text-gray-900">{value} / {max}</span>
+          )}
         </div>
       )}
       <div className={`ui-progress-bar ui-progress-bar-${height}`}>

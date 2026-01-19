@@ -197,6 +197,7 @@ class VarianceAnalysisService:
                         account_code,
                         float(variance_amount)
                     ),
+                    "document_type": actual_info.get("source"),
                 }
 
                 variances.append(variance_data)
@@ -415,6 +416,7 @@ class VarianceAnalysisService:
                         account_code,
                         float(variance_amount)
                     ),
+                    "document_type": actual_info.get("source"),
                 }
 
                 variances.append(variance_data)
@@ -582,7 +584,8 @@ class VarianceAnalysisService:
                     if code not in current_by_account:
                         current_by_account[code] = {
                             "amount": Decimal("0"),
-                            "account_name": item.account_name
+                            "account_name": item.account_name,
+                            "source": "income_statement"
                         }
                     current_by_account[code]["amount"] += Decimal(str(item.period_amount or 0))
 
@@ -592,7 +595,8 @@ class VarianceAnalysisService:
                     if code not in current_by_account:
                         current_by_account[code] = {
                             "amount": Decimal("0"),
-                            "account_name": item.account_name
+                            "account_name": item.account_name,
+                            "source": "balance_sheet"
                         }
                     current_by_account[code]["amount"] += Decimal(str(item.amount or 0))
 
@@ -604,7 +608,8 @@ class VarianceAnalysisService:
                     if code not in previous_by_account:
                         previous_by_account[code] = {
                             "amount": Decimal("0"),
-                            "account_name": item.account_name
+                            "account_name": item.account_name,
+                            "source": "income_statement"
                         }
                     previous_by_account[code]["amount"] += Decimal(str(item.period_amount or 0))
 
@@ -614,7 +619,8 @@ class VarianceAnalysisService:
                     if code not in previous_by_account:
                         previous_by_account[code] = {
                             "amount": Decimal("0"),
-                            "account_name": item.account_name
+                            "account_name": item.account_name,
+                            "source": "balance_sheet"
                         }
                     previous_by_account[code]["amount"] += Decimal(str(item.amount or 0))
 
@@ -666,6 +672,7 @@ class VarianceAnalysisService:
                         account_code,
                         float(variance_amount)
                     ),
+                    "document_type": current_info.get("source") or previous_info.get("source"),
                 }
 
                 variances.append(variance_data)

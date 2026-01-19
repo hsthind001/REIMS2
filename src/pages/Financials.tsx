@@ -1934,6 +1934,7 @@ export default function Financials() {
                             <tr>
                               <th className="text-left py-3 px-4 text-sm font-semibold">Code</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold">Account Name</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold">Document Type</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Previous Period</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Current Period</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold">Variance $</th>
@@ -1966,6 +1967,21 @@ export default function Financials() {
                                   </td>
                                   <td className="py-3 px-4">
                                     <span className="font-medium">{item.account_name}</span>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {item.document_type ? (
+                                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                                        item.document_type === 'income_statement' ? 'bg-blue-100 text-blue-800' :
+                                        item.document_type === 'balance_sheet' ? 'bg-green-100 text-green-800' :
+                                        'bg-gray-100 text-gray-800'
+                                      }`}>
+                                        {item.document_type === 'income_statement' ? 'Income Statement' :
+                                         item.document_type === 'balance_sheet' ? 'Balance Sheet' :
+                                         item.document_type.replace(/_/g, ' ')}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400 text-xs">-</span>
+                                    )}
                                   </td>
                                   <td className="text-right py-3 px-4 font-mono text-sm">
                                     ${(item.previous_period_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

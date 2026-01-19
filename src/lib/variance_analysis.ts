@@ -19,6 +19,7 @@ export interface VarianceItem {
   severity: 'NORMAL' | 'WARNING' | 'CRITICAL' | 'URGENT' | 'INFO';
   tolerance_percentage?: number;
   within_tolerance?: boolean;
+  document_type?: string;
 }
 
 export interface VarianceSummary {
