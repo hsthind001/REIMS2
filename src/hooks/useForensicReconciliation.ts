@@ -80,6 +80,14 @@ export function useForensicHealthScore(propertyId: number | null, periodId: numb
   });
 }
 
+export function useForensicCalculatedRules(propertyId: number | null, periodId: number | null) {
+  return useQuery({
+    queryKey: [...forensicKeys.all, 'calculated-rules', propertyId, periodId],
+    queryFn: () => forensicReconciliationService.evaluateCalculatedRules(propertyId!, periodId!),
+    enabled: !!propertyId && !!periodId,
+  });
+}
+
 // Mutations
 export function useForensicMutations() {
   const queryClient = useQueryClient();

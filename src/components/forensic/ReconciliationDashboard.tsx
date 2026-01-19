@@ -102,10 +102,10 @@ export default function ReconciliationDashboardComponent({
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500">Health Score</p>
               <p className="text-3xl font-bold text-gray-900 mt-2">
-                {healthScore !== null ? `${healthScore.toFixed(1)}%` : 'N/A'}
+                {typeof healthScore === 'number' ? `${healthScore.toFixed(1)}%` : 'N/A'}
               </p>
               <p className="mt-2 text-sm text-gray-700 flex items-center gap-1">
-                {healthScore !== null
+                {typeof healthScore === 'number'
                   ? healthScore >= 80
                     ? 'Excellent'
                     : healthScore >= 60

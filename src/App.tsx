@@ -31,6 +31,7 @@ const ReviewQueue = lazy(() => import('./pages/ReviewQueue'))
 const WorkflowLocks = lazy(() => import('./pages/WorkflowLocks'))
 const NotificationCenter = lazy(() => import('./components/notifications/NotificationCenter'))
 const ForensicReconciliation = lazy(() => import('./pages/ForensicReconciliation'))
+const FinancialIntegrityHub = lazy(() => import('./pages/FinancialIntegrityHub'))
 const MarketIntelligenceDashboard = lazy(() => import('./pages/MarketIntelligenceDashboard'))
 const AnomalyDetailPage = lazy(() => import('./pages/AnomalyDetailPage'))
 const AddProperty = lazy(() => import('./pages/AddProperty'))
@@ -484,7 +485,7 @@ function AppContent() {
             </Suspense>
           ) : hashRoute === 'forensic-reconciliation' ? (
             <Suspense fallback={<PageLoader />}>
-              <ForensicReconciliation />
+              <FinancialIntegrityHub />
             </Suspense>
           ) : hashRoute.startsWith('market-intelligence/') ? (
             <Suspense fallback={<PageLoader />}>

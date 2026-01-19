@@ -98,6 +98,7 @@ export interface ReconciliationDashboard {
     by_severity: Record<string, number>;
     by_status: Record<string, number>;
   };
+  recent_activity?: any[];
 }
 
 export interface SessionCreateRequest {
