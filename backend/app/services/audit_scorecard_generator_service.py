@@ -1284,9 +1284,30 @@ class AuditScorecardGeneratorService:
         period_id: UUID
     ) -> Dict[str, Any]:
         """Get covenant compliance summary."""
-        latest_complete = await self._get_latest_complete_period(property_id)
-        dscr_period_id = latest_complete["period_id"] if latest_complete else period_id
-        dscr_period_label = latest_complete["period_label"] if latest_complete else None
+        # Check if the requested period is complete
+        check_query = text("""
+            SELECT completeness_percentage
+            FROM document_completeness_matrix
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        check_result = await self.db.execute(check_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        check_row = check_result.fetchone()
+        
+        is_current_complete = False
+        if check_row and check_row[0] is not None:
+             is_current_complete = float(check_row[0]) >= 100.0
+
+        dscr_period_id = period_id
+        dscr_period_label = None
+
+        if not is_current_complete:
+            latest_complete = await self._get_latest_complete_period(property_id)
+            if latest_complete:
+                dscr_period_id = latest_complete["period_id"]
+                dscr_period_label = latest_complete["period_label"]
 
         if dscr_period_label is None:
             label_query = text("""

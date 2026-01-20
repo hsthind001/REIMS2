@@ -10,6 +10,7 @@ from typing import List, Optional
 from app.db.database import get_db
 from app.models.financial_period import FinancialPeriod
 from app.models.property import Property
+from app.models.period_document_completeness import PeriodDocumentCompleteness
 from app.api.dependencies import get_current_user
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ class FinancialPeriodResponse(BaseModel):
     period_year: int
     period_month: int
     is_closed: bool
+    is_complete: bool = False
 
     class Config:
         from_attributes = True
@@ -55,12 +57,33 @@ def list_financial_periods(
     if period_month:
         query = query.filter(FinancialPeriod.period_month == period_month)
 
-    periods = query.order_by(
+    # Join with PeriodDocumentCompleteness to get is_complete status
+    results = query.outerjoin(
+        PeriodDocumentCompleteness,
+        (PeriodDocumentCompleteness.property_id == FinancialPeriod.property_id) &
+        (PeriodDocumentCompleteness.period_id == FinancialPeriod.id)
+    ).add_columns(
+        FinancialPeriod,
+        PeriodDocumentCompleteness.is_complete
+    ).order_by(
         FinancialPeriod.period_year.desc(),
         FinancialPeriod.period_month.desc()
     ).all()
 
-    return periods
+    # Transform results to include is_complete flag
+    response = []
+    for period, is_complete in results:
+        period_dict = {
+            "id": period.id,
+            "property_id": period.property_id,
+            "period_year": period.period_year,
+            "period_month": period.period_month,
+            "is_closed": period.is_closed,
+            "is_complete": is_complete if is_complete is not None else False
+        }
+        response.append(period_dict)
+
+    return response
 
 
 @router.get("/{period_id}", response_model=FinancialPeriodResponse)

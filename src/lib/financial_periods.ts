@@ -12,6 +12,7 @@ export interface FinancialPeriod {
   period_year: number;
   period_month: number;
   is_closed: boolean;
+  is_complete?: boolean;
   /**
    * Convenience display name for UI components (e.g., "2024-03")
    */

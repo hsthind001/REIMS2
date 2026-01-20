@@ -4,7 +4,7 @@
  * Displays GREEN/YELLOW/RED status with icon and color
  */
 
-import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, HelpCircle } from 'lucide-react';
 import type { TrafficLightStatus } from '../../lib/forensic_audit';
 
 interface TrafficLightIndicatorProps {
@@ -54,6 +54,13 @@ export default function TrafficLightIndicator({
           color: 'text-red-600',
           bgColor: 'bg-red-100',
           label: 'Fail',
+        };
+      default:
+        return {
+          icon: HelpCircle,
+          color: 'text-gray-400',
+          bgColor: 'bg-gray-100',
+          label: 'Unknown',
         };
     }
   };

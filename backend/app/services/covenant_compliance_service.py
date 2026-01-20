@@ -348,40 +348,50 @@ class CovenantComplianceService:
         if property_value > 0:
             ltv_ratio = (mortgage_balance / property_value) * 100
         else:
-            ltv_ratio = 0
+            ltv_ratio = None
 
         # Calculate cushion
+        # Calculate cushion
         covenant_threshold = self.LTV_COVENANT_MAXIMUM
-        cushion = covenant_threshold - ltv_ratio
-        cushion_pct = (cushion / covenant_threshold) * 100 if covenant_threshold > 0 else 0
+        if ltv_ratio is not None:
+            cushion = covenant_threshold - ltv_ratio
+            cushion_pct = (cushion / covenant_threshold) * 100 if covenant_threshold > 0 else 0
+        else:
+            cushion = 0.0
+            cushion_pct = 0.0
 
         # Determine status
-        if ltv_ratio <= self.LTV_CONSERVATIVE:
-            status = 'GREEN'
-            interpretation = 'Conservative leverage'
-            in_compliance = True
-        elif ltv_ratio <= self.LTV_WARNING:
-            status = 'GREEN'
-            interpretation = 'Adequate leverage'
-            in_compliance = True
-        elif ltv_ratio < self.LTV_CRITICAL:
-            status = 'YELLOW'
-            interpretation = 'Warning - approaching LTV covenant'
-            in_compliance = True
-        elif ltv_ratio == self.LTV_CRITICAL:
-            status = 'YELLOW'
-            interpretation = 'At LTV covenant limit'
-            in_compliance = True
+        if ltv_ratio is not None:
+             if ltv_ratio <= self.LTV_CONSERVATIVE:
+                status = 'GREEN'
+                interpretation = 'Conservative leverage'
+                in_compliance = True
+             elif ltv_ratio <= self.LTV_WARNING:
+                status = 'GREEN'
+                interpretation = 'Adequate leverage'
+                in_compliance = True
+             elif ltv_ratio < self.LTV_CRITICAL:
+                status = 'YELLOW'
+                interpretation = 'Warning - approaching LTV covenant'
+                in_compliance = True
+             elif ltv_ratio == self.LTV_CRITICAL:
+                status = 'YELLOW'
+                interpretation = 'At LTV covenant limit'
+                in_compliance = True
+             else:
+                status = 'RED'
+                interpretation = 'CRITICAL - exceeds LTV covenant'
+                in_compliance = False
         else:
-            status = 'RED'
-            interpretation = 'CRITICAL - exceeds LTV covenant'
-            in_compliance = False
+             status = 'YELLOW' # Warning state for missing data
+             interpretation = 'Unable to calculate LTV - missing property value'
+             in_compliance = True # Assume compliant if unknown
 
         # Get trend
         trend = await self._calculate_ltv_trend(property_id, period_id)
 
         return {
-            'ltv_ratio': round(ltv_ratio, 2),
+            'ltv_ratio': round(ltv_ratio, 2) if ltv_ratio is not None else None,
             'mortgage_balance': round(mortgage_balance, 2),
             'property_value': round(property_value, 2),
             'covenant_threshold': covenant_threshold,

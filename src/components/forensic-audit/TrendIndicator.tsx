@@ -4,7 +4,7 @@
  * Displays UP/DOWN/STABLE trend with arrow icons
  */
 
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, HelpCircle } from 'lucide-react';
 import type { TrendDirection } from '../../lib/forensic_audit';
 
 interface TrendIndicatorProps {
@@ -55,6 +55,12 @@ export default function TrendIndicator({
           icon: Minus,
           color: 'text-gray-600',
           label: 'Stable',
+        };
+      default:
+        return {
+          icon: HelpCircle,
+          color: 'text-gray-400',
+          label: 'Unknown',
         };
     }
   };

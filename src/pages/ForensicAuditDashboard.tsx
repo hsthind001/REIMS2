@@ -83,6 +83,7 @@ export default function ForensicAuditDashboard() {
     }
   }, [selectedPropertyId]);
 
+
   useEffect(() => {
     if (selectedPropertyId && selectedPeriodId) {
       loadScorecard();
@@ -98,6 +99,19 @@ export default function ForensicAuditDashboard() {
       setPerformanceResults(null);
     }
   }, [selectedPropertyId, selectedPeriodId]);
+
+  // Persistence effects
+  useEffect(() => {
+    if (selectedPropertyId) {
+      localStorage.setItem('reims_forensic_property_id', selectedPropertyId);
+    }
+  }, [selectedPropertyId]);
+
+  useEffect(() => {
+    if (selectedPeriodId) {
+      localStorage.setItem('reims_forensic_period_id', selectedPeriodId);
+    }
+  }, [selectedPeriodId]);
 
   useEffect(() => {
     if (!runningAudit || !auditTaskId) return;
@@ -171,7 +185,13 @@ export default function ForensicAuditDashboard() {
     try {
       const data = await propertyService.getAllProperties();
       setProperties(data);
-      if (data.length > 0) {
+
+      const savedPropId = localStorage.getItem('reims_forensic_property_id');
+      const savedPropExists = data.find(p => String(p.id) === savedPropId);
+
+      if (savedPropExists) {
+        setSelectedPropertyId(String(savedPropId));
+      } else if (data.length > 0) {
         setSelectedPropertyId(String(data[0].id));
       }
     } catch (err) {
@@ -184,8 +204,28 @@ export default function ForensicAuditDashboard() {
     try {
       const data = await financialPeriodsService.getPeriods(Number(propertyId));
       setPeriods(data);
-      if (data.length > 0) {
-        setSelectedPeriodId(String(data[0].id));
+
+      const savedPeriodId = localStorage.getItem('reims_forensic_period_id');
+      const savedPeriodExists = data.find(p => String(p.id) === savedPeriodId);
+
+      // Only restore period if it belongs to the current list.
+      // Note: If we switched properties, the saved period ID from the previous property 
+      // is likely invalid or irrelevant, so defaulting to latest (index 0) is usually safer 
+      // unless we happen to have the exact same period ID (unlikely if IDs are unique globally or we want strictness).
+      // However, if we just refreshed the page, this restores the correct period.
+      if (savedPeriodExists) {
+        setSelectedPeriodId(String(savedPeriodId));
+      } else if (data.length > 0) {
+        // Smart Defaulting: Find the first period that is marked as complete
+        // The API returns periods sorted by year/month descending, so find() gets the latest one
+        const latestCompletePeriod = data.find(p => p.is_complete);
+        
+        if (latestCompletePeriod) {
+          setSelectedPeriodId(String(latestCompletePeriod.id));
+        } else {
+          // Fallback to the absolute latest period if none are complete
+          setSelectedPeriodId(String(data[0].id));
+        }
       } else {
         setSelectedPeriodId('');
       }
