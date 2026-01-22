@@ -160,7 +160,7 @@ class CovenantComplianceService:
         noi_row = noi_result.fetchone()
 
         if not noi_row:
-            # Calculate NOI from detailed accounts
+            # Calculate NOI from detailed accounts (exclude totals/subtotals)
             noi_calc_query = text("""
                 SELECT
                     SUM(CASE WHEN account_code LIKE '4%' THEN period_amount ELSE 0 END) as total_income,
@@ -168,6 +168,8 @@ class CovenantComplianceService:
                 FROM income_statement_data
                 WHERE property_id = :property_id
                 AND period_id = :period_id
+                AND (is_total IS NOT TRUE OR is_total IS NULL)
+                AND (is_subtotal IS NOT TRUE OR is_subtotal IS NULL)
             """)
 
             noi_calc_result = await self.db.execute(
@@ -428,6 +430,7 @@ class CovenantComplianceService:
         """
 
         # Get NOI (already calculated in DSCR method, reuse logic)
+        # Exclude total and subtotal rows
         noi_query = text("""
             SELECT
                 SUM(CASE WHEN account_code LIKE '4%' THEN period_amount ELSE 0 END) as total_income,
@@ -435,6 +438,8 @@ class CovenantComplianceService:
             FROM income_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
+            AND (is_total IS NOT TRUE OR is_total IS NULL)
+            AND (is_subtotal IS NOT TRUE OR is_subtotal IS NULL)
         """)
 
         noi_result = await self.db.execute(
