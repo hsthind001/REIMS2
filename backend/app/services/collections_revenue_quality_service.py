@@ -100,7 +100,7 @@ class CollectionsRevenueQualityService:
 
         ar_result = await self.db.execute(
             ar_balance_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         ar_row = ar_result.fetchone()
         ar_balance = float(ar_row.total_ar) if ar_row and ar_row.total_ar else 0.0
@@ -117,7 +117,7 @@ class CollectionsRevenueQualityService:
 
         rent_result = await self.db.execute(
             rent_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         rent_row = rent_result.fetchone()
         monthly_rent = float(rent_row.total_monthly_rent) if rent_row and rent_row.total_monthly_rent else 0.0
@@ -193,7 +193,7 @@ class CollectionsRevenueQualityService:
 
         cash_result = await self.db.execute(
             cash_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         cash_row = cash_result.fetchone()
         cash_collections = float(cash_row.total_cash_collections) if cash_row and cash_row.total_cash_collections else 0.0
@@ -221,7 +221,7 @@ class CollectionsRevenueQualityService:
 
         revenue_result = await self.db.execute(
             revenue_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         revenue_row = revenue_result.fetchone()
         billed_revenue = float(revenue_row.total_revenue) if revenue_row and revenue_row.total_revenue else 0.0
@@ -289,7 +289,7 @@ class CollectionsRevenueQualityService:
             WHERE id = :period_id
         """)
 
-        period_result = await self.db.execute(period_query, {"period_id": str(period_id)})
+        period_result = await self.db.execute(period_query, {"period_id": period_id})
         period_row = period_result.fetchone()
 
         if not period_row:
@@ -308,7 +308,7 @@ class CollectionsRevenueQualityService:
 
         ar_result = await self.db.execute(
             ar_balance_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         ar_row = ar_result.fetchone()
 
@@ -397,7 +397,7 @@ class CollectionsRevenueQualityService:
 
         occ_result = await self.db.execute(
             occupancy_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         occ_row = occ_result.fetchone()
 
