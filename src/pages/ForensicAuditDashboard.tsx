@@ -865,7 +865,11 @@ export default function ForensicAuditDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-semibold text-gray-900">Reconciliations</div>
-                    <div className="text-xs text-gray-500">9 cross-document tie-outs</div>
+                    <div className="text-xs text-gray-500">
+                      {reconciliationResults 
+                        ? `${reconciliationResults.total_reconciliations} cross-document tie-outs`
+                        : 'Cross-document tie-outs'}
+                    </div>
                   </div>
                   <TrafficLightIndicator
                     status={(reconciliationResults

@@ -30,6 +30,72 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/properties/{property_identifier}/market-intelligence")
+async def get_market_intelligence_summary(
+    property_identifier: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive market intelligence summary for a property.
+    
+    Aggregates data from:
+    - Demographics
+    - Location Intelligence
+    - Economic Indicators
+    - ESG Assessment
+    - Forecasts
+    - Competitive Analysis
+    
+    Args:
+        property_identifier: Property ID (int) or Property Code (str)
+    """
+    try:
+        # Resolve property
+        if property_identifier.isdigit():
+            property_obj = db.query(Property).filter(Property.id == int(property_identifier)).first()
+        else:
+            property_obj = db.query(Property).filter(Property.property_code == property_identifier).first()
+            
+        if not property_obj:
+            raise HTTPException(status_code=404, detail="Property not found")
+            
+        # Get or create market intelligence record
+        mi = get_or_create_market_intelligence(db, property_obj.id)
+        
+        # Construct response data from existing JSON fields
+        # If fields are None, they will return as None, which is fine
+        data = {
+            "demographics": mi.demographics,
+            "location_intelligence": mi.location_intelligence,
+            "economic_indicators": mi.economic_indicators,
+            "esg_assessment": mi.esg_assessment,
+            "forecasts": mi.forecasts,
+            "competitive_analysis": mi.competitive_analysis
+        }
+        
+        # Calculate executive summary using the internal helper
+        # We need a cap rate for 'your_cap_rate'. 
+        # Using a default or fetching from metrics would be ideal, but 0.0 is safe fallback.
+        executive_summary_data = calculate_executive_summary(data, your_cap_rate=0.0)
+        
+        # Merge calculated data into response
+        response = {
+            "property_id": property_obj.id,
+            "property_code": property_obj.property_code,
+            **data,
+            **executive_summary_data
+        }
+        
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching market intelligence summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 # Inline executive intelligence calculations (avoiding import issues)
 def calculate_executive_summary(mi_data: Dict[str, Any], your_cap_rate: float = 0.0) -> Dict[str, Any]:
     """Calculate executive-level metrics inline."""
@@ -515,7 +581,7 @@ async def get_esg_assessment(
             property_data = {
                 'property_code': property_code,
                 'property_type': property_obj.property_type,
-                'year_built': property_obj.year_built
+                'year_built': getattr(property_obj, 'year_built', 2000) # Default to 2000 if not set
             }
 
             # Fetch ESG assessment
@@ -546,8 +612,22 @@ async def get_esg_assessment(
                 )
                 db.add(lineage)
                 db.commit()
+            elif mi.esg_assessment:
+                # If fetch failed but we have data, keep existing
+                logger.warning(f"Failed to refresh ESG data for {property_code}, using cached data")
             else:
-                raise HTTPException(status_code=500, detail="Failed to fetch ESG assessment")
+                # No data and fetch failed - return empty structure to avoid frontend crash
+                logger.error(f"Failed to fetch initial ESG data for {property_code}")
+                # Don't raise 500, return empty/pending state
+                empty_assessment = {
+                    "environmental": {"composite_score": 0}, 
+                    "social": {"composite_score": 0}, 
+                    "governance": {"composite_score": 0},
+                    "composite_esg_score": 0,
+                    "esg_grade": "Pending"
+                }
+                mi.esg_assessment = empty_assessment
+                db.commit()
 
         return {
             "property_code": property_code,

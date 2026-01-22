@@ -116,6 +116,10 @@ class CrossDocumentReconciliationService:
         results['important'].append(
             await self.reconcile_insurance_four_way(property_id, period_id)
         )
+        
+        # Phase 1: Rent Roll Reconciliations
+        # Note: reconcile_rent_to_revenue covers base rentals
+        # reconcile_rent_roll_ar_tenants is planned for future implementation
 
         # Informational reconciliations
         results['informational'].append(
@@ -123,6 +127,12 @@ class CrossDocumentReconciliationService:
         )
         results['informational'].append(
             await self.reconcile_rent_to_revenue(property_id, period_id)
+        )
+        results['important'].append(
+            await self.reconcile_capex_cycle(property_id, period_id)
+        )
+        results['important'].append(
+            await self.reconcile_equity_reconciliation(property_id, period_id)
         )
 
         return results
@@ -722,20 +732,50 @@ class CrossDocumentReconciliationService:
             Reconciliation result
         """
 
-        # Simplified implementation - full version would check all 4 statements
+
+        # 1. Get IS Property Tax Expense (Positive value for expense)
+        is_query = text("""
+            SELECT period_amount
+            FROM income_statement_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            AND account_name ILIKE '%RE%Tax%'
+            LIMIT 1
+        """)
+        is_result = await self.db.execute(is_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        is_tax = abs(float(is_result.scalar() or 0))
+
+        # 2. Get MS Tax Escrow Disbursement
+        ms_query = text("""
+            SELECT tax_disbursement
+            FROM mortgage_statement_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            LIMIT 1
+        """)
+        ms_result = await self.db.execute(ms_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        ms_tax = float(ms_result.scalar() or 0)
+
+        # 3. Compare IS vs MS
+        difference = abs(is_tax - ms_tax)
+        # 5% tolerance for timing differences
+        threshold = is_tax * 0.05 if is_tax > 0 else 100.0
+        
+        passed = difference <= threshold
+        
         return ReconciliationResult(
             reconciliation_type="property_tax_four_way",
             rule_code="A-3.6",
-            status=ReconciliationStatus.PASS,
+            status=ReconciliationStatus.PASS if passed else ReconciliationStatus.WARNING,
             source_document="Income Statement",
-            target_document="Balance Sheet, Cash Flow, Mortgage Statement",
-            source_value=0.00,
-            target_value=0.00,
-            difference=0.00,
-            materiality_threshold=self.MATERIALITY_PERCENTAGE,
-            is_material=False,
-            explanation="Property tax reconciles across all statements",
-            recommendation=None
+            target_document="Mortgage Statement",
+            source_value=is_tax,
+            target_value=ms_tax,
+            difference=difference,
+            materiality_threshold=threshold,
+            is_material=not passed,
+            explanation=f"Prop Tax: IS ${is_tax:,.2f} vs MS ${ms_tax:,.2f}" if not passed else "Property tax Reconciled",
+            recommendation="Check for timing differences in tax payments" if not passed else None
         )
 
     async def reconcile_insurance_four_way(
@@ -758,18 +798,48 @@ class CrossDocumentReconciliationService:
             Reconciliation result
         """
 
+
+        # 1. Get IS Insurance Expense
+        is_query = text("""
+            SELECT period_amount
+            FROM income_statement_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            AND account_name ILIKE '%Insurance%'
+            LIMIT 1
+        """)
+        is_result = await self.db.execute(is_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        is_ins = abs(float(is_result.scalar() or 0))
+
+        # 2. Get MS Insurance Escrow Disbursement
+        ms_query = text("""
+            SELECT insurance_disbursement
+            FROM mortgage_statement_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            LIMIT 1
+        """)
+        ms_result = await self.db.execute(ms_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        ms_ins = float(ms_result.scalar() or 0)
+
+        # 3. Compare
+        difference = abs(is_ins - ms_ins)
+        threshold = is_ins * 0.05 if is_ins > 0 else 100.0
+        
+        passed = difference <= threshold
+
         return ReconciliationResult(
             reconciliation_type="insurance_four_way",
             rule_code="A-3.7",
-            status=ReconciliationStatus.PASS,
+            status=ReconciliationStatus.PASS if passed else ReconciliationStatus.WARNING,
             source_document="Income Statement",
-            target_document="Balance Sheet, Cash Flow, Mortgage Statement",
-            source_value=0.00,
-            target_value=0.00,
-            difference=0.00,
-            materiality_threshold=self.MATERIALITY_PERCENTAGE,
-            is_material=False,
-            explanation="Insurance reconciles across all statements",
+            target_document="Mortgage Statement",
+            source_value=is_ins,
+            target_value=ms_ins,
+            difference=difference,
+            materiality_threshold=threshold,
+            is_material=not passed,
+            explanation=f"Insurance: IS ${is_ins:,.2f} vs MS ${ms_ins:,.2f}" if not passed else "Insurance Reconciled",
             recommendation=None
         )
 
@@ -793,18 +863,202 @@ class CrossDocumentReconciliationService:
             Reconciliation result
         """
 
+
+        # 1. Get BS Escrow Balance (1310-1340)
+        bs_query = text("""
+            SELECT SUM(amount)
+            FROM balance_sheet_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            AND account_code >= '1310-0000'
+            AND account_code <= '1340-9999'
+        """)
+        bs_result = await self.db.execute(bs_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        bs_escrow = float(bs_result.scalar() or 0)
+
+        # 2. Get MS Escrow Balance
+        ms_query = text("""
+            SELECT escrow_balance
+            FROM mortgage_statement_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            LIMIT 1
+        """)
+        ms_result = await self.db.execute(ms_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        ms_escrow = float(ms_result.scalar() or 0)
+
+        # 3. Compare
+        difference = abs(bs_escrow - ms_escrow)
+        # 1% tolerance for timing/interest posting
+        threshold = bs_escrow * 0.01 if bs_escrow > 0 else 100.0
+        
+        passed = difference <= threshold
+
         return ReconciliationResult(
             reconciliation_type="escrow_accounts",
             rule_code="A-3.8",
-            status=ReconciliationStatus.PASS,
+            status=ReconciliationStatus.PASS if passed else ReconciliationStatus.WARNING,
             source_document="Balance Sheet",
             target_document="Mortgage Statement",
-            source_value=0.00,
-            target_value=0.00,
-            difference=0.00,
+            source_value=bs_escrow,
+            target_value=ms_escrow,
+            difference=difference,
+            materiality_threshold=threshold,
+            is_material=not passed,
+            explanation=f"Escrow: BS ${bs_escrow:,.2f} vs MS ${ms_escrow:,.2f}" if not passed else "Escrow Accounts Reconciled",
+            recommendation="Review escrow interest processing or timing differences" if not passed else None
+        )
+
+    async def reconcile_capex_cycle(
+        self,
+        property_id: UUID,
+        period_id: UUID
+    ) -> ReconciliationResult:
+        """
+        Rule A-3.13: CapEx Cycle (CF → BS)
+        Verifies Capital Expenditures in Cash Flow match increase in Fixed Assets on Balance Sheet.
+        """
+        # 1. Get CF CapEx (Investing Activities)
+        cf_query = text("""
+            SELECT SUM(period_amount)
+            FROM cash_flow_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            AND (account_name ILIKE '%Capital%Improvement%' OR account_name ILIKE '%CapEx%')
+        """)
+        cf_result = await self.db.execute(cf_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        cf_capex = abs(float(cf_result.scalar() or 0))
+
+        # 2. Get BS Fixed Assets Change (Gross)
+        # Need Prior Period
+        prior_period_query = text("""
+            SELECT fp_prior.id
+            FROM financial_periods fp_current
+            JOIN financial_periods fp_prior ON fp_prior.property_id = fp_current.property_id
+            WHERE fp_current.id = :period_id
+            AND fp_prior.period_year = fp_current.period_year
+            AND fp_prior.period_month = fp_current.period_month - 1
+            LIMIT 1
+        """)
+        prior_result = await self.db.execute(prior_period_query, {"period_id": str(period_id)})
+        prior_row = prior_result.fetchone()
+        
+        if not prior_row:
+             return ReconciliationResult(
+                reconciliation_type="capex_cycle",
+                rule_code="A-3.13",
+                status=ReconciliationStatus.PASS, # Skip
+                source_document="Cash Flow",
+                target_document="Balance Sheet",
+                source_value=cf_capex,
+                target_value=0,
+                difference=0,
+                materiality_threshold=0,
+                is_material=False,
+                explanation="Skipped: No prior period for BS comparison",
+                recommendation=None
+            )
+            
+        prior_period_id = str(prior_row[0])
+
+        # Current Gross Fixed Assets
+        bs_curr_query = text("""
+            SELECT SUM(amount) FROM balance_sheet_data
+            WHERE property_id = :property_id AND period_id = :period_id
+            AND account_code >= '0500-0000' AND account_code <= '0599-9999'
+        """)
+        bs_curr_val = float((await self.db.execute(bs_curr_query, {"property_id": str(property_id), "period_id": str(period_id)})).scalar() or 0)
+
+        # Prior Gross Fixed Assets
+        bs_prior_query = text("""
+            SELECT SUM(amount) FROM balance_sheet_data
+            WHERE property_id = :property_id AND period_id = :prior_id
+            AND account_code >= '0500-0000' AND account_code <= '0599-9999'
+        """)
+        bs_prior_val = float((await self.db.execute(bs_prior_query, {"property_id": str(property_id), "prior_id": prior_period_id})).scalar() or 0)
+
+        bs_change = bs_curr_val - bs_prior_val
+
+        # Compare
+        difference = abs(cf_capex - bs_change)
+        passed = difference <= self.MATERIALITY_ZERO
+        
+        return ReconciliationResult(
+            reconciliation_type="capex_cycle",
+            rule_code="A-3.13",
+            status=ReconciliationStatus.PASS if passed else ReconciliationStatus.WARNING,
+            source_document="Cash Flow",
+            target_document="Balance Sheet",
+            source_value=cf_capex,
+            target_value=bs_change,
+            difference=difference,
             materiality_threshold=self.MATERIALITY_ZERO,
-            is_material=False,
-            explanation="Escrow accounts reconcile",
+            is_material=not passed,
+            explanation=f"CapEx: CF ${cf_capex:,.2f} vs BS Change ${bs_change:,.2f}",
+            recommendation="Verify capitalization of improvements" if not passed else None
+        )
+
+    async def reconcile_equity_reconciliation(
+        self,
+        property_id: UUID,
+        period_id: UUID
+    ) -> ReconciliationResult:
+        """
+        Rule A-3.18: Equity & Distribution (CF → BS)
+        Verifies Distributions in Cash Flow match Distribution account in Balance Sheet (Logic may vary depending on equity structure).
+        For now, we check if Distributions (CF) matches Change in Distributions (BS) or Period Amount.
+        """
+        # 1. Get CF Distributions (Financing Activities)
+        cf_query = text("""
+            SELECT SUM(period_amount)
+            FROM cash_flow_data
+            WHERE property_id = :property_id
+            AND period_id = :period_id
+            AND (account_name ILIKE '%Distributions%' OR account_name ILIKE '%Draws%')
+        """)
+        cf_result = await self.db.execute(cf_query, {"property_id": str(property_id), "period_id": str(period_id)})
+        cf_dist = abs(float(cf_result.scalar() or 0))
+
+        # 2. Get BS Distributions (usually a contra-equity account 3990)
+        # We need the change in this account, or the period activity if we had a ledger.
+        # Assuming BS carries cumulative distributions, we need Prior vs Current.
+        
+        # Borrow Prior Period ID logic from above or simpler:
+        prior_period_query = text("""
+            SELECT fp_prior.id FROM financial_periods fp_current JOIN financial_periods fp_prior ON fp_prior.property_id = fp_current.property_id
+            WHERE fp_current.id = :period_id AND fp_prior.period_year = fp_current.period_year AND fp_prior.period_month = fp_current.period_month - 1
+            LIMIT 1
+        """)
+        prior_res = await self.db.execute(prior_period_query, {"period_id": str(period_id)})
+        prior_row = prior_res.fetchone()
+        
+        if not prior_row:
+             bs_dist_change = 0 # Cannot calc
+        else:
+            prior_id = str(prior_row[0])
+            
+            # Current BS Dist
+            curr_bs = float((await self.db.execute(text("SELECT amount FROM balance_sheet_data WHERE property_id=:p AND period_id=:curr AND account_code LIKE '3990%'"), {"p": str(property_id), "curr": str(period_id)})).scalar() or 0)
+            # Prior BS Dist
+            prior_bs = float((await self.db.execute(text("SELECT amount FROM balance_sheet_data WHERE property_id=:p AND period_id=:prior AND account_code LIKE '3990%'"), {"p": str(property_id), "prior": prior_id})).scalar() or 0)
+            
+            bs_dist_change = abs(curr_bs - prior_bs)
+
+        difference = abs(cf_dist - bs_dist_change)
+        passed = difference <= self.MATERIALITY_ZERO
+        
+        return ReconciliationResult(
+            reconciliation_type="equity_distributions",
+            rule_code="A-3.18",
+            status=ReconciliationStatus.PASS if passed else ReconciliationStatus.WARNING,
+            source_document="Cash Flow",
+            target_document="Balance Sheet",
+            source_value=cf_dist,
+            target_value=bs_dist_change,
+            difference=difference,
+            materiality_threshold=self.MATERIALITY_ZERO,
+            is_material=not passed,
+            explanation=f"Distributions: CF ${cf_dist:,.2f} vs BS Change ${bs_dist_change:,.2f}",
             recommendation=None
         )
 

@@ -183,8 +183,9 @@ export default function Financials() {
     };
   }, [financialData]);
 
-  // Real-time updates
-  const { lastMessage } = useWebSocket('/financials');
+  // Real-time updates - Disabled until backend support is added
+  // const { lastMessage } = useWebSocket('/financials');
+  const lastMessage = null; // Placeholder
   
   useEffect(() => {
     if (lastMessage?.type === 'VARIANCE_UPDATE' && selectedProperty) {

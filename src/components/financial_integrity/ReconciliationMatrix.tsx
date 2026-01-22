@@ -88,7 +88,7 @@ export default function ReconciliationMatrix({ matches, onCellClick }: Reconcili
         <table className="w-full border-collapse min-w-[600px]">
              <thead>
                  <tr>
-                    <th className="w-32"></th> {/* Empty corner */}
+                    <th className="w-32"></th>
                     {DOCUMENTS.map(doc => (
                         <th key={doc.id} className="pb-4 text-center font-semibold text-xs text-gray-500 uppercase tracking-wider">
                             {doc.short}

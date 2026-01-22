@@ -291,7 +291,11 @@ export default function ReconciliationResultsDashboard() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Cross-Document Reconciliations</h1>
-            <p className="text-gray-600 mt-1">9 reconciliation rules across 5 financial statements</p>
+            <p className="text-gray-600 mt-1">
+              {results 
+                ? `${results.total_reconciliations} reconciliation rules across 5 financial statements`
+                : 'Cross-document reconciliation rules'}
+            </p>
           </div>
         </div>
 

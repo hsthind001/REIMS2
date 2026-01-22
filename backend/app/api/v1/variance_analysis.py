@@ -18,6 +18,56 @@ router = APIRouter(prefix="/variance-analysis", tags=["variance_analysis"])
 logger = logging.getLogger(__name__)
 
 
+@router.get("/")
+def get_variance_analysis(
+    property_id: int,
+    period_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get variance analysis summary.
+    
+    If period_id is provided, returns comprehensive report for that period.
+    If not, attempts to find the latest closed period.
+    """
+    try:
+        # If no period specified, find the latest closed period for this property
+        if not period_id:
+            period = db.query(FinancialPeriod).filter(
+                FinancialPeriod.property_id == property_id,
+                FinancialPeriod.is_closed == True
+            ).order_by(FinancialPeriod.period_end_date.desc()).first()
+            
+            if not period:
+                # If no closed period, try latest open period
+                period = db.query(FinancialPeriod).filter(
+                    FinancialPeriod.property_id == property_id
+                ).order_by(FinancialPeriod.period_end_date.desc()).first()
+                
+            if period:
+                period_id = period.id
+            else:
+                 # No periods found at all
+                return {
+                    "success": False,
+                    "error": "No financial periods found for this property",
+                    "data": None
+                }
+        
+        service = VarianceAnalysisService(db)
+        result = service.get_variance_report(
+            property_id=property_id,
+            financial_period_id=period_id,
+            include_budget=True,
+            include_forecast=True
+        )
+        return result
+
+    except Exception as e:
+        logger.error(f"Error fetching variance analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class BudgetVarianceRequest(BaseModel):
     property_id: int
     financial_period_id: int

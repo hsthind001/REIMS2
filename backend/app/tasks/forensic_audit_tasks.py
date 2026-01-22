@@ -529,17 +529,11 @@ def run_complete_forensic_audit_task(
         return audit_results
 
     except Exception as e:
-        # Handle errors
-        self.update_state(
-            state='FAILURE',
-            meta={
-                'current_phase': 'Error',
-                'progress': 0,
-                'message': f'Audit failed: {str(e)}',
-                'error': str(e)
-            }
-        )
-        raise
+        # Log the full traceback so we can see what went wrong
+        logger.exception(f"Forensic audit failed: {str(e)}")
+        # Raise the exception so Celery marks the task as FAILURE automatically
+        # Do NOT manually update_state to FAILURE here as it conflicts with the raise
+        raise e
 
     finally:
         sync_db.close()

@@ -63,7 +63,6 @@ def list_financial_periods(
         (PeriodDocumentCompleteness.property_id == FinancialPeriod.property_id) &
         (PeriodDocumentCompleteness.period_id == FinancialPeriod.id)
     ).add_columns(
-        FinancialPeriod,
         PeriodDocumentCompleteness.is_complete
     ).order_by(
         FinancialPeriod.period_year.desc(),

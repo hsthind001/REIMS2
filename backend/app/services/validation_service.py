@@ -163,6 +163,21 @@ class ValidationService:
         results.append(self.validate_accumulated_depreciation(
             upload.id, upload.property_id, upload.period_id
         ))
+
+        # 10. Fixed Assets Consistency (WARNING)
+        results.append(self.validate_fixed_assets_consistency(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 11. Accumulated Depreciation Consistency (WARNING)
+        results.append(self.validate_accumulated_depreciation_consistency(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 12. Equity Consistency (WARNING)
+        results.append(self.validate_equity_consistency(
+            upload.id, upload.property_id, upload.period_id
+        ))
         
         # ==================== INFORMATIONAL VALIDATIONS ====================
         
@@ -677,6 +692,205 @@ class ValidationService:
             error_message=f"{round_count} of {total_major} major accounts are round numbers (may be estimates)" if round_count > 0 else None,
             severity=rule.severity
         )
+
+    def validate_fixed_assets_consistency(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """
+        Rule BS-6/BS-7: Fixed Assets Consistency
+        Land and Buildings should remain constant unless there are valid CapEx additions.
+        """
+        rule = self._get_or_create_rule(
+            "balance_sheet_fixed_assets_consistency",
+            "Fixed Assets Consistency",
+            "Land and Building values should be consistent with prior period",
+            "balance_sheet",
+            "consistency_check",
+            "current_asset_value = prior_asset_value",
+            "warning"
+        )
+        
+        # Get prior period
+        prior_period_id = self._get_prior_period_id(property_id, period_id)
+        
+        if not prior_period_id:
+            return self._create_skipped_result(upload_id, rule.id, "No prior period found")
+
+        # Check Land (0510-0000)
+        curr_land = self._query_balance_sheet_total(property_id, period_id, '0510-0000') or Decimal('0')
+        prior_land = self._query_balance_sheet_total(property_id, prior_period_id, '0510-0000') or Decimal('0')
+        
+        # Check Buildings (0520-0000)
+        curr_bldg = self._query_balance_sheet_total(property_id, period_id, '0520-0000') or Decimal('0')
+        prior_bldg = self._query_balance_sheet_total(property_id, prior_period_id, '0520-0000') or Decimal('0')
+        
+        land_match = abs(curr_land - prior_land) < Decimal('1.0')
+        bldg_match = abs(curr_bldg - prior_bldg) < Decimal('1.0')
+        
+        passed = land_match and bldg_match
+        
+        error_msg = []
+        if not land_match:
+            error_msg.append(f"Land changed: ${prior_land:,.2f} -> ${curr_land:,.2f}")
+        if not bldg_match:
+            error_msg.append(f"Buildings changed: ${prior_bldg:,.2f} -> ${curr_bldg:,.2f}")
+            
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('0'),
+            actual_value=Decimal('1') if passed else Decimal('0'),
+            difference=Decimal('0'),
+            error_message="; ".join(error_msg) if error_msg else None,
+            severity=rule.severity
+        )
+
+    def validate_accumulated_depreciation_consistency(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """
+        Rule BS-8/9: Accumulated Depreciation Consistency
+        Accumulated depreciation should increase (become more negative) by the depreciation expense amount.
+        """
+        rule = self._get_or_create_rule(
+            "balance_sheet_accum_depr_consistency",
+            "Accumulated Depreciation Logic",
+            "Accumulated depreciation change should match expense",
+            "balance_sheet",
+            "consistency_check",
+            "delta_accum_depr ≈ depreciation_expense",
+            "warning"
+        )
+        
+        prior_period_id = self._get_prior_period_id(property_id, period_id)
+        if not prior_period_id:
+            return self._create_skipped_result(upload_id, rule.id, "No prior period found")
+
+        # Get Accumulated Depreciation totals (1061-1091)
+        curr_accum = self.db.query(func.sum(BalanceSheetData.amount)).filter(
+            BalanceSheetData.property_id == property_id,
+            BalanceSheetData.period_id == period_id,
+            BalanceSheetData.account_code >= '1061-0000',
+            BalanceSheetData.account_code <= '1091-9999'
+        ).scalar() or Decimal('0')
+        
+        prior_accum = self.db.query(func.sum(BalanceSheetData.amount)).filter(
+            BalanceSheetData.property_id == property_id,
+            BalanceSheetData.period_id == prior_period_id,
+            BalanceSheetData.account_code >= '1061-0000',
+            BalanceSheetData.account_code <= '1091-9999'
+        ).scalar() or Decimal('0')
+        
+        # Balance Sheet Change
+        bs_change = abs(curr_accum - prior_accum)
+        
+        # Get IS Depreciation Expense
+        # Note: In a real validation service optimization, we shouldn't query across services blindly,
+        # but here we query the data table directly.
+        depr_expense = abs(self.db.query(func.sum(IncomeStatementData.period_amount)).filter(
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == period_id,
+            (IncomeStatementData.account_name.ilike('%Depreciation%'))
+        ).scalar() or Decimal('0'))
+        
+        # Check if match
+        diff = abs(bs_change - depr_expense)
+        passed = diff < Decimal('5.0') # Allow small rounding diff
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=depr_expense,
+            actual_value=bs_change,
+            difference=diff,
+            error_message=f"BS Accum Depr Change (${bs_change:,.2f}) != IS Depr Expense (${depr_expense:,.2f})" if not passed else None,
+            severity=rule.severity
+        )
+
+    def validate_equity_consistency(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """
+        Rule BS-30/31: Equity Consistency
+        Partners Contribution and Beginning Equity should typically remain constant.
+        """
+        rule = self._get_or_create_rule(
+            "balance_sheet_equity_consistency",
+            "Equity Consistency",
+            "Static equity accounts should not change",
+            "balance_sheet",
+            "consistency_check",
+            "current_equity = prior_equity",
+            "warning"
+        )
+        
+        prior_period_id = self._get_prior_period_id(property_id, period_id)
+        if not prior_period_id:
+            return self._create_skipped_result(upload_id, rule.id, "No prior period found")
+
+        # Partners Contribution (3010-0000)
+        curr_contrib = self._query_balance_sheet_total(property_id, period_id, '3010-0000') or Decimal('0')
+        prior_contrib = self._query_balance_sheet_total(property_id, prior_period_id, '3010-0000') or Decimal('0')
+        
+        passed = abs(curr_contrib - prior_contrib) < Decimal('1.0')
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=prior_contrib,
+            actual_value=curr_contrib,
+            difference=abs(curr_contrib - prior_contrib),
+            error_message=f"Partners Contribution changed: ${prior_contrib:,.2f} -> ${curr_contrib:,.2f}" if not passed else None,
+            severity=rule.severity
+        )
+
+    def _get_prior_period_id(self, property_id: int, current_period_id: int) -> Optional[int]:
+        """Helper to find the immediately preceding period ID"""
+        # This is a simplified lookup. In production, this would use the FinancialPeriod date logic.
+        # For now, we return None to be safe if we can't determining order easily without importing models.
+        # Assuming the caller might need to implement this or we rely on the DB.
+        from app.models.financial_period import FinancialPeriod
+        
+        current = self.db.query(FinancialPeriod).get(current_period_id)
+        if not current:
+            return None
+            
+        target_month = current.period_month - 1
+        target_year = current.period_year
+        if target_month == 0:
+            target_month = 12
+            target_year -= 1
+            
+        prior = self.db.query(FinancialPeriod).filter(
+            FinancialPeriod.property_id == property_id,
+            FinancialPeriod.period_month == target_month,
+            FinancialPeriod.period_year == target_year
+        ).first()
+        
+        return prior.id if prior else None
+
+    def _create_skipped_result(self, upload_id: int, rule_id: int, reason: str) -> Dict:
+        """Helper to create a skipped validation result"""
+        return {
+            "upload_id": upload_id,
+            "rule_id": rule_id,
+            "passed": True,
+            "severity": "info",
+            "skipped": True,
+            "error_message": f"Skipped: {reason}"
+        }
     
     # ==================== INCOME STATEMENT VALIDATIONS ====================
     
@@ -761,8 +975,159 @@ class ValidationService:
         results.append(self.validate_required_accounts(
             upload.id, upload.property_id, upload.period_id
         ))
+
+        # 14. Operational Consistency (Seasonal checks) (WARNING)
+        results.append(self.validate_operational_consistency(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 15. YTD Accumulation Logic (CRITICAL)
+        results.append(self.validate_ytd_accumulation(
+            upload.id, upload.property_id, upload.period_id
+        ))
         
         return results
+
+    def validate_operational_consistency(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """
+        Rule IS-10/11/15: Seasonality & Operational Consistency
+        Checks for significant drops in Property Tax, Insurance, or Utilities that might indicate missing expenses.
+        """
+        rule = self._get_or_create_rule(
+            "income_statement_operational_consistency",
+            "Operational Consistency",
+            "Significant drops in key expenses should be flagged",
+            "income_statement",
+            "consistency_check",
+            "current_expense >= 0.5 * prior_expense",
+            "warning"
+        )
+        
+        prior_period_id = self._get_prior_period_id(property_id, period_id)
+        if not prior_period_id:
+            return self._create_skipped_result(upload_id, rule.id, "No prior period found")
+
+        # Accounts to check: Property Tax (5010), Insurance (5020), Utilities (5100-5199)
+        checks = [
+            ('Property Tax', '5010-0000'),
+            ('Property Insurance', '5020-0000')
+        ]
+        
+        warnings = []
+        for name, code in checks:
+            curr = self.db.query(IncomeStatementData.period_amount).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id,
+                IncomeStatementData.account_code == code
+            ).scalar() or Decimal('0')
+            
+            prior = self.db.query(IncomeStatementData.period_amount).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == prior_period_id,
+                IncomeStatementData.account_code == code
+            ).scalar() or Decimal('0')
+            
+            # Flag if drops by more than 40% (Template v1.0 logic allows for some fluctuation, but >40% is suspicious)
+            if prior > 0 and curr < (prior * Decimal('0.6')):
+                warnings.append(f"{name} dropped significantly: ${prior:,.2f} -> ${curr:,.2f}")
+
+        # Check Utilities Total (5199)
+        curr_util = self.db.query(IncomeStatementData.period_amount).filter(
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == period_id,
+            IncomeStatementData.account_code == '5199-0000'
+        ).scalar() or Decimal('0')
+        
+        prior_util = self.db.query(IncomeStatementData.period_amount).filter(
+            IncomeStatementData.property_id == property_id,
+            IncomeStatementData.period_id == prior_period_id,
+            IncomeStatementData.account_code == '5199-0000'
+        ).scalar() or Decimal('0')
+        
+        if prior_util > 0 and curr_util < (prior_util * Decimal('0.2')): # 80% drop is huge
+             warnings.append(f"Utilities dropped >80%: ${prior_util:,.2f} -> ${curr_util:,.2f}")
+
+        passed = len(warnings) == 0
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('0'),
+            actual_value=Decimal(str(len(warnings))),
+            difference=Decimal('0'),
+            error_message="; ".join(warnings) if warnings else None,
+            severity=rule.severity
+        )
+
+    def validate_ytd_accumulation(
+        self,
+        upload_id: int,
+        property_id: int,
+        period_id: int
+    ) -> Dict:
+        """
+        Rule IS-2/3: YTD Accumulation Logic
+        Current YTD should equal Prior YTD + Current Period (approximately).
+        """
+        rule = self._get_or_create_rule(
+            "income_statement_ytd_accumulation",
+            "YTD Accumulation Logic",
+            "Current YTD = Prior YTD + Current Period",
+            "income_statement",
+            "consistency_check",
+            "YTD_curr ≈ YTD_prior + Period_curr",
+            "error"
+        )
+        
+        prior_period_id = self._get_prior_period_id(property_id, period_id)
+        if not prior_period_id:
+             return self._create_skipped_result(upload_id, rule.id, "No prior period found")
+             
+        # Check Total Income (4990) and Total Expenses (6199) for efficiency
+        codes = ['4990-0000', '6199-0000']
+        failures = []
+        
+        for code in codes:
+            # Current Period Data
+            curr_data = self.db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == period_id,
+                IncomeStatementData.account_code == code
+            ).first()
+            
+            # Prior Period Data
+            prior_data = self.db.query(IncomeStatementData).filter(
+                IncomeStatementData.property_id == property_id,
+                IncomeStatementData.period_id == prior_period_id,
+                IncomeStatementData.account_code == code
+            ).first()
+            
+            if curr_data and prior_data and curr_data.ytd_amount is not None and prior_data.ytd_amount is not None:
+                expected_ytd = (prior_data.ytd_amount or Decimal('0')) + (curr_data.period_amount or Decimal('0'))
+                actual_ytd = curr_data.ytd_amount
+                
+                if abs(expected_ytd - actual_ytd) > Decimal('1.0'):
+                    failures.append(f"{curr_data.account_name}: Exp YTD ${expected_ytd:,.2f} != Act YTD ${actual_ytd:,.2f}")
+
+        passed = len(failures) == 0
+        
+        return self._create_validation_result(
+            upload_id=upload_id,
+            rule_id=rule.id,
+            passed=passed,
+            expected_value=Decimal('0'),
+            actual_value=Decimal(str(len(failures))),
+            difference=Decimal('0'),
+            error_message="; ".join(failures) if failures else None,
+            severity=rule.severity
+        )
+
     
     # ==================== INCOME STATEMENT CRITICAL VALIDATIONS (Template v1.0) ====================
     
@@ -1786,7 +2151,40 @@ class ValidationService:
         
         return result
     
-    # ==================== CASH FLOW TEMPLATE V1.0 VALIDATIONS ====================
+    # ==================== CASH FLOW VALIDATIONS (New Service Integration) ====================
+
+    def _validate_cash_flow(self, upload: DocumentUpload) -> List[Dict]:
+        """
+        Run all cash flow validations
+        """
+        results = []
+        
+        # 1. Total Income Sum Check
+        results.append(self.validate_cf_total_income(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 2. Total Expenses Sum Check
+        results.append(self.validate_cf_total_expenses(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 3. NOI Calculation Check
+        results.append(self.validate_cf_noi_calculation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+
+        # 4. Indirect Method Check (CF-1: Net Income + Adjustments = Cash Flow)
+        results.append(self.validate_cf_cash_flow_calculation(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        # 5. Cash Reconciliation (CF-2: Ending - Beginning = Change)
+        results.append(self.validate_cf_total_cash_balance(
+            upload.id, upload.property_id, upload.period_id
+        ))
+        
+        return results
     
     def validate_cf_total_income(self, upload_id: int, property_id: int, period_id: int) -> Dict:
         """Validate Total Income equals sum of all income line items"""

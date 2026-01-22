@@ -18,6 +18,7 @@ import os
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 import requests
+import httpx # For async/http2 requests (used by Overpass)
 from functools import wraps
 import hashlib
 import json
