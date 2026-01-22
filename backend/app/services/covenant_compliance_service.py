@@ -155,7 +155,7 @@ class CovenantComplianceService:
 
         noi_result = await self.db.execute(
             noi_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         noi_row = noi_result.fetchone()
 
@@ -172,7 +172,7 @@ class CovenantComplianceService:
 
             noi_calc_result = await self.db.execute(
                 noi_calc_query,
-                {"property_id": str(property_id), "period_id": str(period_id)}
+                {"property_id": property_id, "period_id": period_id}
             )
             calc_row = noi_calc_result.fetchone()
 
@@ -188,7 +188,7 @@ class CovenantComplianceService:
             FROM financial_periods
             WHERE id = :period_id
         """)
-        period_result = await self.db.execute(period_query, {"period_id": str(period_id)})
+        period_result = await self.db.execute(period_query, {"period_id": period_id})
         period_row = period_result.fetchone()
 
         if period_row and period_row[0] and period_row[1]:
@@ -215,7 +215,7 @@ class CovenantComplianceService:
 
         debt_result = await self.db.execute(
             debt_service_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         debt_row = debt_result.fetchone()
 
@@ -317,7 +317,7 @@ class CovenantComplianceService:
 
         mortgage_result = await self.db.execute(
             mortgage_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         mortgage_row = mortgage_result.fetchone()
         mortgage_balance = float(mortgage_row[0]) if mortgage_row and mortgage_row[0] else 0
@@ -333,7 +333,7 @@ class CovenantComplianceService:
 
         property_result = await self.db.execute(
             property_query,
-            {"property_id": str(property_id)}
+            {"property_id": property_id}
         )
         property_row = property_result.fetchone()
 
@@ -439,7 +439,7 @@ class CovenantComplianceService:
 
         noi_result = await self.db.execute(
             noi_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         noi_row = noi_result.fetchone()
 
@@ -459,7 +459,7 @@ class CovenantComplianceService:
 
         interest_result = await self.db.execute(
             interest_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         interest_row = interest_result.fetchone()
         interest_expense = float(interest_row[0]) if interest_row and interest_row[0] else 0
@@ -518,7 +518,7 @@ class CovenantComplianceService:
 
         liq_result = await self.db.execute(
             liquidity_query,
-            {"property_id": str(property_id), "period_id": str(period_id)}
+            {"property_id": property_id, "period_id": period_id}
         )
         liq_row = liq_result.fetchone()
 
