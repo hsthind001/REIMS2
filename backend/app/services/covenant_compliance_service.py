@@ -609,10 +609,25 @@ class CovenantComplianceService:
         """
 
         # Get current assets and liabilities from balance sheet
+        # Use account code ranges since category/subcategory fields are often NULL
+        # Current Assets: 11xx-14xx (Cash, AR, Prepaids, Deposits, Escrow)
+        # Current Liabilities: 20xx-21xx (AP, Accrued Expenses, Short-term debt)
         liquidity_query = text("""
             SELECT
-                SUM(CASE WHEN account_category = 'ASSETS' AND account_subcategory ILIKE '%Current%' THEN amount ELSE 0 END) as current_assets,
-                SUM(CASE WHEN account_category = 'LIABILITIES' AND account_subcategory ILIKE '%Current%' THEN amount ELSE 0 END) as current_liabilities,
+                SUM(CASE 
+                    WHEN account_code LIKE '11%' 
+                        OR account_code LIKE '12%' 
+                        OR account_code LIKE '13%' 
+                        OR account_code LIKE '14%' 
+                    THEN amount 
+                    ELSE 0 
+                END) as current_assets,
+                SUM(CASE 
+                    WHEN account_code LIKE '20%' 
+                        OR account_code LIKE '21%' 
+                    THEN ABS(amount)
+                    ELSE 0 
+                END) as current_liabilities,
                 SUM(CASE WHEN account_name ILIKE '%INVENTORY%' THEN amount ELSE 0 END) as inventory
             FROM balance_sheet_data
             WHERE property_id = :property_id
