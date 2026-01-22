@@ -493,13 +493,33 @@ class CovenantComplianceService:
         total_expenses = float(noi_row[1]) if noi_row and noi_row[1] else 0
         noi = total_income - total_expenses
 
-        # Get interest expense
+        # Annualize NOI if period is monthly
+        period_query = text("""
+            SELECT period_start_date, period_end_date
+            FROM financial_periods
+            WHERE id = :period_id
+        """)
+        period_result = await self.db.execute(period_query, {"period_id": period_id})
+        period_row = period_result.fetchone()
+        
+        if period_row and period_row[0] and period_row[1]:
+            period_days = (period_row[1] - period_row[0]).days + 1
+            period_type = 'annual' if period_days >= 330 else 'monthly'
+        else:
+            period_type = 'monthly'
+        
+        if period_type == 'monthly':
+            annual_noi = noi * 12
+        else:
+            annual_noi = noi
+
+        # Get interest expense from mortgage statement (more accurate than IS)
+        # Use YTD interest paid for annual comparison
         interest_query = text("""
-            SELECT period_amount
-            FROM income_statement_data
+            SELECT ytd_interest_paid, interest_due
+            FROM mortgage_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND account_name ILIKE '%INTEREST%'
             LIMIT 1
         """)
 
@@ -508,24 +528,61 @@ class CovenantComplianceService:
             {"property_id": property_id, "period_id": period_id}
         )
         interest_row = interest_result.fetchone()
-        interest_expense = float(interest_row[0]) if interest_row and interest_row[0] else 0
+        
+        # Use YTD interest (annual) or annualize monthly interest due
+        if interest_row and interest_row[0]:
+            interest_expense = float(interest_row[0])  # YTD interest
+        elif interest_row and interest_row[1]:
+            # Annualize monthly interest
+            interest_expense = float(interest_row[1]) * 12 if period_type == 'monthly' else float(interest_row[1])
+        else:
+            # Fallback: try to find in income statement (interest expense accounts)
+            fallback_query = text("""
+                SELECT period_amount
+                FROM income_statement_data
+                WHERE property_id = :property_id
+                AND period_id = :period_id
+                AND (
+                    account_code LIKE '5%'
+                    AND account_name ILIKE '%interest%expense%'
+                )
+                LIMIT 1
+            """)
+            fallback_result = await self.db.execute(
+                fallback_query,
+                {"property_id": property_id, "period_id": period_id}
+            )
+            fallback_row = fallback_result.fetchone()
+            interest_expense = float(fallback_row[0]) * 12 if fallback_row and fallback_row[0] and period_type == 'monthly' else (float(fallback_row[0]) if fallback_row and fallback_row[0] else 0)
 
-        # Calculate ICR
+        # Calculate ICR using annualized values
         if interest_expense > 0:
-            icr = noi / interest_expense
+            icr = annual_noi / interest_expense
         else:
             icr = 0
 
         # Determine compliance
         in_compliance = icr >= self.ICR_MINIMUM
+        
+        # Determine status based on ICR value
+        if icr >= self.ICR_STRONG:
+            status = 'GREEN'
+            interpretation = 'Strong interest coverage'
+        elif icr >= self.ICR_MINIMUM:
+            status = 'YELLOW'
+            interpretation = 'Adequate interest coverage'
+        else:
+            status = 'RED'
+            interpretation = 'CRITICAL - insufficient interest coverage'
 
         return {
             'interest_coverage_ratio': round(icr, 2),
-            'noi': round(noi, 2),
+            'noi': round(annual_noi, 2),
             'interest_expense': round(interest_expense, 2),
             'covenant_threshold': self.ICR_MINIMUM,
             'in_compliance': in_compliance,
-            'status': 'GREEN' if icr >= self.ICR_STRONG else ('YELLOW' if icr >= self.ICR_MINIMUM else 'RED')
+            'status': status,
+            'interpretation': interpretation
         }
 
     async def calculate_liquidity_ratios(
