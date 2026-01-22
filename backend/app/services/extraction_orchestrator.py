@@ -1297,11 +1297,7 @@ class ExtractionOrchestrator:
             # Get amount from totals dict
             amount = totals.get(total_key, 0)
 
-            # Only insert if amount is non-zero
-            if amount == 0:
-                continue
-
-            # Create synthetic total row
+            # Create synthetic total row (even if zero, for validation compatibility)
             synthetic_row = IncomeStatementData(
                 header_id=header.id,
                 property_id=upload.property_id,

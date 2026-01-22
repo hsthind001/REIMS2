@@ -7,7 +7,7 @@ Implements 140+ audit rules across 7 phases
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text, func
+from sqlalchemy import text, func, or_
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from io import BytesIO
@@ -20,6 +20,7 @@ from app.db.database import get_db
 from app.core.config import settings
 from app.core.celery_config import celery_app
 from app.models.cash_flow_adjustments import CashFlowAdjustment
+from app.models.cash_flow_data import CashFlowData
 from app.models.document_upload import DocumentUpload
 from app.models.financial_metrics import FinancialMetrics
 from app.models.financial_period import FinancialPeriod
@@ -1693,19 +1694,52 @@ def get_performance_benchmark(
         current_revenue = float(target_metrics.total_revenue)
         prior_revenue = float(prior_metrics.total_revenue)
         return ((current_revenue - prior_revenue) / prior_revenue) * 100
+        return ((current_revenue - prior_revenue) / prior_revenue) * 100
 
     def compute_capex_ratio(target_period_id: int, revenue: Optional[float]) -> Optional[float]:
         if revenue is None or revenue == 0:
             return None
+            
+        # Try adjustments first (Manual Journal Entries for CapEx)
         capex_sum = db.query(func.sum(CashFlowAdjustment.amount)).filter(
             CashFlowAdjustment.property_id == property_id,
             CashFlowAdjustment.period_id == target_period_id,
             CashFlowAdjustment.adjustment_category == 'PROPERTY_EQUIPMENT'
         ).scalar()
-        if capex_sum is None:
-            return None
-        capex_amount = abs(float(capex_sum))
-        return (capex_amount / revenue) * 100
+        
+        # Fallback to CashFlowData if no adjustments found
+        # Look for CapEx items in ADDITIONAL_EXPENSE section
+        if capex_sum is None or capex_sum == 0:
+             search_terms = [
+                'improvements', 'construction', 'capex', 'capital', 
+                'renovation', 'replacement', 'fixed assets', 'major repairs',
+                '30 year'  # Specific for "30 Year - Roof"
+             ]
+             
+             conditions = [CashFlowData.account_name.ilike(f'%{term}%') for term in search_terms]
+             
+             cf_sum = db.query(func.sum(CashFlowData.period_amount)).filter(
+                 CashFlowData.property_id == property_id,
+                 CashFlowData.period_id == target_period_id,
+                 CashFlowData.line_section == 'ADDITIONAL_EXPENSE',
+                 or_(*conditions)
+             ).scalar()
+             
+             if cf_sum is not None:
+                 # Cash flow outflows are usually negative, we want positive amount for ratio
+                 capex_sum = abs(float(cf_sum))
+             elif capex_sum is None: # If both are None
+                 return None
+             else:
+                 capex_sum = abs(float(capex_sum)) # Logic: if cf_sum None but capex_sum 0, use 0.
+        else:
+             capex_sum = abs(float(capex_sum))
+             
+        # Add any found CF data to adjustment data if both exist (rare but possible)
+        # Actually simplest is: if adjustment exists, use it. If not, fallback.
+        # The above logic does exactly that.
+             
+        return (capex_sum / revenue) * 100
 
     try:
         period = db.query(FinancialPeriod).filter(

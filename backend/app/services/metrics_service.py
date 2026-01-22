@@ -610,6 +610,7 @@ class MetricsService:
             "total_expenses": total_expenses,
             "net_operating_income": noi,
             "net_income": net_income,
+            "operating_expenses": operating_expenses,
             "operating_margin": operating_margin,
             "profit_margin": profit_margin,
         }
@@ -738,8 +739,13 @@ class MetricsService:
         noi_per_sqft = self.safe_divide(noi, total_sqft)
         revenue_per_sqft = self.safe_divide(revenue, total_sqft)
         
-        # Expense ratio
-        expense_ratio_result = self.safe_divide(expenses, revenue)
+        # Expense ratio (Operating Expense Ratio)
+        # Prefer operating_expenses (5000-6999) over total_expenses (which includes interest/depreciation)
+        op_expenses = existing_metrics.get('operating_expenses')
+        if op_expenses is None:
+             op_expenses = expenses
+             
+        expense_ratio_result = self.safe_divide(op_expenses, revenue)
         expense_ratio = expense_ratio_result * Decimal('100') if expense_ratio_result is not None else None
         
         return {
