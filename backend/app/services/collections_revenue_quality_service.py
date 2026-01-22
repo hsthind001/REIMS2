@@ -199,23 +199,23 @@ class CollectionsRevenueQualityService:
         cash_collections = float(cash_row.total_cash_collections) if cash_row and cash_row.total_cash_collections else 0.0
 
         # Get billed revenue from Income Statement
+        # Use account codes instead of line_category (which may be NULL)
         revenue_query = text("""
             SELECT COALESCE(
                 (SELECT period_amount
                  FROM income_statement_data
                  WHERE property_id = :property_id
                    AND period_id = :period_id
-                   AND line_category = 'INCOME'
-                   AND is_total = true
-                 ORDER BY line_number DESC
+                   AND account_code = '4990-0000'  -- Total Income row
                  LIMIT 1),
                 (SELECT SUM(period_amount)
                  FROM income_statement_data
                  WHERE property_id = :property_id
                    AND period_id = :period_id
-                   AND line_category = 'INCOME'
-                   AND is_total IS NOT TRUE
-                   AND is_subtotal IS NOT TRUE)
+                   AND account_code LIKE '4%'  -- All income accounts
+                   AND account_code < '4990-0000'  -- Exclude total row
+                   AND (is_total IS NOT TRUE OR is_total IS NULL)
+                   AND (is_subtotal IS NOT TRUE OR is_subtotal IS NULL))
             ) as total_revenue
         """)
 
