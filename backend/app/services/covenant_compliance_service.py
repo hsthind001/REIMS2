@@ -306,23 +306,49 @@ class CovenantComplianceService:
             LTV analysis with trend
         """
 
-        # Get mortgage balance from balance sheet
-        mortgage_query = text("""
-            SELECT amount
-            FROM balance_sheet_data
+        # Get mortgage balance - try multiple sources
+        # 1. Try mortgage statement first (most accurate)
+        mortgage_stmt_query = text("""
+            SELECT total_loan_balance
+            FROM mortgage_statement_data
             WHERE property_id = :property_id
             AND period_id = :period_id
-            AND account_code LIKE 'MORTGAGE_%'
-            ORDER BY amount DESC
             LIMIT 1
         """)
-
-        mortgage_result = await self.db.execute(
-            mortgage_query,
+        
+        stmt_result = await self.db.execute(
+            mortgage_stmt_query,
             {"property_id": property_id, "period_id": period_id}
         )
-        mortgage_row = mortgage_result.fetchone()
-        mortgage_balance = float(mortgage_row[0]) if mortgage_row and mortgage_row[0] else 0
+        stmt_row = stmt_result.fetchone()
+        
+        if stmt_row and stmt_row[0] and float(stmt_row[0]) > 0:
+            mortgage_balance = float(stmt_row[0])
+        else:
+            # 2. Fall back to Balance Sheet - look for loan/mortgage liabilities
+            mortgage_query = text("""
+                SELECT amount
+                FROM balance_sheet_data
+                WHERE property_id = :property_id
+                AND period_id = :period_id
+                AND account_code LIKE '2%'
+                AND (
+                    account_name ILIKE '%loan%'
+                    OR account_name ILIKE '%mortgage%'
+                    OR account_name ILIKE '%note%payable%'
+                    OR account_code LIKE '219%'
+                    OR account_code LIKE '221%'
+                )
+                ORDER BY ABS(amount) DESC
+                LIMIT 1
+            """)
+            
+            mortgage_result = await self.db.execute(
+                mortgage_query,
+                {"property_id": property_id, "period_id": period_id}
+            )
+            mortgage_row = mortgage_result.fetchone()
+            mortgage_balance = abs(float(mortgage_row[0])) if mortgage_row and mortgage_row[0] else 0
 
         # Get property value (from property table or latest appraisal)
         property_query = text("""
@@ -341,10 +367,25 @@ class CovenantComplianceService:
 
         if property_row and property_row[0]:
             property_value = float(property_row[0])
-            if property_row[1]:
-                property_value += float(property_row[1])
         else:
-            property_value = 0
+            # Fallback: use fixed assets from balance sheet as proxy
+            assets_query = text("""
+                SELECT SUM(amount)
+                FROM balance_sheet_data
+                WHERE property_id = :property_id
+                AND period_id = :period_id
+                AND (
+                    account_code LIKE '15%'
+                    OR account_code LIKE '16%'
+                )
+            """)
+            
+            assets_result = await self.db.execute(
+                assets_query,
+                {"property_id": property_id, "period_id": period_id}
+            )
+            assets_row = assets_result.fetchone()
+            property_value = float(assets_row[0]) if assets_row and assets_row[0] else 0
 
         # Calculate LTV
         if property_value > 0:
