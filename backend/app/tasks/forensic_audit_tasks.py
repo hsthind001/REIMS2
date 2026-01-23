@@ -288,34 +288,27 @@ def run_complete_forensic_audit_task(
         )
 
         # Run reconciliation service
-        recon_service = CrossDocumentReconciliationService(db)
-        recon_results = await_async(
-            recon_service.run_all_reconciliations(property_ref, period_ref)
+        # REPLACED by ReconciliationRuleEngine (New 135+ Rules System)
+        from app.services.reconciliation_rule_engine import ReconciliationRuleEngine
+        
+        rule_engine = ReconciliationRuleEngine(db)
+        # Execute all rules
+        recon_results_list = await_async(
+            rule_engine.execute_all_rules(property_ref, period_ref)
         )
-
+        
         # Save to database
-        await_async(
-            recon_service.save_reconciliation_results(
-                property_ref, period_ref, recon_results
-            )
-        )
-
-        # Count results
-        total_recons = (
-            len(recon_results.get('critical', [])) +
-            len(recon_results.get('important', [])) +
-            len(recon_results.get('informational', []))
-        )
-        passed_recons = sum(
-            1 for recon_list in recon_results.values()
-            for recon in recon_list
-            if recon.status.value == 'PASS'
-        )
-
+        await_async(rule_engine.save_results())
+        
+        # Count results (New Format)
+        total_recons = len(recon_results_list)
+        passed_recons = sum(1 for r in recon_results_list if r.status == 'PASS')
+        
         audit_results['phases']['cross_document_reconciliation'] = {
             'status': 'COMPLETE',
             'total_reconciliations': total_recons,
             'passed': passed_recons,
+            # Handle division by zero if total_recons is 0
             'pass_rate': round((passed_recons / total_recons * 100), 2) if total_recons > 0 else 0
         }
 

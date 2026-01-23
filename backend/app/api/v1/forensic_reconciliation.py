@@ -12,6 +12,7 @@ Endpoints for:
 """
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status, Body
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel
@@ -1235,8 +1236,63 @@ async def evaluate_calculated_rules(
     db: Session = Depends(get_db)
 ):
     """Evaluate all calculated rules for a property and period"""
-    engine = CalculatedRulesEngine(db)
-    results = engine.evaluate_rules(property_id=property_id, period_id=period_id)
+    # MODIFIED: Fetch results from the new ReconciliationRuleEngine storage
+    # instead of calculating on-the-fly with Legacy engine
+    
+    results = []
+    
+    try:
+        # Query results from the new table
+        query = text("""
+            SELECT 
+                rule_code, 
+                reconciliation_type as rule_name,
+                explanation as message,
+                status,
+                source_value as actual_value,
+                target_value as expected_value,
+                difference,
+                is_material,
+                created_at
+            FROM cross_document_reconciliations
+            WHERE property_id = :p_id AND period_id = :period_id
+        """)
+        
+        db_results = db.execute(query, {"p_id": property_id, "period_id": period_id}).fetchall()
+        
+        for row in db_results:
+            # Map DB columns to Frontend expected format
+            status_val = row.status if row.status else "SKIPPED"
+            
+            # Calculate percent if possible
+            diff = float(row.difference or 0)
+            expected = float(row.expected_value or 0)
+            actual = float(row.actual_value or 0)
+            
+            diff_percent = 0.0
+            if max(abs(expected), abs(actual)) > 0:
+                diff_percent = (diff / max(abs(expected), abs(actual))) * 100
+                
+            results.append({
+                "rule_id": row.rule_code or "UNKNOWN",
+                "rule_name": row.rule_name or "Unknown Rule",
+                "description": row.message, # Use explanation as description/message
+                "formula": "N/A (Python Rule)", # Static for now
+                "severity": "medium", # Default
+                "status": status_val, 
+                "expected_value": expected,
+                "actual_value": actual,
+                "difference": diff,
+                "difference_percent": diff_percent,
+                "tolerance_absolute": 0.01,
+                "tolerance_percent": 5.0,
+                "message": row.message
+            })
+            
+    except Exception as e:
+        # Fallback or Log error
+        print(f"Error fetching reconciliation results: {e}")
+        pass
 
     return {
         "property_id": property_id,

@@ -28,10 +28,13 @@ def main():
             SELECT 
                 reconciliation_type,
                 status,
-                expected_value,
-                actual_value,
-                variance_amount,
-                variance_pct
+                source_value,
+                target_value,
+                difference,
+                (CASE 
+                    WHEN source_value != 0 THEN (ABS(difference) / ABS(source_value)) * 100
+                    ELSE 0
+                END) as variance_pct
             FROM cross_document_reconciliations
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -58,15 +61,16 @@ def main():
         
         val_query = text("""
             SELECT 
-                rule_type,
-                rule_code,
-                passing_tests,
-                total_tests,
-                status
-            FROM validation_results
-            WHERE property_id = :property_id
-            AND period_id = :period_id
-            ORDER BY last_run DESC
+                vr.rule_id,
+                vr.passed,
+                vr.expected_value,
+                vr.actual_value,
+                vr.difference
+            FROM validation_results vr
+            JOIN document_uploads du ON vr.upload_id = du.id
+            WHERE du.property_id = :property_id
+            AND du.period_id = :period_id
+            ORDER BY vr.created_at DESC
             LIMIT 10
         """)
         
@@ -92,10 +96,13 @@ def main():
             AND period_id = :period_id
         """)
         
-        cache_result = db.execute(cache_query, {"property_id": property_id, "period_id": period_id})
-        cache_count = cache_result.scalar()
-        
-        print(f"Validation cache entries: {cache_count}")
+        try:
+            cache_result = db.execute(cache_query, {"property_id": property_id, "period_id": period_id})
+            cache_count = cache_result.scalar()
+            print(f"Validation cache entries: {cache_count}")
+        except Exception:
+            print(f"Validation cache entries: N/A (table not implemented)")
+            db.rollback()  # Rollback failed transaction
         
         # 4. Check Audit Scorecard
         print("\n4. AUDIT SCORECARD SUMMARY:")
@@ -103,26 +110,31 @@ def main():
         
         scorecard_query = text("""
             SELECT 
-                overall_score,
-                total_rules,
-                passed_rules,
-                failed_rules
-            FROM audit_scorecard_summaries
+                overall_health_score,
+                traffic_light_status,
+                critical_issues_count,
+                audit_opinion
+            FROM audit_scorecard_summary
             WHERE property_id = :property_id
             AND period_id = :period_id
             ORDER BY created_at DESC
             LIMIT 1
         """)
         
-        sc_result = db.execute(scorecard_query, {"property_id": property_id, "period_id": period_id})
-        sc_row = sc_result.fetchone()
-        
-        if sc_row:
-            print(f"Overall Score: {float(sc_row[0]):.1f}%")
-            print(f"Passed Rules: {sc_row[2]}/{sc_row[1]}")
-            print(f"Failed Rules: {sc_row[3]}")
-        else:
-            print("❌ NO audit scorecard found!")
+        try:
+            sc_result = db.execute(scorecard_query, {"property_id": property_id, "period_id": period_id})
+            sc_row = sc_result.fetchone()
+            
+            if sc_row:
+                print(f"Overall Health Score: {float(sc_row[0]):.1f}%")
+                print(f"Traffic Light Status: {sc_row[1]}")
+                print(f"Critical Issues: {sc_row[2]}")
+                print(f"Audit Opinion: {sc_row[3]}")
+            else:
+                print("❌ NO audit scorecard found!")
+        except Exception as e:
+            print(f"❌ Error checking scorecard: {e}")
+            db.rollback()
         
         # 5. Summary
         print("\n" + "=" * 80)

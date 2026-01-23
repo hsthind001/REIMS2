@@ -1113,10 +1113,11 @@ class AuditScorecardGeneratorService:
         noi = float(metrics_row[2]) if metrics_row and metrics_row[2] is not None else 0.0
         net_income = float(metrics_row[3]) if metrics_row and metrics_row[3] is not None else 0.0
         cash_balance = 0.0
-        if metrics_row and metrics_row[4] is not None:
-            cash_balance = float(metrics_row[4])
-        elif metrics_row and metrics_row[5] is not None:
-            cash_balance = float(metrics_row[5])
+        if metrics_row:
+            ending_cash = float(metrics_row[4]) if metrics_row[4] is not None else 0.0
+            total_cash = float(metrics_row[5]) if metrics_row[5] is not None else 0.0
+            # Use ending_cash if non-zero, otherwise fallback to total_cash_position
+            cash_balance = ending_cash if ending_cash != 0.0 else total_cash
 
         noi_margin_pct = 0.0
         if metrics_row and metrics_row[6] is not None:

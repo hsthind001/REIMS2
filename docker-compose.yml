@@ -29,10 +29,10 @@ services:
       resources:
         limits:
           memory: 1.5G
-          cpus: '2.0'
+          cpus: "2.0"
         reservations:
           memory: 512M
-          cpus: '0.5'
+          cpus: "0.5"
 
   # Database Initialization (runs migrations once)
   db-init:
@@ -40,18 +40,18 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: reims-db-init
-    restart: "no"  # Only runs once
+    restart: "no" # Only runs once
     environment:
       POSTGRES_USER: reims
       POSTGRES_PASSWORD: reims
       POSTGRES_SERVER: postgres
-      POSTGRES_PORT: 5432  # Internal port
+      POSTGRES_PORT: 5432 # Internal port
       POSTGRES_DB: reims
       RUN_MIGRATIONS: "true"
       SEED_DATABASE: "true"
     volumes:
       - ./backend/app:/app/app
-      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
+      - ./backend/alembic:/app/alembic # Mount alembic for migrations
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,6 +94,8 @@ services:
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/04_auto_resolution_rules_corrected.sql;
           echo 'Deploying forensic audit framework...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/05_forensic_audit_framework.sql;
+          echo 'Deploying verified reconciliation results...';
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/06_verified_reconciliations.sql;
           echo '✅ All seed files loaded with 131+ validation rules';
         else
           echo 'ℹ️  Database already seeded, skipping';
@@ -108,8 +110,8 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@pgadmin.com
       PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     volumes:
       - pgadmin-data:/var/lib/pgadmin
     ports:
@@ -122,10 +124,10 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '1.0'
+          cpus: "1.0"
         reservations:
           memory: 256M
-          cpus: '0.25'
+          cpus: "0.25"
 
   # Redis Stack (includes RedisInsight)
   redis:
@@ -135,8 +137,8 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"  # Redis server
-      - "8001:8001"  # RedisInsight GUI
+      - "6379:6379" # Redis server
+      - "8001:8001" # RedisInsight GUI
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -148,10 +150,10 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '1.0'
+          cpus: "1.0"
         reservations:
           memory: 256M
-          cpus: '0.25'
+          cpus: "0.25"
 
   # MinIO - S3-compatible object storage
   minio:
@@ -165,8 +167,8 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
+      - "9000:9000" # API
+      - "9001:9001" # Console
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
@@ -179,16 +181,16 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '1.0'
+          cpus: "1.0"
         reservations:
           memory: 256M
-          cpus: '0.25'
+          cpus: "0.25"
 
   # MinIO Bucket Initialization
   minio-init:
     image: minio/mc:latest
     container_name: reims-minio-init
-    restart: "no"  # Only runs once
+    restart: "no" # Only runs once
     depends_on:
       minio:
         condition: service_healthy
@@ -235,49 +237,49 @@ services:
       # Market Intelligence API Keys
       FRED_API_KEY: ${FRED_API_KEY}
       CENSUS_API_KEY: ${CENSUS_API_KEY}
-      
+
       # ============================================================================
       # ANOMALY DETECTION ENHANCEMENT CONFIGURATION
       # ============================================================================
-      
+
       # PyOD & ML Configuration
       PYOD_ENABLED: ${PYOD_ENABLED:-true}
       PYOD_LLM_MODEL_SELECTION: ${PYOD_LLM_MODEL_SELECTION:-false}
-      
+
       # GPU Acceleration (Optional - requires NVIDIA GPU and nvidia-docker)
       ANOMALY_USE_GPU: ${ANOMALY_USE_GPU:-false}
       GPU_DEVICE_ID: ${GPU_DEVICE_ID:-0}
-      
+
       # Model Caching
       MODEL_CACHE_ENABLED: ${MODEL_CACHE_ENABLED:-true}
       MODEL_CACHE_TTL_DAYS: ${MODEL_CACHE_TTL_DAYS:-30}
       INCREMENTAL_LEARNING_ENABLED: ${INCREMENTAL_LEARNING_ENABLED:-true}
       BATCH_SIZE: ${BATCH_SIZE:-32}
       MAX_EPOCHS: ${MAX_EPOCHS:-50}
-      
+
       # XAI (Explainability) Configuration
       SHAP_ENABLED: ${SHAP_ENABLED:-false}
       LIME_ENABLED: ${LIME_ENABLED:-false}
       XAI_BACKGROUND_SAMPLES: ${XAI_BACKGROUND_SAMPLES:-100}
-      
+
       # Active Learning
       ACTIVE_LEARNING_ENABLED: ${ACTIVE_LEARNING_ENABLED:-false}
       ADAPTIVE_THRESHOLDS_ENABLED: ${ADAPTIVE_THRESHOLDS_ENABLED:-false}
       AUTO_SUPPRESSION_ENABLED: ${AUTO_SUPPRESSION_ENABLED:-false}
       AUTO_SUPPRESSION_CONFIDENCE_THRESHOLD: ${AUTO_SUPPRESSION_CONFIDENCE_THRESHOLD:-0.8}
       FEEDBACK_LOOKBACK_DAYS: ${FEEDBACK_LOOKBACK_DAYS:-90}
-      
+
       # Cross-Property Intelligence
       PORTFOLIO_BENCHMARKS_ENABLED: ${PORTFOLIO_BENCHMARKS_ENABLED:-false}
       BENCHMARK_REFRESH_SCHEDULE: ${BENCHMARK_REFRESH_SCHEDULE:-0 2 1 * *}
       BENCHMARK_MIN_PROPERTIES: ${BENCHMARK_MIN_PROPERTIES:-3}
-      
+
       # LayoutLM Configuration
       LAYOUTLM_ENABLED: ${LAYOUTLM_ENABLED:-false}
       LAYOUTLM_MODEL_PATH: ${LAYOUTLM_MODEL_PATH:-/models/layoutlmv3-reims-finetuned}
       LAYOUTLM_CONFIDENCE_THRESHOLD: ${LAYOUTLM_CONFIDENCE_THRESHOLD:-0.75}
       LAYOUTLM_USE_PRETRAINED: ${LAYOUTLM_USE_PRETRAINED:-true}
-      
+
       # Batch Processing
       BATCH_PROCESSING_CHUNK_SIZE: ${BATCH_PROCESSING_CHUNK_SIZE:-10}
       BATCH_PROCESSING_MAX_CONCURRENT: ${BATCH_PROCESSING_MAX_CONCURRENT:-3}
@@ -299,21 +301,21 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
-      
+
       # MinIO
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_SECURE: "false"
       MINIO_BUCKET_NAME: reims
-      
+
       # API
       API_V1_STR: /api/v1
       PROJECT_NAME: REIMS API
-      
+
       # CORS
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
-      
+
       # Email Configuration (for Alert Notifications)
       EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-localhost}
       EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-1025}
@@ -327,12 +329,12 @@ services:
       EMAIL_SEND_ALERT_EMAILS: ${EMAIL_SEND_ALERT_EMAILS:-true}
       EMAIL_SEND_DIGEST_EMAILS: ${EMAIL_SEND_DIGEST_EMAILS:-true}
       EMAIL_SEND_ESCALATION_EMAILS: ${EMAIL_SEND_ESCALATION_EMAILS:-true}
-      
+
       # Database Initialization
       # NOTE: Migrations and seeding are handled by db-init container
-      RUN_MIGRATIONS: "false"  # db-init container handles migrations
-      SEED_DATABASE: "false"   # db-init container handles seeding
-      
+      RUN_MIGRATIONS: "false" # db-init container handles migrations
+      SEED_DATABASE: "false" # db-init container handles seeding
+
       # Cash Flow Template v1.0 Features:
       # - 3 new tables: cash_flow_headers, cash_flow_adjustments, cash_account_reconciliations
       # - 100+ category classification engine
@@ -341,10 +343,10 @@ services:
       # - Adjustments tracking (30+ types across 10 categories)
       # - Cash reconciliation with beginning/ending balances
     volumes:
-      - ./backend/app:/app/app  # Mount app for development
-      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
-      - ai-models-cache:/app/.cache/huggingface  # Cache for LayoutLMv3 models
-      - model-cache:/app/.cache/reims/models  # Cache for PyOD models (50x speedup)
+      - ./backend/app:/app/app # Mount app for development
+      - ./backend/alembic:/app/alembic # Mount alembic for migrations
+      - ai-models-cache:/app/.cache/huggingface # Cache for LayoutLMv3 models
+      - model-cache:/app/.cache/reims/models # Cache for PyOD models (50x speedup)
     ports:
       - "8000:8000"
     depends_on:
@@ -369,11 +371,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G  # Increased for ML models and caching
-          cpus: '4.0'  # Increased for parallel processing
+          memory: 4G # Increased for ML models and caching
+          cpus: "4.0" # Increased for parallel processing
         reservations:
           memory: 1G
-          cpus: '1.0'
+          cpus: "1.0"
       # GPU support (optional - uncomment if NVIDIA GPU available)
       # device_requests:
       #   - driver: nvidia
@@ -426,7 +428,7 @@ services:
       EMAIL_SEND_ALERT_EMAILS: ${EMAIL_SEND_ALERT_EMAILS:-true}
       EMAIL_SEND_DIGEST_EMAILS: ${EMAIL_SEND_DIGEST_EMAILS:-true}
       EMAIL_SEND_ESCALATION_EMAILS: ${EMAIL_SEND_ESCALATION_EMAILS:-true}
-      
+
       # Anomaly Detection Configuration (same as backend)
       PYOD_ENABLED: ${PYOD_ENABLED:-true}
       MODEL_CACHE_ENABLED: ${MODEL_CACHE_ENABLED:-true}
@@ -435,17 +437,17 @@ services:
       BATCH_PROCESSING_CHUNK_SIZE: ${BATCH_PROCESSING_CHUNK_SIZE:-10}
     volumes:
       - ./backend/app:/app/app
-      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
-      - ai-models-cache:/app/.cache/huggingface  # Share model cache
-      - model-cache:/app/.cache/reims/models  # Share PyOD model cache
+      - ./backend/alembic:/app/alembic # Mount alembic for migrations
+      - ai-models-cache:/app/.cache/huggingface # Share model cache
+      - model-cache:/app/.cache/reims/models # Share PyOD model cache
     deploy:
       resources:
         limits:
-          memory: 3G  # Increased for ML model processing
-          cpus: '3.0'  # Increased for parallel anomaly detection
+          memory: 3G # Increased for ML model processing
+          cpus: "3.0" # Increased for parallel anomaly detection
         reservations:
           memory: 1G
-          cpus: '1.0'
+          cpus: "1.0"
       # GPU support (optional - uncomment if NVIDIA GPU available)
       # device_requests:
       #   - driver: nvidia
@@ -467,7 +469,8 @@ services:
     networks:
       - reims-network
     healthcheck:
-      test: ["CMD", "celery", "-A", "celery_worker.celery_app", "inspect", "ping"]
+      test:
+        ["CMD", "celery", "-A", "celery_worker.celery_app", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -533,17 +536,17 @@ services:
       BATCH_PROCESSING_CHUNK_SIZE: ${BATCH_PROCESSING_CHUNK_SIZE:-10}
     volumes:
       - ./backend/app:/app/app
-      - ./backend/alembic:/app/alembic  # Mount alembic for migrations
-      - ai-models-cache:/app/.cache/huggingface  # Share model cache
-      - model-cache:/app/.cache/reims/models  # Share PyOD model cache
+      - ./backend/alembic:/app/alembic # Mount alembic for migrations
+      - ai-models-cache:/app/.cache/huggingface # Share model cache
+      - model-cache:/app/.cache/reims/models # Share PyOD model cache
     deploy:
       resources:
         limits:
           memory: 2G
-          cpus: '2.0'
+          cpus: "2.0"
         reservations:
           memory: 512M
-          cpus: '0.5'
+          cpus: "0.5"
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -560,7 +563,8 @@ services:
     networks:
       - reims-network
     healthcheck:
-      test: ["CMD", "celery", "-A", "celery_worker.celery_app", "inspect", "ping"]
+      test:
+        ["CMD", "celery", "-A", "celery_worker.celery_app", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -657,10 +661,10 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '0.5'
+          cpus: "0.5"
         reservations:
           memory: 128M
-          cpus: '0.1'
+          cpus: "0.1"
     command: celery -A celery_worker.celery_app flower --port=5555
 
   # Frontend - React + Vite (Development)
@@ -682,7 +686,7 @@ services:
       - ./tsconfig.app.json:/app/tsconfig.app.json
       - ./tsconfig.node.json:/app/tsconfig.node.json
       - ./package.json:/app/package.json
-      - /app/node_modules  # Anonymous volume for node_modules
+      - /app/node_modules # Anonymous volume for node_modules
     ports:
       - "5173:5173"
     environment:
@@ -692,7 +696,15 @@ services:
     networks:
       - reims-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:5173",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -706,10 +718,10 @@ services:
       resources:
         limits:
           memory: 2G
-          cpus: '2.0'
+          cpus: "2.0"
         reservations:
           memory: 512M
-          cpus: '0.5'
+          cpus: "0.5"
     command: npm run dev -- --host 0.0.0.0
 
 # Networks
@@ -728,6 +740,6 @@ volumes:
   minio-data:
     driver: local
   ai-models-cache:
-    driver: local  # Cache for AI/ML models (LayoutLMv3, EasyOCR)
+    driver: local # Cache for AI/ML models (LayoutLMv3, EasyOCR)
   model-cache:
-    driver: local  # Cache for PyOD anomaly detection models (50x speedup)
+    driver: local # Cache for PyOD anomaly detection models (50x speedup)
