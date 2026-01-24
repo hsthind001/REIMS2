@@ -18,6 +18,7 @@ if (process.env.ANALYZE) {
 }
 
 // https://vite.dev/config/
+// Forced restart check
 export default defineConfig({
   plugins,
   resolve: {
@@ -43,6 +44,7 @@ export default defineConfig({
       '@emotion/react',
       '@emotion/styled',
       'hoist-non-react-statics',
+      'react-hook-form',
     ],
     // Esbuild options for better stability in Docker
     esbuildOptions: {

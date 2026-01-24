@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   CheckCircle2, 
   AlertTriangle, 
@@ -8,15 +9,27 @@ import {
   ArrowRight,
   FileText,
   User,
-  ArrowLeft
+  ArrowLeft,
+  Loader2
 } from 'lucide-react';
 import { Button } from '../components/design-system';
+import { forensicReconciliationService } from '../lib/forensic_reconciliation';
+import EditRuleModal from '../components/financial_integrity/modals/EditRuleModal';
 
 export default function RuleConfigurationPage() {
+  const queryClient = useQueryClient();
   const [ruleId, setRuleId] = useState<string>('');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  
+  // Get property and period from local storage, similar to main hub
+  const [context, setContext] = useState<{propertyId: number, periodId: number} | null>(() => {
+    const pId = localStorage.getItem('forensic_selectedPropertyId');
+    const periodId = localStorage.getItem('forensic_selectedPeriodId');
+    return pId && periodId ? { propertyId: Number(pId), periodId: Number(periodId) } : null;
+  });
 
   useEffect(() => {
-    // Parse rule ID from hash: #rule-configuration/R-101
+    // Parse rule ID from hash: #rule-configuration/BS-11
     const hash = window.location.hash;
     const parts = hash.split('/');
     if (parts.length > 1) {
@@ -28,34 +41,94 @@ export default function RuleConfigurationPage() {
     window.location.hash = 'forensic-reconciliation';
   };
 
-  // Mock data - same as RuleDetailModal for now
-  const ruleDetails = {
-    id: ruleId || 'R-101',
-    name: 'Bank Account Reconciliation',
-    description: 'Validates that the Balance Sheet cash account matches the ending balance on the monthly Bank Statement.',
-    formula: 'ABS(BalanceSheet.Cash - BankStatement.EndingBalance) < 0.01',
-    status: 'pass',
-    type: 'Direct Match',
-    lastRun: 'Oct 24, 2025 14:30:22',
-    variance: 0,
-    threshold: 0.01,
-    sourceData: {
-      account: 'Balance Sheet: 1000-Cash',
-      value: '$1,245,678.45',
-      date: '2025-10-31'
-    },
-    targetData: {
-      account: 'Bank Stmt: Chase-8892',
-      value: '$1,245,678.45',
-      date: '2025-10-31'
-    },
-    history: [
-      { date: 'Oct 2025', status: 'pass', variance: 0 },
-      { date: 'Sep 2025', status: 'pass', variance: 0 },
-      { date: 'Aug 2025', status: 'warn', variance: 150.00 },
-      { date: 'Jul 2025', status: 'pass', variance: 0 },
-    ]
-  };
+  // Fetch rules list and find the specific one
+  const { data: ruleDetails, isLoading, error } = useQuery({
+    queryKey: ['rule-evaluation', context?.propertyId, context?.periodId],
+    queryFn: () => forensicReconciliationService.evaluateCalculatedRules(
+      context?.propertyId!, 
+      context?.periodId!
+    ),
+    enabled: !!ruleId && !!context?.propertyId && !!context?.periodId,
+    select: (data) => {
+        const found = data.rules.find(r => r.rule_id === ruleId);
+        if (!found) return null;
+        
+        // Transform to shape expected by UI
+        return {
+            id: found.rule_id,
+            name: found.rule_name,
+            description: found.description || found.message || 'No description available',
+            formula: found.formula,
+            status: found.status,
+            type: 'Calculated Rule',
+            lastRun: new Date().toISOString(), // Fallback
+            variance: found.difference || 0,
+            threshold: found.tolerance_absolute || 0.01,
+            sourceData: {
+                account: 'Source Value',
+                value: found.actual_value, // Note: In engine Logic, 'actual' is left side (Source)
+                date: 'Current Period'
+            },
+            targetData: {
+                account: 'Target / Expected', 
+                value: found.expected_value, // 'expected' is right side (Target)
+                date: 'Current Period'
+            },
+            history: [] // History not available in this view
+        };
+    }
+  });
+
+  if (!context) {
+     return (
+        <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+             <div className="bg-white p-8 rounded-xl border border-gray-200 text-center shadow-sm max-w-md">
+                <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Context Missing</h2>
+                <p className="text-gray-600 mb-6">
+                    No property selected. Please return to the dashboard to select a property.
+                </p>
+                <Button onClick={handleBack}>
+                    Go to Dashboard
+                </Button>
+             </div>
+        </div>
+     );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
+            <p className="text-gray-500">Loading rule details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !ruleDetails) {
+     return (
+        <div className="min-h-screen bg-gray-50 p-6">
+            <div className="max-w-4xl mx-auto space-y-6">
+                 <Button variant="outline" onClick={handleBack} icon={<ArrowLeft className="w-4 h-4" />}>
+                    Back to Hub
+                 </Button>
+                 <div className="bg-white p-8 rounded-xl border border-red-100 text-center">
+                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">Rule Not Found</h2>
+                    <p className="text-gray-600 mb-4">
+                        Could not find execution details for rule <strong>{ruleId}</strong>. 
+                        It may not have run for the selected property and period.
+                    </p>
+                    <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded inline-block font-mono">
+                        Debug: Prop={context?.propertyId} Period={context?.periodId} Rule={ruleId}
+                    </div>
+                 </div>
+            </div>
+        </div>
+     );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -89,12 +162,22 @@ export default function RuleConfigurationPage() {
             </div>
             {/* Status Badge */}
             <div className={`px-4 py-2 rounded-lg border flex items-center gap-2 ${
-                ruleDetails.status === 'pass' 
+                ruleDetails.status === 'PASS' 
                 ? 'bg-green-50 border-green-100 text-green-700' 
+                : ruleDetails.status === 'SKIPPED'
+                ? 'bg-gray-50 border-gray-200 text-gray-500'
                 : 'bg-amber-50 border-amber-100 text-amber-700'
             }`}>
-                {ruleDetails.status === 'pass' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
-                <span className="font-bold">{ruleDetails.status === 'pass' ? 'Passing' : 'Failing'}</span>
+                {ruleDetails.status === 'PASS' ? (
+                    <CheckCircle2 className="w-5 h-5" />
+                ) : ruleDetails.status === 'SKIPPED' ? (
+                    <AlertTriangle className="w-5 h-5" />
+                ) : (
+                    <AlertTriangle className="w-5 h-5" />
+                )}
+                <span className="font-bold">
+                    {ruleDetails.status === 'PASS' ? 'Passing' : ruleDetails.status === 'SKIPPED' ? 'Missing Data' : 'Failing'}
+                </span>
             </div>
           </div>
 
@@ -133,39 +216,47 @@ export default function RuleConfigurationPage() {
 
                        {/* Source */}
                        <div className="bg-white border border-gray-200 rounded-xl p-6 hover:border-blue-200 transition-colors">
-                          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Source A</div>
+                          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Source Value</div>
                           <div className="flex items-center gap-2 mb-4">
                               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                                 <FileText className="w-5 h-5" />
                               </div>
-                              <span className="font-bold text-gray-900 text-lg">Balance Sheet</span>
+                              <span className="font-bold text-gray-900 text-lg">Actual</span>
                           </div>
                           <div className="space-y-2">
                               <div className="text-sm text-gray-500 flex justify-between">
-                                <span>Account</span>
-                                <span className="font-mono text-gray-700">1000-Cash</span>
+                                <span>Value</span>
+                                <span className="font-mono text-gray-700">Calculated</span>
                               </div>
-                              <div className="text-3xl font-bold text-gray-900 tracking-tight">{ruleDetails.sourceData.value}</div>
-                              <div className="text-xs text-gray-400">As of {ruleDetails.sourceData.date}</div>
+                              <div className="text-3xl font-bold text-gray-900 tracking-tight">
+                                {typeof ruleDetails.sourceData.value === 'number' 
+                                    ? ruleDetails.sourceData.value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                                    : ruleDetails.sourceData.value}
+                              </div>
+                              <div className="text-xs text-gray-400">As of Current Period</div>
                           </div>
                        </div>
 
                        {/* Target */}
                        <div className="bg-white border border-gray-200 rounded-xl p-6 hover:border-purple-200 transition-colors">
-                          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Source B</div>
+                          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Target Value</div>
                           <div className="flex items-center gap-2 mb-4">
                               <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
                                 <FileText className="w-5 h-5" />
                               </div>
-                              <span className="font-bold text-gray-900 text-lg">Bank Statement</span>
+                              <span className="font-bold text-gray-900 text-lg">Expected</span>
                           </div>
                           <div className="space-y-2">
                               <div className="text-sm text-gray-500 flex justify-between">
-                                <span>Statement</span>
-                                <span className="font-mono text-gray-700">Chase-8892</span>
+                                <span>Value</span>
+                                <span className="font-mono text-gray-700">Baseline</span>
                               </div>
-                              <div className="text-3xl font-bold text-gray-900 tracking-tight">{ruleDetails.targetData.value}</div>
-                              <div className="text-xs text-gray-400">As of {ruleDetails.targetData.date}</div>
+                              <div className="text-3xl font-bold text-gray-900 tracking-tight">
+                                {typeof ruleDetails.targetData.value === 'number'
+                                    ? ruleDetails.targetData.value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                                    : ruleDetails.targetData.value}
+                              </div>
+                              <div className="text-xs text-gray-400">As of Current Period</div>
                           </div>
                        </div>
                   </div>
@@ -188,16 +279,18 @@ export default function RuleConfigurationPage() {
                              </tr>
                          </thead>
                          <tbody className="divide-y divide-gray-100">
-                             {ruleDetails.history.map((h, i) => (
+                             {ruleDetails.history.map((h: any, i: number) => (
                                  <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                                     <td className="px-6 py-4 text-gray-900 font-medium">{h.date}</td>
+                                     <td className="px-6 py-4 text-gray-900 font-medium">{h.period}</td>
                                      <td className="px-6 py-4">
                                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
-                                             h.status === 'pass' 
+                                             h.status === 'PASS' 
                                              ? 'bg-green-100 text-green-700' 
+                                             : h.status === 'SKIPPED'
+                                             ? 'bg-gray-100 text-gray-500'
                                              : 'bg-amber-100 text-amber-700'
                                          }`}>
-                                             {h.status === 'pass' ? 'Pass' : 'Warning'}
+                                             {h.status === 'PASS' ? 'Pass' : h.status === 'SKIPPED' ? 'Missing Data' : 'Warning'}
                                          </span>
                                      </td>
                                      <td className="px-6 py-4 text-right font-mono text-gray-600">
@@ -223,18 +316,46 @@ export default function RuleConfigurationPage() {
                 </div>
                 <div>
                    <div className="text-sm font-medium text-gray-900">Maintained by Finance Team</div>
-                   <div className="text-xs text-gray-500">Last updated: {ruleDetails.lastRun}</div>
+                   <div className="text-xs text-gray-500">Last updated: {ruleDetails.lastRun ? new Date(ruleDetails.lastRun).toLocaleDateString() : 'N/A'}</div>
                 </div>
              </div>
              
              <div className="flex gap-3">
-                 <Button variant="secondary">
+                 <Button variant="secondary" onClick={() => setIsEditModalOpen(true)}>
                      Edit Logic
                  </Button>
              </div>
           </div>
         </div>
       </div>
+      
+      {ruleDetails && (
+        <EditRuleModal 
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            rule={{
+                id: ruleId,
+                name: ruleDetails.name!,
+                description: ruleDetails.description,
+                formula: ruleDetails.formula,
+                threshold: ruleDetails.threshold,
+                type: ruleDetails.type
+            }}
+            onSave={async (data) => {
+                // Determine if this is updating existing or creating new
+                // For now, we'll try to update existing
+                try {
+                   // This would call the update endpoint
+                   // await forensicReconciliationService.updateCalculatedRule(ruleId, data);
+                   console.log("Updating rule with:", data);
+                   // Refresh query
+                   queryClient.invalidateQueries({ queryKey: ['rule-evaluation'] });
+                } catch (err) {
+                   console.error("Error updating rule:", err);
+                }
+            }}
+        />
+      )}
     </div>
   );
 }

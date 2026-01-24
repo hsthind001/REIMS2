@@ -36,8 +36,6 @@ from app.models.health_score_config import HealthScoreConfig
 router = APIRouter(prefix="/forensic-reconciliation", tags=["forensic-reconciliation"])
 
 
-
-
 # ==================== PYDANTIC MODELS ====================
 
 class ReconciliationSessionCreate(BaseModel):
@@ -1241,16 +1239,12 @@ async def list_calculated_rules(
 
 
 @router.get("/calculated-rules/evaluate/{property_id}/{period_id}")
-@router.post("/calculated-rules/evaluate/{property_id}/{period_id}")
 async def evaluate_calculated_rules(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
-    request: Optional[RunReconciliationRequest] = Body(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-
     """Evaluate all calculated rules for a property and period"""
     # MODIFIED: Fetch results from the new ReconciliationRuleEngine storage
     # instead of calculating on-the-fly with Legacy engine

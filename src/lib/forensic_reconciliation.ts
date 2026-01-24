@@ -242,10 +242,28 @@ export const forensicReconciliationService = {
   },
 
   /**
+   * Get specific calculated rule detail
+   */
+  async getCalculatedRuleDetail(ruleId: string, propertyId: number, periodId: number): Promise<any> {
+    return api.get(`/forensic-reconciliation/calculated-rules/detail/${ruleId}/${propertyId}/${periodId}`);
+  },
+
+  /**
    * Evaluate calculated rules for a property and period
    */
   async evaluateCalculatedRules(propertyId: number, periodId: number): Promise<CalculatedRuleEvaluationResponse> {
     return api.get(`/forensic-reconciliation/calculated-rules/evaluate/${propertyId}/${periodId}`);
+  },
+
+
+  /**
+   * Update calculated rule definition (Placeholder)
+   */
+  async updateCalculatedRule(ruleId: string, ruleData: any): Promise<any> {
+    // In real implementation, this would emit a PUT request
+    // return api.put(`/forensic-reconciliation/calculated-rules/${ruleId}`, ruleData);
+    console.log('Mock Update Rule:', ruleId, ruleData);
+    return new Promise(resolve => setTimeout(resolve, 800));
   },
 
   /**

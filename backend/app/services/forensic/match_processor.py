@@ -55,16 +55,19 @@ class ForensicMatchProcessor:
         session_id: int,
         property_id: int,
         period_id: int,
-        use_exact: bool = True,
-        use_fuzzy: bool = True,
-        use_calculated: bool = True,
-        use_inferred: bool = True,
         use_rules: bool = True
     ) -> Dict[str, Any]:
         """
-        Execute matching engines and return matches to be stored.
-        Does NOT handle transaction commit/rollback.
+        Process matches for a session
+        
+        Orchestrates the matching process:
+        1. Clears existing matches
+        2. Runs matching engines
+        3. Applies tiering logic
+        4. Stores results
         """
+        logger.info(f"Processing matches for session {session_id} (Prop: {property_id}, Period: {period_id})")
+        
         # Clear existing matches for this session to ensure idempotency
         # This prevents duplicate matches if the reconciliation is run multiple times for the same session
         try:
@@ -75,7 +78,19 @@ class ForensicMatchProcessor:
         except Exception as e:
             logger.error(f"Error clearing existing matches for session {session_id}: {e}")
             # Continue, as we might be starting fresh anyway
-        
+
+        # Verify deletion and build existing set if needed
+        existing_matches_set = set()
+        try:
+            existing_count = self.db.query(ForensicMatch).filter(ForensicMatch.session_id == session_id).count()
+            if existing_count > 0:
+                logger.warning(f"Deletion incomplete, found {existing_count} existing matches for session {session_id}. Enabling deduplication.")
+                existing_rows = self.db.query(ForensicMatch.source_record_id, ForensicMatch.target_record_id).filter(ForensicMatch.session_id == session_id).all()
+                for row in existing_rows:
+                    existing_matches_set.add((row.source_record_id, row.target_record_id))
+        except Exception as e:
+            logger.error(f"Error checking existing matches: {e}")
+
         all_matches = []
         
         # Get prior period for reconciliation rules
@@ -84,15 +99,25 @@ class ForensicMatchProcessor:
         
         # 1. Execute cross-document matching rules (adaptive matching)
         if use_rules:
-            # self._log_available_data(property_id, period_id) # Logging moved or removed to keep clean
-            
-            rule_matches = self.matching_rules.find_all_matches(
-                property_id=property_id,
-                period_id=period_id,
-                prior_period_id=prior_period_id
-            )
-            logger.info(f"Found {len(rule_matches)} rule-based matches")
-            all_matches.extend(rule_matches)
+            try:
+                rule_matches = self.matching_rules.find_all_matches(
+                    property_id=property_id,
+                    period_id=period_id,
+                    prior_period_id=prior_period_id
+                )
+                
+                # Deduplicate matches before adding
+                for match in rule_matches:
+                    pair = (match.source_record_id, match.target_record_id)
+                    if pair not in existing_matches_set:
+                        all_matches.append(match)
+                        existing_matches_set.add(pair)
+                    else:
+                        logger.debug(f"Skipping duplicate match pair: {pair}")
+                        
+                logger.info(f"Found {len(rule_matches)} rule-based matches")
+            except Exception as e:
+                logger.error(f"Error running matching rules: {e}", exc_info=True)
             
         # 2. Execute other engines if needed (placeholder for now as per original code)
 

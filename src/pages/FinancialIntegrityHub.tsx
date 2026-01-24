@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { propertyService } from '../lib/property';
@@ -18,6 +19,8 @@ import {
     useForensicHealthScore,
     useForensicCalculatedRules
 } from '../hooks/useForensicReconciliation';
+
+import EditRuleModal from '../components/financial_integrity/modals/EditRuleModal';
 
 // UI Components
 import { Card, Button } from '../components/ui';
@@ -49,6 +52,8 @@ export default function FinancialIntegrityHub() {
     // UI State
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedPair, setSelectedPair] = useState<{source: string, target: string, value: number} | null>(null);
+
+    const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
     // Persist State
     useEffect(() => {
@@ -111,7 +116,7 @@ export default function FinancialIntegrityHub() {
     const discrepancies = discrepanciesData?.discrepancies || [];
     const healthScore = healthScoreData?.health_score || dashboardData?.summary?.health_score || 0;
 
-    const { createSession, runReconciliation, validateSession } = useForensicMutations();
+    const { createSession, runReconciliation, validateSession, updateRule } = useForensicMutations();
 
     // Derived Data for Document Tab
     const documentStats = useMemo(() => {
@@ -241,6 +246,38 @@ export default function FinancialIntegrityHub() {
     };
 
     const status = getStatusFromScore(healthScore);
+
+    const editingRule = useMemo(() => {
+        if (!editingRuleId || !calculatedRulesData?.rules) return null;
+        const rule = calculatedRulesData.rules.find(r => r.rule_id === editingRuleId);
+        if (!rule) return null;
+        
+        // Map API response format to Modal format
+        return {
+            id: rule.rule_id,
+            name: rule.rule_name,
+            description: rule.description || '',
+            formula: rule.formula,
+            threshold: rule.tolerance_absolute || rule.tolerance_percent || 0,
+            type: 'calculated'
+        };
+    }, [editingRuleId, calculatedRulesData]);
+
+
+    const handleSaveRule = async (data: any) => {
+        if (!editingRuleId) return;
+        
+        try {
+            await updateRule.mutateAsync({
+                ruleId: editingRuleId,
+                data
+            });
+            // Toast success?
+        } catch (error) {
+            console.error("Failed to update rule", error);
+            // Toast error?
+        }
+    };
 
     return (
         <div className="p-6 space-y-6">
@@ -442,6 +479,9 @@ export default function FinancialIntegrityHub() {
                     ) : activeTab === 'rules' ? (
                         <ByRuleTab 
                             rules={calculatedRulesData?.rules}
+                            onRuleClick={(ruleId) => {
+                                setEditingRuleId(ruleId);
+                            }}
                         />
                     ) : activeTab === 'exceptions' ? (
                         <ExceptionsTab 
@@ -463,6 +503,14 @@ export default function FinancialIntegrityHub() {
                 />
             )}
 
+            {editingRule && (
+                <EditRuleModal
+                    isOpen={!!editingRuleId}
+                    onClose={() => setEditingRuleId(null)}
+                    rule={editingRule}
+                    onSave={handleSaveRule}
+                />
+            )}
 
         </div>
     );

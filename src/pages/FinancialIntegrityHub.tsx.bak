@@ -1,0 +1,117 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { propertyService } from '../lib/property';
+import { financialPeriodsService } from '../lib/financial_periods';
+import type { Property } from '../types/api';
+import ReconciliationMatrix from '../components/financial_integrity/ReconciliationMatrix';
+import OverviewTab from '../components/financial_integrity/tabs/OverviewTab';
+import ByDocumentTab from '../components/financial_integrity/tabs/ByDocumentTab';
+import ByRuleTab from '../components/financial_integrity/tabs/ByRuleTab';
+import ExceptionsTab from '../components/financial_integrity/tabs/ExceptionsTab';
+import InsightsTab from '../components/financial_integrity/tabs/InsightsTab';
+
+import EditRuleModal from '../components/financial_integrity/modals/EditRuleModal';
+
+// ... (existing imports)
+
+export default function FinancialIntegrityHub() {
+    // ... (existing state)
+    const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+
+    // ... (existing queries)
+    
+    // ... (existing mutations)
+    const { createSession, runReconciliation, validateSession, updateRule } = useForensicMutations();
+
+    // ... (documentStats derivation)
+
+    const editingRule = useMemo(() => {
+        if (!editingRuleId || !calculatedRulesData?.rules) return null;
+        const rule = calculatedRulesData.rules.find(r => r.rule_id === editingRuleId);
+        if (!rule) return null;
+        
+        // Map API response format to Modal format
+        return {
+            id: rule.rule_id,
+            name: rule.rule_name,
+            description: rule.description || '',
+            formula: rule.formula,
+            threshold: rule.tolerance_absolute || rule.tolerance_percent || 0,
+            type: 'calculated'
+        };
+    }, [editingRuleId, calculatedRulesData]);
+
+
+    const handleSaveRule = async (data: any) => {
+        if (!editingRuleId) return;
+        
+        try {
+            await updateRule.mutateAsync({
+                ruleId: editingRuleId,
+                data
+            });
+            // Toast success?
+        } catch (error) {
+            console.error("Failed to update rule", error);
+            // Toast error?
+        }
+    };
+
+    // ... (other handlers)
+
+    return (
+        <div className="p-6 space-y-6">
+            {/* ... (Header and Grid) */}
+            
+            {/* ... (Matrix and Tabs) */}
+            <div className="col-span-12 xl:col-span-7 flex flex-col gap-6">
+                    {activeTab === 'overview' ? (
+                        <OverviewTab 
+                            healthScore={healthScore}
+                            criticalItems={discrepancies.filter(d => d.severity === 'high')}
+                            recentActivity={dashboardData?.recent_activity}
+                        />
+                    ) : activeTab === 'documents' ? (
+                        <ByDocumentTab 
+                            documents={documentStats}
+                            rules={calculatedRulesData?.rules}
+                        />
+                    ) : activeTab === 'rules' ? (
+                        <ByRuleTab 
+                            rules={calculatedRulesData?.rules}
+                            onRuleClick={(ruleId) => {
+                                setEditingRuleId(ruleId);
+                            }}
+                        />
+                    ) : activeTab === 'exceptions' ? (
+                        <ExceptionsTab 
+                            discrepancies={discrepancies}
+                        />
+                    ) : (
+                        <InsightsTab />
+                    )}
+            </div>
+            
+            {/* Modals & Panels */}
+            {selectedPair && (
+                <DocumentPairPanel
+                    isOpen={!!selectedPair}
+                    onClose={() => setSelectedPair(null)}
+                    pair={selectedPair}
+                    matches={matches}
+                />
+            )}
+
+            {editingRule && (
+                <EditRuleModal
+                    isOpen={!!editingRuleId}
+                    onClose={() => setEditingRuleId(null)}
+                    rule={editingRule}
+                    onSave={handleSaveRule}
+                />
+            )}
+
+        </div>
+    );
+}
+

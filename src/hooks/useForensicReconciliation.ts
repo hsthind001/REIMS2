@@ -149,6 +149,15 @@ export function useForensicMutations() {
     },
   });
 
+
+  const updateRuleMutation = useMutation({
+    mutationFn: (params: { ruleId: string; data: any }) =>
+      forensicReconciliationService.updateCalculatedRule(params.ruleId, params.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: forensicKeys.all });
+    },
+  });
+
   return {
     createSession: createSessionMutation,
     runReconciliation: runReconciliationMutation,
@@ -157,5 +166,6 @@ export function useForensicMutations() {
     rejectMatch: rejectMatchMutation,
     resolveDiscrepancy: resolveDiscrepancyMutation,
     completeSession: completeSessionMutation,
+    updateRule: updateRuleMutation,
   };
 }
