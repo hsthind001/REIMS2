@@ -37,6 +37,7 @@ const AnomalyDetailPage = lazy(() => import('./pages/AnomalyDetailPage'))
 const AddProperty = lazy(() => import('./pages/AddProperty'))
 const RuleConfigurationPage = lazy(() => import('./pages/RuleConfigurationPage'))
 const RuleEditPage = lazy(() => import('./pages/RuleEditPage'))
+const SyntaxGuidePage = lazy(() => import('./pages/SyntaxGuidePage'))
 
 // Forensic Audit Framework Pages
 const ForensicAuditDashboard = lazy(() => import('./pages/ForensicAuditDashboard'))
@@ -554,6 +555,10 @@ function AppContent() {
           ) : hashRoute.startsWith('rule-edit') ? (
             <Suspense fallback={<PageLoader />}>
               <RuleEditPage />
+            </Suspense>
+          ) : hashRoute === 'syntax-guide' ? (
+            <Suspense fallback={<PageLoader />}>
+              <SyntaxGuidePage />
             </Suspense>
           ) : (
             renderPage()

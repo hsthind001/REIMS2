@@ -18,6 +18,14 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Calculate statistics
+  const stats = {
+    total: rules.length,
+    passed: rules.filter(r => r.status === 'PASS').length,
+    variance: rules.filter(r => r.status !== 'PASS').length,
+    passRate: rules.length > 0 ? Math.round((rules.filter(r => r.status === 'PASS').length / rules.length) * 100) : 0
+  };
+
   // ... (filter logic remains)
   const filteredRules = rules.filter(rule => {
       // type property isn't on CalculatedRuleEvaluation, assume 'derived' or fallback
@@ -31,6 +39,61 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
 
   return (
     <div className="space-y-6">
+       {/* Summary Statistics */}
+       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+           {/* Total Rules */}
+           <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-4">
+               <div className="flex items-center justify-between">
+                   <div>
+                       <p className="text-sm font-medium text-blue-700 mb-1">Total Rules</p>
+                       <p className="text-3xl font-bold text-blue-900">{stats.total}</p>
+                   </div>
+                   <div className="p-3 bg-blue-200 rounded-lg">
+                       <Calculator className="w-6 h-6 text-blue-700" />
+                   </div>
+               </div>
+           </div>
+
+           {/* Passed Rules */}
+           <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-4">
+               <div className="flex items-center justify-between">
+                   <div>
+                       <p className="text-sm font-medium text-green-700 mb-1">Passed</p>
+                       <p className="text-3xl font-bold text-green-900">{stats.passed}</p>
+                   </div>
+                   <div className="p-3 bg-green-200 rounded-lg">
+                       <CheckCircle2 className="w-6 h-6 text-green-700" />
+                   </div>
+               </div>
+           </div>
+
+           {/* Variance Rules */}
+           <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-4">
+               <div className="flex items-center justify-between">
+                   <div>
+                       <p className="text-sm font-medium text-amber-700 mb-1">Variance</p>
+                       <p className="text-3xl font-bold text-amber-900">{stats.variance}</p>
+                   </div>
+                   <div className="p-3 bg-amber-200 rounded-lg">
+                       <AlertTriangle className="w-6 h-6 text-amber-700" />
+                   </div>
+               </div>
+           </div>
+
+           {/* Pass Rate */}
+           <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-4">
+               <div className="flex items-center justify-between">
+                   <div>
+                       <p className="text-sm font-medium text-purple-700 mb-1">Pass Rate</p>
+                       <p className="text-3xl font-bold text-purple-900">{stats.passRate}%</p>
+                   </div>
+                   <div className="p-3 bg-purple-200 rounded-lg">
+                       <CheckCircle2 className="w-6 h-6 text-purple-700" />
+                   </div>
+               </div>
+           </div>
+       </div>
+
        {/* ... (Toolbar remains) */}
        <div className="flex flex-col sm:flex-row justify-between gap-4">
            {/* Filters - Simplified since we don't have types yet */}

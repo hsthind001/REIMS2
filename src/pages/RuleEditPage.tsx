@@ -210,13 +210,14 @@ export default function RuleEditPage() {
                           <Calculator className="w-4 h-4 text-gray-400" />
                           Execution Formula
                       </label>
-                      <button 
-                        type="button"
-                        onClick={() => setShowSyntaxGuide(true)} 
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                      <a 
+                        href="#syntax-guide" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
                       >
                           <Info className="w-3 h-3" /> Syntax Guide
-                      </button>
+                      </a>
                   </div>
                   
                   <div className="relative">
