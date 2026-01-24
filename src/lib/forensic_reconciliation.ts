@@ -83,6 +83,27 @@ export interface ForensicDiscrepancy {
   created_at?: string;
 }
 
+export interface DocumentHealth {
+  health_score: number;
+  total_rules: number;
+  passed_rules: number;
+  failed_rules: number;
+  error?: string;
+}
+
+export interface DocumentHealthResponse {
+  property_id: number;
+  period_id: number;
+  overall_health: number;
+  documents: {
+    balance_sheet: DocumentHealth;
+    income_statement: DocumentHealth;
+    cash_flow: DocumentHealth;
+    rent_roll: DocumentHealth;
+    mortgage_statement: DocumentHealth;
+  };
+}
+
 export interface ReconciliationDashboard {
   session_id?: number;
   session_status?: string;
@@ -379,5 +400,12 @@ export const forensicReconciliationService = {
    */
   async updateHealthScoreConfig(persona: string, config: any): Promise<any> {
     return api.put(`/forensic-reconciliation/health-score-configs/${persona}`, config);
+  },
+
+  /**
+   * Get document health scores by document type
+   */
+  async getDocumentHealth(propertyId: number, periodId: number): Promise<DocumentHealthResponse> {
+    return api.get(`/forensic-reconciliation/document-health/${propertyId}/${periodId}`);
   },
 };

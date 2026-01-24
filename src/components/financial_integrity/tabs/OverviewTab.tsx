@@ -1,21 +1,51 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   DollarSign, 
   ShieldCheck, 
   AlertTriangle, 
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 
-import type { ForensicDiscrepancy } from '../../../lib/forensic_reconciliation';
+import type { ForensicDiscrepancy, DocumentHealthResponse } from '../../../lib/forensic_reconciliation';
+import { forensicReconciliationService } from '../../../lib/forensic_reconciliation';
 
 interface OverviewTabProps {
   healthScore: number;
   criticalItems: ForensicDiscrepancy[];
   recentActivity?: any[];
+  propertyId?: number;
+  periodId?: number;
 }
 
-export default function OverviewTab({ healthScore, criticalItems, recentActivity = [] }: OverviewTabProps) {
+export default function OverviewTab({ healthScore, criticalItems, recentActivity = [], propertyId, periodId }: OverviewTabProps) {
+  const [documentHealth, setDocumentHealth] = useState<DocumentHealthResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (propertyId && periodId) {
+      loadDocumentHealth();
+    }
+  }, [propertyId, periodId]);
+
+  const loadDocumentHealth = async () => {
+    if (!propertyId || !periodId) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const data = await forensicReconciliationService.getDocumentHealth(propertyId, periodId);
+      setDocumentHealth(data);
+    } catch (err) {
+      console.error('Error loading document health:', err);
+      setError('Failed to load document health data');
+    } finally {
+      setLoading(false);
+    }
+  };
   
   // Mock activity if empty (fallback)
   const activity = recentActivity.length > 0 ? recentActivity : [
@@ -23,6 +53,15 @@ export default function OverviewTab({ healthScore, criticalItems, recentActivity
     { id: 2, type: 'alert', desc: 'New variance detected in Rent Roll', time: '15 mins ago', icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-100' },
     { id: 3, type: 'system', desc: 'Bank statement parsing completed', time: '1 hour ago', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-100' },
   ];
+
+  // Document type display names
+  const documentLabels: Record<string, string> = {
+    balance_sheet: 'Balance Sheet',
+    income_statement: 'Income Statement',
+    cash_flow: 'Cash Flow',
+    rent_roll: 'Rent Roll',
+    mortgage_statement: 'Mortgage Statement'
+  };
 
   return (
     <div className="space-y-6">
@@ -36,34 +75,48 @@ export default function OverviewTab({ healthScore, criticalItems, recentActivity
                        <ShieldCheck className="w-5 h-5 text-blue-600" /> Document Health
                    </h3>
                    <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded-lg text-gray-600">
-                       Overall: {healthScore}%
+                       Overall: {documentHealth ? documentHealth.overall_health.toFixed(2) : healthScore}%
                    </span>
                </div>
                
-               <div className="space-y-3">
-                   {[
-                       { label: 'Balance Sheet', score: healthScore > 0 ? Math.min(100, healthScore + 5) : 98, rules: 12 },
-                       { label: 'Income Statement', score: healthScore > 0 ? Math.max(0, healthScore - 5) : 92, rules: 8 },
-                       { label: 'Rent Roll', score: 85, rules: 15 },
-                       { label: 'Bank Statements', score: 100, rules: 4 },
-                   ].map((item) => (
-                       <div key={item.label}>
-                           <div className="flex justify-between text-sm mb-1">
-                               <span className="text-gray-600 font-medium">{item.label}</span>
-                               <span className={`font-bold ${item.score < 90 ? 'text-amber-600' : 'text-gray-900'}`}>{item.score}%</span>
+               {loading ? (
+                   <div className="flex items-center justify-center py-8">
+                       <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                   </div>
+               ) : error ? (
+                   <div className="text-center py-4 text-red-600 text-sm">{error}</div>
+               ) : documentHealth ? (
+                   <div className="space-y-3">
+                       {Object.entries(documentHealth.documents).map(([docType, health]) => (
+                           <div key={docType}>
+                               <div className="flex justify-between text-sm mb-1">
+                                   <span className="text-gray-600 font-medium">{documentLabels[docType]}</span>
+                                   <div className="flex items-center gap-2">
+                                       <span className={`font-bold ${health.health_score < 90 ? 'text-amber-600' : 'text-gray-900'}`}>
+                                           {health.health_score.toFixed(1)}%
+                                       </span>
+                                       <span className="text-xs text-gray-400">
+                                           ({health.passed_rules}/{health.total_rules})
+                                       </span>
+                                   </div>
+                               </div>
+                               <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                   <div 
+                                       className={`h-full rounded-full transition-all ${
+                                           health.total_rules === 0 ? 'bg-gray-300' :
+                                           health.health_score === 100 ? 'bg-green-500' : 
+                                           health.health_score >= 90 ? 'bg-blue-500' : 
+                                           health.health_score >= 70 ? 'bg-amber-500' : 'bg-red-500'
+                                       }`} 
+                                       style={{ width: `${health.total_rules === 0 ? 0 : health.health_score}%` }}
+                                   />
+                               </div>
                            </div>
-                           <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                               <div 
-                                   className={`h-full rounded-full ${
-                                       item.score === 100 ? 'bg-green-500' : 
-                                       item.score > 90 ? 'bg-blue-500' : 'bg-amber-500'
-                                   }`} 
-                                   style={{ width: `${item.score}%` }}
-                               />
-                           </div>
-                       </div>
-                   ))}
-               </div>
+                       ))}
+                   </div>
+               ) : (
+                   <div className="text-center py-4 text-gray-500 text-sm">No data available</div>
+               )}
            </div>
 
            {/* Card 2: Critical Reconciliations */}

@@ -470,6 +470,8 @@ export default function FinancialIntegrityHub() {
                             healthScore={healthScore}
                             criticalItems={discrepancies.filter(d => d.severity === 'high')}
                             recentActivity={dashboardData?.recent_activity}
+                            propertyId={selectedPropertyId || undefined}
+                            periodId={selectedPeriodId || undefined}
                         />
                     ) : activeTab === 'documents' ? (
                         <ByDocumentTab 

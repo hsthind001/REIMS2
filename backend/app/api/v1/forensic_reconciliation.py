@@ -1240,6 +1240,115 @@ async def list_calculated_rules(
     ]
 
 
+@router.get("/document-health/{property_id}/{period_id}")
+async def get_document_health(
+    property_id: int = Path(..., description="Property ID"),
+    period_id: int = Path(..., description="Period ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get document health scores by document type
+    
+    Returns health percentage for each document type based on:
+    - Calculated rule evaluations (PASS vs FAIL)
+    - Cross-document reconciliation matches
+    
+    Document types: balance_sheet, income_statement, cash_flow, rent_roll, mortgage_statement
+    """
+    
+    # Map rule prefixes to document types
+    rule_prefix_map = {
+        'BS': 'balance_sheet',
+        'IS': 'income_statement',
+        'CF': 'cash_flow',
+        'RR': 'rent_roll',
+        'MS': 'mortgage_statement'
+    }
+    
+    document_health = {}
+    
+    # Calculate health from calculated rules
+    try:
+        query = text("""
+            SELECT 
+                rule_code,
+                status
+            FROM cross_document_reconciliations
+            WHERE property_id = :property_id 
+              AND period_id = :period_id
+        """)
+        
+        results = db.execute(query, {
+            "property_id": property_id,
+            "period_id": period_id
+        }).fetchall()
+        
+        # Group by document type
+        doc_stats = {
+            'balance_sheet': {'total': 0, 'passed': 0},
+            'income_statement': {'total': 0, 'passed': 0},
+            'cash_flow': {'total': 0, 'passed': 0},
+            'rent_roll': {'total': 0, 'passed': 0},
+            'mortgage_statement': {'total': 0, 'passed': 0}
+        }
+        
+        for row in results:
+            rule_code = row[0] or ''
+            status = row[1] or ''
+            
+            # Extract prefix (e.g., "BS-1" -> "BS")
+            prefix = rule_code.split('-')[0] if '-' in rule_code else ''
+            
+            doc_type = rule_prefix_map.get(prefix)
+            if doc_type and doc_type in doc_stats:
+                doc_stats[doc_type]['total'] += 1
+                if status == 'PASS':
+                    doc_stats[doc_type]['passed'] += 1
+        
+        # Calculate health percentages
+        for doc_type, stats in doc_stats.items():
+            if stats['total'] > 0:
+                health_pct = (stats['passed'] / stats['total']) * 100
+                document_health[doc_type] = {
+                    'health_score': round(health_pct, 2),
+                    'total_rules': stats['total'],
+                    'passed_rules': stats['passed'],
+                    'failed_rules': stats['total'] - stats['passed']
+                }
+            else:
+                # No rules for this document type
+                document_health[doc_type] = {
+                    'health_score': 0.0,
+                    'total_rules': 0,
+                    'passed_rules': 0,
+                    'failed_rules': 0
+                }
+    
+    except Exception as e:
+        logger.error(f"Error calculating document health: {str(e)}")
+        # Return default structure on error
+        for doc_type in rule_prefix_map.values():
+            document_health[doc_type] = {
+                'health_score': 0.0,
+                'total_rules': 0,
+                'passed_rules': 0,
+                'failed_rules': 0,
+                'error': str(e)
+            }
+    
+    # Calculate overall health
+    valid_scores = [v['health_score'] for v in document_health.values() if v['total_rules'] > 0]
+    overall_health = round(sum(valid_scores) / len(valid_scores), 2) if valid_scores else 0.0
+    
+    return {
+        "property_id": property_id,
+        "period_id": period_id,
+        "overall_health": overall_health,
+        "documents": document_health
+    }
+
+
 @router.get("/calculated-rules/evaluate/{property_id}/{period_id}")
 @router.post("/calculated-rules/evaluate/{property_id}/{period_id}")
 async def evaluate_calculated_rules(
