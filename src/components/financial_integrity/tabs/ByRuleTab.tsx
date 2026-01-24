@@ -14,8 +14,8 @@ interface ByRuleTabProps {
 }
 
 export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
-  // ... (state remains)
-  const [activeFilter, setActiveFilter] = useState('all');
+  // State for filtering
+  const [statusFilter, setStatusFilter] = useState<'all' | 'passed' | 'variance'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Calculate statistics
@@ -26,27 +26,51 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
     passRate: rules.length > 0 ? Math.round((rules.filter(r => r.status === 'PASS').length / rules.length) * 100) : 0
   };
 
-  // ... (filter logic remains)
+  // Filter logic
   const filteredRules = rules.filter(rule => {
-      // type property isn't on CalculatedRuleEvaluation, assume 'derived' or fallback
-      const matchesFilter = activeFilter === 'all'; 
+      // Apply status filter
+      let matchesStatus = true;
+      if (statusFilter === 'passed') {
+        matchesStatus = rule.status === 'PASS';
+      } else if (statusFilter === 'variance') {
+        matchesStatus = rule.status !== 'PASS';
+      }
+      
+      // Apply search filter
       const name = rule.rule_name || '';
       const desc = rule.description || '';
       const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             desc.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesFilter && matchesSearch;
+      
+      return matchesStatus && matchesSearch;
   });
+
+  // Click handlers for filter cards
+  const handleFilterClick = (filter: 'all' | 'passed' | 'variance') => {
+    // Toggle: if clicking the same filter, reset to 'all'
+    setStatusFilter(statusFilter === filter ? 'all' : filter);
+  };
 
   return (
     <div className="space-y-6">
        {/* Summary Statistics */}
        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
            {/* Total Rules */}
-           <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-4">
+           <div 
+               onClick={() => handleFilterClick('all')}
+               className={`bg-gradient-to-br from-blue-50 to-blue-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+                   statusFilter === 'all' 
+                       ? 'border-blue-500 border-2 shadow-lg ring-2 ring-blue-200' 
+                       : 'border-blue-200 hover:border-blue-300'
+               }`}
+           >
                <div className="flex items-center justify-between">
                    <div>
                        <p className="text-sm font-medium text-blue-700 mb-1">Total Rules</p>
                        <p className="text-3xl font-bold text-blue-900">{stats.total}</p>
+                       {statusFilter === 'all' && (
+                           <p className="text-xs text-blue-600 mt-1 font-medium">Showing all</p>
+                       )}
                    </div>
                    <div className="p-3 bg-blue-200 rounded-lg">
                        <Calculator className="w-6 h-6 text-blue-700" />
@@ -55,11 +79,21 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            </div>
 
            {/* Passed Rules */}
-           <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-4">
+           <div 
+               onClick={() => handleFilterClick('passed')}
+               className={`bg-gradient-to-br from-green-50 to-green-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+                   statusFilter === 'passed' 
+                       ? 'border-green-500 border-2 shadow-lg ring-2 ring-green-200' 
+                       : 'border-green-200 hover:border-green-300'
+               }`}
+           >
                <div className="flex items-center justify-between">
                    <div>
                        <p className="text-sm font-medium text-green-700 mb-1">Passed</p>
                        <p className="text-3xl font-bold text-green-900">{stats.passed}</p>
+                       {statusFilter === 'passed' && (
+                           <p className="text-xs text-green-600 mt-1 font-medium">Filtered</p>
+                       )}
                    </div>
                    <div className="p-3 bg-green-200 rounded-lg">
                        <CheckCircle2 className="w-6 h-6 text-green-700" />
@@ -68,11 +102,21 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            </div>
 
            {/* Variance Rules */}
-           <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-4">
+           <div 
+               onClick={() => handleFilterClick('variance')}
+               className={`bg-gradient-to-br from-amber-50 to-amber-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+                   statusFilter === 'variance' 
+                       ? 'border-amber-500 border-2 shadow-lg ring-2 ring-amber-200' 
+                       : 'border-amber-200 hover:border-amber-300'
+               }`}
+           >
                <div className="flex items-center justify-between">
                    <div>
                        <p className="text-sm font-medium text-amber-700 mb-1">Variance</p>
                        <p className="text-3xl font-bold text-amber-900">{stats.variance}</p>
+                       {statusFilter === 'variance' && (
+                           <p className="text-xs text-amber-600 mt-1 font-medium">Filtered</p>
+                       )}
                    </div>
                    <div className="p-3 bg-amber-200 rounded-lg">
                        <AlertTriangle className="w-6 h-6 text-amber-700" />
@@ -94,11 +138,26 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            </div>
        </div>
 
-       {/* ... (Toolbar remains) */}
-       <div className="flex flex-col sm:flex-row justify-between gap-4">
-           {/* Filters - Simplified since we don't have types yet */}
-           <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
-               {/* Hidden for now until we have types */}
+       {/* Toolbar */}
+       <div className="flex flex-col sm:flex-row justify-between gap-4 items-start sm:items-center">
+           {/* Filter Status */}
+           <div className="flex items-center gap-3">
+               {statusFilter !== 'all' && (
+                   <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg">
+                       <span className="text-sm text-blue-700">
+                           Showing: <strong>{statusFilter === 'passed' ? 'Passed' : 'Variance'} Rules</strong>
+                       </span>
+                       <button 
+                           onClick={() => setStatusFilter('all')}
+                           className="text-blue-600 hover:text-blue-800 font-medium text-sm underline"
+                       >
+                           Clear Filter
+                       </button>
+                   </div>
+               )}
+               <span className="text-sm text-gray-600">
+                   {filteredRules.length} of {stats.total} rules
+               </span>
            </div>
 
            {/* Search */}
@@ -117,8 +176,24 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
        {/* Rules List */}
        <div className="grid grid-cols-1 gap-4">
            {filteredRules.length === 0 && (
-                <div className="text-center py-10 text-gray-400">
-                    No rules found for this selection.
+                <div className="text-center py-10">
+                    <div className="text-gray-400 mb-2">
+                        {searchQuery ? 'No rules match your search.' : 
+                         statusFilter === 'passed' ? 'No passed rules found.' :
+                         statusFilter === 'variance' ? 'No variance rules found.' :
+                         'No rules found for this selection.'}
+                    </div>
+                    {(searchQuery || statusFilter !== 'all') && (
+                        <button 
+                            onClick={() => {
+                                setSearchQuery('');
+                                setStatusFilter('all');
+                            }}
+                            className="text-sm text-blue-600 hover:underline font-medium"
+                        >
+                            Clear all filters
+                        </button>
+                    )}
                 </div>
            )}
            {filteredRules.map(rule => (
