@@ -469,6 +469,7 @@ export default function FinancialIntegrityHub() {
                         <OverviewTab 
                             healthScore={healthScore}
                             criticalItems={discrepancies.filter(d => d.severity === 'high')}
+                            ruleViolations={calculatedRulesData?.rules?.filter(r => r.status !== 'PASS') || []}
                             recentActivity={dashboardData?.recent_activity}
                             propertyId={selectedPropertyId || undefined}
                             periodId={selectedPeriodId || undefined}
