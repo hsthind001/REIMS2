@@ -1,7 +1,6 @@
 
 import os
 import re
-import glob
 
 RULES_DIR = "/home/hsthind/Downloads/Reconcile - Aduit - Rules"
 CODE_DIR = "/home/hsthind/Documents/GitHub/REIMS2/backend/app/services/rules"
