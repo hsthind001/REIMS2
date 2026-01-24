@@ -486,6 +486,7 @@ export default function FinancialIntegrityHub() {
                     ) : activeTab === 'exceptions' ? (
                         <ExceptionsTab 
                             discrepancies={discrepancies}
+                            ruleViolations={calculatedRulesData?.rules?.filter(r => r.status !== 'PASS') || []}
                         />
                     ) : (
                         <InsightsTab />
