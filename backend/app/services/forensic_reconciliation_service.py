@@ -180,6 +180,21 @@ class ForensicReconciliationService:
         # Summary update and other orchestration logic could happen here
         # Note: We do NOT commit here. The API route calling this should handle the commit.
         
+
+        
+        # Execute Calculated Rules (Hardcoded Python Rules)
+        # This ensures the "By Document" tab is updated with fresh rule evaluations
+        if use_rules:
+            try:
+                from app.services.reconciliation_rule_engine import ReconciliationRuleEngine
+                rule_engine = ReconciliationRuleEngine(self.db)
+                rule_engine.execute_all_rules(session.property_id, session.period_id)
+                rule_engine.save_results()
+                logger.info(f"Executed ReconciliationRuleEngine for session {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to execute ReconciliationRuleEngine: {e}")
+                # Don't fail the whole request, but log it
+        
         return {
             'session_id': session_id,
             'matches_count': len(result['stored_matches']),

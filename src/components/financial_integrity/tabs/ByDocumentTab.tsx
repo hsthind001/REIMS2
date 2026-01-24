@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import { 
-  FileText, 
   ChevronDown, 
   ChevronRight, 
   CheckCircle2, 
   AlertTriangle,
-  ArrowRight,
   Calculator,
   MinusCircle
 } from 'lucide-react';
@@ -22,13 +20,25 @@ export default function ByDocumentTab({ documents = [], rules = [] }: ByDocument
   // Helper to filter rules for a specific document
   const getRulesForDoc = (docId: string) => {
       if (!rules.length) return [];
-      // Heuristic: Check if formula contains the doc ID (e.g. "BS.") or if rule name/description mentions it.
-      // This matches the backend convention usually used (BS.Cash, IS.Revenue)
-      return rules.filter(r => 
-          r.formula.includes(`${docId}.`) || 
-          r.rule_name.includes(docId) ||
-          (r.description && r.description.includes(docId))
-      );
+      
+      const docPrefixMap: Record<string, string> = {
+          'balance_sheet': 'BS',
+          'income_statement': 'IS',
+          'cash_flow': 'CF',
+          'rent_roll': 'RR',
+          'mortgage_statement': 'MS'
+      };
+
+      const prefix = docPrefixMap[docId];
+
+      return rules.filter(r => {
+          if (prefix && r.rule_id.startsWith(prefix)) return true;
+          
+          // Fallback heuristics
+          return r.formula.includes(`${docId}.`) || 
+                 r.rule_name.toLowerCase().includes(docId.replace('_', ' ')) ||
+                 (r.description && r.description.toLowerCase().includes(docId.replace('_', ' ')));
+      });
   };
 
   const currentRules = expandedDoc ? getRulesForDoc(expandedDoc) : [];

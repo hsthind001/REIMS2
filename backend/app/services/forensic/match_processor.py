@@ -65,6 +65,17 @@ class ForensicMatchProcessor:
         Execute matching engines and return matches to be stored.
         Does NOT handle transaction commit/rollback.
         """
+        # Clear existing matches for this session to ensure idempotency
+        # This prevents duplicate matches if the reconciliation is run multiple times for the same session
+        try:
+            self.db.query(ForensicMatch).filter(ForensicMatch.session_id == session_id).delete()
+            # We flush to ensure the delete happens before new inserts, 
+            # though usually SQLAlchemy handles this in transaction flush order.
+            self.db.flush()
+        except Exception as e:
+            logger.error(f"Error clearing existing matches for session {session_id}: {e}")
+            # Continue, as we might be starting fresh anyway
+        
         all_matches = []
         
         # Get prior period for reconciliation rules

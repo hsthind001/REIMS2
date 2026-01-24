@@ -11,3 +11,4 @@ class ReconciliationResult(BaseModel):
     variance_pct: float
     details: str
     severity: str = "medium"
+    formula: str | None = None

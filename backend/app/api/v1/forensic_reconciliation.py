@@ -190,6 +190,16 @@ async def run_reconciliation(
             use_rules=request.use_rules
         )
         
+        # Commit matches to database (even if tiering had errors)
+        # Matches are flushed but not committed by the service
+        try:
+            db.commit()
+            logger.info(f"Committed matches for session {session_id}")
+        except Exception as commit_error:
+            logger.error(f"Error committing matches: {commit_error}")
+            db.rollback()
+            # Don't fail - matches might still be in database from tiering commits
+        
         # Check for errors but don't fail if we have partial results
         if 'error' in result:
             # If we have matches stored, return them with error info
@@ -1253,7 +1263,8 @@ async def evaluate_calculated_rules(
                 target_value as expected_value,
                 difference,
                 is_material,
-                created_at
+                created_at,
+                recommendation as formula
             FROM cross_document_reconciliations
             WHERE property_id = :p_id AND period_id = :period_id
         """)
@@ -1277,7 +1288,7 @@ async def evaluate_calculated_rules(
                 "rule_id": row.rule_code or "UNKNOWN",
                 "rule_name": row.rule_name or "Unknown Rule",
                 "description": row.message, # Use explanation as description/message
-                "formula": "N/A (Python Rule)", # Static for now
+                "formula": row.formula or "N/A (Python Rule)", 
                 "severity": "medium", # Default
                 "status": status_val, 
                 "expected_value": expected,

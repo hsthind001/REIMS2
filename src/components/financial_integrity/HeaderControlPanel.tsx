@@ -4,7 +4,8 @@ import {
   Download, 
   Calendar as CalendarIcon,
   ChevronDown,
-  RefreshCw
+  RefreshCw,
+  Play
 } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import type { Property } from '../../types/api';
@@ -16,6 +17,8 @@ interface HeaderControlPanelProps {
   periods: any[];
   onPropertyChange: (id: number) => void;
   onPeriodChange: (id: number) => void;
+  onRunReconciliation?: () => void;
+  isRunningReconciliation?: boolean;
   onValidate: () => void;
   isValidating: boolean;
   onExport?: (format: string) => void;
@@ -28,6 +31,8 @@ export default function HeaderControlPanel({
   periods,
   onPropertyChange,
   onPeriodChange,
+  onRunReconciliation,
+  isRunningReconciliation = false,
   onValidate,
   isValidating,
   onExport
@@ -114,9 +119,29 @@ export default function HeaderControlPanel({
             <div className="h-6 w-px bg-gray-300 mx-1" />
 
             {/* Actions */}
+            {onRunReconciliation && (
+                <>
+                    <button
+                        onClick={onRunReconciliation}
+                        disabled={isRunningReconciliation || isValidating || !selectedPropertyId || !selectedPeriodId}
+                        className={`
+                            flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm
+                            ${isRunningReconciliation 
+                                ? 'bg-green-50 text-green-400 cursor-wait' 
+                                : 'bg-green-600 text-white hover:bg-green-700 border border-green-600 hover:border-green-700'
+                            }
+                        `}
+                    >
+                        <Play className={`w-4 h-4 ${isRunningReconciliation ? 'animate-pulse' : ''}`} />
+                        {isRunningReconciliation ? 'Running...' : 'Run Reconciliation'}
+                    </button>
+                    <div className="h-6 w-px bg-gray-300 mx-1" />
+                </>
+            )}
+            
             <button
                 onClick={onValidate}
-                disabled={isValidating || !selectedPropertyId || !selectedPeriodId}
+                disabled={isValidating || isRunningReconciliation || !selectedPropertyId || !selectedPeriodId}
                 className={`
                     flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm
                     ${isValidating 
