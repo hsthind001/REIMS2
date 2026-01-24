@@ -10,12 +10,15 @@ Endpoints for:
 - Discrepancy resolution
 - Dashboard and health score
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import text, and_, or_, func
 from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.api.dependencies import get_current_user, get_db
 from app.models.user import User
