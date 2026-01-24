@@ -242,7 +242,17 @@ export const forensicReconciliationService = {
   },
 
   /**
-   * Get specific calculated rule detail
+   * Get all calculated rules
+   */
+  async getCalculatedRules(propertyId?: number): Promise<any[]> {
+    const url = propertyId 
+      ? `/forensic-reconciliation/calculated-rules?property_id=${propertyId}`
+      : '/forensic-reconciliation/calculated-rules';
+    return api.get(url);
+  },
+
+  /**
+   * Get specific calculated rule detail (execution)
    */
   async getCalculatedRuleDetail(ruleId: string, propertyId: number, periodId: number): Promise<any> {
     return api.get(`/forensic-reconciliation/calculated-rules/detail/${ruleId}/${propertyId}/${periodId}`);

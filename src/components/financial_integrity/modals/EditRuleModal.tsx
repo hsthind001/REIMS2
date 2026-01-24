@@ -10,6 +10,7 @@ import {
   Info
 } from 'lucide-react';
 import { Button } from '../../design-system';
+import SyntaxGuideModal from './SyntaxGuideModal';
 
 interface EditRuleModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ interface RuleFormInputs {
 
 export default function EditRuleModal({ isOpen, onClose, rule, onSave }: EditRuleModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSyntaxGuide, setShowSyntaxGuide] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm<RuleFormInputs>({
       defaultValues: {
           name: rule.name,
@@ -131,9 +133,13 @@ export default function EditRuleModal({ isOpen, onClose, rule, onSave }: EditRul
                         <Calculator className="w-4 h-4 text-gray-400" />
                         Execution Formula
                     </label>
-                    <a href="#" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                    <button 
+                      type="button"
+                      onClick={() => setShowSyntaxGuide(true)}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                    >
                         <Info className="w-3 h-3" /> Syntax Guide
-                    </a>
+                    </button>
                 </div>
                 
                 <div className="relative">
@@ -176,6 +182,12 @@ export default function EditRuleModal({ isOpen, onClose, rule, onSave }: EditRul
            </Button>
         </div>
       </div>
+
+      {/* Syntax Guide Modal */}
+      <SyntaxGuideModal 
+        isOpen={showSyntaxGuide}
+        onClose={() => setShowSyntaxGuide(false)}
+      />
     </div>
   );
 }

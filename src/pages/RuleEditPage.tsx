@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { 
-  X, 
   Save, 
   Calculator, 
   AlertTriangle,
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/design-system';
 import { forensicReconciliationService } from '../lib/forensic_reconciliation';
+import SyntaxGuideModal from '../components/financial_integrity/modals/SyntaxGuideModal';
 
 interface RuleFormInputs {
     name: string;
@@ -24,21 +24,53 @@ export default function RuleEditPage() {
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ruleData, setRuleData] = useState<any>(null);
+  const [showSyntaxGuide, setShowSyntaxGuide] = useState(false);
 
-  // Get rule data from localStorage (set by RuleConfigurationPage)
+  // Get rule data from localStorage (set by RuleConfigurationPage) OR fetch from API
   useEffect(() => {
     const stored = localStorage.getItem('editingRule');
     if (stored) {
       try {
         const data = JSON.parse(stored);
         setRuleData(data);
+        return;
       } catch (err) {
         console.error('Failed to parse rule data:', err);
       }
     }
+
+    // Fallback: Fetch from API using ID from URL
+    const hash = window.location.hash;
+    // URL format: #/rule-edit/BS-1
+    const parts = hash.split('/');
+    const ruleId = parts[parts.length - 1];
+
+    if (ruleId && !ruleId.includes('?')) {
+        const fetchRule = async () => {
+            try {
+                // We need to fetch all rules to find the one we want
+                // In a real app, we'd have a specific endpoint for this
+                const rules = await forensicReconciliationService.getCalculatedRules();
+                const rule = rules.find((r: any) => r.rule_id === ruleId);
+                
+                if (rule) {
+                    setRuleData({
+                        id: rule.rule_id,
+                        name: rule.rule_name,
+                        description: rule.description,
+                        formula: rule.formula,
+                        threshold: rule.tolerance_absolute || 0.01
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to fetch rule:", err);
+            }
+        };
+        fetchRule();
+    }
   }, []);
 
-  const { register, handleSubmit, formState: { errors } } = useForm<RuleFormInputs>({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<RuleFormInputs>({
       defaultValues: ruleData ? {
           name: ruleData.name,
           description: ruleData.description,
@@ -47,9 +79,22 @@ export default function RuleEditPage() {
       } : undefined
   });
 
+  // Update form when data load completes
+  useEffect(() => {
+      if (ruleData) {
+          reset({
+              name: ruleData.name,
+              description: ruleData.description,
+              formula: ruleData.formula,
+              threshold: ruleData.threshold
+          });
+      }
+  }, [ruleData, reset]);
+
   const handleBack = () => {
     // Navigate back to rule configuration page
     if (ruleData?.id) {
+      // Use the ID we have, whether from local storage or API
       window.location.hash = `rule-configuration/${ruleData.id}`;
     } else {
       window.location.hash = 'forensic-reconciliation';
@@ -165,9 +210,13 @@ export default function RuleEditPage() {
                           <Calculator className="w-4 h-4 text-gray-400" />
                           Execution Formula
                       </label>
-                      <a href="#" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                      <button 
+                        type="button"
+                        onClick={() => setShowSyntaxGuide(true)} 
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                      >
                           <Info className="w-3 h-3" /> Syntax Guide
-                      </a>
+                      </button>
                   </div>
                   
                   <div className="relative">
@@ -211,6 +260,12 @@ export default function RuleEditPage() {
           </div>
         </div>
       </div>
+
+      {/* Syntax Guide Modal */}
+      <SyntaxGuideModal 
+        isOpen={showSyntaxGuide}
+        onClose={() => setShowSyntaxGuide(false)}
+      />
     </div>
   );
 }
