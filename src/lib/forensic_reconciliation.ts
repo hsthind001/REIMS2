@@ -257,13 +257,27 @@ export const forensicReconciliationService = {
 
 
   /**
-   * Update calculated rule definition (Placeholder)
+   * Update calculated rule definition (creates new version)
    */
   async updateCalculatedRule(ruleId: string, ruleData: any): Promise<any> {
-    // In real implementation, this would emit a PUT request
-    // return api.put(`/forensic-reconciliation/calculated-rules/${ruleId}`, ruleData);
-    console.log('Mock Update Rule:', ruleId, ruleData);
-    return new Promise(resolve => setTimeout(resolve, 800));
+    // Backend uses versioning - POSTing with existing rule_id creates new version
+    const payload = {
+      rule_id: ruleId,
+      rule_name: ruleData.name,
+      formula: ruleData.formula,
+      description: ruleData.description,
+      tolerance_absolute: ruleData.threshold || 0.01,
+      tolerance_percent: null,
+      materiality_threshold: null,
+      severity: 'medium',
+      property_scope: null, // Apply to all properties
+      doc_scope: { all: true }, // Apply to all document types
+      failure_explanation_template: null,
+      effective_date: new Date().toISOString().split('T')[0], // Today
+      expires_at: null // No expiration
+    };
+    
+    return api.post('/forensic-reconciliation/calculated-rules', payload);
   },
 
   /**

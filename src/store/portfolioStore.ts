@@ -22,6 +22,7 @@ export interface PortfolioStore {
   // Selected state
   selectedProperty: Property | null;
   selectedYear: number;
+  selectedMonth: number;
   viewMode: 'list' | 'map' | 'grid';
 
   // Filters
@@ -34,6 +35,7 @@ export interface PortfolioStore {
   // Actions
   setSelectedProperty: (property: Property | null) => void;
   setSelectedYear: (year: number) => void;
+  setSelectedMonth: (month: number) => void;
   setViewMode: (mode: 'list' | 'map' | 'grid') => void;
   setFilters: (filters: Partial<FilterState>) => void;
   resetFilters: () => void;
@@ -67,6 +69,7 @@ export const usePortfolioStore = create<PortfolioStore>()(
       // Initial state
       selectedProperty: null,
       selectedYear: new Date().getFullYear(),
+      selectedMonth: new Date().getMonth() + 1,
       viewMode: 'grid',
       filters: defaultFilters,
       comparisonMode: false,
@@ -76,6 +79,8 @@ export const usePortfolioStore = create<PortfolioStore>()(
       setSelectedProperty: (property) => set({ selectedProperty: property }),
 
       setSelectedYear: (year) => set({ selectedYear: year }),
+
+      setSelectedMonth: (month) => set({ selectedMonth: month }),
 
       setViewMode: (mode) => set({ viewMode: mode }),
 
@@ -112,6 +117,7 @@ export const usePortfolioStore = create<PortfolioStore>()(
       name: 'portfolio-storage',
       partialize: (state) => ({
         selectedYear: state.selectedYear,
+        selectedMonth: state.selectedMonth,
         viewMode: state.viewMode,
         filters: state.filters,
       }),

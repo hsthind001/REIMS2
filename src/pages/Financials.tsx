@@ -88,7 +88,9 @@ export default function Financials() {
     selectedProperty, 
     setSelectedProperty,
     selectedYear,
-    setSelectedYear
+    setSelectedYear,
+    selectedMonth,
+    setSelectedMonth
   } = usePortfolioStore();
   const [nlqQuery, setNlqQuery] = useState('');
   const [nlqHistory, setNlqHistory] = useState<Array<{ query: string; response: NLQResponse; timestamp: Date }>>([]);
@@ -135,7 +137,6 @@ export default function Financials() {
   const [loadingFinancialData, setLoadingFinancialData] = useState(false);
   const [comparePeriodId, setComparePeriodId] = useState<number | null>(null);
   const [selectedStatementType, setSelectedStatementType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow' | 'mortgage_statement' | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [kpiDscr, setKpiDscr] = useState<number | null>(null);
   const [kpiLtv, setKpiLtv] = useState<number | null>(null);
   const [kpiCapRate, setKpiCapRate] = useState<number | null>(null);
@@ -270,15 +271,39 @@ export default function Financials() {
     try {
       const periods = await financialPeriodsService.listPeriods();
       if (periods && periods.length > 0) {
-        const sorted = periods.sort((a, b: any) =>
-          (b.period_year - a.period_year) || (b.period_month - a.period_month)
-        );
-        const latest = sorted[0];
-        setSelectedYear(latest.period_year);
-        setSelectedMonth(latest.period_month);
+        // First, try to find the latest complete period (all documents available)
+        const completePeriods = periods.filter(p => p.is_complete);
+        
+        let targetPeriod;
+        if (completePeriods.length > 0) {
+          // Sort complete periods by year and month descending to get most recent
+          const sortedComplete = completePeriods.sort((a, b) =>
+            (b.period_year - a.period_year) || (b.period_month - a.period_month)
+          );
+          targetPeriod = sortedComplete[0];
+        } else {
+          // No complete periods, fall back to latest period regardless of completeness
+          const sorted = periods.sort((a, b) =>
+            (b.period_year - a.period_year) || (b.period_month - a.period_month)
+          );
+          targetPeriod = sorted[0];
+        }
+        
+        // Only update if the store doesn't already have valid values
+        // This prevents overriding user's last selected filters on page refresh
+        const currentYear = selectedYear;
+        const currentMonth = selectedMonth;
+        const isCurrentYearValid = currentYear >= 2020 && currentYear <= 2030;
+        const isCurrentMonthValid = currentMonth >= 1 && currentMonth <= 12;
+        
+        if (!isCurrentYearValid || !isCurrentMonthValid) {
+          setSelectedYear(targetPeriod.period_year);
+          setSelectedMonth(targetPeriod.period_month);
+        }
       }
     } catch (err) {
       console.error('Failed to initialize period:', err);
+      // Keep current values if fetch fails
     }
   };
 

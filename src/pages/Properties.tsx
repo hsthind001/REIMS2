@@ -172,6 +172,8 @@ export default function Properties() {
     setSelectedProperty,
     selectedYear,
     setSelectedYear,
+    selectedMonth,
+    setSelectedMonth,
     viewMode,
     setViewMode,
     filters,
@@ -206,7 +208,6 @@ export default function Properties() {
   const [selectedStatement, setSelectedStatement] = useState<'income' | 'balance' | 'cashflow' | 'mortgage'>('income');
   const [propertyMetricsMap, setPropertyMetricsMap] = useState<Map<number, any>>(new Map());
   const [propertyDscrMap, setPropertyDscrMap] = useState<Map<number, number | null>>(new Map());
-  const [selectedMonth, setSelectedMonth] = useState(12); // Default to December 2023
   const [financialData, setFinancialData] = useState<FinancialDataResponse | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<DocumentUploadType[]>([]);
   const [loadingDocumentData, setLoadingDocumentData] = useState(false);
@@ -289,17 +290,39 @@ export default function Properties() {
     try {
       const periods = await financialPeriodsService.listPeriods();
       if (periods && periods.length > 0) {
-        // Sort by year and month descending to get most recent
-        const sorted = periods.sort((a, b) =>
-          (b.period_year - a.period_year) || (b.period_month - a.period_month)
-        );
-        const latest = sorted[0];
-        setSelectedYear(latest.period_year);
-        setSelectedMonth(latest.period_month);
+        // First, try to find the latest complete period (all documents available)
+        const completePeriods = periods.filter(p => p.is_complete);
+        
+        let targetPeriod;
+        if (completePeriods.length > 0) {
+          // Sort complete periods by year and month descending to get most recent
+          const sortedComplete = completePeriods.sort((a, b) =>
+            (b.period_year - a.period_year) || (b.period_month - a.period_month)
+          );
+          targetPeriod = sortedComplete[0];
+        } else {
+          // No complete periods, fall back to latest period regardless of completeness
+          const sorted = periods.sort((a, b) =>
+            (b.period_year - a.period_year) || (b.period_month - a.period_month)
+          );
+          targetPeriod = sorted[0];
+        }
+        
+        // Only update if the store doesn't already have valid values
+        // This prevents overriding user's last selected filters on page refresh
+        const currentYear = selectedYear;
+        const currentMonth = selectedMonth;
+        const isCurrentYearValid = currentYear >= 2020 && currentYear <= 2030;
+        const isCurrentMonthValid = currentMonth >= 1 && currentMonth <= 12;
+        
+        if (!isCurrentYearValid || !isCurrentMonthValid) {
+          setSelectedYear(targetPeriod.period_year);
+          setSelectedMonth(targetPeriod.period_month);
+        }
       }
     } catch (error) {
       console.error('Failed to load latest period:', error);
-      // Keep defaults (2023-11) if fetch fails
+      // Keep current values if fetch fails
     }
   };
 

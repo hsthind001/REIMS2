@@ -103,12 +103,15 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
                             {/* Tags would go here if we had docTypes */}
                        </div>
                        
-                       <button 
-                            onClick={() => onRuleClick && onRuleClick(rule.rule_id)}
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
-                       >
-                           Configure Rule <ArrowRight className="w-4 h-4" />
-                       </button>
+                      <button 
+                           onClick={() => {
+                               // Navigate to dedicated rule configuration page
+                               window.location.hash = `rule-configuration/${rule.rule_id}`;
+                           }}
+                           className="text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+                      >
+                          Configure Rule <ArrowRight className="w-4 h-4" />
+                      </button>
                    </div>
                </div>
            ))}

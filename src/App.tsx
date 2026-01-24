@@ -36,6 +36,7 @@ const MarketIntelligenceDashboard = lazy(() => import('./pages/MarketIntelligenc
 const AnomalyDetailPage = lazy(() => import('./pages/AnomalyDetailPage'))
 const AddProperty = lazy(() => import('./pages/AddProperty'))
 const RuleConfigurationPage = lazy(() => import('./pages/RuleConfigurationPage'))
+const RuleEditPage = lazy(() => import('./pages/RuleEditPage'))
 
 // Forensic Audit Framework Pages
 const ForensicAuditDashboard = lazy(() => import('./pages/ForensicAuditDashboard'))
@@ -119,6 +120,9 @@ function AppContent() {
         setCurrentPage('add-property')
       }
       if (routeName.startsWith('rule-configuration') && currentPage !== 'operations') {
+        setCurrentPage('operations')
+      }
+      if (routeName.startsWith('rule-edit') && currentPage !== 'operations') {
         setCurrentPage('operations')
       }
       if (routeName.startsWith('anomaly-details') && currentPage !== 'risk') {
@@ -546,6 +550,10 @@ function AppContent() {
           ) : hashRoute.startsWith('rule-configuration') ? (
             <Suspense fallback={<PageLoader />}>
               <RuleConfigurationPage />
+            </Suspense>
+          ) : hashRoute.startsWith('rule-edit') ? (
+            <Suspense fallback={<PageLoader />}>
+              <RuleEditPage />
             </Suspense>
           ) : (
             renderPage()

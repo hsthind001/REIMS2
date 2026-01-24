@@ -14,12 +14,10 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/design-system';
 import { forensicReconciliationService } from '../lib/forensic_reconciliation';
-import EditRuleModal from '../components/financial_integrity/modals/EditRuleModal';
 
 export default function RuleConfigurationPage() {
   const queryClient = useQueryClient();
   const [ruleId, setRuleId] = useState<string>('');
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   
   // Get property and period from local storage, similar to main hub
   const [context, setContext] = useState<{propertyId: number, periodId: number} | null>(() => {
@@ -321,41 +319,25 @@ export default function RuleConfigurationPage() {
              </div>
              
              <div className="flex gap-3">
-                 <Button variant="secondary" onClick={() => setIsEditModalOpen(true)}>
+                 <Button variant="secondary" onClick={() => {
+                     // Store rule data in localStorage for edit page
+                     localStorage.setItem('editingRule', JSON.stringify({
+                         id: ruleId,
+                         name: ruleDetails.name,
+                         description: ruleDetails.description,
+                         formula: ruleDetails.formula,
+                         threshold: ruleDetails.threshold,
+                         type: ruleDetails.type
+                     }));
+                     // Navigate to edit page
+                     window.location.hash = `rule-edit/${ruleId}`;
+                 }}>
                      Edit Logic
                  </Button>
              </div>
           </div>
         </div>
       </div>
-      
-      {ruleDetails && (
-        <EditRuleModal 
-            isOpen={isEditModalOpen}
-            onClose={() => setIsEditModalOpen(false)}
-            rule={{
-                id: ruleId,
-                name: ruleDetails.name!,
-                description: ruleDetails.description,
-                formula: ruleDetails.formula,
-                threshold: ruleDetails.threshold,
-                type: ruleDetails.type
-            }}
-            onSave={async (data) => {
-                // Determine if this is updating existing or creating new
-                // For now, we'll try to update existing
-                try {
-                   // This would call the update endpoint
-                   // await forensicReconciliationService.updateCalculatedRule(ruleId, data);
-                   console.log("Updating rule with:", data);
-                   // Refresh query
-                   queryClient.invalidateQueries({ queryKey: ['rule-evaluation'] });
-                } catch (err) {
-                   console.error("Error updating rule:", err);
-                }
-            }}
-        />
-      )}
     </div>
   );
 }
