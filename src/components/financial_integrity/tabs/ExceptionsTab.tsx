@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { 
   AlertTriangle, 
   Clock, 
@@ -14,6 +14,37 @@ interface ExceptionsTabProps {
 }
 
 export default function ExceptionsTab({ discrepancies, ruleViolations = [] }: ExceptionsTabProps) {
+  // Determine severity based on rule type and variance magnitude
+  const getSeverityFromRule = useCallback((rule: any): string => {
+    const ruleId = rule.rule_id?.toUpperCase() || '';
+    const variance = rule.actual_value && rule.expected_value
+      ? Math.abs(parseFloat(rule.actual_value) - parseFloat(rule.expected_value))
+      : 0;
+    
+    // Critical: Fundamental accounting equations
+    if (ruleId.includes('BS-1') || ruleId.includes('IS-1') || ruleId.includes('ACCOUNTING')) {
+      return 'critical';
+    }
+    
+    // High: Significant financial ratios and liquidity
+    if (ruleId.includes('RATIO') || ruleId.includes('LIQUIDITY') || ruleId.includes('WORKING')) {
+      return variance > 100000 ? 'high' : 'medium';
+    }
+    
+    // High: Large variances
+    if (variance > 500000) {
+      return 'high';
+    }
+    
+    // Medium: Moderate variances
+    if (variance > 100000) {
+      return 'medium';
+    }
+    
+    // Low: Small variances
+    return 'low';
+  }, []);
+  
   // Combine discrepancies and rule violations into unified exception list
   const allExceptions = useMemo(() => {
     const exceptions: any[] = [];
@@ -68,38 +99,7 @@ export default function ExceptionsTab({ discrepancies, ruleViolations = [] }: Ex
     });
     
     return exceptions;
-  }, [discrepancies, ruleViolations]);
-  
-  // Determine severity based on rule type and variance magnitude
-  const getSeverityFromRule = (rule: any): string => {
-    const ruleId = rule.rule_id?.toUpperCase() || '';
-    const variance = rule.actual_value && rule.expected_value
-      ? Math.abs(parseFloat(rule.actual_value) - parseFloat(rule.expected_value))
-      : 0;
-    
-    // Critical: Fundamental accounting equations
-    if (ruleId.includes('BS-1') || ruleId.includes('IS-1') || ruleId.includes('ACCOUNTING')) {
-      return 'critical';
-    }
-    
-    // High: Significant financial ratios and liquidity
-    if (ruleId.includes('RATIO') || ruleId.includes('LIQUIDITY') || ruleId.includes('WORKING')) {
-      return variance > 100000 ? 'high' : 'medium';
-    }
-    
-    // High: Large variances
-    if (variance > 500000) {
-      return 'high';
-    }
-    
-    // Medium: Moderate variances
-    if (variance > 100000) {
-      return 'medium';
-    }
-    
-    // Low: Small variances
-    return 'low';
-  };
+  }, [discrepancies, ruleViolations, getSeverityFromRule]);
   
   // Calculate statistics
   const stats = {
