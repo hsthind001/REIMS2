@@ -28,26 +28,69 @@ export default function ReconciliationMatrix({ matches, onCellClick }: Reconcili
         });
     });
 
-    // Aggregate
+    // Document type normalization map (backend might use different formats)
+    const normalizeDocType = (docType: string): string => {
+      const normalized = docType.toLowerCase().replace(/\s+/g, '_');
+      
+      // Map common variations
+      const mappings: Record<string, string> = {
+        'balancesheet': 'balance_sheet',
+        'balance_sheet': 'balance_sheet',
+        'incomestatement': 'income_statement',
+        'income_statement': 'income_statement',
+        'cashflow': 'cash_flow',
+        'cash_flow': 'cash_flow',
+        'rentroll': 'rent_roll',
+        'rent_roll': 'rent_roll',
+        'mortgagestatement': 'mortgage_statement',
+        'mortgage_statement': 'mortgage_statement',
+        'mortgage_stmt': 'mortgage_statement',
+      };
+      
+      return mappings[normalized] || normalized;
+    };
+
+    // Aggregate matches
     matches.forEach(m => {
-        const source = m.source_document_type;
-        const target = m.target_document_type;
+        const source = normalizeDocType(m.source_document_type);
+        const target = normalizeDocType(m.target_document_type);
         
         if (data[source] && data[source][target]) {
             data[source][target].total++;
-            if (m.status === 'approved' || m.confidence_score === 1.0) {
+            
+            // Perfect match: approved status OR confidence score is 100%
+            if (m.status === 'approved' || m.confidence_score >= 1.0) {
                 data[source][target].passed++;
-            } else if (m.status === 'pending' && m.confidence_score && m.confidence_score < 0.8) {
+            } 
+            // Warning: pending with low confidence
+            else if (m.status === 'pending' && m.confidence_score < 0.8) {
                 data[source][target].warning++;
-            } else {
-                 data[source][target].variance++; // Simplify for now
+            } 
+            // Variance: anything else (rejected, modified, or mid-confidence pending)
+            else {
+                data[source][target].variance++;
             }
+        } else {
+          // Log unmatched document types for debugging
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`Unmatched document types in ReconciliationMatrix: ${source} -> ${target}`);
+          }
         }
-        
-        // Matches are bidirectional in concept, but stored unidirectionally usually. 
-        // If your backend stores A->B, we might want to show it in B->A too if it implies equality.
-        // For now, let's assume strict directionality or that matches are duplicated/normalized.
     });
+
+    // Log summary for debugging
+    if (process.env.NODE_ENV === 'development' && matches.length > 0) {
+      console.log('ReconciliationMatrix Data Summary:', {
+        totalMatches: matches.length,
+        gridData: data,
+        documentTypes: matches.map(m => ({
+          source: m.source_document_type,
+          target: m.target_document_type,
+          normalized_source: normalizeDocType(m.source_document_type),
+          normalized_target: normalizeDocType(m.target_document_type),
+        }))
+      });
+    }
 
     return data;
   }, [matches]);
@@ -141,10 +184,10 @@ export default function ReconciliationMatrix({ matches, onCellClick }: Reconcili
                                                         <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
                                                     </div>
                                                 )}
-                                                <span className={`text-[10px] uppercase font-bold tracking-wide mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+                                                <span className={`text-[10px] uppercase font-bold tracking-wide ${
                                                      status === 'perfect' ? 'text-emerald-700' : 'text-amber-700'
                                                 }`}>
-                                                    {status === 'perfect' ? 'Match' : 'Variance'}
+                                                    {status === 'perfect' ? 'MATCH' : 'VARIANCE'}
                                                 </span>
                                             </>
                                         )}
