@@ -61,7 +61,8 @@ export default function OverviewTab({ healthScore, criticalItems, ruleViolations
     income_statement: 'Income Statement',
     cash_flow: 'Cash Flow',
     rent_roll: 'Rent Roll',
-    mortgage_statement: 'Mortgage Statement'
+    mortgage_statement: 'Mortgage Statement',
+    three_statement_integration: 'Three Statement Integration'
   };
 
   // Combine critical discrepancies and rule violations

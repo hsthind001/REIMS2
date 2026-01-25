@@ -27,7 +27,8 @@ export default function ByDocumentTab({ documents = [], rules = [] }: ByDocument
           'income_statement': 'IS',
           'cash_flow': 'CF',
           'rent_roll': 'RR',
-          'mortgage_statement': 'MST'  // Mortgage rules use MST- prefix, not MS-
+          'mortgage_statement': 'MST',  // Mortgage rules use MST- prefix, not MS-
+          'three_statement_integration': '3S'  // Three statement integration rules use 3S- prefix
       };
 
       const prefix = docPrefixMap[docId];

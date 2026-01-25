@@ -120,13 +120,14 @@ export default function FinancialIntegrityHub() {
 
     // Derived Data for Document Tab
     const documentStats = useMemo(() => {
-        // Initialize all 5 document types
+        // Initialize all 6 document types
         const documentNames: Record<string, string> = {
             'balance_sheet': 'Balance Sheet',
             'income_statement': 'Income Statement',
             'cash_flow': 'Cash Flow',
             'rent_roll': 'Rent Roll',
-            'mortgage_statement': 'Mortgage Statement'
+            'mortgage_statement': 'Mortgage Statement',
+            'three_statement_integration': 'Three Statement Integration'
         };
 
         const rulePrefixMap: Record<string, string> = {
@@ -134,7 +135,8 @@ export default function FinancialIntegrityHub() {
             'income_statement': 'IS',
             'cash_flow': 'CF',
             'rent_roll': 'RR',
-            'mortgage_statement': 'MST'  // Mortgage rules use MST- prefix, not MS-
+            'mortgage_statement': 'MST',  // Mortgage rules use MST- prefix, not MS-
+            'three_statement_integration': '3S'  // Three statement integration rules use 3S- prefix
         };
 
         const stats: Record<string, { id: string, name: string, type: string, passed: number, failed: number, rules: number, lastSync: string }> = {};

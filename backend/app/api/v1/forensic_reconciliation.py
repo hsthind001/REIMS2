@@ -1266,7 +1266,8 @@ async def get_document_health(
         'IS': 'income_statement',
         'CF': 'cash_flow',
         'RR': 'rent_roll',
-        'MST': 'mortgage_statement'  # Mortgage rules use MST- prefix, not MS-
+        'MST': 'mortgage_statement',  # Mortgage rules use MST- prefix, not MS-
+        '3S': 'three_statement_integration'  # Three statement integration rules use 3S- prefix
     }
     
     document_health = {}
