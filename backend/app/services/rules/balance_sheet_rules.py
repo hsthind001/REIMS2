@@ -740,7 +740,7 @@ class BalanceSheetRulesMixin:
         val = self._get_bs_value(account_name_pattern="Distributions")
         self.results.append(ReconciliationResult(
             rule_id="BS-32",
-            rule_name="Distributions",
+            rule_name="BS Distributions Check",
             category="Balance Sheet",
             status="PASS" if val <= 0 else "WARNING", # Usually negative
             source_value=val,

@@ -53,6 +53,8 @@ class ReconciliationStatus(str, Enum):
     PASS = "PASS"
     FAIL = "FAIL"
     WARNING = "WARNING"
+    INFO = "INFO"
+    SKIP = "SKIP"
 
 
 class RiskSeverity(str, Enum):
@@ -721,9 +723,31 @@ def get_audit_scorecard(
                 }
             )
 
-            # Always refresh covenant summary so DSCR reflects latest complete period
+            # Always refresh from live data so dashboard reflects current state
             async_db = AsyncSessionWrapper(db)
             scorecard_service = AuditScorecardGeneratorService(async_db)
+
+            # Refresh reconciliation summary from live cross_document_reconciliations
+            scorecard_data["reconciliation_summary"] = await_async(
+                scorecard_service._get_reconciliation_summary(property_id, period_id)
+            )
+
+            # Refresh overall health score (depends on live reconciliation data)
+            scorecard_data["overall_health_score"] = await_async(
+                scorecard_service.calculate_overall_health_score(property_id, period_id)
+            )
+
+            # Refresh traffic light status based on live data
+            scorecard_data["traffic_light_status"] = await_async(
+                scorecard_service.determine_traffic_light_status(property_id, period_id)
+            ).value
+
+            # Refresh audit opinion based on live data (now consistent with traffic light)
+            scorecard_data["audit_opinion"] = await_async(
+                scorecard_service.generate_audit_opinion(property_id, period_id)
+            ).value
+
+            # Refresh covenant summary so DSCR reflects latest complete period
             scorecard_data["covenant_summary"] = await_async(
                 scorecard_service._get_covenant_summary(property_id, period_id)
             )

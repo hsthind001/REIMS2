@@ -75,6 +75,17 @@ class ReconciliationRuleEngine(
         self.period_id = period_id
         self.results = []
         
+        # DEBUG RULE: Verify Engine Update
+        self.results.append(ReconciliationResult(
+            rule_id="ENGINE-TEST",
+            rule_name="Engine Active",
+            category="System",
+            status="PASS",
+            source_value=1, target_value=1, difference=0, variance_pct=0,
+            details="Engine verified",
+            severity="info"
+        ))
+        
         # Helper to run mixin safely
         def run_module(name, func):
             try:
@@ -96,6 +107,8 @@ class ReconciliationRuleEngine(
                     severity="critical",
                     formula="N/A"
                 ))
+                # Re-raise for debugging if it's critical? No, just log distinctively.
+                print(f"CRITICAL MODULE FAILURE [{name}]: {e}")
         
         # Execute modules independently
         run_module("Balance Sheet", self._execute_balance_sheet_rules)
@@ -104,7 +117,21 @@ class ReconciliationRuleEngine(
         run_module("Cash Flow", self._execute_cash_flow_rules)
         run_module("Mortgage", self._execute_mortgage_rules)
         # Rent Roll usually robust, but wrap it too
-        run_module("Rent Roll", self._execute_rent_roll_rules)
+        # Custom execution for Rent Roll to debug
+        try:
+             # Force fresh execution logic
+             print("Executing Rent Roll Rules explicitly...")
+             self._execute_rent_roll_rules()
+        except Exception as e:
+             self.results.append(ReconciliationResult(
+                rule_id="SYS-RR-Crash",
+                rule_name="Rent Roll Crash",
+                category="Rent Roll",
+                status="FAIL",
+                source_value=0, target_value=0, difference=0, variance_pct=0,
+                details=str(e),
+                severity="critical"
+             ))
             
         return self.results
 

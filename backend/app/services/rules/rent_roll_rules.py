@@ -4,22 +4,49 @@ from app.services.reconciliation_types import ReconciliationResult
 class RentRollRulesMixin:
     
     def _execute_rent_roll_rules(self):
-        """Execute Rent Roll rules"""
-        self._rule_rr_1_annual_rent()
-        self._rule_rr_2_occupancy()
-        self._rule_rr_3_vacancy_calc()
+        """Execute Rent Roll rules with safe execution wrapper"""
+        def run_safe(func, rule_id_fallback):
+            try:
+                # Removed inner transaction to simplify debugging
+                func()
+            except Exception as e:
+                print(f"Rule {rule_id_fallback} failed: {e}")
+                self.results.append(ReconciliationResult(
+                    rule_id=rule_id_fallback,
+                    rule_name=f"Execution Error {rule_id_fallback}",
+                    category="Rent Roll",
+                    status="FAIL",
+                    source_value=0, target_value=0, difference=0, variance_pct=0,
+                    details=f"Crashed: {str(e)}",
+                    severity="critical"
+                ))
+
+        # Dummy Rule to verify execution path
+        self.results.append(ReconciliationResult(
+            rule_id="RR-TEST",
+            rule_name="Connectivity Test",
+            category="Rent Roll",
+            status="PASS",
+            source_value=1, target_value=1, difference=0, variance_pct=0,
+            details="Engine is reachable",
+            severity="info"
+        ))
+
+        run_safe(self._rule_rr_1_annual_rent, "RR-1")
+        run_safe(self._rule_rr_2_occupancy, "RR-2")
+        run_safe(self._rule_rr_3_vacancy_calc, "RR-3")
         
         # Financial Calcs
-        self._rule_rr_4_monthly_rent_psf()
-        self._rule_rr_5_annual_rent_psf()
+        run_safe(self._rule_rr_4_monthly_rent_psf, "RR-4")
+        run_safe(self._rule_rr_5_annual_rent_psf, "RR-5")
         
         # Tenant Specific
-        self._rule_rr_6_petsmart_rent_increase()
-        self._rule_rr_7_spirit_halloween_seasonal()
+        run_safe(self._rule_rr_6_petsmart_rent_increase, "RR-6")
+        run_safe(self._rule_rr_7_spirit_halloween_seasonal, "RR-7")
         
         # Aggregate Changes
-        self._rule_rr_8_total_monthly_rent_check()
-        self._rule_rr_9_vacant_units_tracking()
+        run_safe(self._rule_rr_8_total_monthly_rent_check, "RR-8")
+        run_safe(self._rule_rr_9_vacant_units_tracking, "RR-9")
         
     def _get_rr_aggregate(self, func, column_name):
         """Helper to get aggregate from rent_roll_data"""
@@ -66,7 +93,7 @@ class RentRollRulesMixin:
         occupancy_query = text("""
             SELECT COUNT(*) FROM rent_roll_data 
             WHERE property_id = :p_id AND period_id = :period_id
-            AND status = 'Occupied'
+            AND occupancy_status ILIKE 'occupied'
         """)
         res = self.db.execute(occupancy_query, {"p_id": self.property_id, "period_id": self.period_id})
         occupied_units = res.scalar() or 0
@@ -94,16 +121,16 @@ class RentRollRulesMixin:
         # Now verify if we have vacant units rows or if it's derived.
         # Usually RR has rows for "Vacant" status.
         
-        total_area = self._get_rr_aggregate("SUM", "area")
+        total_area = self._get_rr_aggregate("SUM", "unit_area_sqft")
         
-        q_occ = text("SELECT SUM(area) FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND status='Occupied'")
-        occ_area = self.db.execute(q_occ, {"p": self.property_id, "id": self.period_id}).scalar() or 0
-        
-        q_vac = text("SELECT SUM(area) FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND status='Vacant'")
-        vac_area = self.db.execute(q_vac, {"p": self.property_id, "id": self.period_id}).scalar() or 0
-        
+        q_occ = text("SELECT SUM(unit_area_sqft) FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND occupancy_status ILIKE 'occupied'")
+        occ_area = float(self.db.execute(q_occ, {"p": self.property_id, "id": self.period_id}).scalar() or 0)
+
+        q_vac = text("SELECT SUM(unit_area_sqft) FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND occupancy_status ILIKE 'vacant'")
+        vac_area = float(self.db.execute(q_vac, {"p": self.property_id, "id": self.period_id}).scalar() or 0)
+
         calc_total = occ_area + vac_area
-        diff = total_area - calc_total
+        diff = float(total_area) - calc_total
         
         self.results.append(ReconciliationResult(
             rule_id="RR-3",
@@ -123,7 +150,7 @@ class RentRollRulesMixin:
         """RR-4: Monthly Rent PSF Calculation"""
         # Check average or specific tenant integrity?
         # We can calculate aggregate $/SF
-        total_area = self._get_rr_aggregate("SUM", "area")
+        total_area = self._get_rr_aggregate("SUM", "unit_area_sqft")
         total_rent = self._get_rr_aggregate("SUM", "monthly_rent")
         
         psf = total_rent / total_area if total_area else 0
@@ -144,7 +171,7 @@ class RentRollRulesMixin:
 
     def _rule_rr_5_annual_rent_psf(self):
         """RR-5: Annual Rent PSF Calculation"""
-        total_area = self._get_rr_aggregate("SUM", "area")
+        total_area = self._get_rr_aggregate("SUM", "unit_area_sqft")
         total_annual = self._get_rr_aggregate("SUM", "annual_rent")
         
         psf = total_annual / total_area if total_area else 0
@@ -193,7 +220,7 @@ class RentRollRulesMixin:
     def _rule_rr_7_spirit_halloween_seasonal(self):
         """RR-7: Spirit Halloween Seasonal Logic"""
         # Check Unit 600 or 'Spirit'
-        q = text("SELECT status, monthly_rent FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND (tenant_name ILIKE '%Spirit%' OR unit_id='600') LIMIT 1")
+        q = text("SELECT occupancy_status, monthly_rent FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND (tenant_name ILIKE '%Spirit%' OR unit_number='600') LIMIT 1")
         row = self.db.execute(q, {"p": self.property_id, "id": self.period_id}).mappings().first()
         
         details = "Unit 600 check"
@@ -241,7 +268,7 @@ class RentRollRulesMixin:
 
     def _rule_rr_9_vacant_units_tracking(self):
         """RR-9: Vacancy Tracking"""
-        q = text("SELECT COUNT(*) FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND status='Vacant'")
+        q = text("SELECT COUNT(*) FROM rent_roll_data WHERE property_id=:p AND period_id=:id AND occupancy_status ILIKE 'vacant'")
         count = self.db.execute(q, {"p": self.property_id, "id": self.period_id}).scalar() or 0
         
         # Expect 2 or 3

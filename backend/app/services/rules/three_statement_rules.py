@@ -49,16 +49,16 @@ class ThreeStatementRulesMixin:
         bs_earnings = self._get_bs_value(account_name_pattern="%CURRENT PERIOD EARNINGS%")
         
         if bs_earnings == 0 and ni != 0:
-             prior_id = self._get_prior_period_id()
-             if prior_id:
-                 re_curr = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%")
-                 re_prior = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%", period_id=prior_id)
-                 earnings_change = re_curr - re_prior
+            prior_id = self._get_prior_period_id()
+            if prior_id:
+                re_curr = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%")
+                re_prior = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%", period_id=prior_id)
+                earnings_change = re_curr - re_prior
                  
-                 diff = earnings_change - ni
-                 status = "PASS" if abs(diff) < 1.0 else "WARNING"
+                diff = earnings_change - ni
+                status = "PASS" if abs(diff) < 1.0 else "WARNING"
                  
-                 self.results.append(ReconciliationResult(
+                self.results.append(ReconciliationResult(
                     rule_id="3S-RE-1",
                     rule_name="Net Income to RE Change",
                     category="Three-Statement",
@@ -70,7 +70,20 @@ class ThreeStatementRulesMixin:
                     details=f"Net Income vs RE Change (Prior ${re_prior:,.0f} -> Curr ${re_curr:,.0f})",
                     severity="high"
                 ))
-                 return
+                # Also emit 3S-3 as SKIP to maintain rule count consistency
+                self.results.append(ReconciliationResult(
+                    rule_id="3S-3",
+                    rule_name="Net Income Logic",
+                    category="Three-Statement",
+                    status="SKIP",
+                    source_value=0,
+                    target_value=0,
+                    difference=0,
+                    variance_pct=0,
+                    details="Using Retained Earnings Logic (See 3S-RE-1)",
+                    severity="info"
+                ))
+                return
 
         diff = bs_earnings - ni
         status = "PASS" if abs(diff) < 1.0 else "FAIL"

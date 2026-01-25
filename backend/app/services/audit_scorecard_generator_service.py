@@ -431,14 +431,14 @@ class AuditScorecardGeneratorService:
             Audit opinion
         """
 
-        # Count critical failures
+        # Count critical failures (material failures - consistent with traffic light logic)
         critical_query = text("""
             SELECT COUNT(*)
             FROM cross_document_reconciliations
             WHERE property_id = :property_id
             AND period_id = :period_id
             AND status = 'FAIL'
-            AND rule_code IN ('A-3.1', 'A-3.4', 'A-3.5')  -- Critical reconciliations
+            AND is_material = true
         """)
 
         critical_result = await self.db.execute(

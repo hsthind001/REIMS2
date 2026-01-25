@@ -359,7 +359,7 @@ class CashFlowRulesMixin:
         status = "PASS" if val <= 0 else "WARNING"
         self.results.append(ReconciliationResult(
             rule_id="CF-15",
-            rule_name="Distributions",
+            rule_name="CF Distributions Check",
             category="Cash Flow",
             status=status,
             source_value=val,

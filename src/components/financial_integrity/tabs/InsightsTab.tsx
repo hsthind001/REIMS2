@@ -46,12 +46,14 @@ export default function InsightsTab({ calculatedRules = [], matches = [], discre
     calculatedRules.forEach(rule => {
       const ruleId = rule.rule_id || '';
       let docType = 'Unknown';
-      
+
       if (ruleId.startsWith('BS-')) docType = 'Balance Sheet';
       else if (ruleId.startsWith('IS-')) docType = 'Income Statement';
       else if (ruleId.startsWith('CF-')) docType = 'Cash Flow';
       else if (ruleId.startsWith('RR-')) docType = 'Rent Roll';
       else if (ruleId.startsWith('MST-')) docType = 'Mortgage Statement';
+      else if (ruleId.startsWith('3S-')) docType = 'Three-Statement Integration';
+      else if (ruleId.startsWith('ENGINE-')) docType = 'System';
 
       if (!docTypes[docType]) {
         docTypes[docType] = { passed: 0, failed: 0, total: 0 };
