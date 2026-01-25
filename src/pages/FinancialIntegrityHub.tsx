@@ -516,7 +516,11 @@ export default function FinancialIntegrityHub() {
                             ruleViolations={calculatedRulesData?.rules?.filter(r => r.status !== 'PASS') || []}
                         />
                     ) : (
-                        <InsightsTab />
+                        <InsightsTab 
+                            calculatedRules={calculatedRulesData?.rules || []}
+                            matches={matches}
+                            discrepancies={discrepancies}
+                        />
                     )}
                 </div>
             </div>
