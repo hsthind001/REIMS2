@@ -159,6 +159,16 @@ services:
           memory: 256M
           cpus: "0.25"
 
+  # Ollama - Local LLM inference (optional but recommended for AI Insights)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: reims-ollama
+    restart: unless-stopped
+    volumes:
+      - /usr/share/ollama/.ollama:/root/.ollama:ro
+    networks:
+      - reims-network
+
   # MinIO - S3-compatible object storage
   minio:
     image: minio/minio:latest
@@ -364,6 +374,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 30s

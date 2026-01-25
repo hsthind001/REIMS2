@@ -11,6 +11,7 @@ Date: 2025-01-09
 
 import json
 import logging
+import os
 from typing import Dict, List, Optional, Union, Any
 from enum import Enum
 import httpx
@@ -101,6 +102,8 @@ class LocalLLMService:
         self.available_ollama_models: Optional[set[str]] = None
         self.last_model_used: Optional[str] = None
         self.last_provider: Optional[LLMProvider] = None
+        self._ollama_base_url: Optional[str] = None
+        self._ollama_base_url_candidates = self._build_ollama_base_urls(self.config.ollama_base_url)
 
         # Model selection rules (task_type -> model)
         # Use configured model for all tasks initially (will upgrade when larger models available)
@@ -113,19 +116,57 @@ class LocalLLMService:
             LLMTaskType.CHAT: default_model,  # Chat
         }
 
-    async def _check_ollama_health(self) -> bool:
+    def _build_ollama_base_urls(self, configured_url: str) -> List[str]:
+        urls: List[str] = []
+        env_urls = os.getenv("OLLAMA_BASE_URLS", "")
+        if env_urls:
+            urls.extend([u.strip() for u in env_urls.split(",") if u.strip()])
+        if configured_url:
+            urls.append(configured_url)
+
+        # Common fallbacks (docker + host)
+        for url in [
+            "http://ollama:11434",
+            "http://host.docker.internal:11434",
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]:
+            if url not in urls:
+                urls.append(url)
+
+        return urls
+
+    async def _check_ollama_health(self, base_url: str) -> bool:
         """Check if Ollama service is available"""
         try:
-            response = await self.client.get(f"{self.config.ollama_base_url}/api/tags")
+            response = await self.client.get(f"{base_url}/api/tags")
             return response.status_code == 200
         except Exception as e:
             logger.warning(f"Ollama health check failed: {e}")
             return False
 
+    async def _ensure_ollama_endpoint(self) -> str:
+        """Resolve a working Ollama endpoint."""
+        if self._ollama_base_url:
+            return self._ollama_base_url
+
+        for url in self._ollama_base_url_candidates:
+            if await self._check_ollama_health(url):
+                self._ollama_base_url = url
+                # Update config for downstream usage
+                self.config.ollama_base_url = url
+                # Reset model cache on endpoint change
+                self.available_ollama_models = None
+                logger.info(f"Using Ollama endpoint: {url}")
+                return url
+
+        raise RuntimeError("No reachable Ollama endpoint found")
+
     async def _list_ollama_models(self) -> List[str]:
         """List available models in Ollama"""
         try:
-            response = await self.client.get(f"{self.config.ollama_base_url}/api/tags")
+            base_url = await self._ensure_ollama_endpoint()
+            response = await self.client.get(f"{base_url}/api/tags")
             if response.status_code == 200:
                 data = response.json()
                 return [model["name"] for model in data.get("models", [])]
@@ -233,7 +274,13 @@ class LocalLLMService:
 
         # Check if Ollama is available
         if self.config.provider == LLMProvider.OLLAMA:
-            ollama_available = await self._check_ollama_health()
+            try:
+                await self._ensure_ollama_endpoint()
+            except Exception as e:
+                logger.warning(f"Ollama unavailable: {e}")
+                ollama_available = False
+            else:
+                ollama_available = True
             if not ollama_available:
                 logger.warning("Ollama unavailable, falling back to Groq")
                 self.last_provider = LLMProvider.GROQ
@@ -285,7 +332,8 @@ class LocalLLMService:
         }
 
         try:
-            url = f"{self.config.ollama_base_url}/api/chat"
+            base_url = await self._ensure_ollama_endpoint()
+            url = f"{base_url}/api/chat"
             logger.info(f"Sending request to Ollama: {url}")
             logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
 

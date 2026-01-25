@@ -96,6 +96,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
   const insights = data.data;
   const swot = insights.swot_analysis;
   const recommendation = insights.investment_recommendation;
+  const coverage = insights.data_coverage;
 
   const getRecommendationColor = (rec: string): string => {
     if (rec === 'BUY') return '#2e7d32';
@@ -117,6 +118,12 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
 
   return (
     <Box p={3}>
+      {insights.generated_by === 'fallback_rules' && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          AI Insights are running in fallback mode. LLM is unavailable or not reachable. Check Ollama connectivity for
+          richer narratives.
+        </Alert>
+      )}
       {/* Investment Recommendation */}
       <Paper
         sx={{
@@ -271,6 +278,11 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
           threats. In production, these insights can be enhanced with Claude API or GPT-4 for natural language
           generation and deeper analysis.
         </Typography>
+        {coverage && (
+          <Typography variant="caption" display="block" mt={1}>
+            Data coverage: {coverage.coverage_percent}% ({coverage.present.length} sources present, {coverage.missing.length} missing).
+          </Typography>
+        )}
       </Alert>
 
       {/* Data Source */}
@@ -313,6 +325,26 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
               </Typography>
               <Typography variant="body2" fontWeight="bold">
                 {swot.strengths.length + swot.weaknesses.length + swot.opportunities.length + swot.threats.length}
+              </Typography>
+            </Paper>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                Data Coverage
+              </Typography>
+              <Typography variant="body2" fontWeight="bold">
+                {coverage ? `${coverage.coverage_percent}%` : 'N/A'}
+              </Typography>
+            </Paper>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                Model Used
+              </Typography>
+              <Typography variant="body2" fontWeight="bold">
+                {insights.model_used || insights.generated_by || 'N/A'}
               </Typography>
             </Paper>
           </Grid>

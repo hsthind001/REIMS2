@@ -134,6 +134,8 @@ const CompetitiveAnalysisPanel: React.FC<CompetitiveAnalysisPanelProps> = ({ dat
   const position = competitive.submarket_position;
   const threats = competitive.competitive_threats;
   const trends = competitive.submarket_trends;
+  const benchmark = competitive.benchmark_context;
+  const narrative = competitive.llm_narrative;
 
   const getThreatSeverity = (score: number): 'error' | 'warning' | 'success' => {
     if (score >= 70) return 'error';
@@ -197,6 +199,73 @@ const CompetitiveAnalysisPanel: React.FC<CompetitiveAnalysisPanelProps> = ({ dat
           />
         </Grid>
       </Grid>
+
+      {/* Benchmark Context */}
+      {benchmark && (
+        <>
+          <Typography variant="h5" gutterBottom fontWeight="bold">
+            Benchmark Context
+          </Typography>
+          <Typography variant="body2" color="text.secondary" paragraph>
+            Portfolio benchmarks ({benchmark.scope}) based on {benchmark.peer_count} peer properties, plus open‑data context.
+          </Typography>
+
+          <Grid container spacing={3} mb={4}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="caption" color="text.secondary">Property Rent (PSF)</Typography>
+                <Typography variant="h6">
+                  {benchmark.property_metrics.rent_psf != null ? benchmark.property_metrics.rent_psf.toFixed(3) : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="caption" color="text.secondary">Portfolio Avg Rent (PSF)</Typography>
+                <Typography variant="h6">
+                  {benchmark.portfolio_averages.rent_psf != null ? benchmark.portfolio_averages.rent_psf.toFixed(3) : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="caption" color="text.secondary">Property Occupancy</Typography>
+                <Typography variant="h6">
+                  {benchmark.property_metrics.occupancy_rate != null ? `${benchmark.property_metrics.occupancy_rate.toFixed(1)}%` : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="caption" color="text.secondary">Portfolio Avg Occupancy</Typography>
+                <Typography variant="h6">
+                  {benchmark.portfolio_averages.occupancy_rate != null ? `${benchmark.portfolio_averages.occupancy_rate.toFixed(1)}%` : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="caption" color="text.secondary">ACS Median Gross Rent</Typography>
+                <Typography variant="h6">
+                  {benchmark.open_data_benchmarks?.acs_median_gross_rent !== undefined && benchmark.open_data_benchmarks?.acs_median_gross_rent !== null
+                    ? `$${benchmark.open_data_benchmarks.acs_median_gross_rent}`
+                    : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="caption" color="text.secondary">ACS Median Household Income</Typography>
+                <Typography variant="h6">
+                  {benchmark.open_data_benchmarks?.acs_median_household_income !== undefined && benchmark.open_data_benchmarks?.acs_median_household_income !== null
+                    ? `$${benchmark.open_data_benchmarks.acs_median_household_income}`
+                    : 'N/A'}
+                </Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        </>
+      )}
 
       {/* Competitive Threats */}
       <Typography variant="h5" gutterBottom fontWeight="bold">
@@ -396,6 +465,77 @@ const CompetitiveAnalysisPanel: React.FC<CompetitiveAnalysisPanelProps> = ({ dat
           ) : 'Supply and demand metrics are currently unavailable for this submarket.'}
         </Typography>
       </Alert>
+
+      {/* LLM Narrative */}
+      {narrative && (
+        <Box mt={4}>
+          <Typography variant="h5" gutterBottom fontWeight="bold">
+            AI Competitive Narrative
+          </Typography>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Positioning Summary
+            </Typography>
+            <Typography variant="body2">{narrative.positioning_summary}</Typography>
+          </Paper>
+
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 3, height: '100%' }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Differentiation Factors
+                </Typography>
+                <List dense>
+                  {narrative.differentiation_factors?.map((item, idx) => (
+                    <ListItem key={idx}>
+                      <ListItemText
+                        primary={`${item.factor} (${item.competitive_advantage ? 'Advantage' : 'Risk'})`}
+                        secondary={item.description}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 3, height: '100%' }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Pricing Power
+                </Typography>
+                <Typography variant="body2">
+                  Position: {narrative.pricing_power_analysis?.current_position || 'N/A'}
+                </Typography>
+                <Typography variant="body2">
+                  Flexibility: {narrative.pricing_power_analysis?.pricing_flexibility || 'N/A'}
+                </Typography>
+                <Typography variant="body2">
+                  Rent Growth Potential: {narrative.pricing_power_analysis?.rent_growth_potential ?? 'N/A'}%
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {narrative.pricing_power_analysis?.rationale}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <Paper sx={{ p: 3 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Strategic Recommendations
+                </Typography>
+                <List dense>
+                  {narrative.strategic_recommendations?.map((rec, idx) => (
+                    <ListItem key={idx}>
+                      <ListItemText
+                        primary={`${rec.strategy} (${rec.timeline})`}
+                        secondary={`${rec.description} • Impact: ${rec.expected_impact} • Investment: $${rec.investment_required}`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Box>
+      )}
 
       {/* Data Source */}
       <Box mt={3}>

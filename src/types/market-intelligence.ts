@@ -217,10 +217,69 @@ export interface SubmarketTrends {
   months_of_supply: number | null;
 }
 
+export interface CompetitiveBenchmarkContext {
+  scope: 'city' | 'portfolio';
+  peer_count: number;
+  portfolio_averages: {
+    rent_psf: number | null;
+    occupancy_rate: number | null;
+    value: number | null;
+    quality_score: number | null;
+  };
+  property_metrics: {
+    rent_psf: number | null;
+    occupancy_rate: number | null;
+    value: number | null;
+    quality_score: number | null;
+  };
+  open_data_benchmarks?: {
+    acs_median_gross_rent?: number | null;
+    acs_median_household_income?: number | null;
+    acs_population?: number | null;
+    acs_unemployment_rate?: number | null;
+  };
+}
+
+export interface CompetitiveLLMNarrative {
+  positioning_summary: string;
+  differentiation_factors: Array<{
+    factor: string;
+    description: string;
+    competitive_advantage: boolean;
+  }>;
+  competitive_threats: Array<{
+    competitor: string;
+    threat_level: 'High' | 'Medium' | 'Low';
+    description: string;
+    market_share_risk: string;
+  }>;
+  pricing_power_analysis: {
+    current_position: string;
+    pricing_flexibility: 'High' | 'Medium' | 'Low';
+    rent_growth_potential: number;
+    rationale: string;
+  };
+  strategic_recommendations: Array<{
+    strategy: string;
+    description: string;
+    expected_impact: string;
+    investment_required: number;
+    timeline: string;
+  }>;
+}
+
 export interface CompetitiveAnalysisData {
   submarket_position: SubmarketPosition;
   competitive_threats: CompetitiveThreat[];
   submarket_trends: SubmarketTrends;
+  comparables?: Array<Record<string, any>>;
+  clusters?: Array<Record<string, any>>;
+  benchmark_context?: CompetitiveBenchmarkContext;
+  market_position?: string;
+  submarket?: string;
+  submarket_avg_rent_psf?: number | null;
+  submarket_avg_occupancy?: number | null;
+  llm_narrative?: CompetitiveLLMNarrative;
 }
 
 export type CompetitiveAnalysis = TaggedData<CompetitiveAnalysisData>;
@@ -288,6 +347,17 @@ export interface AIInsightsData {
   risk_assessment: string;
   opportunities: string[];
   market_trend_synthesis: string;
+  data_coverage?: {
+    coverage_ratio: number;
+    coverage_percent: number;
+    present: string[];
+    missing: string[];
+  };
+  input_hash?: string;
+  generated_at?: string;
+  generated_by?: string;
+  model_used?: string | null;
+  provider_used?: string | null;
 }
 
 export type AIInsights = TaggedData<AIInsightsData>;

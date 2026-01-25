@@ -25,7 +25,7 @@ import json
 import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 
 try:
     from pgvector.sqlalchemy import Vector  # type: ignore
@@ -42,6 +42,9 @@ except Exception:
 
 from app.models.ai_insights_embedding import AIInsightsEmbedding
 from app.models.financial_metrics import FinancialMetrics
+from app.models.financial_period import FinancialPeriod
+from app.models.market_intelligence import MarketIntelligence
+from app.models.property import Property
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,11 @@ class MarketDataService:
     BLS_API_BASE = "https://api.bls.gov/publicAPI/v2"
     HUD_API_BASE = "https://www.huduser.gov/hudapi/public"
     NOMINATIM_API_BASE = "https://nominatim.openstreetmap.org"
+    OVERPASS_API_URLS = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.nchc.org.tw/api/interpreter",
+    ]
 
     # Rate limiting (requests per minute)
     RATE_LIMITS = {
@@ -115,7 +123,8 @@ class MarketDataService:
         'fred': 120,
         'bls': 25,
         'hud': 60,
-        'nominatim': 1  # Very conservative for OSM
+        'nominatim': 1,  # Very conservative for OSM
+        'overpass': 30
     }
 
     # Request tracking for rate limiting
@@ -829,7 +838,8 @@ class MarketDataService:
     def fetch_location_intelligence(
         self,
         latitude: float,
-        longitude: float
+        longitude: float,
+        cache_bust: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Fetch comprehensive location intelligence data.
@@ -843,6 +853,7 @@ class MarketDataService:
         Args:
             latitude: Property latitude
             longitude: Property longitude
+            cache_bust: Optional cache-busting token to force refresh
 
         Returns:
             Tagged location intelligence data with lineage
@@ -852,13 +863,20 @@ class MarketDataService:
 
             # Fetch amenity counts from OpenStreetMap
             amenities = self._fetch_amenities_osm(latitude, longitude)
+            if amenities is None:
+                logger.warning("No amenities returned from Overpass; skipping location intelligence update")
+                return None
 
             # Drive-times (OSRM if configured)
             drive_times = self._compute_drive_times(latitude, longitude)
             isochrones = self._compute_isochrones(latitude, longitude)
 
-            # Calculate transit access
-            transit = self._calculate_transit_access(latitude, longitude)
+            # Calculate transit access (optional)
+            transit = self._calculate_transit_access(latitude, longitude) or {
+                'bus_stops_0_5mi': 0,
+                'subway_stations_1mi': 0,
+                'commute_time_downtown_min': 60
+            }
 
             # Calculate walkability/bikeability scores
             walk_score = self._calculate_walk_score(amenities)
@@ -901,7 +919,7 @@ class MarketDataService:
         self,
         latitude: float,
         longitude: float
-    ) -> Dict[str, int]:
+    ) -> Optional[Dict[str, int]]:
         """
         Fetch amenity counts from OpenStreetMap Overpass API.
 
@@ -913,9 +931,6 @@ class MarketDataService:
             Dictionary of amenity counts
         """
         try:
-            # Overpass API endpoint
-            overpass_url = "https://overpass-api.de/api/interpreter"
-
             # Search radii in meters
             radius_1mi = 1609  # 1 mile
             radius_2mi = 3218  # 2 miles
@@ -925,52 +940,51 @@ class MarketDataService:
             query = f"""
             [out:json][timeout:25];
             (
-              node["shop"="supermarket"](around:{radius_1mi},{latitude},{longitude});
-              node["amenity"="restaurant"](around:{radius_1mi},{latitude},{longitude});
-              node["amenity"="school"](around:{radius_2mi},{latitude},{longitude});
-              node["amenity"="hospital"](around:{radius_5mi},{latitude},{longitude});
-              node["leisure"="park"](around:{radius_1mi},{latitude},{longitude});
-              node["amenity"="bus_station"](around:805,{latitude},{longitude});
-              node["railway"="station"](around:{radius_1mi},{latitude},{longitude});
+              nwr["shop"="supermarket"](around:{radius_1mi},{latitude},{longitude});
+              nwr["amenity"="restaurant"](around:{radius_1mi},{latitude},{longitude});
+              nwr["amenity"="school"](around:{radius_2mi},{latitude},{longitude});
+              nwr["amenity"="hospital"](around:{radius_5mi},{latitude},{longitude});
+              nwr["leisure"="park"](around:{radius_1mi},{latitude},{longitude});
             );
-            out count;
+            out tags;
             """
 
-            self._wait_for_rate_limit('nominatim')  # Reuse Nominatim rate limit
-            self._record_request('nominatim')
+            self._wait_for_rate_limit('overpass')
+            self._record_request('overpass')
 
-            response = httpx.post(
-                overpass_url,
-                data={'data': query},
-                timeout=30.0
-            )
-            response.raise_for_status()
+            last_error = None
+            for overpass_url in self.OVERPASS_API_URLS:
+                try:
+                    response = httpx.post(
+                        overpass_url,
+                        data={'data': query},
+                        timeout=30.0
+                    )
+                    response.raise_for_status()
 
-            data = response.json()
+                    data = response.json()
 
-            # Parse counts from Overpass response
-            # Note: This is simplified - real implementation would parse element counts
-            amenities = {
-                'grocery_stores_1mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('shop') == 'supermarket']),
-                'restaurants_1mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('amenity') == 'restaurant']),
-                'schools_2mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('amenity') == 'school']),
-                'hospitals_5mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('amenity') == 'hospital']),
-                'parks_1mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('leisure') == 'park']),
-            }
+                    # Parse counts from Overpass response (tags-only payload)
+                    amenities = {
+                        'grocery_stores_1mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('shop') == 'supermarket']),
+                        'restaurants_1mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('amenity') == 'restaurant']),
+                        'schools_2mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('amenity') == 'school']),
+                        'hospitals_5mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('amenity') == 'hospital']),
+                        'parks_1mi': len([e for e in data.get('elements', []) if e.get('tags', {}).get('leisure') == 'park']),
+                    }
 
-            logger.info(f"Found amenities: {amenities}")
-            return amenities
+                    logger.info(f"Found amenities: {amenities}")
+                    return amenities
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"Overpass amenities request failed via {overpass_url}: {e}")
+
+            if last_error:
+                raise last_error
 
         except Exception as e:
             logger.warning(f"Error fetching amenities from OSM: {e}")
-            # Return default values if API fails
-            return {
-                'grocery_stores_1mi': 0,
-                'restaurants_1mi': 0,
-                'schools_2mi': 0,
-                'hospitals_5mi': 0,
-                'parks_1mi': 0
-            }
+            return None
 
     def _compute_drive_times(self, latitude: float, longitude: float) -> Dict[str, Any]:
         """
@@ -1037,7 +1051,7 @@ class MarketDataService:
         self,
         latitude: float,
         longitude: float
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Calculate transit access metrics.
 
@@ -1049,47 +1063,49 @@ class MarketDataService:
             Transit access metrics
         """
         try:
-            # Query OSM for transit stops nearby
-            overpass_url = "https://overpass-api.de/api/interpreter"
-
             query = f"""
             [out:json][timeout:15];
             (
-              node["highway"="bus_stop"](around:805,{latitude},{longitude});
-              node["railway"="station"](around:1609,{latitude},{longitude});
-              node["railway"="subway_entrance"](around:1609,{latitude},{longitude});
+              nwr["highway"="bus_stop"](around:805,{latitude},{longitude});
+              nwr["railway"="station"](around:1609,{latitude},{longitude});
+              nwr["railway"="subway_entrance"](around:1609,{latitude},{longitude});
             );
-            out count;
+            out tags;
             """
 
-            self._wait_for_rate_limit('nominatim')
-            self._record_request('nominatim')
+            self._wait_for_rate_limit('overpass')
+            self._record_request('overpass')
 
-            response = httpx.post(
-                overpass_url,
-                data={'data': query},
-                timeout=20.0
-            )
-            response.raise_for_status()
+            last_error = None
+            for overpass_url in self.OVERPASS_API_URLS:
+                try:
+                    response = httpx.post(
+                        overpass_url,
+                        data={'data': query},
+                        timeout=20.0
+                    )
+                    response.raise_for_status()
 
-            data = response.json()
-            elements = data.get('elements', [])
+                    data = response.json()
+                    elements = data.get('elements', [])
 
-            transit = {
-                'bus_stops_0_5mi': len([e for e in elements if e.get('tags', {}).get('highway') == 'bus_stop']),
-                'subway_stations_1mi': len([e for e in elements if e.get('tags', {}).get('railway') in ['station', 'subway_entrance']]),
-                'commute_time_downtown_min': 30  # Placeholder - would calculate actual distance/time
-            }
+                    transit = {
+                        'bus_stops_0_5mi': len([e for e in elements if e.get('tags', {}).get('highway') == 'bus_stop']),
+                        'subway_stations_1mi': len([e for e in elements if e.get('tags', {}).get('railway') in ['station', 'subway_entrance']]),
+                        'commute_time_downtown_min': 30  # Placeholder - would calculate actual distance/time
+                    }
 
-            return transit
+                    return transit
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"Overpass transit request failed via {overpass_url}: {e}")
+
+            if last_error:
+                raise last_error
 
         except Exception as e:
             logger.warning(f"Error calculating transit access: {e}")
-            return {
-                'bus_stops_0_5mi': 0,
-                'subway_stations_1mi': 0,
-                'commute_time_downtown_min': 60
-            }
+            return None
 
     def _calculate_walk_score(self, amenities: Dict[str, int]) -> int:
         """
@@ -1797,11 +1813,200 @@ class MarketDataService:
 
     # ========== COMPETITIVE ANALYSIS (Phase 5) ==========
 
+    def _safe_float(self, value: Any) -> Optional[float]:
+        """Safely convert numeric values (including Decimals) to float."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    def _percentile_rank(self, value: Optional[float], values: List[float]) -> Optional[float]:
+        """Return percentile rank (0-100) of value within values."""
+        if value is None or not values:
+            return None
+        if len(values) == 1:
+            return 50.0
+        ordered = sorted(values)
+        count = sum(1 for v in ordered if v <= value)
+        return round((count / len(ordered)) * 100.0, 1)
+
+    def _get_latest_metrics_map(self, property_ids: List[int]) -> Dict[int, FinancialMetrics]:
+        """Fetch latest *usable* financial metrics per property."""
+        if not property_ids:
+            return {}
+
+        rows = (
+            self.db.query(FinancialMetrics, FinancialPeriod.period_end_date)
+            .join(FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id)
+            .filter(FinancialMetrics.property_id.in_(property_ids))
+            .order_by(FinancialMetrics.property_id, FinancialPeriod.period_end_date.desc())
+            .all()
+        )
+
+        metrics_map: Dict[int, FinancialMetrics] = {}
+        for fm, _end_date in rows:
+            if fm.property_id in metrics_map:
+                continue
+            # Prefer rows with usable signals (rent/occupancy/NOI)
+            has_signal = any([
+                fm.avg_rent_per_sqft,
+                fm.total_monthly_rent,
+                fm.occupancy_rate,
+                fm.net_operating_income
+            ])
+            if has_signal:
+                metrics_map[fm.property_id] = fm
+
+        # Fallback to first row if no usable signals found
+        for fm, _end_date in rows:
+            if fm.property_id not in metrics_map:
+                metrics_map[fm.property_id] = fm
+
+        return metrics_map
+
+    def _compute_quality_score(self, mi: Optional[MarketIntelligence]) -> Optional[float]:
+        """Derive a simple quality score from location intelligence."""
+        if not mi or not mi.location_intelligence:
+            return None
+        data = mi.location_intelligence.get("data", {}) if isinstance(mi.location_intelligence, dict) else {}
+        walk_score = self._safe_float(data.get("walk_score"))
+        amenities = data.get("amenities") or {}
+        if walk_score is None and not amenities:
+            return None
+        amenity_score = 0
+        if isinstance(amenities, dict):
+            amenity_score = (
+                (amenities.get("grocery_stores_1mi") or 0)
+                + (amenities.get("restaurants_1mi") or 0) * 0.25
+                + (amenities.get("parks_1mi") or 0) * 0.5
+            )
+        walk_component = walk_score if walk_score is not None else 50
+        return round(min(100.0, walk_component * 0.7 + amenity_score), 1)
+
+    def _get_peer_scope(self, org_id: Optional[int], city: Optional[str], state: Optional[str]) -> Tuple[str, List[Property]]:
+        """Return benchmark scope and peer properties list."""
+        if not org_id:
+            return "portfolio", []
+        base_query = self.db.query(Property).filter(Property.organization_id == org_id, Property.status == 'active')
+        peers = []
+        if city and state:
+            peers = base_query.filter(Property.city == city, Property.state == state).all()
+        if len(peers) < 3:
+            peers = base_query.all()
+            return "portfolio", peers
+        return "city", peers
+
+    def _extract_rent_psf(self, fm: FinancialMetrics) -> Optional[float]:
+        """Extract rent per sqft when available, else fallback to rent per unit."""
+        if not fm:
+            return None
+        if fm.avg_rent_per_sqft and self._safe_float(fm.avg_rent_per_sqft) and float(fm.avg_rent_per_sqft) > 0:
+            return float(fm.avg_rent_per_sqft)
+        if fm.total_monthly_rent and fm.occupied_sqft and self._safe_float(fm.occupied_sqft):
+            denom = float(fm.occupied_sqft)
+            if denom > 0:
+                return float(fm.total_monthly_rent) / denom
+        if fm.total_monthly_rent and fm.occupied_units and self._safe_float(fm.occupied_units):
+            denom = float(fm.occupied_units)
+            if denom > 0:
+                return float(fm.total_monthly_rent) / denom
+        return None
+
+    def _compute_submarket_trends(self, property_ids: List[int]) -> Dict[str, Any]:
+        """Compute simple rent CAGR and occupancy trend from financial metrics."""
+        if not property_ids:
+            return {
+                'rent_growth_3yr_cagr': None,
+                'occupancy_trend': None,
+                'new_supply_pipeline_units': None,
+                'absorption_rate_units_per_mo': None,
+                'months_of_supply': None
+            }
+
+        rows = (
+            self.db.query(FinancialMetrics, FinancialPeriod.period_end_date)
+            .join(FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id)
+            .filter(FinancialMetrics.property_id.in_(property_ids))
+            .all()
+        )
+
+        if not rows:
+            return {
+                'rent_growth_3yr_cagr': None,
+                'occupancy_trend': None,
+                'new_supply_pipeline_units': None,
+                'absorption_rate_units_per_mo': None,
+                'months_of_supply': None
+            }
+
+        # Aggregate by period end date
+        rent_by_date: Dict[datetime, List[float]] = {}
+        occ_by_date: Dict[datetime, List[float]] = {}
+        for fm, end_date in rows:
+            if not end_date:
+                continue
+            rent = self._extract_rent_psf(fm)
+            occ = self._safe_float(fm.occupancy_rate)
+            if rent is not None:
+                rent_by_date.setdefault(end_date, []).append(rent)
+            if occ is not None:
+                occ_by_date.setdefault(end_date, []).append(occ)
+
+        if not rent_by_date and not occ_by_date:
+            return {
+                'rent_growth_3yr_cagr': None,
+                'occupancy_trend': None,
+                'new_supply_pipeline_units': None,
+                'absorption_rate_units_per_mo': None,
+                'months_of_supply': None
+            }
+
+        # Compute average series
+        rent_series = sorted(
+            [(dt, float(np.mean(vals))) for dt, vals in rent_by_date.items()],
+            key=lambda x: x[0]
+        )
+        occ_series = sorted(
+            [(dt, float(np.mean(vals))) for dt, vals in occ_by_date.items()],
+            key=lambda x: x[0]
+        )
+
+        rent_cagr = None
+        if len(rent_series) >= 2:
+            start_dt, start_val = rent_series[0]
+            end_dt, end_val = rent_series[-1]
+            if start_val and end_val and start_val > 0:
+                years = max(0.25, (end_dt - start_dt).days / 365.25)
+                rent_cagr = round(((end_val / start_val) ** (1 / years) - 1) * 100, 2)
+
+        occ_trend = None
+        if len(occ_series) >= 2:
+            start_val = occ_series[0][1]
+            end_val = occ_series[-1][1]
+            diff = end_val - start_val
+            if diff > 1.0:
+                occ_trend = "increasing"
+            elif diff < -1.0:
+                occ_trend = "decreasing"
+            else:
+                occ_trend = "stable"
+
+        return {
+            'rent_growth_3yr_cagr': rent_cagr,
+            'occupancy_trend': occ_trend,
+            'new_supply_pipeline_units': None,
+            'absorption_rate_units_per_mo': None,
+            'months_of_supply': None
+        }
+
     @cache_with_ttl(ttl_seconds=604800)  # 7 days
     def analyze_competitive_position(
         self,
         property_data: Dict[str, Any],
-        submarket_data: Optional[Dict[str, Any]] = None
+        submarket_data: Optional[Dict[str, Any]] = None,
+        cache_bust: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Analyze competitive position within submarket.
@@ -1814,31 +2019,119 @@ class MarketDataService:
             Competitive analysis with positioning, threats, and market share
         """
         try:
-            # Extract property metrics
-            property_rent = property_data.get('avg_rent', 1500)
-            property_occupancy = property_data.get('occupancy_rate', 95.0)
+            # Portfolio + submarket benchmarks (no external keys required)
+            org_id = property_data.get('organization_id')
+            city = property_data.get('city') or property_data.get('submarket')
+            state = property_data.get('state')
+            scope, peers = self._get_peer_scope(org_id, city, state)
+            peer_ids = [p.id for p in peers if p.id]
+            metrics_map = self._get_latest_metrics_map(peer_ids)
+            mi_map: Dict[int, MarketIntelligence] = {}
+            if peer_ids:
+                for mi in self.db.query(MarketIntelligence).filter(MarketIntelligence.property_id.in_(peer_ids)).all():
+                    mi_map[mi.property_id] = mi
 
+            peer_rent_psf: List[float] = []
+            peer_occupancy: List[float] = []
+            peer_value: List[float] = []
+            peer_quality: List[float] = []
 
-            # Generate submarket positioning
-            submarket_position = self._calculate_submarket_position(
-                property_rent,
-                property_occupancy,
-                property_data
-            )
+            for pid, fm in metrics_map.items():
+                rent_psf = self._extract_rent_psf(fm)
+                if rent_psf is not None:
+                    peer_rent_psf.append(float(rent_psf))
+                occ = self._safe_float(getattr(fm, 'occupancy_rate', None))
+                if occ is not None:
+                    peer_occupancy.append(occ)
+                val = (
+                    getattr(fm, 'net_property_value', None)
+                    or getattr(fm, 'gross_property_value', None)
+                    or getattr(fm, 'total_assets', None)
+                )
+                if val is not None:
+                    peer_value.append(float(val))
+                quality = self._compute_quality_score(mi_map.get(pid))
+                if quality is not None:
+                    peer_quality.append(float(quality))
+
+            # Property-specific metrics (prefer latest metrics)
+            prop_id = property_data.get('property_id')
+            prop_fm = metrics_map.get(prop_id) if prop_id else None
+            property_rent_psf = self._extract_rent_psf(prop_fm) if prop_fm else None
+            property_occ = self._safe_float(getattr(prop_fm, 'occupancy_rate', None)) if prop_fm else None
+            property_value = None
+            if prop_fm:
+                property_value = self._safe_float(
+                    getattr(prop_fm, 'net_property_value', None)
+                    or getattr(prop_fm, 'gross_property_value', None)
+                    or getattr(prop_fm, 'total_assets', None)
+                )
+            property_quality = self._compute_quality_score(mi_map.get(prop_id)) if prop_id else None
+
+            # Fallback to provided property_data
+            if property_rent_psf is None:
+                property_rent_psf = self._safe_float(property_data.get('avg_rent_psf')) or self._safe_float(property_data.get('avg_rent'))
+            if property_occ is None:
+                property_occ = self._safe_float(property_data.get('occupancy_rate'))
+
+            # Generate submarket positioning based on portfolio benchmarks
+            submarket_position = {
+                'rent_percentile': self._percentile_rank(property_rent_psf, peer_rent_psf),
+                'occupancy_percentile': self._percentile_rank(property_occ, peer_occupancy),
+                'quality_percentile': self._percentile_rank(property_quality, peer_quality),
+                'value_percentile': self._percentile_rank(property_value, peer_value)
+            }
 
             # Identify competitive threats with OSM comps + simple clustering
             comps, clusters = self._fetch_and_cluster_comps(property_data)
             competitive_threats = self._identify_competitive_threats(property_data, comps)
 
-            # Calculate market share
-            submarket_trends = self._analyze_submarket_trends(property_data)
+            # Calculate trends from portfolio/submarket data
+            submarket_trends = self._compute_submarket_trends(peer_ids)
+
+            # Benchmark context (portfolio + open-data)
+            open_data = property_data.get('open_data') or {}
+            benchmark_context = {
+                'scope': scope,
+                'peer_count': len(peer_ids),
+                'portfolio_averages': {
+                    'rent_psf': round(float(np.mean(peer_rent_psf)), 2) if peer_rent_psf else None,
+                    'occupancy_rate': round(float(np.mean(peer_occupancy)), 2) if peer_occupancy else None,
+                    'value': round(float(np.mean(peer_value)), 2) if peer_value else None,
+                    'quality_score': round(float(np.mean(peer_quality)), 2) if peer_quality else None
+                },
+                'property_metrics': {
+                    'rent_psf': round(float(property_rent_psf), 4) if property_rent_psf is not None else None,
+                    'occupancy_rate': round(float(property_occ), 2) if property_occ is not None else None,
+                    'value': round(float(property_value), 2) if property_value is not None else None,
+                    'quality_score': round(float(property_quality), 1) if property_quality is not None else None
+                },
+                'open_data_benchmarks': open_data
+            }
+
+            # Basic market position label for narrative
+            market_position = "Unknown"
+            rent_pct = submarket_position.get('rent_percentile')
+            if rent_pct is not None:
+                if rent_pct >= 70:
+                    market_position = "Premium"
+                elif rent_pct >= 40:
+                    market_position = "Mid-tier"
+                else:
+                    market_position = "Value"
 
             competitive_analysis = {
                 'submarket_position': submarket_position,
                 'competitive_threats': competitive_threats,
                 'submarket_trends': submarket_trends,
                 'comparables': comps,
-                'clusters': clusters
+                'clusters': clusters,
+                'benchmark_context': benchmark_context,
+                'submarket': f"{city}, {state}" if city and state else (city or "Unknown"),
+                'market_position': market_position,
+                'comparable_properties_count': len(comps),
+                'submarket_avg_rent_psf': benchmark_context['portfolio_averages'].get('rent_psf'),
+                'submarket_avg_occupancy': benchmark_context['portfolio_averages'].get('occupancy_rate')
             }
 
             self.log_data_pull('competitive_model', 'competitive_analysis', 'success', records_fetched=1)
@@ -1924,8 +2217,8 @@ class MarketDataService:
                 clusters.append({
                     'band_mi': band,
                     'count': len(members),
-                    'avg_rent_psf': np.mean([m.get('rent_psf', 0) for m in members]) if members else 0,
-                    'avg_occupancy': np.mean([m.get('occupancy', 0) for m in members]) if members else 0
+                    'avg_rent_psf': np.mean([(m.get('rent_psf') or 0) for m in members]) if members else 0,
+                    'avg_occupancy': np.mean([(m.get('occupancy') or 0) for m in members]) if members else 0
                 })
         return comps, clusters
 
@@ -1940,42 +2233,59 @@ class MarketDataService:
             if age < 3600:  # 1 hour cache
                 return cached['data']
 
-        overpass_url = "https://overpass-api.de/api/interpreter"
         radius_m = 5000
         query = f"""
         [out:json][timeout:25];
         (
-          node["building"="apartments"](around:{radius_m},{latitude},{longitude});
-          node["building"="retail"](around:{radius_m},{latitude},{longitude});
-          node["amenity"="coworking_space"](around:{radius_m},{latitude},{longitude});
+          nwr["building"="apartments"](around:{radius_m},{latitude},{longitude});
+          nwr["building"="retail"](around:{radius_m},{latitude},{longitude});
+          nwr["building"="commercial"](around:{radius_m},{latitude},{longitude});
+          nwr["building"="office"](around:{radius_m},{latitude},{longitude});
+          nwr["amenity"="coworking_space"](around:{radius_m},{latitude},{longitude});
         );
-        out center;
+        out tags center;
         """
-        self._wait_for_rate_limit('nominatim')
-        self._record_request('nominatim')
-        resp = requests.post(overpass_url, data={'data': query}, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+
+        self._wait_for_rate_limit('overpass')
+        self._record_request('overpass')
+        last_error = None
         comps = []
-        for el in data.get('elements', []):
-            comp_lat = el.get('lat') or (el.get('center') or {}).get('lat')
-            comp_lon = el.get('lon') or (el.get('center') or {}).get('lon')
-            if comp_lat is None or comp_lon is None:
-                continue
-            dist_mi = self._haversine_distance(latitude, longitude, comp_lat, comp_lon)
-            comps.append({
-                'name': el.get('tags', {}).get('name', 'Unknown'),
-                'type': el.get('tags', {}).get('building') or el.get('tags', {}).get('amenity'),
-                'distance_mi': round(dist_mi, 2),
-                'occupancy': None,
-                'rent_psf': None
-            })
+        for overpass_url in self.OVERPASS_API_URLS:
+            try:
+                resp = httpx.post(overpass_url, data={'data': query}, timeout=30.0)
+                resp.raise_for_status()
+                data = resp.json()
+                for el in data.get('elements', []):
+                    comp_lat = el.get('lat') or (el.get('center') or {}).get('lat')
+                    comp_lon = el.get('lon') or (el.get('center') or {}).get('lon')
+                    if comp_lat is None or comp_lon is None:
+                        continue
+                    dist_mi = self._haversine_distance(latitude, longitude, comp_lat, comp_lon)
+                    comps.append({
+                        'name': el.get('tags', {}).get('name', 'Unknown'),
+                        'type': el.get('tags', {}).get('building') or el.get('tags', {}).get('amenity'),
+                        'distance_mi': round(dist_mi, 2),
+                        'occupancy': None,
+                        'rent_psf': None
+                    })
+                break
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Overpass comparables request failed via {overpass_url}: {e}")
+
+        if last_error and not comps:
+            raise last_error
 
         _market_data_cache[cache_key] = {'data': comps, 'timestamp': time.time()}
         return comps
 
     def _haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """Return distance in miles between two lat/lon points."""
+        # Ensure numeric inputs are floats (DB decimals can leak in)
+        lat1 = float(lat1)
+        lon1 = float(lon1)
+        lat2 = float(lat2)
+        lon2 = float(lon2)
         R = 3958.8  # Earth radius in miles
         phi1, phi2 = np.radians(lat1), np.radians(lat2)
         dphi = np.radians(lat2 - lat1)
@@ -2000,6 +2310,60 @@ class MarketDataService:
 
     # ========== AI INSIGHTS (Phase 6) ==========
 
+    def _extract_tagged_data(self, item: Any) -> Dict[str, Any]:
+        """Extract nested data payloads from tagged market intelligence structures."""
+        if item is None:
+            return {}
+        if isinstance(item, dict) and "data" in item:
+            return item.get("data", {}) or {}
+        if isinstance(item, dict):
+            return item
+        return {}
+
+    def _compute_data_coverage(self, market_intelligence: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute data coverage across market intelligence categories."""
+        categories = [
+            "demographics",
+            "economic_indicators",
+            "location_intelligence",
+            "esg_assessment",
+            "forecasts",
+            "competitive_analysis",
+        ]
+        present = []
+        missing = []
+        for key in categories:
+            data = self._extract_tagged_data(market_intelligence.get(key))
+            if data:
+                present.append(key)
+            else:
+                missing.append(key)
+        coverage_ratio = round(len(present) / len(categories), 2) if categories else 0.0
+        return {
+            "coverage_ratio": coverage_ratio,
+            "coverage_percent": int(coverage_ratio * 100),
+            "present": present,
+            "missing": missing,
+        }
+
+    def _hash_ai_payload(self, property_data: Dict[str, Any], market_intelligence: Dict[str, Any]) -> str:
+        """Create a stable hash for AI inputs (for caching/traceability)."""
+        payload = {
+            "property": property_data,
+            "market_intelligence": {
+                key: self._extract_tagged_data(market_intelligence.get(key))
+                for key in [
+                    "demographics",
+                    "economic_indicators",
+                    "location_intelligence",
+                    "esg_assessment",
+                    "forecasts",
+                    "competitive_analysis",
+                ]
+            },
+        }
+        return hashlib.md5(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+
     async def generate_ai_insights(
         self,
         property_data: Dict[str, Any],
@@ -2016,6 +2380,10 @@ class MarketDataService:
             SWOT analysis, investment recommendation, and narrative insights
         """
         try:
+            # Prepare coverage metadata
+            coverage = self._compute_data_coverage(market_intelligence)
+            input_hash = self._hash_ai_payload(property_data, market_intelligence)
+
             # Try using the new AI service first (with LLMs)
             try:
                 from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
@@ -2027,6 +2395,17 @@ class MarketDataService:
                 ai_insights = await ai_service.generate_ai_insights(property_data, market_intelligence)
 
                 if ai_insights:
+                    ai_insights["data_coverage"] = coverage
+                    ai_insights["input_hash"] = input_hash
+                    ai_insights["generated_at"] = datetime.utcnow().isoformat()
+
+                    # Clamp confidence to data coverage
+                    confidence = ai_insights.get("confidence") or ai_insights.get("investment_recommendation", {}).get("confidence_score")
+                    if confidence is not None:
+                        ai_insights["confidence"] = min(float(confidence), coverage.get("coverage_percent", 100))
+                        if "investment_recommendation" in ai_insights:
+                            ai_insights["investment_recommendation"]["confidence_score"] = ai_insights["confidence"]
+
                     self.log_data_pull('ai_insights', 'ai_insights', 'success', records_fetched=1)
                     return self.tag_data_source(
                         ai_insights,
@@ -2043,11 +2422,11 @@ class MarketDataService:
             logger.info("Using rule-based fallback for insights generation")
 
             # Extract key data points
-            demographics = market_intelligence.get('demographics', {})
-            economic = market_intelligence.get('economic_indicators', {})
-            location = market_intelligence.get('location_intelligence', {})
-            esg = market_intelligence.get('esg_assessment', {})
-            forecasts = market_intelligence.get('forecasts', {})
+            demographics = self._extract_tagged_data(market_intelligence.get('demographics', {}))
+            economic = self._extract_tagged_data(market_intelligence.get('economic_indicators', {}))
+            location = self._extract_tagged_data(market_intelligence.get('location_intelligence', {}))
+            esg = self._extract_tagged_data(market_intelligence.get('esg_assessment', {}))
+            forecasts = self._extract_tagged_data(market_intelligence.get('forecasts', {}))
 
             # Generate SWOT analysis
             swot = self._generate_swot_analysis(
@@ -2082,7 +2461,10 @@ class MarketDataService:
                 'risk_assessment': risk_assessment,
                 'opportunities': opportunities,
                 'market_trend_synthesis': self._synthesize_market_trends(economic, demographics),
-                'generated_by': 'fallback_rules'
+                'generated_by': 'fallback_rules',
+                'data_coverage': coverage,
+                'input_hash': input_hash,
+                'generated_at': datetime.utcnow().isoformat(),
             }
 
             self.log_data_pull('ai_insights', 'ai_insights', 'success', records_fetched=1)
@@ -2091,7 +2473,7 @@ class MarketDataService:
                 ai_insights,
                 source='rule_based_fallback',
                 vintage='2025-01',
-                confidence=60
+                confidence=min(60, coverage.get("coverage_percent", 60))
             )
 
         except Exception as e:
@@ -2215,43 +2597,49 @@ class MarketDataService:
         forecasts: Dict[str, Any]
     ) -> Dict[str, List[str]]:
         """Generate SWOT analysis."""
+        demographics_data = self._extract_tagged_data(demographics)
+        economic_data = self._extract_tagged_data(economic)
+        location_data = self._extract_tagged_data(location)
+        esg_data = self._extract_tagged_data(esg)
+        forecasts_data = self._extract_tagged_data(forecasts)
+
         strengths = []
         weaknesses = []
         opportunities = []
         threats = []
 
         # Analyze location intelligence
-        if location and 'data' in location:
-            walk_score = location['data'].get('walk_score', 0)
+        if location_data:
+            walk_score = location_data.get('walk_score', 0)
             if walk_score >= 70:
                 strengths.append(f"Excellent walkability (Walk Score: {walk_score})")
             elif walk_score < 40:
                 weaknesses.append(f"Limited walkability (Walk Score: {walk_score})")
 
         # Analyze ESG
-        if esg and 'data' in esg:
-            esg_grade = esg['data'].get('esg_grade', 'C')
-            esg_score = esg['data'].get('composite_esg_score', 60)
+        if esg_data:
+            esg_grade = esg_data.get('esg_grade', 'C')
+            esg_score = esg_data.get('composite_esg_score', 60)
             if esg_score >= 75:
                 strengths.append(f"Strong ESG profile ({esg_grade} rating)")
             elif esg_score < 55:
                 weaknesses.append(f"ESG concerns require attention ({esg_grade} rating)")
 
         # Analyze forecasts
-        if forecasts and 'data' in forecasts:
-            rent_forecast = forecasts['data'].get('rent_forecast_12mo', {})
+        if forecasts_data:
+            rent_forecast = forecasts_data.get('rent_forecast_12mo', {})
             if rent_forecast.get('change_pct', 0) > 4:
                 opportunities.append("Above-average rent growth projected")
 
         # Analyze demographics
-        if demographics and 'data' in demographics:
-            median_income = demographics['data'].get('median_household_income', 0)
+        if demographics_data:
+            median_income = demographics_data.get('median_household_income', 0)
             if median_income > 75000:
                 strengths.append(f"High-income market (${median_income:,} median)")
 
         # Analyze economic indicators
-        if economic and 'data' in economic:
-            unemployment = economic['data'].get('unemployment_rate', {})
+        if economic_data:
+            unemployment = economic_data.get('unemployment_rate', {})
             if unemployment.get('value', 5) > 6:
                 threats.append("Elevated unemployment in market area")
 
@@ -2275,6 +2663,7 @@ class MarketDataService:
         forecasts: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate investment recommendation."""
+        forecasts_data = self._extract_tagged_data(forecasts)
         # Simplified scoring based on SWOT and forecasts
         score = 0
         score += len(swot.get('strengths', [])) * 10
@@ -2283,8 +2672,8 @@ class MarketDataService:
         score -= len(swot.get('threats', [])) * 9
 
         # Adjust for forecasts
-        if forecasts and 'data' in forecasts:
-            rent_growth = forecasts['data'].get('rent_forecast_12mo', {}).get('change_pct', 0)
+        if forecasts_data:
+            rent_growth = forecasts_data.get('rent_forecast_12mo', {}).get('change_pct', 0)
             if rent_growth > 3:
                 score += 15
 
@@ -2315,15 +2704,17 @@ class MarketDataService:
         economic: Dict[str, Any]
     ) -> str:
         """Generate risk assessment narrative."""
+        esg_data = self._extract_tagged_data(esg)
+        economic_data = self._extract_tagged_data(economic)
         risks = []
 
-        if esg and 'data' in esg:
-            env_score = esg['data'].get('environmental', {}).get('composite_score', 70)
+        if esg_data:
+            env_score = esg_data.get('environmental', {}).get('composite_score', 70)
             if env_score < 60:
                 risks.append("environmental risk factors")
 
-        if economic and 'data' in economic:
-            recession_prob = economic['data'].get('recession_probability', {}).get('value', 0)
+        if economic_data:
+            recession_prob = economic_data.get('recession_probability', {}).get('value', 0)
             if recession_prob and recession_prob > 40:
                 risks.append("elevated recession risk")
 
@@ -2338,20 +2729,23 @@ class MarketDataService:
         forecasts: Dict[str, Any]
     ) -> List[str]:
         """Identify value-creation opportunities."""
+        demographics_data = self._extract_tagged_data(demographics)
+        location_data = self._extract_tagged_data(location)
+        forecasts_data = self._extract_tagged_data(forecasts)
         opportunities = []
 
-        if location and 'data' in location:
-            amenities = location['data'].get('amenities', {})
+        if location_data:
+            amenities = location_data.get('amenities', {})
             if amenities.get('restaurants_1mi', 0) > 20:
                 opportunities.append("Strong retail environment supports amenity upgrades")
 
-        if demographics and 'data' in demographics:
-            pop = demographics['data'].get('population', 0)
+        if demographics_data:
+            pop = demographics_data.get('population', 0)
             if pop > 50000:
                 opportunities.append("Dense population supports occupancy stability")
 
-        if forecasts and 'data' in forecasts:
-            rent_growth = forecasts['data'].get('rent_forecast_12mo', {}).get('change_pct', 0)
+        if forecasts_data:
+            rent_growth = forecasts_data.get('rent_forecast_12mo', {}).get('change_pct', 0)
             if rent_growth > 3.5:
                 opportunities.append("Market rent growth enables value-add renovations")
 
@@ -2363,15 +2757,17 @@ class MarketDataService:
         demographics: Dict[str, Any]
     ) -> str:
         """Synthesize market trend narrative."""
+        economic_data = self._extract_tagged_data(economic)
+        demographics_data = self._extract_tagged_data(demographics)
         trends = []
 
-        if economic and 'data' in economic:
-            gdp_growth = economic['data'].get('gdp_growth', {}).get('value', 0)
+        if economic_data:
+            gdp_growth = economic_data.get('gdp_growth', {}).get('value', 0)
             if gdp_growth and gdp_growth > 2:
                 trends.append("expanding economic conditions")
 
-        if demographics and 'data' in demographics:
-            college_pct = demographics['data'].get('college_educated_pct', 0)
+        if demographics_data:
+            college_pct = demographics_data.get('college_educated_pct', 0)
             if college_pct > 35:
                 trends.append("highly educated workforce")
 

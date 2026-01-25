@@ -10,9 +10,12 @@ Author: REIMS Development Team
 Date: 2025-01-09
 """
 
+import asyncio
 import json
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 from app.services.local_llm_service import (
     get_local_llm_service,
     LLMTaskType
@@ -29,7 +32,60 @@ class MarketIntelligenceAIService:
 
     def __init__(self):
         self.llm_service = get_local_llm_service()
+        self.llm_timeout_sec = self._get_llm_timeout()
+        self.prefer_fast = self._get_prefer_fast()
         logger.info("Initialized MarketIntelligenceAIService with local LLM")
+
+    def _get_llm_timeout(self) -> int:
+        raw = os.getenv("AI_INSIGHTS_LLM_TIMEOUT_SEC") or os.getenv("LLM_TIMEOUT_SEC")
+        if raw:
+            try:
+                return max(10, int(raw))
+            except ValueError:
+                logger.warning(f"Invalid LLM timeout value: {raw}")
+        return 90
+
+    def _get_prefer_fast(self) -> bool:
+        raw = os.getenv("AI_INSIGHTS_PREFER_FAST", "")
+        return raw.strip().lower() in {"1", "true", "yes", "y"}
+
+    def _get_max_tokens(self, default_tokens: int) -> int:
+        raw = os.getenv("AI_INSIGHTS_MAX_TOKENS")
+        if raw:
+            try:
+                return max(256, int(raw))
+            except ValueError:
+                logger.warning(f"Invalid AI insights max token override: {raw}")
+        return default_tokens
+
+    async def _safe_generate_json(
+        self,
+        *,
+        label: str,
+        prompt: str,
+        task_type: LLMTaskType,
+        temperature: float,
+        max_tokens: int
+    ) -> Optional[Dict[str, Any]]:
+        """Safely generate JSON from LLM with timeout + error handling."""
+        timeout = self.llm_timeout_sec
+        try:
+            return await asyncio.wait_for(
+                self.llm_service.generate_json(
+                    prompt=prompt,
+                    task_type=task_type,
+                    system_prompt=prompts.SYSTEM_PROMPT,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    prefer_fast=self.prefer_fast,
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"{label} timed out after {timeout}s")
+        except Exception as e:
+            logger.error(f"{label} failed: {e}")
+        return None
 
     def _record_llm_usage(self, models_used: set[str], providers_used: set[str]) -> None:
         model = getattr(self.llm_service, "last_model_used", None)
@@ -47,6 +103,42 @@ class MarketIntelligenceAIService:
                 return f"{title}: {description}"
             return title or description or json.dumps(item)
         return str(item)
+
+    def _extract_data_item(self, item: Any) -> Dict[str, Any]:
+        """Extract nested data payloads from tagged market intelligence structures."""
+        if item is None:
+            return {}
+        if isinstance(item, dict) and "data" in item:
+            return item.get("data", {}) or {}
+        if isinstance(item, dict):
+            return item
+        return {}
+
+    def _compute_data_coverage(self, market_intelligence: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute data coverage for AI insights."""
+        categories = [
+            "demographics",
+            "economic_indicators",
+            "location_intelligence",
+            "esg_assessment",
+            "forecasts",
+            "competitive_analysis",
+        ]
+        present: List[str] = []
+        missing: List[str] = []
+        for key in categories:
+            data = self._extract_data_item(market_intelligence.get(key))
+            if data:
+                present.append(key)
+            else:
+                missing.append(key)
+        coverage_ratio = round(len(present) / len(categories), 2) if categories else 0.0
+        return {
+            "coverage_ratio": coverage_ratio,
+            "coverage_percent": int(coverage_ratio * 100),
+            "present": present,
+            "missing": missing,
+        }
 
     def _normalize_swot_analysis(self, swot_analysis: Dict[str, Any]) -> Dict[str, list]:
         normalized = {}
@@ -73,10 +165,15 @@ class MarketIntelligenceAIService:
             Complete AI insights including SWOT, recommendations, risks
         """
         logger.info(f"Generating AI insights for property {property_data.get('property_code')}")
+        if not use_local_llm:
+            logger.info("use_local_llm disabled; LLM provider config will be honored.")
 
         try:
             models_used: set[str] = set()
             providers_used: set[str] = set()
+            llm_sections_used: set[str] = set()
+            fallback_sections_used: set[str] = set()
+            coverage = self._compute_data_coverage(market_intelligence)
 
             # Prepare market data for prompts
             market_data = {
@@ -84,11 +181,31 @@ class MarketIntelligenceAIService:
                 **market_intelligence
             }
 
+            fallback_insights = self._generate_fallback_insights(property_data, market_intelligence)
+            fallback_swot = fallback_insights.get("swot_analysis", {})
+            fallback_recommendation = fallback_insights.get("investment_recommendation", {})
+            fallback_risk = {
+                "narrative": fallback_insights.get("risk_assessment"),
+                "overall_risk_score": fallback_insights.get("overall_risk_score"),
+                "risk_level": fallback_insights.get("risk_level"),
+                "risk_categories": fallback_insights.get("risk_categories", []),
+            }
+            fallback_trends = {
+                "executive_summary": fallback_insights.get("market_trend_synthesis"),
+                "demand_drivers": fallback_insights.get("demand_drivers", []),
+                "supply_constraints": fallback_insights.get("supply_constraints", []),
+            }
+
             # Step 1: Generate SWOT Analysis
             logger.info("Generating SWOT analysis with LLM...")
-            swot_analysis = await self._generate_swot_with_llm(market_data)
-            swot_analysis = self._normalize_swot_analysis(swot_analysis)
-            self._record_llm_usage(models_used, providers_used)
+            swot_candidate = await self._generate_swot_with_llm(market_data)
+            if swot_candidate:
+                swot_analysis = self._normalize_swot_analysis(swot_candidate)
+                self._record_llm_usage(models_used, providers_used)
+                llm_sections_used.add("swot")
+            else:
+                swot_analysis = fallback_swot
+                fallback_sections_used.add("swot")
 
             # Step 2: Generate Investment Recommendation
             logger.info("Generating investment recommendation...")
@@ -96,7 +213,13 @@ class MarketIntelligenceAIService:
                 market_data,
                 swot_analysis
             )
-            self._record_llm_usage(models_used, providers_used)
+            if recommendation:
+                self._record_llm_usage(models_used, providers_used)
+                llm_sections_used.add("recommendation")
+                recommendation_payload = recommendation
+            else:
+                fallback_sections_used.add("recommendation")
+                recommendation_payload = fallback_recommendation or {}
 
             # Step 3: Generate Risk Assessment
             logger.info("Generating risk assessment...")
@@ -104,7 +227,12 @@ class MarketIntelligenceAIService:
                 market_data,
                 swot_analysis
             )
-            self._record_llm_usage(models_used, providers_used)
+            if risk_assessment:
+                self._record_llm_usage(models_used, providers_used)
+                llm_sections_used.add("risk")
+            else:
+                fallback_sections_used.add("risk")
+                risk_assessment = fallback_risk
 
             # Step 4: Generate Competitive Analysis (if data available)
             competitive_analysis = None
@@ -114,15 +242,23 @@ class MarketIntelligenceAIService:
                     market_data,
                     property_data
                 )
-                self._record_llm_usage(models_used, providers_used)
+                if competitive_analysis:
+                    self._record_llm_usage(models_used, providers_used)
+                    llm_sections_used.add("competitive")
+                else:
+                    fallback_sections_used.add("competitive")
 
             # Step 5: Generate Market Trends Synthesis
             logger.info("Generating market trends synthesis...")
             market_trends = await self._generate_market_trends_with_llm(market_data)
-            self._record_llm_usage(models_used, providers_used)
+            if market_trends:
+                self._record_llm_usage(models_used, providers_used)
+                llm_sections_used.add("trends")
+            else:
+                fallback_sections_used.add("trends")
+                market_trends = fallback_trends
 
             # Combine all insights
-            recommendation_payload = recommendation or {}
             rec_action = recommendation_payload.get("recommendation") or "REVIEW"
             key_factors = recommendation_payload.get("key_factors")
             if not key_factors:
@@ -136,6 +272,13 @@ class MarketIntelligenceAIService:
                     key_factors = (threats + weaknesses)[:4]
                 else:
                     key_factors = (strengths + weaknesses)[:4]
+
+            if llm_sections_used and fallback_sections_used:
+                generated_by = "hybrid_llm_fallback"
+            elif llm_sections_used:
+                generated_by = "local_llm"
+            else:
+                generated_by = "fallback_rules"
 
             ai_insights = {
                 "swot_analysis": swot_analysis,
@@ -165,9 +308,11 @@ class MarketIntelligenceAIService:
                 "demand_drivers": market_trends.get("demand_drivers", []),
                 "supply_constraints": market_trends.get("supply_constraints", []),
                 "competitive_intelligence": competitive_analysis,
-                "generated_by": "local_llm",
-                "model_used": ", ".join(sorted(models_used)) if models_used else None,
-                "provider_used": ", ".join(sorted(providers_used)) if providers_used else None
+                "generated_by": generated_by,
+                "model_used": ", ".join(sorted(models_used)) if llm_sections_used else None,
+                "provider_used": ", ".join(sorted(providers_used)) if llm_sections_used else None,
+                "data_coverage": coverage,
+                "generated_at": datetime.utcnow().isoformat()
             }
 
             logger.info("AI insights generation complete")
@@ -182,134 +327,99 @@ class MarketIntelligenceAIService:
     async def _generate_swot_with_llm(
         self,
         market_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """Generate SWOT analysis using LLM"""
-        try:
-            # Generate prompt
-            prompt = prompts.generate_swot_prompt(market_data)
+        # Generate prompt
+        prompt = prompts.generate_swot_prompt(market_data)
 
-            # Call LLM
-            swot_json = await self.llm_service.generate_json(
-                prompt=prompt,
-                task_type=LLMTaskType.ANALYSIS,
-                system_prompt=prompts.SYSTEM_PROMPT,
-                temperature=0.3,
-                max_tokens=3000
-            )
-
-            return swot_json
-
-        except Exception as e:
-            logger.error(f"SWOT generation failed: {e}")
-            raise
+        # Call LLM
+        return await self._safe_generate_json(
+            label="SWOT generation",
+            prompt=prompt,
+            task_type=LLMTaskType.ANALYSIS,
+            temperature=0.3,
+            max_tokens=self._get_max_tokens(1800),
+        )
 
     async def _generate_recommendation_with_llm(
         self,
         market_data: Dict[str, Any],
         swot_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """Generate investment recommendation using LLM"""
-        try:
-            # Generate prompt
-            prompt = prompts.generate_investment_recommendation_prompt(
-                market_data,
-                swot_analysis
-            )
+        # Generate prompt
+        prompt = prompts.generate_investment_recommendation_prompt(
+            market_data,
+            swot_analysis
+        )
 
-            # Call LLM
-            recommendation_json = await self.llm_service.generate_json(
-                prompt=prompt,
-                task_type=LLMTaskType.NARRATIVE,
-                system_prompt=prompts.SYSTEM_PROMPT,
-                temperature=0.4,
-                max_tokens=4000
-            )
-
-            return recommendation_json
-
-        except Exception as e:
-            logger.error(f"Recommendation generation failed: {e}")
-            raise
+        # Call LLM
+        return await self._safe_generate_json(
+            label="Recommendation generation",
+            prompt=prompt,
+            task_type=LLMTaskType.NARRATIVE,
+            temperature=0.4,
+            max_tokens=self._get_max_tokens(2000),
+        )
 
     async def _generate_risk_assessment_with_llm(
         self,
         market_data: Dict[str, Any],
         swot_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """Generate risk assessment using LLM"""
-        try:
-            # Generate prompt
-            prompt = prompts.generate_risk_assessment_prompt(
-                market_data,
-                swot_analysis
-            )
+        # Generate prompt
+        prompt = prompts.generate_risk_assessment_prompt(
+            market_data,
+            swot_analysis
+        )
 
-            # Call LLM
-            risk_json = await self.llm_service.generate_json(
-                prompt=prompt,
-                task_type=LLMTaskType.ANALYSIS,
-                system_prompt=prompts.SYSTEM_PROMPT,
-                temperature=0.3,
-                max_tokens=2500
-            )
-
-            return risk_json
-
-        except Exception as e:
-            logger.error(f"Risk assessment generation failed: {e}")
-            raise
+        # Call LLM
+        return await self._safe_generate_json(
+            label="Risk assessment generation",
+            prompt=prompt,
+            task_type=LLMTaskType.ANALYSIS,
+            temperature=0.3,
+            max_tokens=self._get_max_tokens(1600),
+        )
 
     async def _generate_competitive_analysis_with_llm(
         self,
         market_data: Dict[str, Any],
         property_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """Generate competitive analysis using LLM"""
-        try:
-            # Generate prompt
-            prompt = prompts.generate_competitive_analysis_prompt(
-                market_data,
-                property_data
-            )
+        # Generate prompt
+        prompt = prompts.generate_competitive_analysis_prompt(
+            market_data,
+            property_data
+        )
 
-            # Call LLM
-            competitive_json = await self.llm_service.generate_json(
-                prompt=prompt,
-                task_type=LLMTaskType.ANALYSIS,
-                system_prompt=prompts.SYSTEM_PROMPT,
-                temperature=0.3,
-                max_tokens=2500
-            )
-
-            return competitive_json
-
-        except Exception as e:
-            logger.error(f"Competitive analysis generation failed: {e}")
-            return None
+        # Call LLM
+        return await self._safe_generate_json(
+            label="Competitive analysis generation",
+            prompt=prompt,
+            task_type=LLMTaskType.ANALYSIS,
+            temperature=0.3,
+            max_tokens=self._get_max_tokens(1600),
+        )
 
     async def _generate_market_trends_with_llm(
         self,
         market_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """Generate market trends synthesis using LLM"""
-        try:
-            # Generate prompt
-            prompt = prompts.generate_market_trends_prompt(market_data)
+        # Generate prompt
+        prompt = prompts.generate_market_trends_prompt(market_data)
 
-            # Call LLM
-            trends_json = await self.llm_service.generate_json(
-                prompt=prompt,
-                task_type=LLMTaskType.ANALYSIS,
-                system_prompt=prompts.SYSTEM_PROMPT,
-                temperature=0.3,
-                max_tokens=2500
-            )
-
-            return trends_json
-
-        except Exception as e:
-            logger.error(f"Market trends generation failed: {e}")
-            raise
+        # Call LLM
+        return await self._safe_generate_json(
+            label="Market trends generation",
+            prompt=prompt,
+            task_type=LLMTaskType.ANALYSIS,
+            temperature=0.3,
+            max_tokens=self._get_max_tokens(1400),
+        )
 
     async def generate_swot_streaming(
         self,
@@ -437,28 +547,57 @@ Be specific about what you observe in the image."""
         """
         logger.warning("Using fallback rule-based insights (LLM unavailable)")
 
-        location = market_intelligence.get("location_intelligence", {})
-        esg = market_intelligence.get("esg_assessment", {})
-        forecasts = market_intelligence.get("forecasts", {})
+        location = self._extract_data_item(market_intelligence.get("location_intelligence"))
+        esg = self._extract_data_item(market_intelligence.get("esg_assessment"))
+        forecasts = self._extract_data_item(market_intelligence.get("forecasts"))
+        economic = self._extract_data_item(market_intelligence.get("economic_indicators"))
+        demographics = self._extract_data_item(market_intelligence.get("demographics"))
 
         # Simple SWOT
         strengths = []
-        if location.get("walk_score", 0) >= 70:
+        amenities = location.get("amenities") or {}
+        walk_score = location.get("walk_score", 0)
+        if isinstance(walk_score, dict):
+            walk_score = walk_score.get("value") or 0
+        if (walk_score or 0) >= 70:
             strengths.append({"title": "High Walkability", "description": "Excellent pedestrian access", "impact": "High"})
-        if esg.get("composite_esg_score", 0) >= 75:
+        if (amenities.get("restaurants_1mi") or 0) >= 15:
+            strengths.append({"title": "Amenity Density", "description": "Strong nearby amenity mix supports demand", "impact": "Medium"})
+        esg_score = esg.get("composite_esg_score", 0)
+        if isinstance(esg_score, dict):
+            esg_score = esg_score.get("score") or esg_score.get("composite_score") or 0
+        if (esg_score or 0) >= 75:
             strengths.append({"title": "Strong ESG Profile", "description": "Low environmental and social risk", "impact": "High"})
 
         weaknesses = []
-        if esg.get("composite_esg_score", 0) < 50:
+        esg_score = esg.get("composite_esg_score", 0)
+        if isinstance(esg_score, dict):
+            esg_score = esg_score.get("score") or esg_score.get("composite_score") or 0
+        if (esg_score or 0) < 50:
             weaknesses.append({"title": "ESG Concerns", "description": "Below-average ESG performance", "impact": "Medium"})
+        unemployment_val = economic.get("unemployment_rate")
+        if isinstance(unemployment_val, dict):
+            unemployment_val = unemployment_val.get("value")
+        if (unemployment_val or 0) > 6:
+            weaknesses.append({"title": "Economic Softness", "description": "Elevated unemployment may pressure demand", "impact": "Medium"})
 
         opportunities = []
-        if forecasts.get("rent_growth_percentage", 0) > 4:
+        rent_growth = forecasts.get("rent_growth_percentage")
+        if rent_growth is None and isinstance(forecasts.get("rent_forecast_12mo"), dict):
+            rent_growth = forecasts.get("rent_forecast_12mo", {}).get("change_pct")
+        if (rent_growth or 0) > 4:
             opportunities.append({"title": "Strong Rent Growth", "description": "Market fundamentals support rent increases", "impact": "High"})
+        income_val = demographics.get("median_household_income", 0)
+        if isinstance(income_val, dict):
+            income_val = income_val.get("value") or 0
+        if (income_val or 0) > 75000:
+            opportunities.append({"title": "Income Upside", "description": "Higher income base can support premium rents", "impact": "Medium"})
 
         threats = []
-        economic = market_intelligence.get("economic_indicators", {})
-        if economic.get("unemployment_rate", 0) > 6:
+        unemployment_val = economic.get("unemployment_rate")
+        if isinstance(unemployment_val, dict):
+            unemployment_val = unemployment_val.get("value")
+        if (unemployment_val or 0) > 6:
             threats.append({"title": "Economic Headwinds", "description": "Elevated unemployment may pressure demand", "impact": "Medium"})
 
         swot_analysis = self._normalize_swot_analysis({
@@ -470,20 +609,24 @@ Be specific about what you observe in the image."""
 
         opportunities_list = self._extract_opportunities_from_swot(swot_analysis)
 
+        coverage = self._compute_data_coverage(market_intelligence)
+
         return {
             "swot_analysis": swot_analysis,
             "investment_recommendation": {
                 "recommendation": "REVIEW",
-                "confidence_score": 50,
-                "rationale": "Automated analysis. LLM service unavailable for detailed insights.",
-                "key_factors": swot_analysis.get("weaknesses", [])[:2] or ["Limited data availability"],
+                "confidence_score": max(35, coverage.get("coverage_percent", 50)),
+                "rationale": "Automated analysis based on available data (LLM unavailable).",
+                "key_factors": swot_analysis.get("weaknesses", [])[:2] or swot_analysis.get("strengths", [])[:2] or ["Limited data availability"],
             },
-            "risk_assessment": "Risk assessment unavailable due to limited data.",
+            "risk_assessment": "Risk assessment limited due to incomplete data sources.",
             "opportunities": opportunities_list,
-            "market_trend_synthesis": "Market trend synthesis unavailable for fallback analysis.",
-            "confidence": 50,
-            "rationale": "Automated analysis. LLM service unavailable for detailed insights.",
+            "market_trend_synthesis": "Market trend synthesis limited to available indicators.",
+            "confidence": coverage.get("coverage_percent", 50),
+            "rationale": "Automated analysis based on available data (LLM unavailable).",
             "generated_by": "fallback_rules",
+            "data_coverage": coverage,
+            "generated_at": datetime.utcnow().isoformat(),
         }
 
 

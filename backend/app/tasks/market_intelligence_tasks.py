@@ -40,14 +40,18 @@ def refresh_market_intelligence_task(property_code: str, property_id: Optional[i
         service = _service(db)
 
         results = {}
-        # Geocode once
-        latitude = longitude = None
+        # Geocode once (prefer stored coordinates)
+        latitude = getattr(prop, 'latitude', None)
+        longitude = getattr(prop, 'longitude', None)
         try:
-            if prop.address:
+            if (not latitude or not longitude) and prop.address:
                 geo = service.geocode_address(f"{prop.address}, {prop.city}, {prop.state}, {prop.zip_code}")
                 if geo and geo.get('data'):
                     latitude = geo['data'].get('latitude')
                     longitude = geo['data'].get('longitude')
+                    if latitude and longitude:
+                        prop.latitude = latitude
+                        prop.longitude = longitude
         except Exception as geo_err:
             logger.warning(f"[MI] Geocoding failed for {property_code}: {geo_err}")
 
@@ -55,6 +59,7 @@ def refresh_market_intelligence_task(property_code: str, property_id: Optional[i
         prop_meta_base = {
             'property_code': property_code,
             'property_id': prop.id,
+            'organization_id': getattr(prop, 'organization_id', None),
             'property_type': prop.property_type,
             'year_built': getattr(prop, 'year_built', None),
             'avg_rent': 1500,
@@ -63,6 +68,8 @@ def refresh_market_intelligence_task(property_code: str, property_id: Optional[i
             'market_value': 10000000,
             'total_units': getattr(prop, 'total_units', 100),
             'submarket': prop.city,
+            'city': prop.city,
+            'state': prop.state,
             'latitude': latitude,
             'longitude': longitude,
         }
@@ -117,7 +124,11 @@ def refresh_market_intelligence_task(property_code: str, property_id: Optional[i
 
         # Competitive
         try:
-            comp = service.analyze_competitive_position(prop_meta_base, None)
+            comp = service.analyze_competitive_position(
+                prop_meta_base,
+                None,
+                cache_bust=datetime.utcnow().isoformat()
+            )
             mi.competitive_analysis = comp or service.generate_sample_competitive()
             results['competitive'] = 'ok'
         except Exception as e:

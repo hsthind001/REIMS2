@@ -28,6 +28,10 @@ class Property(Base, TenantMixin):
     acquisition_date = Column(Date)
     ownership_structure = Column(String(100))  # Partnership, LLC, etc.
 
+    # Coordinates (optional manual override for geocoding)
+    latitude = Column(DECIMAL(9, 6))
+    longitude = Column(DECIMAL(9, 6))
+
     # Financial information
     purchase_price = Column(DECIMAL(15, 2))  # Original acquisition price
     acquisition_costs = Column(DECIMAL(15, 2))  # Closing costs, legal fees, due diligence, etc.

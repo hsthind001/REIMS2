@@ -14,6 +14,8 @@ class PropertyBase(BaseModel):
     state: Optional[str] = None
     zip_code: Optional[str] = None
     country: str = 'USA'
+    latitude: Optional[Decimal] = None
+    longitude: Optional[Decimal] = None
     total_area_sqft: Optional[Decimal] = None
     acquisition_date: Optional[date] = None
     ownership_structure: Optional[str] = None
@@ -58,6 +60,22 @@ class PropertyCreate(PropertyBase):
             raise ValueError('Total area must be greater than 0')
         return v
 
+    @field_validator('latitude')
+    @classmethod
+    def validate_latitude(cls, v):
+        """Validate latitude range if provided"""
+        if v is not None and not (-90 <= float(v) <= 90):
+            raise ValueError('Latitude must be between -90 and 90')
+        return v
+
+    @field_validator('longitude')
+    @classmethod
+    def validate_longitude(cls, v):
+        """Validate longitude range if provided"""
+        if v is not None and not (-180 <= float(v) <= 180):
+            raise ValueError('Longitude must be between -180 and 180')
+        return v
+
 
 class PropertyUpdate(BaseModel):
     property_code: Optional[str] = None
@@ -66,6 +84,8 @@ class PropertyUpdate(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    latitude: Optional[Decimal] = None
+    longitude: Optional[Decimal] = None
     status: Optional[str] = None
     notes: Optional[str] = None
     
@@ -79,6 +99,22 @@ class PropertyUpdate(BaseModel):
             if len(v.strip()) < 3:
                 raise ValueError('Property name must be at least 3 characters')
             return v.strip()
+        return v
+
+    @field_validator('latitude')
+    @classmethod
+    def validate_latitude(cls, v):
+        """Validate latitude range if provided"""
+        if v is not None and not (-90 <= float(v) <= 90):
+            raise ValueError('Latitude must be between -90 and 90')
+        return v
+
+    @field_validator('longitude')
+    @classmethod
+    def validate_longitude(cls, v):
+        """Validate longitude range if provided"""
+        if v is not None and not (-180 <= float(v) <= 180):
+            raise ValueError('Longitude must be between -180 and 180')
         return v
 
 
@@ -140,4 +176,3 @@ class FinancialPeriod(FinancialPeriodBase):
 
     class Config:
         from_attributes = True
-

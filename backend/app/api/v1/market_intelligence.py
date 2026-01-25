@@ -313,9 +313,10 @@ async def get_demographics(
                         detail="Could not geocode property address. Please ensure address is valid."
                     )
 
-                # Store coordinates (would need to add lat/lon fields to Property model)
                 latitude = geocode_result['data']['latitude']
                 longitude = geocode_result['data']['longitude']
+                property_obj.latitude = latitude
+                property_obj.longitude = longitude
             else:
                 latitude = property_obj.latitude
                 longitude = property_obj.longitude
@@ -487,18 +488,29 @@ async def get_location_intelligence(
             # Get market data service
             market_data_service = get_market_data_service(db)
 
-            # First, geocode the property address
-            full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
-            geocoded = market_data_service.geocode_address(full_address)
+            # Resolve coordinates (prefer stored values)
+            latitude = getattr(property_obj, 'latitude', None)
+            longitude = getattr(property_obj, 'longitude', None)
 
-            if not geocoded:
-                raise HTTPException(status_code=400, detail="Could not geocode property address")
+            if not latitude or not longitude:
+                full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
+                geocoded = market_data_service.geocode_address(full_address)
 
-            latitude = geocoded['data']['latitude']
-            longitude = geocoded['data']['longitude']
+                if not geocoded:
+                    raise HTTPException(status_code=400, detail="Could not geocode property address")
 
-            # Fetch location intelligence
-            location_intel = market_data_service.fetch_location_intelligence(latitude, longitude)
+                latitude = geocoded['data']['latitude']
+                longitude = geocoded['data']['longitude']
+                property_obj.latitude = latitude
+                property_obj.longitude = longitude
+
+            # Fetch location intelligence (cache-bust on explicit refresh)
+            cache_bust = datetime.utcnow().isoformat() if refresh else None
+            location_intel = market_data_service.fetch_location_intelligence(
+                latitude,
+                longitude,
+                cache_bust=cache_bust
+            )
 
             if location_intel:
                 mi.location_intelligence = location_intel
@@ -522,6 +534,15 @@ async def get_location_intelligence(
                 db.add(lineage)
                 db.commit()
             else:
+                if mi.location_intelligence:
+                    mi.refresh_status = 'stale'
+                    db.commit()
+                    db.refresh(mi)
+                    return {
+                        "property_code": property_code,
+                        "location_intelligence": mi.location_intelligence,
+                        "last_refreshed": mi.last_refreshed_at
+                    }
                 raise HTTPException(status_code=500, detail="Failed to fetch location intelligence")
 
         return {
@@ -585,15 +606,21 @@ async def get_esg_assessment(
             # Get market data service
             market_data_service = get_market_data_service(db)
 
-            # Geocode property address
-            full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
-            geocoded = market_data_service.geocode_address(full_address)
+            # Resolve coordinates (prefer stored values)
+            latitude = getattr(property_obj, 'latitude', None)
+            longitude = getattr(property_obj, 'longitude', None)
 
-            if not geocoded:
-                raise HTTPException(status_code=400, detail="Could not geocode property address")
+            if not latitude or not longitude:
+                full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
+                geocoded = market_data_service.geocode_address(full_address)
 
-            latitude = geocoded['data']['latitude']
-            longitude = geocoded['data']['longitude']
+                if not geocoded:
+                    raise HTTPException(status_code=400, detail="Could not geocode property address")
+
+                latitude = geocoded['data']['latitude']
+                longitude = geocoded['data']['longitude']
+                property_obj.latitude = latitude
+                property_obj.longitude = longitude
 
             # Prepare property data for ESG assessment
             property_data = {
@@ -843,8 +870,15 @@ async def get_competitive_analysis(
 
             # Prepare property data
             avg_rent = 1500
+            avg_rent_psf = None
             if latest_metrics and latest_metrics.total_monthly_rent and latest_metrics.occupied_units:
                 avg_rent = float(latest_metrics.total_monthly_rent / latest_metrics.occupied_units)
+            if latest_metrics and latest_metrics.avg_rent_per_sqft:
+                avg_rent_psf = float(latest_metrics.avg_rent_per_sqft)
+            elif latest_metrics and latest_metrics.total_monthly_rent and latest_metrics.occupied_sqft:
+                denom = float(latest_metrics.occupied_sqft)
+                if denom > 0:
+                    avg_rent_psf = float(latest_metrics.total_monthly_rent) / denom
             
             occupancy_rate = 95.0
             if latest_metrics and latest_metrics.occupancy_rate:
@@ -868,25 +902,88 @@ async def get_competitive_analysis(
                 if geocode_result:
                     latitude = geocode_result['data']['latitude']
                     longitude = geocode_result['data']['longitude']
+                    property_obj.latitude = latitude
+                    property_obj.longitude = longitude
+
+            # Open-data benchmarks (Census) if available
+            open_data = {}
+            if mi.demographics and isinstance(mi.demographics, dict):
+                demo = mi.demographics.get('data') or {}
+                open_data = {
+                    'acs_median_gross_rent': demo.get('median_gross_rent'),
+                    'acs_median_household_income': demo.get('median_household_income'),
+                    'acs_population': demo.get('population'),
+                    'acs_unemployment_rate': demo.get('unemployment_rate')
+                }
 
             property_data = {
+                'property_id': property_obj.id,
+                'organization_id': current_org.id,
                 'property_code': property_code,
                 'avg_rent': avg_rent,
+                'avg_rent_psf': avg_rent_psf,
                 'occupancy_rate': occupancy_rate,
                 'total_units': total_units,
                 'property_type': property_obj.property_type,
                 'submarket': property_obj.city,
-                'latitude': latitude,
-                'longitude': longitude
+                'city': property_obj.city,
+                'state': property_obj.state,
+                'latitude': float(latitude) if latitude is not None else None,
+                'longitude': float(longitude) if longitude is not None else None,
+                'open_data': open_data
             }
 
             # TODO: Fetch submarket data from external API or database
             submarket_data = None
 
             # Analyze competitive position
-            competitive = market_data_service.analyze_competitive_position(property_data, submarket_data)
+            competitive = market_data_service.analyze_competitive_position(
+                property_data,
+                submarket_data,
+                cache_bust=datetime.utcnow().isoformat()
+            )
 
             if competitive:
+                # Generate LLM narrative for competitive analysis (best-effort)
+                try:
+                    existing_narrative = None
+                    if isinstance(competitive, dict):
+                        existing_narrative = (competitive.get('data') or {}).get('llm_narrative')
+                    if refresh or not existing_narrative:
+                        from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
+                        ai_service = get_market_intelligence_ai_service()
+
+                        # Build minimal market_data payload for prompt
+                        loc_prompt = {}
+                        if mi.location_intelligence and isinstance(mi.location_intelligence, dict):
+                            loc_data = mi.location_intelligence.get('data') or {}
+                            amenities = loc_data.get('amenities') or {}
+                            loc_prompt = {
+                                'walk_score': loc_data.get('walk_score'),
+                                'nearby_restaurants': amenities.get('restaurants_1mi'),
+                                'nearby_grocery': amenities.get('grocery_stores_1mi')
+                            }
+
+                        market_data = {
+                            'property_code': property_code,
+                            'competitive_analysis': competitive,
+                            'location_intelligence': {'data': loc_prompt}
+                        }
+
+                        property_metrics = {
+                            'current_rent_psf': property_data.get('avg_rent_psf') or property_data.get('avg_rent'),
+                            'current_occupancy': property_data.get('occupancy_rate')
+                        }
+
+                        llm_narrative = await ai_service._generate_competitive_analysis_with_llm(
+                            market_data,
+                            property_metrics
+                        )
+                        if llm_narrative:
+                            competitive.setdefault('data', {})['llm_narrative'] = llm_narrative
+                except Exception as llm_err:
+                    logger.warning(f"Competitive narrative generation skipped: {llm_err}")
+
                 mi.competitive_analysis = competitive
                 mi.last_refreshed_at = datetime.utcnow()
                 mi.refresh_status = 'success'
@@ -1206,6 +1303,7 @@ async def refresh_market_intelligence(
 
         # Default values (fallback)
         avg_rent = 1500.0
+        avg_rent_psf = None
         occupancy_rate = 95.0
         noi = 500000.0
         total_units = getattr(property_obj, 'total_units', 100)
@@ -1219,33 +1317,60 @@ async def refresh_market_intelligence(
                 noi = float(latest_metrics.net_operating_income) * 12 # Annualize
             if latest_metrics.total_units:
                 total_units = latest_metrics.total_units
+            if latest_metrics.avg_rent_per_sqft:
+                avg_rent_psf = float(latest_metrics.avg_rent_per_sqft)
+            elif latest_metrics.total_monthly_rent and latest_metrics.occupied_sqft:
+                denom = float(latest_metrics.occupied_sqft)
+                if denom > 0:
+                    avg_rent_psf = float(latest_metrics.total_monthly_rent) / denom
 
-        # Attempt geocoding once for reuse
+        # Attempt geocoding once for reuse (prefer stored coordinates)
+        latitude = getattr(property_obj, 'latitude', None)
+        longitude = getattr(property_obj, 'longitude', None)
         geocoded = None
-        if property_obj.address:
+        if (not latitude or not longitude) and property_obj.address:
             try:
                 full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state}, {property_obj.zip_code}"
                 geocoded = service.geocode_address(full_address)
             except Exception as geo_err:
                 logger.warning(f"Geocoding failed for {property_code}: {geo_err}")
 
-        latitude = geocoded['data']['latitude'] if geocoded else None
-        longitude = geocoded['data']['longitude'] if geocoded else None
+        if geocoded and geocoded.get('data'):
+            latitude = geocoded['data'].get('latitude')
+            longitude = geocoded['data'].get('longitude')
+            if latitude and longitude:
+                property_obj.latitude = latitude
+                property_obj.longitude = longitude
         
+        # Open-data benchmarks (Census) if available
+        open_data = {}
+        if mi.demographics and isinstance(mi.demographics, dict):
+            demo = mi.demographics.get('data') or {}
+            open_data = {
+                'acs_median_gross_rent': demo.get('median_gross_rent'),
+                'acs_median_household_income': demo.get('median_household_income'),
+                'acs_population': demo.get('population'),
+                'acs_unemployment_rate': demo.get('unemployment_rate')
+            }
+
         # Base property data for all services
         base_property_data = {
+            'property_id': property_obj.id,
+            'organization_id': current_org.id,
             'property_code': property_code,
             'property_type': property_obj.property_type,
             'year_built': getattr(property_obj, 'year_built', None),
             'city': property_obj.city,
             'state': property_obj.state,
             'avg_rent': avg_rent,
+            'avg_rent_psf': avg_rent_psf,
             'occupancy_rate': occupancy_rate,
             'noi': noi,
             'market_value': getattr(property_obj, 'market_value', 10000000), # Fallback if not tracked
             'total_units': total_units,
             'latitude': latitude,
-            'longitude': longitude
+            'longitude': longitude,
+            'open_data': open_data
         }
 
         # Refresh demographics
@@ -1284,14 +1409,20 @@ async def refresh_market_intelligence(
             try:
                 location_intel = None
                 if latitude and longitude:
-                    location_intel = service.fetch_location_intelligence(latitude, longitude)
+                    location_intel = service.fetch_location_intelligence(
+                        latitude,
+                        longitude,
+                        cache_bust=datetime.utcnow().isoformat()
+                    )
                 
                 if location_intel:
                     mi.location_intelligence = location_intel
                     refreshed.append('location')
                 else:
                     logger.warning(f"No location intelligence found for {property_code}")
-                    # No sample data fallback
+                    if mi.location_intelligence:
+                        # Keep existing data when refresh fails
+                        refreshed.append('location')
             except Exception as e:
                 logger.error(f"Failed to refresh location intelligence: {e}")
                 errors.append({'category': 'location', 'error': str(e)})
@@ -1335,8 +1466,43 @@ async def refresh_market_intelligence(
         # Refresh competitive analysis
         if 'competitive' in categories:
             try:
-                competitive = service.analyze_competitive_position(base_property_data, None)
+                competitive = service.analyze_competitive_position(
+                    base_property_data,
+                    None,
+                    cache_bust=datetime.utcnow().isoformat()
+                )
                 if competitive:
+                    # Best-effort LLM narrative
+                    try:
+                        from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
+                        ai_service = get_market_intelligence_ai_service()
+                        loc_prompt = {}
+                        if mi.location_intelligence and isinstance(mi.location_intelligence, dict):
+                            loc_data = mi.location_intelligence.get('data') or {}
+                            amenities = loc_data.get('amenities') or {}
+                            loc_prompt = {
+                                'walk_score': loc_data.get('walk_score'),
+                                'nearby_restaurants': amenities.get('restaurants_1mi'),
+                                'nearby_grocery': amenities.get('grocery_stores_1mi')
+                            }
+                        market_data = {
+                            'property_code': property_code,
+                            'competitive_analysis': competitive,
+                            'location_intelligence': {'data': loc_prompt}
+                        }
+                        property_metrics = {
+                            'current_rent_psf': base_property_data.get('avg_rent_psf') or base_property_data.get('avg_rent'),
+                            'current_occupancy': base_property_data.get('occupancy_rate')
+                        }
+                        llm_narrative = await ai_service._generate_competitive_analysis_with_llm(
+                            market_data,
+                            property_metrics
+                        )
+                        if llm_narrative:
+                            competitive.setdefault('data', {})['llm_narrative'] = llm_narrative
+                    except Exception as llm_err:
+                        logger.warning(f"Competitive narrative generation skipped: {llm_err}")
+
                     mi.competitive_analysis = competitive
                     refreshed.append('competitive')
                 else:
