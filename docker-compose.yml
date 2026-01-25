@@ -81,6 +81,8 @@ services:
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_mortgage_extraction_templates.sql;
           echo 'Seeding mortgage validation rules...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_mortgage_validation_rules.sql;
+          echo 'Seeding rent roll validation rules...';
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_rent_roll_validation_rules.sql;
           echo 'Seeding lenders...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_lenders.sql;
           echo 'Seeding default alert rules...';
@@ -88,6 +90,8 @@ services:
           echo 'Deploying comprehensive validation rules...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/01_balance_sheet_rules.sql;
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/02_income_statement_rules.sql;
+          echo 'Seeding Three Statement Integration rules...';
+          PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/seed_three_statement_integration_rules.sql;
           echo 'Deploying prevention rules...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/03_prevention_rules_corrected.sql;
           echo 'Deploying auto-resolution rules...';
@@ -96,7 +100,7 @@ services:
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/05_forensic_audit_framework.sql;
           echo 'Deploying verified reconciliation results...';
           PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$POSTGRES_SERVER -U $$POSTGRES_USER -d $$POSTGRES_DB -f scripts/06_verified_reconciliations.sql;
-          echo '✅ All seed files loaded with 131+ validation rules';
+          echo '✅ All seed files loaded with 135+ validation rules (including Three Statement Integration)';
         else
           echo 'ℹ️  Database already seeded, skipping';
         fi;

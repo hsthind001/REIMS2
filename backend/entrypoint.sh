@@ -59,6 +59,9 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       echo "🌱 Seeding mortgage validation rules..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_mortgage_validation_rules.sql
       
+      echo "🌱 Seeding rent roll validation rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_rent_roll_validation_rules.sql
+      
       echo "🌱 Seeding lenders..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_lenders.sql
       
@@ -68,6 +71,9 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       echo "🌱 Deploying comprehensive validation rules..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/01_balance_sheet_rules.sql
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/02_income_statement_rules.sql
+      
+      echo "🌱 Seeding Three Statement Integration rules..."
+      PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/seed_three_statement_integration_rules.sql
 
       echo "🌱 Deploying prevention rules..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/03_prevention_rules_corrected.sql
@@ -78,7 +84,7 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
       echo "🌱 Deploying forensic audit framework..."
       PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_SERVER -U $POSTGRES_USER -d $POSTGRES_DB -f scripts/05_forensic_audit_framework.sql
 
-      echo "✅ Database seeded successfully with 131+ validation rules!"
+      echo "✅ Database seeded successfully with 135+ validation rules (including Three Statement Integration)!"
     else
       echo "ℹ️  Database already seeded, skipping..."
     fi
