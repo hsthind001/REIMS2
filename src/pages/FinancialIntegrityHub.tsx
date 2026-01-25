@@ -134,7 +134,7 @@ export default function FinancialIntegrityHub() {
             'income_statement': 'IS',
             'cash_flow': 'CF',
             'rent_roll': 'RR',
-            'mortgage_statement': 'MS'
+            'mortgage_statement': 'MST'  // Mortgage rules use MST- prefix, not MS-
         };
 
         const stats: Record<string, { id: string, name: string, type: string, passed: number, failed: number, rules: number, lastSync: string }> = {};
