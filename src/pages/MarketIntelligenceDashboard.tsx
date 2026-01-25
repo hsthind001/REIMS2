@@ -18,8 +18,8 @@ import {
   Chip,
   Divider,
   IconButton,
+  Grid,
 } from '@mui/material';
-import Grid from '@mui/material/GridLegacy';
 import {
   Refresh as RefreshIcon,
   TrendingUp as TrendingUpIcon,
@@ -353,7 +353,7 @@ const MarketIntelligenceDashboard: React.FC = () => {
       {/* Header */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Box display="flex" alignItems="center" gap={2}>
               <IconButton
                 onClick={handleBack}
@@ -378,7 +378,7 @@ const MarketIntelligenceDashboard: React.FC = () => {
               </Box>
             </Box>
           </Grid>
-          <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
+          <Grid size={{ xs: 12, md: 6 }} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
             <Box display="flex" gap={2} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="wrap">
               {marketIntel.last_refreshed && (
                 <Chip
@@ -426,13 +426,11 @@ const MarketIntelligenceDashboard: React.FC = () => {
             icon={<LocationIcon />}
             label="Demographics"
             iconPosition="start"
-            disabled={!marketIntel.demographics}
           />
           <Tab
             icon={<TrendingUpIcon />}
             label="Economic Indicators"
             iconPosition="start"
-            disabled={!marketIntel.economic_indicators}
           />
           <Tab
             icon={<AssessmentIcon />}

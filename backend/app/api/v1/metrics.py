@@ -1680,7 +1680,7 @@ async def get_historical_dscr(
         from decimal import Decimal
         
         # Get property
-                property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

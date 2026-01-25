@@ -19,8 +19,8 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
+  Grid,
 } from '@mui/material';
-import Grid from '@mui/material/GridLegacy';
 import {
   TrendingUp as StrengthIcon,
   Warning as WeaknessIcon,
@@ -49,7 +49,7 @@ interface SWOTSectionProps {
 
 const SWOTSection: React.FC<SWOTSectionProps> = ({ title, items, icon, color, emptyMessage }) => {
   return (
-    <Card>
+    <Card sx={{ height: '100%' }}>
       <CardContent>
         <Box display="flex" alignItems="center" gap={2} mb={2}>
           <Box
@@ -176,7 +176,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
       </Typography>
 
       <Grid container spacing={3} mb={4}>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <SWOTSection
             title="Strengths"
             items={swot.strengths}
@@ -185,7 +185,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
             emptyMessage="No significant strengths identified"
           />
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <SWOTSection
             title="Weaknesses"
             items={swot.weaknesses}
@@ -194,7 +194,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
             emptyMessage="No significant weaknesses identified"
           />
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <SWOTSection
             title="Opportunities"
             items={swot.opportunities}
@@ -203,7 +203,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
             emptyMessage="No opportunities identified"
           />
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <SWOTSection
             title="Threats"
             items={swot.threats}
@@ -276,7 +276,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
       {/* Data Source */}
       <Box mt={3}>
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="caption" color="text.secondary">
                 Analysis Engine
@@ -286,7 +286,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
               </Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="caption" color="text.secondary">
                 Analysis Date
@@ -296,7 +296,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
               </Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="caption" color="text.secondary">
                 Confidence Level
@@ -306,7 +306,7 @@ const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ data }) => {
               </Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="caption" color="text.secondary">
                 Total Insights

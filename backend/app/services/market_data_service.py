@@ -41,6 +41,7 @@ except Exception:
     HAS_FAISS = False
 
 from app.models.ai_insights_embedding import AIInsightsEmbedding
+from app.models.financial_metrics import FinancialMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -356,8 +357,9 @@ class MarketDataService:
         """
         try:
             current_year = datetime.now().year
-            # Try years from most recent to 3 years back
-            for years_back in range(3, 6):  # Try 3, 4, 5 years back (more stable)
+            # Try years from most recent to 5 years back
+            # ACS5 typically has 1-2 year lag. We check aggressively starting from 1 year back.
+            for years_back in range(1, 6):  # Try 1, 2, 3, 4, 5 years back
                 test_year = current_year - years_back
                 test_url = f"{self.CENSUS_API_BASE}/{test_year}/acs/acs5"
 
@@ -415,7 +417,7 @@ class MarketDataService:
                 year = self.get_latest_census_vintage()
                 logger.info(f"Using auto-detected Census vintage: {year}")
             # First, get census tract from coordinates
-            geocode_url = f"https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
+            geocode_url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
             geocode_params = {
                 'x': longitude,
                 'y': latitude,
@@ -1560,38 +1562,34 @@ class MarketDataService:
             # Generate rent forecast using Prophet or ARIMA fallback (with macro nudge)
             rent_forecast = self._forecast_rent(current_rent, historical_data, economic_data)
             try:
-                if historical_data and historical_data.get('rent'):
+                # Only use advanced forecasting if we have actual historical data
+                if historical_data and 'rent' in historical_data and historical_data['rent'] is not None and not historical_data['rent'].empty:
                     series = historical_data['rent']
-                else:
-                    dates = pd.date_range(end=pd.Timestamp.utcnow(), periods=24, freq='M')
-                    series = pd.Series(
-                        np.linspace(current_rent * 0.9, current_rent * 1.05, len(dates))
-                        + np.random.normal(scale=current_rent * 0.01, size=len(dates)),
-                        index=dates
-                    )
-                if has_prophet:
-                    df = pd.DataFrame({'ds': series.index, 'y': series.values})
-                    m = Prophet(growth='linear', daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
-                    m.fit(df)
-                    future = m.make_future_dataframe(periods=12, freq='M')
-                    forecast = m.predict(future).tail(12)
-                    rent_forecast['predicted_rent'] = float(forecast['yhat'].iloc[-1])
-                    rent_forecast['confidence_interval_95'] = [
-                        float(forecast['yhat_lower'].min()),
-                        float(forecast['yhat_upper'].max())
-                    ]
-                    rent_forecast['model'] = 'prophet'
-                else:
-                    from statsmodels.tsa.statespace.sarimax import SARIMAX
-                    model = SARIMAX(series, order=(1, 0, 0), seasonal_order=(0, 0, 0, 0))
-                    res = model.fit(disp=False)
-                    preds = res.forecast(12)
-                    rent_forecast['predicted_rent'] = float(preds.iloc[-1])
-                    rent_forecast['confidence_interval_95'] = [
-                        float(preds.min()),
-                        float(preds.max())
-                    ]
-                    rent_forecast['model'] = 'arima'
+                    
+                    if len(series) >= 6:  # Need meaningful amount of data
+                        if has_prophet:
+                            df = pd.DataFrame({'ds': series.index, 'y': series.values})
+                            m = Prophet(growth='linear', daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
+                            m.fit(df)
+                            future = m.make_future_dataframe(periods=12, freq='M')
+                            forecast = m.predict(future).tail(12)
+                            rent_forecast['predicted_rent'] = float(forecast['yhat'].iloc[-1])
+                            rent_forecast['confidence_interval_95'] = [
+                                float(forecast['yhat_lower'].min()),
+                                float(forecast['yhat_upper'].max())
+                            ]
+                            rent_forecast['model'] = 'prophet'
+                        else:
+                            from statsmodels.tsa.statespace.sarimax import SARIMAX
+                            model = SARIMAX(series, order=(1, 0, 0), seasonal_order=(0, 0, 0, 0))
+                            res = model.fit(disp=False)
+                            preds = res.forecast(12)
+                            rent_forecast['predicted_rent'] = float(preds.iloc[-1])
+                            rent_forecast['confidence_interval_95'] = [
+                                float(preds.min()),
+                                float(preds.max())
+                            ]
+                            rent_forecast['model'] = 'arima'
             except Exception as fe:
                 logger.warning(f"Forecast model fallback used: {fe}")
 
@@ -1819,7 +1817,7 @@ class MarketDataService:
             # Extract property metrics
             property_rent = property_data.get('avg_rent', 1500)
             property_occupancy = property_data.get('occupancy_rate', 95.0)
-            property_units = property_data.get('total_units', 100)
+
 
             # Generate submarket positioning
             submarket_position = self._calculate_submarket_position(
@@ -1830,7 +1828,7 @@ class MarketDataService:
 
             # Identify competitive threats with OSM comps + simple clustering
             comps, clusters = self._fetch_and_cluster_comps(property_data)
-            competitive_threats = self._identify_competitive_threats(property_data)
+            competitive_threats = self._identify_competitive_threats(property_data, comps)
 
             # Calculate market share
             submarket_trends = self._analyze_submarket_trends(property_data)
@@ -1864,55 +1862,43 @@ class MarketDataService:
         property_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Calculate property's position within submarket."""
-        # Simplified percentile calculations
-        # In production, query actual comparable properties from database
-
-        # Assume market averages
-        market_avg_rent = 1450
-        market_avg_occupancy = 93.0
-
-        # Calculate percentiles (simplified)
-        rent_percentile = 50 + ((property_rent - market_avg_rent) / market_avg_rent) * 30
-        rent_percentile = max(0, min(100, rent_percentile))
-
-        occupancy_percentile = 50 + ((property_occupancy - market_avg_occupancy) / market_avg_occupancy) * 30
-        occupancy_percentile = max(0, min(100, occupancy_percentile))
-
-        # Quality score (placeholder - would use actual amenities, age, renovations)
-        quality_percentile = 65.0
-
-        # Value score
-        value_percentile = 60.0
-
+        # Only calculated if we have actual submarket data
+        # For now, return 0s to indicate lack of data rather than fake percentiles
+        
         return {
-            'rent_percentile': round(rent_percentile, 1),
-            'occupancy_percentile': round(occupancy_percentile, 1),
-            'quality_percentile': quality_percentile,
-            'value_percentile': value_percentile
+            'rent_percentile': None,
+            'occupancy_percentile': None,
+            'quality_percentile': None,
+            'value_percentile': None
         }
 
     def _identify_competitive_threats(
         self,
-        property_data: Dict[str, Any]
+        property_data: Dict[str, Any],
+        comps: List[Dict[str, Any]] = []
     ) -> List[Dict[str, Any]]:
-        """Identify top competitive threats (placeholder)."""
-        # In production, query properties within radius with similar characteristics
-        return [
-            {
-                'property_name': 'Nearby Luxury Apartments',
-                'distance_mi': 0.8,
-                'threat_score': 75,
-                'advantages': ['Newer construction', 'Premium amenities', 'Better location'],
-                'disadvantages': ['Higher rent (+$200/mo)', 'No parking included']
-            },
-            {
-                'property_name': 'Value Competitor Complex',
-                'distance_mi': 1.2,
-                'threat_score': 45,
-                'advantages': ['Lower rent (-$150/mo)', 'Pet-friendly'],
-                'disadvantages': ['Older property', 'Limited amenities', 'Lower quality']
-            }
-        ]
+        """Identify top competitive threats using actual OSM comparables."""
+        threats = []
+        
+        # Sort comps by distance
+        sorted_comps = sorted(comps, key=lambda x: x.get('distance_mi', 999))
+        
+        # Take top 5 closest
+        for comp in sorted_comps[:5]:
+            dist = comp.get('distance_mi', 999)
+            # Simple threat score based on distance (closer = higher)
+            # 0 miles = 100, 5 miles = 0
+            threat_score = max(0, min(100, int(100 - (dist * 20))))
+            
+            threats.append({
+                'property_name': comp.get('name', 'Unknown Property'),
+                'distance_mi': dist,
+                'threat_score': threat_score,
+                'advantages': [], # No data available
+                'disadvantages': [] # No data available
+            })
+            
+        return threats
 
     def _fetch_and_cluster_comps(self, property_data: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
@@ -2002,18 +1988,19 @@ class MarketDataService:
         property_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Analyze submarket trends."""
+        # No actual sourcing for trends yet.
+        # Returning 0/null to avoid sample data.
         return {
-            'rent_growth_3yr_cagr': 4.2,  # 3-year compound annual growth rate
-            'occupancy_trend': 'stable',  # stable/increasing/declining
-            'new_supply_pipeline_units': 450,
-            'absorption_rate_units_per_mo': 35,
-            'months_of_supply': 12.9
+            'rent_growth_3yr_cagr': None,
+            'occupancy_trend': None,
+            'new_supply_pipeline_units': None,
+            'absorption_rate_units_per_mo': None,
+            'months_of_supply': None
         }
 
     # ========== AI INSIGHTS (Phase 6) ==========
 
-    @cache_with_ttl(ttl_seconds=86400)  # 1 day
-    def generate_ai_insights(
+    async def generate_ai_insights(
         self,
         property_data: Dict[str, Any],
         market_intelligence: Dict[str, Any]
@@ -2032,27 +2019,12 @@ class MarketDataService:
             # Try using the new AI service first (with LLMs)
             try:
                 from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
-                import asyncio
-
+                
                 logger.info("Using open-source AI service for insights generation")
                 ai_service = get_market_intelligence_ai_service()
 
-                # Run async method in sync context
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If we're already in an async context, create a new task
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            asyncio.run,
-                            ai_service.generate_ai_insights(property_data, market_intelligence)
-                        )
-                        ai_insights = future.result(timeout=300)  # 5 minute timeout
-                else:
-                    # Run directly
-                    ai_insights = asyncio.run(
-                        ai_service.generate_ai_insights(property_data, market_intelligence)
-                    )
+                # Directly await the async method
+                ai_insights = await ai_service.generate_ai_insights(property_data, market_intelligence)
 
                 if ai_insights:
                     self.log_data_pull('ai_insights', 'ai_insights', 'success', records_fetched=1)
@@ -2062,6 +2034,8 @@ class MarketDataService:
                         vintage='2025-01',
                         confidence=ai_insights.get('confidence', 85)
                     )
+            except Exception as ai_error:
+                logger.warning(f"AI service unavailable, falling back to rule-based: {ai_error}")
             except Exception as ai_error:
                 logger.warning(f"AI service unavailable, falling back to rule-based: {ai_error}")
 

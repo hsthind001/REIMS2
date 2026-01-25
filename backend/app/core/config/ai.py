@@ -7,13 +7,13 @@ class AISettings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None  # Groq Cloud API (free tier, 800 tokens/sec)
     LLM_PROVIDER: str = "ollama"  # "ollama", "groq", "openai", or "anthropic"
-    LLM_MODEL: str = "qwen2.5:14b"  # Ollama model name (installed)
+    LLM_MODEL: str = "deepseek-r1:14b"  # Ollama model name (installed)
     LLM_TEMPERATURE: float = 0.3  # Lower temperature for factual summarization
     LLM_MAX_TOKENS: int = 4000
 
     # Ollama Configuration (Local LLM)
-    OLLAMA_BASE_URL: str = "http://ollama:11434"
-    OLLAMA_DEFAULT_MODEL: str = "qwen2.5:14b"  # Currently available model
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_DEFAULT_MODEL: str = "deepseek-r1:14b"  # Currently available model
     OLLAMA_GPU_LAYERS: int = -1  # -1 = all layers on GPU, 0 = CPU only
     OLLAMA_NUM_THREADS: int = 8  # CPU threads for inference
 

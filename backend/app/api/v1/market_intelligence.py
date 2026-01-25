@@ -167,12 +167,12 @@ def calculate_executive_summary(mi_data: Dict[str, Any], your_cap_rate: float = 
             action = "HOLD"
             confidence = 75
             priority = "LOW"
-            rationale = [f"Performing at/above market", f"Balanced risk/reward"]
+            rationale = ["Performing at/above market", "Balanced risk/reward"]
         elif risk_score >= 70:
             action = "SELL"
             confidence = 80
             priority = "HIGH"
-            rationale = [f"High risk ({risk_score}/100)", f"Limited upside"]
+            rationale = [f"High risk ({risk_score}/100)", "Limited upside"]
         else:
             action = "REVIEW"
             confidence = 60
@@ -735,6 +735,7 @@ async def get_forecasts(
 
             property_data = {
                 'property_code': property_code,
+                'property_id': property_obj.id,
                 'avg_rent': avg_rent,
                 'occupancy_rate': occupancy_rate,
                 'noi': noi,
@@ -743,9 +744,12 @@ async def get_forecasts(
 
             # TODO: Fetch historical data for better forecasting
             historical_data = None
+            
+            # Use economic indicators if available
+            economic_data = mi.economic_indicators
 
             # Generate forecasts
-            forecasts = market_data_service.generate_forecasts(property_data, historical_data)
+            forecasts = market_data_service.generate_forecasts(property_data, historical_data, economic_data)
 
             if forecasts:
                 mi.forecasts = forecasts
@@ -852,13 +856,28 @@ async def get_competitive_analysis(
             elif hasattr(property_obj, 'total_units'):
                  total_units = property_obj.total_units
 
+            # Get property coordinates
+            latitude = getattr(property_obj, 'latitude', None)
+            longitude = getattr(property_obj, 'longitude', None)
+            
+            if not latitude or not longitude:
+                # Attempt to geocode if coordinates missing
+                service = get_market_data_service(db)
+                full_address = f"{property_obj.address}, {property_obj.city}, {property_obj.state} {property_obj.zip_code}"
+                geocode_result = service.geocode_address(full_address)
+                if geocode_result:
+                    latitude = geocode_result['data']['latitude']
+                    longitude = geocode_result['data']['longitude']
+
             property_data = {
                 'property_code': property_code,
                 'avg_rent': avg_rent,
                 'occupancy_rate': occupancy_rate,
                 'total_units': total_units,
                 'property_type': property_obj.property_type,
-                'submarket': property_obj.city  # Simplified - use city as submarket
+                'submarket': property_obj.city,
+                'latitude': latitude,
+                'longitude': longitude
             }
 
             # TODO: Fetch submarket data from external API or database
@@ -974,7 +993,7 @@ async def get_ai_insights(
             }
 
             # Generate AI insights
-            ai_insights = market_data_service.generate_ai_insights(property_data, market_intelligence)
+            ai_insights = await market_data_service.generate_ai_insights(property_data, market_intelligence)
 
             if ai_insights:
                 ai_insights['property_code'] = property_code
@@ -1180,6 +1199,27 @@ async def refresh_market_intelligence(
             except Exception as e:
                 logger.error(f"Failed to enqueue Celery task: {e} — falling back to sync refresh")
 
+        # Fetch latest financial metrics for real data
+        latest_metrics = db.query(FinancialMetrics).join(FinancialPeriod).filter(
+            FinancialMetrics.property_id == property_obj.id
+        ).order_by(FinancialPeriod.period_end_date.desc()).first()
+
+        # Default values (fallback)
+        avg_rent = 1500.0
+        occupancy_rate = 95.0
+        noi = 500000.0
+        total_units = getattr(property_obj, 'total_units', 100)
+
+        if latest_metrics:
+            if latest_metrics.total_monthly_rent and latest_metrics.occupied_units:
+                 avg_rent = float(latest_metrics.total_monthly_rent / latest_metrics.occupied_units)
+            if latest_metrics.occupancy_rate:
+                occupancy_rate = float(latest_metrics.occupancy_rate)
+            if latest_metrics.net_operating_income:
+                noi = float(latest_metrics.net_operating_income) * 12 # Annualize
+            if latest_metrics.total_units:
+                total_units = latest_metrics.total_units
+
         # Attempt geocoding once for reuse
         geocoded = None
         if property_obj.address:
@@ -1191,6 +1231,22 @@ async def refresh_market_intelligence(
 
         latitude = geocoded['data']['latitude'] if geocoded else None
         longitude = geocoded['data']['longitude'] if geocoded else None
+        
+        # Base property data for all services
+        base_property_data = {
+            'property_code': property_code,
+            'property_type': property_obj.property_type,
+            'year_built': getattr(property_obj, 'year_built', None),
+            'city': property_obj.city,
+            'state': property_obj.state,
+            'avg_rent': avg_rent,
+            'occupancy_rate': occupancy_rate,
+            'noi': noi,
+            'market_value': getattr(property_obj, 'market_value', 10000000), # Fallback if not tracked
+            'total_units': total_units,
+            'latitude': latitude,
+            'longitude': longitude
+        }
 
         # Refresh demographics
         if 'demographics' in categories:
@@ -1198,10 +1254,13 @@ async def refresh_market_intelligence(
                 demographics = None
                 if latitude and longitude:
                     demographics = service.fetch_enhanced_demographics(latitude, longitude)
-                if not demographics:
-                    demographics = service.generate_sample_demographics(property_code)
-                mi.demographics = demographics
-                refreshed.append('demographics')
+                
+                if demographics:
+                    mi.demographics = demographics
+                    refreshed.append('demographics')
+                else:
+                    logger.warning(f"No demographics data found for {property_code}")
+                    # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh demographics: {e}")
                 errors.append({'category': 'demographics', 'error': str(e)})
@@ -1210,10 +1269,12 @@ async def refresh_market_intelligence(
         if 'economic' in categories:
             try:
                 economic = service.fetch_fred_economic_indicators()
-                if not economic:
-                    economic = service.generate_sample_economic()
-                mi.economic_indicators = economic
-                refreshed.append('economic')
+                if economic:
+                    mi.economic_indicators = economic
+                    refreshed.append('economic')
+                else:
+                     logger.warning(f"No economic data available")
+                     # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh economic indicators: {e}")
                 errors.append({'category': 'economic', 'error': str(e)})
@@ -1224,10 +1285,13 @@ async def refresh_market_intelligence(
                 location_intel = None
                 if latitude and longitude:
                     location_intel = service.fetch_location_intelligence(latitude, longitude)
-                if not location_intel:
-                    location_intel = service.generate_sample_location(latitude or 37.77, longitude or -122.42)
-                mi.location_intelligence = location_intel
-                refreshed.append('location')
+                
+                if location_intel:
+                    mi.location_intelligence = location_intel
+                    refreshed.append('location')
+                else:
+                    logger.warning(f"No location intelligence found for {property_code}")
+                    # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh location intelligence: {e}")
                 errors.append({'category': 'location', 'error': str(e)})
@@ -1243,10 +1307,13 @@ async def refresh_market_intelligence(
                         'year_built': getattr(property_obj, 'year_built', None)
                     }
                     esg_assessment = service.fetch_esg_assessment(latitude, longitude, prop_meta)
-                if not esg_assessment:
-                    esg_assessment = service.generate_sample_esg()
-                mi.esg_assessment = esg_assessment
-                refreshed.append('esg')
+                
+                if esg_assessment:
+                    mi.esg_assessment = esg_assessment
+                    refreshed.append('esg')
+                else:
+                     logger.warning(f"No ESG assessment found for {property_code}")
+                     # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh ESG assessment: {e}")
                 errors.append({'category': 'esg', 'error': str(e)})
@@ -1254,18 +1321,13 @@ async def refresh_market_intelligence(
         # Refresh forecasts
         if 'forecasts' in categories:
             try:
-                property_data = {
-                    'property_code': property_code,
-                    'avg_rent': 1500,  # TODO: Get from actual property metrics
-                    'occupancy_rate': 95.0,
-                    'noi': 500000,
-                    'market_value': 10000000
-                }
-                forecasts = service.generate_forecasts(property_data, None)
-                if not forecasts:
-                    forecasts = service.generate_sample_forecasts()
-                mi.forecasts = forecasts
-                refreshed.append('forecasts')
+                forecasts = service.generate_forecasts(base_property_data, None)
+                if forecasts:
+                    mi.forecasts = forecasts
+                    refreshed.append('forecasts')
+                else:
+                    logger.warning(f"Could not generate forecasts for {property_code}")
+                    # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh forecasts: {e}")
                 errors.append({'category': 'forecasts', 'error': str(e)})
@@ -1273,19 +1335,13 @@ async def refresh_market_intelligence(
         # Refresh competitive analysis
         if 'competitive' in categories:
             try:
-                property_data = {
-                    'property_code': property_code,
-                    'avg_rent': 1500,
-                    'occupancy_rate': 95.0,
-                    'total_units': property_obj.total_units if hasattr(property_obj, 'total_units') else 100,
-                    'property_type': property_obj.property_type,
-                    'submarket': property_obj.city
-                }
-                competitive = service.analyze_competitive_position(property_data, None)
-                if not competitive:
-                    competitive = service.generate_sample_competitive()
-                mi.competitive_analysis = competitive
-                refreshed.append('competitive')
+                competitive = service.analyze_competitive_position(base_property_data, None)
+                if competitive:
+                    mi.competitive_analysis = competitive
+                    refreshed.append('competitive')
+                else:
+                    logger.warning(f"Could not generate competitive analysis for {property_code}")
+                    # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh competitive analysis: {e}")
                 errors.append({'category': 'competitive', 'error': str(e)})
@@ -1293,14 +1349,6 @@ async def refresh_market_intelligence(
         # Refresh AI insights
         if 'insights' in categories:
             try:
-                property_data = {
-                    'property_code': property_code,
-                    'property_type': property_obj.property_type,
-                    'year_built': getattr(property_obj, 'year_built', None),
-                    'avg_rent': 1500,
-                    'occupancy_rate': 95.0,
-                    'noi': 500000
-                }
                 market_intelligence_data = {
                     'demographics': mi.demographics,
                     'economic_indicators': mi.economic_indicators,
@@ -1309,18 +1357,21 @@ async def refresh_market_intelligence(
                     'forecasts': mi.forecasts,
                     'competitive_analysis': mi.competitive_analysis
                 }
-                ai_insights = service.generate_ai_insights(property_data, market_intelligence_data)
-                if not ai_insights:
-                    ai_insights = service.generate_sample_ai_insights()
-                ai_insights['property_code'] = property_code
-                try:
-                    embeddings_meta = service.generate_ai_embeddings(ai_insights)
-                    if embeddings_meta:
-                        ai_insights['embeddings'] = embeddings_meta
-                except Exception as emb_err:
-                    logger.debug(f"AI embedding generation skipped: {emb_err}")
-                mi.ai_insights = ai_insights
-                refreshed.append('insights')
+                ai_insights = await service.generate_ai_insights(base_property_data, market_intelligence_data)
+                
+                if ai_insights:
+                    ai_insights['property_code'] = property_code
+                    try:
+                        embeddings_meta = service.generate_ai_embeddings(ai_insights)
+                        if embeddings_meta:
+                            ai_insights['embeddings'] = embeddings_meta
+                    except Exception as emb_err:
+                        logger.debug(f"AI embedding generation skipped: {emb_err}")
+                    mi.ai_insights = ai_insights
+                    refreshed.append('insights')
+                else:
+                    logger.warning(f"Could not generate AI insights for {property_code}")
+                    # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh AI insights: {e}")
                 errors.append({'category': 'insights', 'error': str(e)})

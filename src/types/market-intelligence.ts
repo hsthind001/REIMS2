@@ -195,10 +195,10 @@ export type Forecasts = TaggedData<ForecastsData>;
 // ============================================================================
 
 export interface SubmarketPosition {
-  rent_percentile: number;
-  occupancy_percentile: number;
-  quality_percentile: number;
-  value_percentile: number;
+  rent_percentile: number | null;
+  occupancy_percentile: number | null;
+  quality_percentile: number | null;
+  value_percentile: number | null;
 }
 
 export interface CompetitiveThreat {
@@ -210,11 +210,11 @@ export interface CompetitiveThreat {
 }
 
 export interface SubmarketTrends {
-  rent_growth_3yr_cagr: number;
-  occupancy_trend: string;
-  new_supply_pipeline_units: number;
-  absorption_rate_units_per_mo: number;
-  months_of_supply: number;
+  rent_growth_3yr_cagr: number | null;
+  occupancy_trend: string | null;
+  new_supply_pipeline_units: number | null;
+  absorption_rate_units_per_mo: number | null;
+  months_of_supply: number | null;
 }
 
 export interface CompetitiveAnalysisData {
