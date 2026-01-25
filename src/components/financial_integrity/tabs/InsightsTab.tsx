@@ -125,15 +125,15 @@ export default function InsightsTab() {
              </div>
 
              {/* Mock Bar Chart */}
-             <div className="flex-1 flex items-end justify-between gap-2 px-2">
+             <div className="flex-1 flex items-end justify-between gap-2 px-2 min-h-[280px]">
                 {[45, 60, 55, 70, 65, 80, 75, 85, 90, 88, 92, 94].map((h, i) => (
                    <div key={i} className="w-full relative group">
                       <div 
-                        className="bg-blue-100 hover:bg-blue-500 transition-colors rounded-t-sm w-full relative group-hover:shadow-lg"
+                        className="bg-blue-500 hover:bg-blue-600 transition-colors rounded-t-md w-full relative group-hover:shadow-lg"
                         style={{ height: `${h}%` }}
                       ></div>
                       {/* Tooltip */}
-                      <div className="opacity-0 group-hover:opacity-100 absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10 transition-opacity">
+                      <div className="opacity-0 group-hover:opacity-100 absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap z-10 transition-opacity pointer-events-none">
                          {h}% Accuracy
                       </div>
                    </div>
