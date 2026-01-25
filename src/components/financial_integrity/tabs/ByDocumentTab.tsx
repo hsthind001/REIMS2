@@ -5,7 +5,8 @@ import {
   CheckCircle2, 
   AlertTriangle,
   Calculator,
-  MinusCircle
+  MinusCircle,
+  FileText
 } from 'lucide-react';
 import type { CalculatedRuleEvaluation } from '../../../lib/forensic_reconciliation';
 

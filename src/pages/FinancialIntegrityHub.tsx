@@ -120,33 +120,57 @@ export default function FinancialIntegrityHub() {
 
     // Derived Data for Document Tab
     const documentStats = useMemo(() => {
+        // Initialize all 5 document types
+        const documentNames: Record<string, string> = {
+            'balance_sheet': 'Balance Sheet',
+            'income_statement': 'Income Statement',
+            'cash_flow': 'Cash Flow',
+            'rent_roll': 'Rent Roll',
+            'mortgage_statement': 'Mortgage Statement'
+        };
+
+        const rulePrefixMap: Record<string, string> = {
+            'balance_sheet': 'BS',
+            'income_statement': 'IS',
+            'cash_flow': 'CF',
+            'rent_roll': 'RR',
+            'mortgage_statement': 'MS'
+        };
+
         const stats: Record<string, { id: string, name: string, type: string, passed: number, failed: number, rules: number, lastSync: string }> = {};
         
-        matches.forEach(m => {
-            const docs = [m.source_document_type, m.target_document_type];
-            docs.forEach(d => {
-                if (!stats[d]) {
-                     stats[d] = { 
-                         id: d, 
-                         name: d.replace(/_/g, ' '), 
-                         type: 'Financial', // Infer from name?
-                         passed: 0, 
-                         failed: 0, 
-                         rules: 0, 
-                         lastSync: 'Now' 
-                     };
+        // Initialize all document types
+        Object.keys(documentNames).forEach(docId => {
+            stats[docId] = {
+                id: docId,
+                name: documentNames[docId],
+                type: 'Financial',
+                passed: 0,
+                failed: 0,
+                rules: 0,
+                lastSync: 'Now'
+            };
+        });
+
+        // Count rules by document type based on rule prefixes
+        const rules = calculatedRulesData?.rules || [];
+        rules.forEach(rule => {
+            // Find which document this rule belongs to based on prefix
+            for (const [docId, prefix] of Object.entries(rulePrefixMap)) {
+                if (rule.rule_id?.startsWith(prefix + '-')) {
+                    stats[docId].rules++;
+                    if (rule.status === 'PASS') {
+                        stats[docId].passed++;
+                    } else {
+                        stats[docId].failed++;
+                    }
+                    break;
                 }
-                if (m.status === 'approved' || m.confidence_score === 1.0) {
-                    stats[d].passed++;
-                } else {
-                    stats[d].failed++;
-                }
-                stats[d].rules++; // Rough proxy
-            });
+            }
         });
 
         return Object.values(stats);
-    }, [matches]);
+    }, [calculatedRulesData]);
 
     const handleRunReconciliation = async () => {
         if (!selectedPropertyId || !selectedPeriodId) return;
