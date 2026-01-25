@@ -10,6 +10,8 @@ from datetime import datetime, date
 from decimal import Decimal
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_organization
+from app.models.organization import Organization
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.mortgage_payment_history import MortgagePaymentHistory
 from app.models.property import Property
@@ -22,6 +24,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def _get_property_for_org(db: Session, organization_id: int, property_id: int) -> Optional[Property]:
+    return Property.filter_by_org(db.query(Property), organization_id).filter(Property.id == property_id).first()
+
+def _get_mortgage_for_org(db: Session, organization_id: int, mortgage_id: int) -> Optional[MortgageStatementData]:
+    return db.query(MortgageStatementData).join(
+        Property, MortgageStatementData.property_id == Property.id
+    ).filter(
+        MortgageStatementData.id == mortgage_id,
+        Property.organization_id == organization_id
+    ).first()
 
 
 # ==================== REQUEST/RESPONSE MODELS ====================
@@ -168,11 +181,19 @@ class MaturityCalendarResponse(BaseModel):
 def get_mortgages_by_property_period(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Financial Period ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get all mortgage statements for a property and period with full details
     """
+    property_obj = _get_property_for_org(db, current_org.id, property_id)
+    if not property_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property {property_id} not found"
+        )
+
     mortgages = db.query(MortgageStatementData).filter(
         MortgageStatementData.property_id == property_id,
         MortgageStatementData.period_id == period_id
@@ -217,14 +238,13 @@ def get_mortgages_by_property_period(
 @router.get("/{mortgage_id}", response_model=MortgageStatementDetailResponse)
 def get_mortgage_detail(
     mortgage_id: int = Path(..., description="Mortgage Statement ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get detailed mortgage statement with payment history
     """
-    mortgage = db.query(MortgageStatementData).filter(
-        MortgageStatementData.id == mortgage_id
-    ).first()
+    mortgage = _get_mortgage_for_org(db, current_org.id, mortgage_id)
     
     if not mortgage:
         raise HTTPException(
@@ -267,16 +287,15 @@ def get_mortgage_detail(
 @router.put("/{mortgage_id}", response_model=MortgageStatementResponse)
 def update_mortgage(
     mortgage_id: int = Path(..., description="Mortgage Statement ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Update mortgage statement data after review
     
     Note: This is a placeholder - implement with proper update schema
     """
-    mortgage = db.query(MortgageStatementData).filter(
-        MortgageStatementData.id == mortgage_id
-    ).first()
+    mortgage = _get_mortgage_for_org(db, current_org.id, mortgage_id)
     
     if not mortgage:
         raise HTTPException(
@@ -295,14 +314,13 @@ def update_mortgage(
 @router.delete("/{mortgage_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_mortgage(
     mortgage_id: int = Path(..., description="Mortgage Statement ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Delete a mortgage statement
     """
-    mortgage = db.query(MortgageStatementData).filter(
-        MortgageStatementData.id == mortgage_id
-    ).first()
+    mortgage = _get_mortgage_for_org(db, current_org.id, mortgage_id)
     
     if not mortgage:
         raise HTTPException(
@@ -320,12 +338,13 @@ def delete_mortgage(
 def get_dscr_history(
     property_id: int = Path(..., description="Property ID"),
     limit: int = Query(12, ge=1, le=60, description="Number of periods to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get DSCR history over time for a property
     """
-    property_obj = db.query(Property).filter(Property.id == property_id).first()
+    property_obj = _get_property_for_org(db, current_org.id, property_id)
     if not property_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -346,7 +365,8 @@ def get_dscr_history(
 def get_latest_complete_dscr(
     property_id: int = Path(..., description="Property ID"),
     year: Optional[int] = Query(None, description="Optional year filter (e.g., 2025)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get DSCR for the latest COMPLETE period (has both income and mortgage data).
@@ -361,7 +381,7 @@ def get_latest_complete_dscr(
         - debt_service: Annual debt service
         - status: DSCR health status (healthy/warning/critical)
     """
-    property_obj = db.query(Property).filter(Property.id == property_id).first()
+    property_obj = _get_property_for_org(db, current_org.id, property_id)
     if not property_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -431,12 +451,13 @@ def get_latest_complete_dscr(
 def get_ltv_history(
     property_id: int = Path(..., description="Property ID"),
     limit: int = Query(12, ge=1, le=60, description="Number of periods to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get LTV history over time for a property
     """
-    property_obj = db.query(Property).filter(Property.id == property_id).first()
+    property_obj = _get_property_for_org(db, current_org.id, property_id)
     if not property_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -489,11 +510,19 @@ def get_ltv_history(
 def get_debt_summary(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Financial Period ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get comprehensive debt summary for a property/period
     """
+    property_obj = _get_property_for_org(db, current_org.id, property_id)
+    if not property_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property {property_id} not found"
+        )
+
     # Get all mortgages
     mortgages = db.query(MortgageStatementData).filter(
         MortgageStatementData.property_id == property_id,
@@ -525,7 +554,8 @@ def get_debt_summary(
 @router.get("/covenant-monitoring", response_model=List[CovenantMonitoringResponse])
 def get_covenant_monitoring(
     property_id: Optional[int] = Query(None, description="Filter by property ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get covenant compliance dashboard for all properties or a specific property
@@ -533,9 +563,18 @@ def get_covenant_monitoring(
     dscr_service = DSCRMonitoringService(db)
     
     if property_id:
-        properties = db.query(Property).filter(Property.id == property_id).all()
+        property_obj = _get_property_for_org(db, current_org.id, property_id)
+        if not property_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Property {property_id} not found"
+            )
+        properties = [property_obj]
     else:
-        properties = db.query(Property).filter(Property.status == 'active').all()
+        properties = db.query(Property).filter(
+            Property.organization_id == current_org.id,
+            Property.status == 'active'
+        ).all()
     
     results = []
     for prop in properties:
@@ -587,7 +626,8 @@ def get_covenant_monitoring(
 @router.get("/maturity-calendar", response_model=MaturityCalendarResponse)
 def get_maturity_calendar(
     months_ahead: int = Query(24, ge=1, le=60, description="Number of months ahead to look"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get loan maturity calendar (upcoming maturities)
@@ -602,12 +642,13 @@ def get_maturity_calendar(
     ).filter(
         MortgageStatementData.maturity_date.isnot(None),
         MortgageStatementData.maturity_date >= date.today(),
-        MortgageStatementData.maturity_date <= cutoff_date
+        MortgageStatementData.maturity_date <= cutoff_date,
+        Property.organization_id == current_org.id
     ).order_by(MortgageStatementData.maturity_date).all()
     
     upcoming_maturities = []
     for mortgage in mortgages:
-        property_obj = db.query(Property).filter(Property.id == mortgage.property_id).first()
+        property_obj = mortgage.property
         days_until = (mortgage.maturity_date - date.today()).days if mortgage.maturity_date else None
         
         upcoming_maturities.append({
@@ -625,5 +666,4 @@ def get_maturity_calendar(
         "upcoming_maturities": upcoming_maturities,
         "total_upcoming": len(upcoming_maturities)
     }
-
 

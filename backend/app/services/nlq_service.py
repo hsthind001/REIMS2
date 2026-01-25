@@ -79,8 +79,9 @@ class NaturalLanguageQueryService:
         'cash flow': {'table': 'cash_flow', 'field': 'net_cash_flow'},
     }
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id: Optional[int] = None):
         self.db = db
+        self.organization_id = organization_id
 
         # Initialize LLM client
         self.llm_client = None
@@ -146,7 +147,7 @@ class NaturalLanguageQueryService:
             cache_key = question
             if property_id:
                 cache_key = f"{property_id}:{question}"
-            cached = self._check_cache(cache_key)
+            cached = self._check_cache(cache_key, user_id=user_id)
             if cached:
                 logger.info("Returning cached result")
                 return cached
@@ -289,6 +290,21 @@ class NaturalLanguageQueryService:
             .all()
 
         return [q.to_dict() for q in queries]
+
+    def _property_query(self):
+        query = self.db.query(Property)
+        if self.organization_id is not None:
+            query = query.filter(Property.organization_id == self.organization_id)
+        return query
+
+    def _org_filter_sql(self, alias: str = "p") -> str:
+        if self.organization_id is None:
+            return ""
+        return f" AND {alias}.organization_id = :organization_id"
+
+    def _add_org_param(self, params: Dict) -> None:
+        if self.organization_id is not None:
+            params["organization_id"] = self.organization_id
 
     # Helper methods
     
@@ -656,7 +672,7 @@ Respond in JSON format:
 
     def _extract_properties(self, question: str) -> List[str]:
         """Extract property names from question"""
-        properties = self.db.query(Property.property_name, Property.property_code).all()
+        properties = self._property_query().with_entities(Property.property_name, Property.property_code).all()
 
         mentioned = []
         question_lower = question.lower()
@@ -945,10 +961,15 @@ Respond in JSON format:
         
         # If property_id is provided from context, use it directly
         # Otherwise, try to find property ID from property names in entities
+        if property_id and self.organization_id is not None:
+            property_check = self._property_query().filter(Property.id == property_id).first()
+            if not property_check:
+                property_id = None
+
         if not property_id:
             properties = entities.get('properties', [])
             if properties:
-                property_obj = self.db.query(Property).filter(
+                property_obj = self._property_query().filter(
                     Property.property_name.in_(properties)
                 ).first()
                 if property_obj:
@@ -972,7 +993,8 @@ Respond in JSON format:
             property_id=property_id,
             period_id=period_id,
             document_type=document_type,
-            min_similarity=0.3
+            min_similarity=0.3,
+            organization_id=self.organization_id
         )
         
         return chunks
@@ -1083,7 +1105,7 @@ Answer:"""
         
         # Get all properties with their latest DSCR
         # Note: Property model may not have 'status' field, so get all properties
-        properties = self.db.query(Property).all()
+        properties = self._property_query().all()
         dscr_service = DSCRMonitoringService(self.db)
         
         results = []
@@ -1156,7 +1178,7 @@ Answer:"""
         FROM properties p
         JOIN financial_metrics fm ON p.id = fm.property_id
         JOIN financial_periods fp ON fm.period_id = fp.id
-        WHERE fm.dscr IS NOT NULL
+        WHERE fm.dscr IS NOT NULL{self._org_filter_sql('p')}
         ORDER BY fm.dscr ASC
         """
         
@@ -1194,6 +1216,7 @@ Answer:"""
         JOIN financial_metrics fm ON fp.id = fm.period_id
         WHERE fm.net_income IS NOT NULL
         """
+        sql += self._org_filter_sql('p')
         
         # Get latest period for each property
         sql += """
@@ -1215,7 +1238,9 @@ Answer:"""
         sql += " ORDER BY fm.net_income ASC" if is_loss_query else " ORDER BY fm.net_income DESC"
         
         try:
-            result = self.db.execute(text(sql)).fetchall()
+            params = {}
+            self._add_org_param(params)
+            result = self.db.execute(text(sql), params).fetchall()
             data = [dict(r._mapping) for r in result]
             
             return data, sql
@@ -1249,6 +1274,7 @@ Answer:"""
                 JOIN financial_periods fp ON isd.period_id = fp.id
                 WHERE isd.account_name LIKE :metric
                 """
+                sql += self._org_filter_sql('p')
                 if properties:
                     sql += " AND p.property_name IN :properties"
                     params['properties'] = tuple(properties)
@@ -1261,6 +1287,7 @@ Answer:"""
 
                 sql += " ORDER BY fp.period_year DESC, fp.period_month DESC LIMIT 10"
                 params['metric'] = f'%{mapping["field"]}%'
+                self._add_org_param(params)
 
                 result = self.db.execute(text(sql), params).fetchall()
                 return [dict(r._mapping) for r in result], sql
@@ -1294,6 +1321,7 @@ Answer:"""
               AND isd.account_code NOT IN ('4990-0000', '4991-0000')
               AND p.property_name IN :properties
             """
+        sql += self._org_filter_sql('p')
 
         params = {'properties': tuple(properties)} if properties and len(properties) >= 2 else {}
 
@@ -1307,6 +1335,7 @@ Answer:"""
             GROUP BY p.property_name
             ORDER BY total DESC
             """
+        self._add_org_param(params)
 
         result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
@@ -1334,6 +1363,7 @@ Answer:"""
             JOIN financial_periods fp ON fm.period_id = fp.id
             WHERE fm.net_operating_income IS NOT NULL
             """
+            sql += self._org_filter_sql('p')
 
             params = {}
             if properties:
@@ -1351,6 +1381,7 @@ Answer:"""
 
             sql += " ORDER BY p.property_name, fp.period_year DESC, fp.period_month DESC LIMIT 24"
 
+            self._add_org_param(params)
             result = self.db.execute(text(sql), params).fetchall()
             return [dict(r._mapping) for r in result], sql
 
@@ -1366,6 +1397,7 @@ Answer:"""
         WHERE isd.account_code LIKE '4%'  -- All revenue accounts (4xxx series)
           AND isd.account_code NOT IN ('4990-0000', '4991-0000')  -- Exclude total/summary rows
         """
+        sql += self._org_filter_sql('p')
 
         params = {}
         if properties:
@@ -1384,6 +1416,7 @@ Answer:"""
         sql += " GROUP BY p.property_name, fp.period_year, fp.period_month"
         sql += " ORDER BY p.property_name, fp.period_year DESC, fp.period_month DESC LIMIT 24"
 
+        self._add_org_param(params)
         result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
 
@@ -1420,8 +1453,14 @@ Answer:"""
             JOIN financial_metrics fm ON fp.id = fm.period_id
             WHERE fm.total_assets IS NOT NULL
             """
+            sql = sql.replace(
+                "WHERE fm.total_assets IS NOT NULL",
+                f"WHERE fm.total_assets IS NOT NULL{self._org_filter_sql('p')}"
+            )
 
-            result = self.db.execute(text(sql)).fetchall()
+            params = {}
+            self._add_org_param(params)
+            result = self.db.execute(text(sql), params).fetchall()
             return [dict(r._mapping) for r in result], sql
 
         # Default: revenue aggregation
@@ -1437,6 +1476,7 @@ Answer:"""
         WHERE isd.account_code LIKE '4%'  -- All revenue accounts (4xxx series)
           AND isd.account_code NOT IN ('4990-0000', '4991-0000')  -- Exclude total/summary rows
         """
+        sql += self._org_filter_sql('p')
 
         params = {}
 
@@ -1455,6 +1495,7 @@ Answer:"""
           )
         """
 
+        self._add_org_param(params)
         result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
 
@@ -1476,6 +1517,7 @@ Answer:"""
         WHERE isd.account_code LIKE '4%'  -- All revenue accounts (4xxx series)
           AND isd.account_code NOT IN ('4990-0000', '4991-0000')  -- Exclude total/summary rows
         """
+        sql += self._org_filter_sql('p')
 
         params = {}
 
@@ -1500,6 +1542,7 @@ Answer:"""
         LIMIT 5
         """
 
+        self._add_org_param(params)
         result = self.db.execute(text(sql), params).fetchall()
         return [dict(r._mapping) for r in result], sql
     
@@ -1553,6 +1596,8 @@ Answer:"""
         ).join(
             Property, RentRollData.property_id == Property.id
         )
+        if self.organization_id is not None:
+            query = query.filter(Property.organization_id == self.organization_id)
         
         # Apply filters - try property code first (with partial matching), then name
         if property_code:
@@ -1630,7 +1675,7 @@ Answer:"""
         FROM rent_roll_data rr
         JOIN properties p ON rr.property_id = p.id
         JOIN financial_periods fp ON rr.period_id = fp.id
-        WHERE {'p.property_code = :property_code' if property_code else ('p.property_name = :property_name' if property_name else '1=1')}
+        WHERE {'p.property_code = :property_code' if property_code else ('p.property_name = :property_name' if property_name else '1=1')}{self._org_filter_sql('p')}
         {'AND fp.period_year = :period_year' if period_year else ''}
         {'AND fp.period_month = :period_month' if period_month else ''}
         GROUP BY p.property_name, p.property_code, fp.period_year, fp.period_month
@@ -2212,7 +2257,7 @@ Generate a clear, accurate answer:"""
             logger.warning(f"Data serialization failed: {e}")
             return {"rows": [], "total_rows": 0}
 
-    def _check_cache(self, cache_key: str) -> Optional[Dict]:
+    def _check_cache(self, cache_key: str, user_id: Optional[int] = None) -> Optional[Dict]:
         """Check if similar question was asked recently"""
         # Cache key may be in format "property_id:question" or just "question"
         # Extract question from cache_key if it contains property context
@@ -2228,10 +2273,12 @@ Generate a clear, accurate answer:"""
         cutoff = datetime.now() - timedelta(hours=24)
 
         # Check for exact question match (works for both property-specific and general queries)
-        cached = self.db.query(NLQQuery)\
+        cached_query = self.db.query(NLQQuery)\
             .filter(NLQQuery.created_at >= cutoff)\
-            .filter(NLQQuery.question == question)\
-            .first()
+            .filter(NLQQuery.question == question)
+        if user_id is not None:
+            cached_query = cached_query.filter(NLQQuery.user_id == user_id)
+        cached = cached_query.first()
 
         if cached:
             cached_dict = cached.to_dict()

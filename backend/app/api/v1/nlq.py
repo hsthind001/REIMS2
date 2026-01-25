@@ -1,7 +1,7 @@
 """
 Natural Language Query API Endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -9,12 +9,53 @@ import logging
 
 from app.db.database import get_db
 from app.services.nlq_service import NaturalLanguageQueryService
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
-from fastapi import Request
+from app.models.organization import Organization
+from app.models.property import Property
 
 router = APIRouter(prefix="/nlq", tags=["natural_language_query"])
 logger = logging.getLogger(__name__)
+
+
+def _normalize_property_context(
+    db: Session,
+    current_org: Organization,
+    context: Optional[dict]
+) -> Optional[dict]:
+    if not context:
+        return context
+
+    property_id = context.get('property_id')
+    property_code = context.get('property_code')
+    property_name = context.get('property_name')
+
+    if not any([property_id, property_code, property_name]):
+        return context
+
+    query = Property.filter_by_org(db.query(Property), current_org.id)
+    prop = None
+
+    if property_id:
+        prop = query.filter(Property.id == property_id).first()
+    elif property_code:
+        prop = query.filter(Property.property_code == property_code).first()
+    elif property_name:
+        prop = query.filter(Property.property_name == property_name).first()
+
+    if not prop:
+        raise HTTPException(
+            status_code=404,
+            detail="Property not found"
+        )
+
+    normalized = dict(context)
+    normalized.update({
+        "property_id": prop.id,
+        "property_code": prop.property_code,
+        "property_name": prop.property_name
+    })
+    return normalized
 
 
 class NLQueryRequest(BaseModel):
@@ -26,7 +67,8 @@ class NLQueryRequest(BaseModel):
 def natural_language_query(
     request: NLQueryRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Process natural language query
@@ -42,11 +84,12 @@ def natural_language_query(
     logger.info(f"NLQ query received from user {current_user.id}: {request.question}")
     user_id = current_user.id
 
-    service = NaturalLanguageQueryService(db)
+    service = NaturalLanguageQueryService(db, organization_id=current_org.id)
 
     try:
         # Pass context to service if provided
-        result = service.query(request.question, user_id, context=request.context)
+        context = _normalize_property_context(db, current_org, request.context)
+        result = service.query(request.question, user_id, context=context)
 
         if not result.get('success', False):
             # Return error response with proper format instead of raising exception
@@ -96,7 +139,8 @@ def get_query_suggestions():
 def get_query_history(
     limit: int = 20,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get user's query history
@@ -105,7 +149,7 @@ def get_query_history(
     """
     user_id = current_user.id
 
-    service = NaturalLanguageQueryService(db)
+    service = NaturalLanguageQueryService(db, organization_id=current_org.id)
     history = service.get_history(user_id, limit)
 
     return {
@@ -140,7 +184,7 @@ class AIInsight(BaseModel):
 @router.get("/insights/portfolio")
 def get_portfolio_insights(
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user)
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get AI-generated portfolio insights
@@ -164,7 +208,10 @@ def get_portfolio_insights(
 
     try:
         # Get all properties with latest metrics
-        properties = db.query(Property).filter(Property.status == 'active').all()
+        properties = db.query(Property).filter(
+            Property.organization_id == current_org.id,
+            Property.status == 'active'
+        ).all()
 
         # Analyze DSCR stress patterns
         dscr_stress_count = 0
@@ -207,10 +254,12 @@ def get_portfolio_insights(
 
         expiring_leases = (
             db.query(RentRollData)
+            .join(Property, RentRollData.property_id == Property.id)
             .filter(
                 RentRollData.lease_end_date >= next_quarter_start.date(),
                 RentRollData.lease_end_date <= next_quarter_end.date(),
-                RentRollData.occupancy_status == 'occupied'
+                RentRollData.occupancy_status == 'occupied',
+                Property.organization_id == current_org.id
             )
             .count()
         )

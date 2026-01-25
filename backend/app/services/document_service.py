@@ -30,8 +30,9 @@ PROPERTY_NAME_MAPPING = {
 class DocumentService:
     """Handle document upload workflow and storage"""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id: Optional[int] = None):
         self.db = db
+        self.organization_id = organization_id
         self.minio_client = get_minio_client()
 
     def _maybe_override_period_for_range(
@@ -181,8 +182,11 @@ class DocumentService:
         from app.utils.extraction_engine import MultiEngineExtractor
         detector = MultiEngineExtractor()
         
-        # Get all properties for property detection
-        all_properties = self.db.query(Property).all()
+        # Get all properties for property detection (scoped to org if available)
+        properties_query = self.db.query(Property)
+        if self.organization_id is not None:
+            properties_query = properties_query.filter(Property.organization_id == self.organization_id)
+        all_properties = properties_query.all()
         available_props = [{
             'property_code': p.property_code,
             'property_name': p.property_name,
@@ -451,17 +455,19 @@ class DocumentService:
         Intelligently handles both property_code (e.g., "WEND001") and numeric ID.
         """
         # Try as property_code first
-        property_obj = self.db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        query = self.db.query(Property).filter(Property.property_code == property_code)
+        if self.organization_id is not None:
+            query = query.filter(Property.organization_id == self.organization_id)
+        property_obj = query.first()
         
         # If not found and looks like a numeric ID, try as ID
         if not property_obj and property_code.isdigit():
             try:
                 property_id = int(property_code)
-                property_obj = self.db.query(Property).filter(
-                    Property.id == property_id
-                ).first()
+                query = self.db.query(Property).filter(Property.id == property_id)
+                if self.organization_id is not None:
+                    query = query.filter(Property.organization_id == self.organization_id)
+                property_obj = query.first()
             except ValueError:
                 pass
         

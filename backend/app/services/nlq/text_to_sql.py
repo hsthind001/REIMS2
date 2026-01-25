@@ -108,7 +108,7 @@ class VannaTextToSQL:
         Fallback DDL statements for essential tables if dynamic generation fails
         """
         return {
-            "properties": "CREATE TABLE properties (id SERIAL PRIMARY KEY, property_code VARCHAR(10) UNIQUE NOT NULL, property_name VARCHAR(255), property_type VARCHAR(50), status VARCHAR(20));",
+            "properties": "CREATE TABLE properties (id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL, property_code VARCHAR(10) NOT NULL, property_name VARCHAR(255), property_type VARCHAR(50), status VARCHAR(20), UNIQUE (organization_id, property_code));",
             "financial_periods": "CREATE TABLE financial_periods (id SERIAL PRIMARY KEY, property_id INTEGER, period_year INTEGER, period_month INTEGER, is_closed BOOLEAN);",
             "balance_sheet_data": "CREATE TABLE balance_sheet_data (id SERIAL PRIMARY KEY, property_id INTEGER, period_id INTEGER, account_code VARCHAR(20), account_name VARCHAR(255), amount DECIMAL(15,2), category VARCHAR(50));",
             "income_statement_data": "CREATE TABLE income_statement_data (id SERIAL PRIMARY KEY, property_id INTEGER, period_id INTEGER, account_code VARCHAR(20), account_name VARCHAR(255), amount DECIMAL(15,2), category VARCHAR(50));",

@@ -7,6 +7,8 @@
 -- Consolidated view of all financial metrics for each property/period
 CREATE OR REPLACE VIEW v_property_financial_summary AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     p.property_type,
@@ -61,6 +63,8 @@ ORDER BY p.property_code, fp.period_year DESC, fp.period_month DESC;
 -- Month-over-month comparison for income statement
 CREATE OR REPLACE VIEW v_monthly_comparison AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     isd.account_code,
@@ -100,6 +104,8 @@ ORDER BY p.property_code, fp.period_year DESC, fp.period_month DESC, isd.account
 -- YTD aggregated financials for current fiscal year
 CREATE OR REPLACE VIEW v_ytd_rollup AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     fp.fiscal_year,
@@ -114,7 +120,7 @@ FROM properties p
 JOIN financial_periods fp ON p.id = fp.property_id
 LEFT JOIN financial_metrics fm ON fp.id = fm.period_id
 WHERE p.status = 'active'
-GROUP BY p.property_code, p.property_name, fp.fiscal_year
+GROUP BY p.id, p.organization_id, p.property_code, p.property_name, fp.fiscal_year
 ORDER BY p.property_code, fp.fiscal_year DESC;
 
 
@@ -126,6 +132,8 @@ CREATE OR REPLACE VIEW v_multi_property_comparison AS
 SELECT
     fp.period_year,
     fp.period_month,
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     p.property_type,
@@ -159,6 +167,8 @@ ORDER BY fp.period_year DESC, fp.period_month DESC, fm.net_operating_income DESC
 -- Monitor extraction quality across all uploads
 CREATE OR REPLACE VIEW v_extraction_quality_dashboard AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     fp.period_year,
@@ -188,6 +198,8 @@ ORDER BY du.upload_date DESC;
 -- All validation failures that need attention
 CREATE OR REPLACE VIEW v_validation_issues AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     fp.period_year,
@@ -219,6 +231,8 @@ ORDER BY vres.severity DESC, vres.created_at DESC;
 -- Upcoming lease expirations for proactive management
 CREATE OR REPLACE VIEW v_lease_expiration_pipeline AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     rr.unit_number,
@@ -260,6 +274,8 @@ ORDER BY rr.lease_end_date ASC;
 -- 12-month trend analysis for specific accounts
 CREATE OR REPLACE VIEW v_annual_trends AS
 SELECT
+    p.id AS property_id,
+    p.organization_id,
     p.property_code,
     p.property_name,
     isd.account_code,
@@ -278,7 +294,7 @@ JOIN financial_periods fp ON isd.period_id = fp.id
 JOIN properties p ON isd.property_id = p.id
 WHERE p.status = 'active'
   AND isd.is_calculated = FALSE  -- Only actual accounts, not calculated totals
-GROUP BY p.property_code, p.property_name, isd.account_code, isd.account_name, fp.period_year
+GROUP BY p.id, p.organization_id, p.property_code, p.property_name, isd.account_code, isd.account_name, fp.period_year
 ORDER BY p.property_code, fp.period_year DESC, isd.account_code;
 
 
@@ -288,6 +304,7 @@ ORDER BY p.property_code, fp.period_year DESC, isd.account_code;
 -- High-level portfolio metrics
 CREATE OR REPLACE VIEW v_portfolio_summary AS
 SELECT
+    p.organization_id,
     fp.period_year,
     fp.period_month,
     COUNT(DISTINCT p.id) AS total_properties,
@@ -306,6 +323,5 @@ FROM properties p
 JOIN financial_periods fp ON p.id = fp.property_id
 LEFT JOIN financial_metrics fm ON fp.id = fm.period_id
 WHERE p.status = 'active'
-GROUP BY fp.period_year, fp.period_month
+GROUP BY p.organization_id, fp.period_year, fp.period_month
 ORDER BY fp.period_year DESC, fp.period_month DESC;
-

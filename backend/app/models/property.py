@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DECIMAL, Date, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DECIMAL, Date, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -12,7 +12,7 @@ class Property(Base, TenantMixin):
     __tablename__ = "properties"
 
     id = Column(Integer, primary_key=True, index=True)
-    property_code = Column(String(50), unique=True, nullable=False, index=True)
+    property_code = Column(String(50), nullable=False, index=True)
     property_name = Column(String(255), nullable=False)
     property_type = Column(String(50))  # Retail, Office, Mixed-Use
     
@@ -79,6 +79,10 @@ class Property(Base, TenantMixin):
     # Document completeness tracking
     document_completeness = relationship("PeriodDocumentCompleteness", back_populates="property", cascade="all, delete-orphan")
 
+    __table_args__ = (
+        UniqueConstraint("organization_id", "property_code", name="uq_properties_org_property_code"),
+    )
+
     def __repr__(self):
         return f"<Property {self.property_code}: {self.property_name}>"
     
@@ -87,4 +91,3 @@ class Property(Base, TenantMixin):
         valid_statuses = ['active', 'sold', 'under_contract']
         if self.status not in valid_statuses:
             raise ValueError(f"Status must be one of: {valid_statuses}")
-

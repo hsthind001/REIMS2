@@ -9,9 +9,10 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user, require_role, UserRole
+from app.api.dependencies import get_current_user, get_current_organization, require_role, UserRole
 from app.models.user import User
 from app.models import DocumentUpload, Property, FinancialPeriod
+from app.models.organization import Organization
 from app.schemas.base import (
     SuccessResponse,
     ErrorResponse,
@@ -50,6 +51,7 @@ async def list_documents(
     document_type: Optional[DocumentTypeEnum] = Query(None, description="Filter by document type"),
     extraction_status: Optional[str] = Query(None, description="Filter by extraction status"),
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db)
 ):
     """
@@ -58,11 +60,19 @@ async def list_documents(
     Returns documents the user has access to, with optional filtering.
     """
     # Build query
-    query = db.query(DocumentUpload).filter(DocumentUpload.is_active == True)
+    query = db.query(DocumentUpload).join(
+        Property, DocumentUpload.property_id == Property.id
+    ).filter(
+        DocumentUpload.is_active == True,
+        Property.organization_id == current_org.id
+    )
 
     # Apply filters
     if property_code:
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = db.query(Property).filter(
+            Property.property_code == property_code,
+            Property.organization_id == current_org.id
+        ).first()
         if property_obj:
             query = query.filter(DocumentUpload.property_id == property_obj.id)
 
@@ -121,14 +131,18 @@ async def list_documents(
 async def get_document(
     document_id: int,
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db)
 ):
     """
     Get detailed information about a specific document.
     """
-    document = db.query(DocumentUpload).filter(
+    document = db.query(DocumentUpload).join(
+        Property, DocumentUpload.property_id == Property.id
+    ).filter(
         DocumentUpload.id == document_id,
-        DocumentUpload.is_active == True
+        DocumentUpload.is_active == True,
+        Property.organization_id == current_org.id
     ).first()
 
     if not document:
@@ -142,7 +156,10 @@ async def get_document(
         )
 
     # Get related data
-    property_obj = db.query(Property).filter(Property.id == document.property_id).first()
+    property_obj = db.query(Property).filter(
+        Property.id == document.property_id,
+        Property.organization_id == current_org.id
+    ).first()
     period_obj = db.query(FinancialPeriod).filter(FinancialPeriod.id == document.period_id).first()
 
     return SuccessResponse(
@@ -179,6 +196,7 @@ async def get_document(
 async def delete_document(
     document_id: int,
     current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPERUSER)),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db)
 ):
     """
@@ -186,9 +204,12 @@ async def delete_document(
 
     Requires ADMIN or SUPERUSER role.
     """
-    document = db.query(DocumentUpload).filter(
+    document = db.query(DocumentUpload).join(
+        Property, DocumentUpload.property_id == Property.id
+    ).filter(
         DocumentUpload.id == document_id,
-        DocumentUpload.is_active == True
+        DocumentUpload.is_active == True,
+        Property.organization_id == current_org.id
     ).first()
 
     if not document:

@@ -10,6 +10,8 @@ from functools import lru_cache
 import time
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_organization
+from app.models.organization import Organization
 from app.core.redis_client import cache_get, cache_set, invalidate_portfolio_cache
 from app.db.minio_client import get_file_url
 from app.services.metrics_service import MetricsService
@@ -26,6 +28,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _get_property_for_org(db: Session, organization_id: int, property_code: str) -> Optional[Property]:
+    query = db.query(Property).filter(Property.property_code == property_code)
+    if organization_id is not None:
+        query = query.filter(Property.organization_id == organization_id)
+    return query.first()
+
+
+def _get_property_by_id_for_org(db: Session, organization_id: int, property_id: int) -> Optional[Property]:
+    query = db.query(Property).filter(Property.id == property_id)
+    if organization_id is not None:
+        query = query.filter(Property.organization_id == organization_id)
+    return query.first()
 
 # Simple in-memory cache for metrics summary (5-minute TTL)
 _metrics_summary_cache = {'data': None, 'timestamp': None, 'ttl': 300}
@@ -222,7 +238,8 @@ async def get_financial_metrics(
     property_code: str = Path(..., description="Property code"),
     year: int = Path(..., ge=2000, le=2100, description="Financial year"),
     month: int = Path(..., ge=1, le=12, description="Financial month"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get all calculated financial metrics for a property/period
@@ -238,9 +255,7 @@ async def get_financial_metrics(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        property_obj = _get_property_for_org(db, current_org.id, property_code)
         
         if not property_obj:
             raise HTTPException(
@@ -392,7 +407,8 @@ async def recalculate_metrics(
     property_code: str = Path(..., description="Property code"),
     year: int = Path(..., ge=2000, le=2100, description="Financial year"),
     month: int = Path(..., ge=1, le=12, description="Financial month"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Manually trigger metrics recalculation
@@ -408,9 +424,7 @@ async def recalculate_metrics(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        property_obj = _get_property_for_org(db, current_org.id, property_code)
         
         if not property_obj:
             raise HTTPException(
@@ -471,7 +485,8 @@ async def get_metrics_summary(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     year: Optional[int] = Query(None, description="Filter by specific year (e.g., 2023, 2024, 2025)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get metrics summary for all properties
@@ -494,7 +509,7 @@ async def get_metrics_summary(
     """
     try:
         # Check Redis cache first (include year in cache key)
-        cache_key = f"metrics:summary:{skip}:{limit}:{year if year else 'all'}"
+        cache_key = f"metrics:summary:{current_org.id}:{skip}:{limit}:{year if year else 'all'}"
         cached_data = cache_get(cache_key)
 
         if cached_data is not None:
@@ -540,7 +555,8 @@ async def get_metrics_summary(
             ).join(
                 Property, and_(
                     FinancialMetrics.property_id == Property.id,
-                    Property.status == 'active'
+                    Property.status == 'active',
+                    Property.organization_id == current_org.id
                 )
             ).join(
                 FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
@@ -585,7 +601,8 @@ async def get_metrics_summary(
             ).join(
                 Property, and_(
                     FinancialMetrics.property_id == Property.id,
-                    Property.status == 'active'
+                    Property.status == 'active',
+                    Property.organization_id == current_org.id
                 )
             ).join(
                 FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
@@ -624,7 +641,8 @@ async def get_metrics_summary(
             ).join(
                 Property, and_(
                     FinancialMetrics.property_id == Property.id,
-                    Property.status == 'active'
+                    Property.status == 'active',
+                    Property.organization_id == current_org.id
                 )
             ).join(
                 FinancialPeriod, FinancialMetrics.period_id == FinancialPeriod.id
@@ -705,7 +723,8 @@ async def get_metrics_trends(
     end_year: Optional[int] = Query(None, ge=2000, le=2100),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get metrics over time for trend analysis
@@ -723,9 +742,7 @@ async def get_metrics_trends(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        property_obj = _get_property_for_org(db, current_org.id, property_code)
 
         if not property_obj:
             raise HTTPException(
@@ -901,7 +918,8 @@ class HistoricalMetricsResponse(BaseModel):
 @router.get("/metrics/{property_id}/cap-rate", response_model=CapRateResponse)
 async def get_cap_rate(
     property_id: int = Path(..., description="Property ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Calculate Cap Rate for a property
@@ -911,7 +929,7 @@ async def get_cap_rate(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -971,7 +989,8 @@ async def get_cap_rate(
 @router.get("/metrics/{property_id}/ltv", response_model=LTVResponse)
 async def get_ltv(
     property_id: int = Path(..., description="Property ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Calculate LTV (Loan-to-Value) ratio for a property
@@ -985,7 +1004,7 @@ async def get_ltv(
     4. Last resort: Use total_liabilities / total_assets (debt-to-assets ratio)
     """
     try:
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1071,7 +1090,10 @@ async def get_ltv(
 
 
 @router.get("/exit-strategy/portfolio-dscr", response_model=PortfolioDSCRResponse)
-async def get_portfolio_dscr(db: Session = Depends(get_db)):
+async def get_portfolio_dscr(
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
+):
     """
     Calculate portfolio-wide DSCR from actual financial data
 
@@ -1085,7 +1107,7 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
     """
     try:
         # Check Redis cache first
-        cache_key = "portfolio:dscr:latest"
+        cache_key = f"portfolio:dscr:latest:{current_org.id}"
         cached_data = cache_get(cache_key)
         if cached_data is not None:
             logger.info(f"Redis cache HIT: {cache_key}")
@@ -1116,7 +1138,8 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
         ).join(
             Property, and_(
                 PeriodDocumentCompleteness.property_id == Property.id,
-                Property.status == 'active'
+                Property.status == 'active',
+                Property.organization_id == current_org.id
             )
         ).filter(
             PeriodDocumentCompleteness.is_complete == True  # Only complete periods
@@ -1157,7 +1180,7 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
         for property_id, period_id, year, month in latest_complete_periods:
             try:
                 # Get property info
-                property_obj = db.query(Property).filter(Property.id == property_id).first()
+                property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
                 if not property_obj:
                     continue
 
@@ -1211,7 +1234,8 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
         ).join(
             Property, and_(
                 PeriodDocumentCompleteness.property_id == Property.id,
-                Property.status == 'active'
+                Property.status == 'active',
+                Property.organization_id == current_org.id
             )
         ).filter(
             PeriodDocumentCompleteness.is_complete == True,
@@ -1269,7 +1293,10 @@ async def get_portfolio_dscr(db: Session = Depends(get_db)):
 
 
 @router.get("/exit-strategy/portfolio-irr", response_model=PortfolioIRRResponse)
-async def get_portfolio_irr(db: Session = Depends(get_db)):
+async def get_portfolio_irr(
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
+):
     """
     Calculate portfolio-wide IRR from actual financial data
     
@@ -1289,7 +1316,8 @@ async def get_portfolio_irr(db: Session = Depends(get_db)):
         ).join(
             Property, FinancialPeriod.property_id == Property.id
         ).filter(
-            Property.status == 'active'
+            Property.status == 'active',
+            Property.organization_id == current_org.id
         ).first()
         
         if not latest_period or not latest_period.max_year:
@@ -1312,6 +1340,7 @@ async def get_portfolio_irr(db: Session = Depends(get_db)):
             Property, FinancialMetrics.property_id == Property.id
         ).filter(
             Property.status == 'active',
+            Property.organization_id == current_org.id,
             FinancialPeriod.period_year == latest_period.max_year,
             FinancialPeriod.period_month == latest_period.max_month
         ).first()
@@ -1332,6 +1361,7 @@ async def get_portfolio_irr(db: Session = Depends(get_db)):
             Property, FinancialMetrics.property_id == Property.id
         ).filter(
             Property.status == 'active',
+            Property.organization_id == current_org.id,
             FinancialPeriod.period_year == prev_year,
             FinancialPeriod.period_month == prev_month
         ).first()
@@ -1369,6 +1399,7 @@ async def get_portfolio_irr(db: Session = Depends(get_db)):
             Property, FinancialMetrics.property_id == Property.id
         ).filter(
             Property.status == 'active',
+            Property.organization_id == current_org.id,
             FinancialPeriod.period_year == latest_period.max_year,
             FinancialPeriod.period_month == latest_period.max_month,
             FinancialMetrics.total_equity > 0
@@ -1405,7 +1436,10 @@ async def get_portfolio_irr(db: Session = Depends(get_db)):
 
 
 @router.get("/metrics/portfolio-changes", response_model=PortfolioPercentageChangesResponse)
-async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
+async def get_portfolio_percentage_changes(
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
+):
     """
     Get portfolio percentage changes for dashboard KPIs
     
@@ -1431,6 +1465,7 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
             Property, FinancialPeriod.property_id == Property.id
         ).filter(
             Property.status == 'active',
+            Property.organization_id == current_org.id,
             FinancialMetrics.net_operating_income.isnot(None),  # Must have NOI
             FinancialMetrics.total_assets.isnot(None)  # Must have assets
         ).order_by(
@@ -1462,6 +1497,7 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
             Property, FinancialPeriod.property_id == Property.id
         ).filter(
             Property.status == 'active',
+            Property.organization_id == current_org.id,
             FinancialMetrics.net_operating_income.isnot(None),  # Must have NOI
             FinancialMetrics.total_assets.isnot(None),  # Must have assets
             # Previous period must be before current period
@@ -1494,6 +1530,7 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
             Property, FinancialMetrics.property_id == Property.id
         ).filter(
             Property.status == 'active',
+            Property.organization_id == current_org.id,
             FinancialPeriod.period_year == current_year,
             FinancialPeriod.period_month == current_month
         ).first()
@@ -1511,6 +1548,7 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
                 Property, FinancialMetrics.property_id == Property.id
             ).filter(
                 Property.status == 'active',
+                Property.organization_id == current_org.id,
                 FinancialPeriod.period_year == prev_year,
                 FinancialPeriod.period_month == prev_month
             ).first()
@@ -1540,7 +1578,10 @@ async def get_portfolio_percentage_changes(db: Session = Depends(get_db)):
         prev_dscr = 0.0
         
         # Get all active properties for current period
-        properties = db.query(Property).filter(Property.status == 'active').all()
+        properties = db.query(Property).filter(
+            Property.status == 'active',
+            Property.organization_id == current_org.id
+        ).all()
         
         current_total_noi = Decimal('0')
         current_total_debt_service = Decimal('0')
@@ -1626,7 +1667,8 @@ class DSCRHistoricalResponse(BaseModel):
 async def get_historical_dscr(
     property_id: int = Path(..., description="Property ID"),
     months: int = Query(12, ge=1, le=60, description="Number of months of historical data"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get historical DSCR values for a property for sparkline visualization
@@ -1638,7 +1680,7 @@ async def get_historical_dscr(
         from decimal import Decimal
         
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+                property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1714,7 +1756,8 @@ async def get_historical_dscr(
 async def get_historical_metrics(
     property_id: Optional[int] = Query(None, description="Property ID (optional - omit for portfolio)"),
     months: int = Query(12, ge=1, le=60, description="Number of months"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get historical metrics for sparkline charts
@@ -1739,8 +1782,15 @@ async def get_historical_metrics(
         ).join(
             Property, FinancialMetrics.property_id == Property.id
         )
+        query = query.filter(Property.organization_id == current_org.id)
 
         if property_id:
+            property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
+            if not property_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Property {property_id} not found"
+                )
             query = query.filter(FinancialMetrics.property_id == property_id)
 
         results = query.order_by(
@@ -1820,7 +1870,8 @@ class PropertyCostsResponse(BaseModel):
 @router.get("/metrics/{property_id}/costs", response_model=PropertyCostsResponse)
 async def get_property_costs(
     property_id: int = Path(..., description="Property ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get detailed cost breakdown for a property - ANNUAL TOTALS
@@ -1831,7 +1882,7 @@ async def get_property_costs(
     - Based on summing all 12 months of the latest year with data
     """
     try:
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(404, "Property not found")
 
@@ -1963,7 +2014,8 @@ async def get_unit_details(
     property_id: int = Path(..., description="Property ID"),
     period_id: Optional[int] = Query(None, description="Financial period ID (optional, defaults to latest)"),
     limit: int = Query(50, description="Maximum number of units to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get detailed unit information for a property from rent roll data
@@ -1977,7 +2029,7 @@ async def get_unit_details(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2138,7 +2190,8 @@ class TenantMixResponse(BaseModel):
 @router.get("/metrics/{property_id}/tenant-mix", response_model=TenantMixResponse)
 async def get_tenant_mix(
     property_id: int = Path(..., description="Property ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get tenant mix breakdown by lease type for a property
@@ -2153,7 +2206,7 @@ async def get_tenant_mix(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2303,7 +2356,8 @@ class TenantDetailsResponse(BaseModel):
 async def get_all_tenants(
     property_id: int = Path(..., description="Property ID"),
     period_id: Optional[int] = Query(None, description="Optional: Specific period ID. If not provided, uses latest rent roll period"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get all tenant information from rent roll data
@@ -2320,7 +2374,7 @@ async def get_all_tenants(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(404, f"Property {property_id} not found")
         
@@ -2425,7 +2479,8 @@ async def get_metric_source(
     account_code: Optional[str] = Query(None, description="Account code (e.g., '1999-0000' for Total Assets)"),
     metric_type: Optional[str] = Query(None, description="Metric type: 'total_assets', 'net_operating_income', 'occupancy_rate'"),
     period_id: Optional[int] = Query(None, description="Financial period ID (optional, uses latest if not provided)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get source document information for a metric value
@@ -2447,7 +2502,7 @@ async def get_metric_source(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_id} not found")
         
@@ -2666,7 +2721,8 @@ async def get_metric_source(
 def get_dscr_for_latest_complete_period(
     property_id: int,
     year: int = Query(..., description="Year to check for complete periods"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Calculate DSCR for the latest period where all required documents are available.
@@ -2677,6 +2733,13 @@ def get_dscr_for_latest_complete_period(
         from app.services.dscr_monitoring_service import DSCRMonitoringService
         from app.models.mortgage_statement_data import MortgageStatementData
         from app.models.document_upload import DocumentUpload
+
+        property_obj = _get_property_by_id_for_org(db, current_org.id, property_id)
+        if not property_obj:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Property {property_id} not found"
+            )
 
         # Get all periods for the property and year, ordered by most recent first
         periods = db.query(FinancialPeriod).filter(

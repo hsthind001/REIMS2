@@ -26,8 +26,9 @@ class ReportsService:
     - Excel export with professional formatting
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id: Optional[int] = None):
         self.db = db
+        self.organization_id = organization_id
     
     def get_financial_summary(
         self,
@@ -54,18 +55,25 @@ class ReportsService:
             Complete financial summary as nested dict
         """
         # Query the property financial summary view
-        query = text("""
-            SELECT *
-            FROM v_property_financial_summary
+        where_clause = """
             WHERE property_code = :property_code
               AND period_year = :year
               AND period_month = :month
+        """
+        if self.organization_id is not None:
+            where_clause += " AND organization_id = :organization_id"
+
+        query = text(f"""
+            SELECT *
+            FROM v_property_financial_summary
+            {where_clause}
         """)
-        
-        result = self.db.execute(
-            query,
-            {"property_code": property_code, "year": year, "month": month}
-        ).fetchone()
+
+        params = {"property_code": property_code, "year": year, "month": month}
+        if self.organization_id is not None:
+            params["organization_id"] = self.organization_id
+
+        result = self.db.execute(query, params).fetchone()
         
         if not result:
             raise ValueError(f"No financial data found for {property_code} {year}-{month:02d}")
@@ -168,6 +176,8 @@ class ReportsService:
               AND period_year = :year
               AND period_month = :month
         """
+        if self.organization_id is not None:
+            where_clause += " AND organization_id = :organization_id"
         
         if account_codes:
             placeholders = ','.join([f":code_{i}" for i in range(len(account_codes))])
@@ -194,6 +204,8 @@ class ReportsService:
             "year": end_year,
             "month": end_month
         }
+        if self.organization_id is not None:
+            params["organization_id"] = self.organization_id
         
         if account_codes:
             for i, code in enumerate(account_codes):
@@ -256,6 +268,8 @@ class ReportsService:
             WHERE property_code = :property_code
               AND year = :year
         """
+        if self.organization_id is not None:
+            where_clause += " AND organization_id = :organization_id"
         
         if account_codes:
             placeholders = ','.join([f":code_{i}" for i in range(len(account_codes))])
@@ -280,6 +294,8 @@ class ReportsService:
         
         # Build parameters
         params = {"property_code": property_code, "year": year}
+        if self.organization_id is not None:
+            params["organization_id"] = self.organization_id
         
         if account_codes:
             for i, code in enumerate(account_codes):
@@ -672,4 +688,3 @@ class ReportsService:
         if isinstance(value, (int, float)):
             return float(value)
         return value
-

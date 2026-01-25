@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building2,
   FileText,
@@ -799,8 +799,10 @@ export default function Properties() {
   const loadMarketIntelligence = async (propertyId: number) => {
     setLoadingMarketIntel(true);
     try {
-      // Use the correct market intelligence endpoint
-      const res = await fetch(`${API_BASE_URL}/properties/${propertyId}/market-intelligence`, {
+      // Use summary endpoint (supports id or code) to get executive metrics
+      const currentProperty = properties.find(p => p.id === propertyId);
+      const propertyIdentifier = currentProperty?.property_code || propertyId;
+      const res = await fetch(`${API_BASE_URL}/properties/${propertyIdentifier}/market-intelligence/summary`, {
         credentials: 'include'
       });
 
@@ -811,9 +813,6 @@ export default function Properties() {
       }
       
       // Always set market intelligence data (with fallback if API fails)
-      // Get property for property_code
-      const currentProperty = properties.find(p => p.id === propertyId);
-      
       // Get property metrics for comparison (filtered by selected year)
       const metricsRes = await fetch(`${API_BASE_URL}/metrics/summary?limit=100&year=${selectedYear}`, {
         credentials: 'include'
@@ -838,6 +837,8 @@ export default function Properties() {
       
       // Only set market intelligence if we have real data
       if (research) {
+        const demographicsData = research.demographics?.data || {};
+        const demographicsLineage = research.demographics?.lineage || {};
         setMarketIntel({
           locationScore: research.location_score ?? null,
           marketCapRate: research.market_cap_rate || 0,
@@ -845,10 +846,10 @@ export default function Properties() {
           rentGrowth: research.rent_growth ?? null,
           yourRentGrowth: propertyMetric?.rent_growth_yoy || 0,
           demographics: {
-            population: research.demographics?.population ?? null,
-            medianIncome: research.demographics?.median_income ?? null,
-            employmentType: research.demographics?.employment_type || 'Data not available',
-            dataSource: research.demographics?.data_source || null
+            population: demographicsData.population ?? null,
+            medianIncome: demographicsData.median_household_income ?? demographicsData.median_income ?? null,
+            employmentType: demographicsData.employment_type || 'Data not available',
+            dataSource: demographicsLineage.source || null
           },
           comparables: research.comparables || [],
           aiInsights: research.key_findings || research.insights || [],
@@ -1251,13 +1252,15 @@ export default function Properties() {
      return true;
   };
 
-  const filteredProperties = properties
-    .filter(p =>
-      p.property_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.property_code.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .filter(matchesQuickFilter)
-    .filter(matchesAdvancedFilter);
+  const filteredProperties = useMemo(() => (
+    properties
+      .filter(p =>
+        p.property_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.property_code.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .filter(matchesQuickFilter)
+      .filter(matchesAdvancedFilter)
+  ), [properties, searchTerm, quickFilter, filters, propertyMetricsMap]);
 
   const filtersApplied = Boolean(searchTerm.trim()) ||
     quickFilter !== 'all' ||

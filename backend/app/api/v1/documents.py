@@ -9,8 +9,9 @@ from decimal import Decimal
 
 from app.db.database import get_db
 from app.db.minio_client import get_file_url, delete_file
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
+from app.models.organization import Organization
 from app.services.document_service import DocumentService
 from app.services.pdf_generator_service import PDFGeneratorService
 from app.tasks.extraction_tasks import extract_document
@@ -53,6 +54,18 @@ limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
 
+def _get_upload_for_org(db: Session, upload_id: int, organization_id: int) -> Optional[DocumentUpload]:
+    return (
+        db.query(DocumentUpload)
+        .join(Property, DocumentUpload.property_id == Property.id)
+        .filter(
+            DocumentUpload.id == upload_id,
+            Property.organization_id == organization_id
+        )
+        .first()
+    )
+
+
 @router.post("/documents/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")  # Rate limit: 10 uploads per minute per IP
 async def upload_document(
@@ -63,7 +76,8 @@ async def upload_document(
     document_type: DocumentTypeEnum = Form(..., description="Type of financial document"),
     file: UploadFile = File(..., description="PDF file to upload"),
     force_overwrite: bool = Form(False, description="Force overwrite if file exists"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Upload financial document and trigger extraction
@@ -154,7 +168,7 @@ async def upload_document(
     
     try:
         # Create document service
-        doc_service = DocumentService(db)
+        doc_service = DocumentService(db, organization_id=current_org.id)
         
         # Upload document
         result = await doc_service.upload_document(
@@ -286,7 +300,8 @@ async def bulk_upload_documents(
     files: List[UploadFile] = File(..., description="Multiple files to upload (PDF, CSV, Excel, DOC)"),
     duplicate_strategy: str = Form("skip", description="How to handle duplicates: 'skip' (default), 'replace', or 'version'"),
     uploaded_by: Optional[int] = Form(None, description="User ID (optional)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Bulk upload multiple documents for a year with intelligent duplicate handling.
@@ -326,7 +341,7 @@ async def bulk_upload_documents(
     
     try:
         # Create document service
-        doc_service = DocumentService(db)
+        doc_service = DocumentService(db, organization_id=current_org.id)
 
         # Bulk upload documents with duplicate strategy
         result = await doc_service.bulk_upload_documents(
@@ -577,7 +592,8 @@ async def list_uploads(
     is_active: Optional[bool] = Query(True, description="Filter by active status (default: True, only current versions)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     List all uploaded documents with filters
@@ -613,6 +629,8 @@ async def list_uploads(
         )
         
         # Apply filters
+        query = query.filter(Property.organization_id == current_org.id)
+
         if property_code:
             query = query.filter(Property.property_code == property_code)
         
@@ -672,7 +690,8 @@ async def list_uploads(
 @router.get("/documents/uploads/{upload_id}", response_model=DocumentUploadDetail)
 async def get_upload_status(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get extraction status and details for an upload
@@ -699,7 +718,8 @@ async def get_upload_status(
         ).outerjoin(
             ExtractionLog, DocumentUpload.extraction_id == ExtractionLog.id
         ).filter(
-            DocumentUpload.id == upload_id
+            DocumentUpload.id == upload_id,
+            Property.organization_id == current_org.id
         ).first()
         
         if not result:
@@ -748,7 +768,8 @@ async def get_upload_status(
 @router.get("/documents/uploads/{upload_id}/data", response_model=ExtractedDataResponse)
 async def get_extracted_data(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get extracted financial data from upload
@@ -776,7 +797,8 @@ async def get_extracted_data(
         ).outerjoin(
             ExtractionLog, DocumentUpload.extraction_id == ExtractionLog.id
         ).filter(
-            DocumentUpload.id == upload_id
+            DocumentUpload.id == upload_id,
+            Property.organization_id == current_org.id
         ).first()
         
         if not upload_query:
@@ -953,7 +975,8 @@ async def get_extracted_data(
 async def get_download_url(
     upload_id: int,
     expires_in_seconds: int = Query(3600, ge=60, le=86400, description="URL expiry time in seconds (1 hour default, max 24 hours)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get presigned download URL for uploaded document
@@ -966,9 +989,7 @@ async def get_download_url(
     """
     try:
         # Get upload record
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
-        ).first()
+        upload = _get_upload_for_org(db, upload_id, current_org.id)
         
         if not upload:
             raise HTTPException(
@@ -1007,7 +1028,8 @@ async def get_download_url(
 
 @router.post("/documents/uploads/reprocess-failed", status_code=status.HTTP_200_OK)
 async def reprocess_failed_uploads(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Reprocess all failed document uploads
@@ -1024,7 +1046,10 @@ async def reprocess_failed_uploads(
     try:
         # Find all failed uploads
         from sqlalchemy import or_
-        failed_uploads = db.query(DocumentUpload).filter(
+        failed_uploads = db.query(DocumentUpload).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id,
             or_(
                 DocumentUpload.extraction_status == 'failed',
                 DocumentUpload.extraction_status.like('%failed%')
@@ -1075,7 +1100,8 @@ async def reprocess_failed_uploads(
 async def reprocess_single_upload(
     upload_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Reprocess a single document upload
@@ -1093,7 +1119,7 @@ async def reprocess_single_upload(
     """
     try:
         # Get the upload
-        upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+        upload = _get_upload_for_org(db, upload_id, current_org.id)
 
         if not upload:
             raise HTTPException(
@@ -1717,7 +1743,8 @@ async def preview_filtered_anomalies_warnings_alerts(
 @router.post("/documents/uploads/{upload_id}/re-extract")
 async def re_run_extraction(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Re-run extraction for an existing document upload.
@@ -1731,7 +1758,7 @@ async def re_run_extraction(
     - Task ID for the extraction
     - Updated extraction status
     """
-    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+    upload = _get_upload_for_org(db, upload_id, current_org.id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
     
@@ -1765,7 +1792,8 @@ async def re_extract_failed_uploads(
     document_type: Optional[str] = Query(None, description="Filter by document type"),
     property_id: Optional[int] = Query(None, description="Filter by property"),
     period_id: Optional[int] = Query(None, description="Filter by period"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Re-run extraction for uploads that completed but have no data records.
@@ -1779,8 +1807,11 @@ async def re_extract_failed_uploads(
     logger = logging.getLogger(__name__)
     
     # Build query for completed uploads
-    query = db.query(DocumentUpload).filter(
-        DocumentUpload.extraction_status == 'completed'
+    query = db.query(DocumentUpload).join(
+        Property, DocumentUpload.property_id == Property.id
+    ).filter(
+        DocumentUpload.extraction_status == 'completed',
+        Property.organization_id == current_org.id
     )
     
     if document_type:
@@ -1846,7 +1877,8 @@ async def re_extract_failed_uploads(
 @router.get("/documents/uploads/{upload_id}/regenerate-pdf")
 async def regenerate_income_statement_pdf(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Regenerate income statement PDF from database data
@@ -1868,9 +1900,7 @@ async def regenerate_income_statement_pdf(
     """
     try:
         # Get upload record
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
-        ).first()
+        upload = _get_upload_for_org(db, upload_id, current_org.id)
         
         if not upload:
             raise HTTPException(
@@ -1922,7 +1952,8 @@ async def correct_upload_period(
     upload_id: int,
     correct_month: int = Body(..., ge=1, le=12, description="Correct month (1-12)"),
     correct_year: int = Body(..., ge=2000, le=2100, description="Correct year"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     User confirms or corrects the detected period for an upload.
@@ -1948,7 +1979,7 @@ async def correct_upload_period(
 
     try:
         # Get upload
-        upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+        upload = _get_upload_for_org(db, upload_id, current_org.id)
         if not upload:
             raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -2002,7 +2033,7 @@ async def correct_upload_period(
         if not was_correct:
             # Get or create correct period
             from app.services.document_service import DocumentService
-            doc_service = DocumentService(db)
+            doc_service = DocumentService(db, organization_id=current_org.id)
 
             correct_period = doc_service.get_or_create_period(
                 upload.property_id,

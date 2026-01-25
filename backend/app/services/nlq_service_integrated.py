@@ -86,7 +86,7 @@ class IntegratedNLQService:
     5. Graceful degradation if cache fails
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id: Optional[int] = None):
         """
         Initialize integrated service
         
@@ -94,6 +94,7 @@ class IntegratedNLQService:
             db: SQLAlchemy database session
         """
         self.db = db
+        self.organization_id = organization_id
         
         # Initialize Component A (Semantic Cache)
         self.cache_service = None
@@ -106,7 +107,7 @@ class IntegratedNLQService:
         
         # Initialize Component B (NLQ Service)
         try:
-            self.nlq_service = NaturalLanguageQueryService(db)
+            self.nlq_service = NaturalLanguageQueryService(db, organization_id=organization_id)
             logger.info("✅ NaturalLanguageQueryService (Component B) initialized")
         except Exception as e:
             logger.error(f"❌ NaturalLanguageQueryService initialization failed: {e}")
@@ -369,4 +370,3 @@ class IntegratedNLQService:
         }
         
         return status
-

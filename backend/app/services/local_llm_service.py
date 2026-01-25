@@ -31,6 +31,7 @@ class LLMModel(str, Enum):
     # Fast, lightweight models (2-8GB VRAM)
     LLAMA_3_2_3B = "llama3.2:3b-instruct-q4_K_M"
     QWEN_2_5_7B = "qwen2.5:7b-instruct-q4_K_M"
+    QWEN_2_5_CODER_7B = "qwen2.5-coder:7b"
     
     # Mid-range models (available on system)
     QWEN_2_5_14B = "qwen2.5:14b"
@@ -47,7 +48,7 @@ class LLMModel(str, Enum):
     # Vision models
     LLAVA_13B = "llava:13b-v1.6-vicuna-q4_K_M"
     LLAVA_34B = "llava:34b-v1.6-vicuna-q4_K_M"
-    MOONDREAM = "moondream"  # Lightweight vision model (available)
+    MOONDREAM = "moondream:latest"  # Lightweight vision model (available)
 
     # Groq cloud models (fallback)
     GROQ_LLAMA_3_3_70B = "llama-3.3-70b-versatile"
@@ -97,6 +98,9 @@ class LocalLLMService:
             timeout=300.0,  # 5 min timeout for large models
             headers={"Content-Type": "application/json"}
         )
+        self.available_ollama_models: Optional[set[str]] = None
+        self.last_model_used: Optional[str] = None
+        self.last_provider: Optional[LLMProvider] = None
 
         # Model selection rules (task_type -> model)
         # Use configured model for all tasks initially (will upgrade when larger models available)
@@ -130,6 +134,51 @@ class LocalLLMService:
             logger.error(f"Failed to list Ollama models: {e}")
             return []
 
+    async def _ensure_ollama_models(self) -> set[str]:
+        """Cache available Ollama models to avoid repeated calls."""
+        if self.available_ollama_models is None:
+            models = await self._list_ollama_models()
+            self.available_ollama_models = set(models)
+        return self.available_ollama_models
+
+    def _normalize_model(self, model: Union[str, LLMModel]) -> str:
+        return model.value if isinstance(model, LLMModel) else str(model)
+
+    def _resolve_model(
+        self,
+        desired_model: str,
+        task_type: LLMTaskType,
+        prefer_fast: bool,
+        available_models: Optional[set[str]]
+    ) -> str:
+        """Resolve to an installed model when the desired model isn't available."""
+        if not available_models or desired_model in available_models:
+            return desired_model
+
+        candidates: List[Union[str, LLMModel]] = []
+
+        if task_type == LLMTaskType.VISION:
+            candidates.extend([LLMModel.MOONDREAM, LLMModel.LLAVA_13B, LLMModel.LLAVA_34B])
+        elif prefer_fast:
+            candidates.extend([LLMModel.QWEN_2_5_CODER_7B, LLMModel.QWEN_2_5_14B, LLMModel.DEEPSEEK_R1_14B])
+        else:
+            candidates.extend([
+                self.config.model,
+                LLMModel.DEEPSEEK_R1_14B,
+                LLMModel.QWEN_2_5_14B,
+                LLMModel.QWEN_2_5_CODER_7B,
+                LLMModel.QWEN_2_5_7B,
+                LLMModel.LLAMA_3_2_3B,
+            ])
+
+        for candidate in candidates:
+            name = self._normalize_model(candidate)
+            if name in available_models:
+                return name
+
+        # Fall back to any available model if all else fails
+        return next(iter(available_models))
+
     def select_model(self, task_type: LLMTaskType, prefer_fast: bool = False) -> str:
         """
         Automatically select the best model for the task
@@ -142,8 +191,8 @@ class LocalLLMService:
             Model name string
         """
         if prefer_fast:
-            # Use lightweight models for speed
-            return LLMModel.LLAMA_3_2_3B
+            # Prefer a smaller installed model for speed
+            return LLMModel.QWEN_2_5_CODER_7B
 
         # Fallback to configured default model
         return self.model_selector.get(task_type, self.config.model)
@@ -174,7 +223,7 @@ class LocalLLMService:
             Generated text
         """
         # Select appropriate model
-        model = self.select_model(task_type, prefer_fast)
+        model = self._normalize_model(self.select_model(task_type, prefer_fast))
 
         # Override config if specified
         temp = temperature if temperature is not None else self.config.temperature
@@ -187,13 +236,21 @@ class LocalLLMService:
             ollama_available = await self._check_ollama_health()
             if not ollama_available:
                 logger.warning("Ollama unavailable, falling back to Groq")
+                self.last_provider = LLMProvider.GROQ
+                self.last_model_used = LLMModel.GROQ_LLAMA_3_3_70B
                 return await self._generate_with_groq(prompt, system_prompt, temp, max_tok)
 
+            available_models = await self._ensure_ollama_models()
+            model = self._resolve_model(model, task_type, prefer_fast, available_models)
+            self.last_provider = LLMProvider.OLLAMA
+            self.last_model_used = model
             return await self._generate_with_ollama(
                 prompt, model, system_prompt, temp, max_tok, **kwargs
             )
 
         elif self.config.provider == LLMProvider.GROQ:
+            self.last_provider = LLMProvider.GROQ
+            self.last_model_used = LLMModel.GROQ_LLAMA_3_3_70B
             return await self._generate_with_groq(prompt, system_prompt, temp, max_tok)
 
         else:
@@ -261,6 +318,9 @@ class LocalLLMService:
         """Generate text using Groq (fallback)"""
         try:
             from groq import Groq
+
+            self.last_provider = LLMProvider.GROQ
+            self.last_model_used = LLMModel.GROQ_LLAMA_3_3_70B
 
             if not self.config.groq_api_key:
                 raise ValueError("Groq API key not configured")
@@ -353,7 +413,11 @@ class LocalLLMService:
         Yields:
             Text chunks as they are generated
         """
-        model = self.select_model(task_type)
+        model = self._normalize_model(self.select_model(task_type))
+        available_models = await self._ensure_ollama_models()
+        model = self._resolve_model(model, task_type, False, available_models)
+        self.last_provider = LLMProvider.OLLAMA
+        self.last_model_used = model
 
         messages = []
         if system_prompt:
@@ -412,7 +476,11 @@ class LocalLLMService:
         import base64
         
         # Determine model dynamically
-        model = self.select_model(LLMTaskType.VISION)
+        model = self._normalize_model(self.select_model(LLMTaskType.VISION))
+        available_models = await self._ensure_ollama_models()
+        model = self._resolve_model(model, LLMTaskType.VISION, False, available_models)
+        self.last_provider = LLMProvider.OLLAMA
+        self.last_model_used = model
 
         # Get base64 data
         if image_b64:
@@ -476,7 +544,8 @@ def get_local_llm_service() -> LocalLLMService:
 
         config = LLMConfig(
             provider=LLMProvider.OLLAMA,
-            model=getattr(settings, "OLLAMA_DEFAULT_MODEL", "llama3.2:3b-instruct-q4_K_M"),
+            model=getattr(settings, "LLM_MODEL", None)
+            or getattr(settings, "OLLAMA_DEFAULT_MODEL", "qwen2.5:14b"),
             ollama_base_url=getattr(settings, "OLLAMA_BASE_URL", "http://ollama:11434"),
             groq_api_key=getattr(settings, "GROQ_API_KEY", None),
             temperature=getattr(settings, "LLM_TEMPERATURE", 0.3),

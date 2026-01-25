@@ -29,7 +29,8 @@ class ExportService:
         self,
         property_code: str,
         year: int,
-        month: int
+        month: int,
+        organization_id: Optional[int] = None
     ) -> bytes:
         """
         Export balance sheet to Excel with formatting
@@ -38,9 +39,10 @@ class ExportService:
             bytes: Excel file content
         """
         # Get data
-        property_obj = self.db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        query = self.db.query(Property).filter(Property.property_code == property_code)
+        if organization_id is not None:
+            query = query.filter(Property.organization_id == organization_id)
+        property_obj = query.first()
         
         if not property_obj:
             raise ValueError(f"Property {property_code} not found")
@@ -124,13 +126,15 @@ class ExportService:
         self,
         property_code: str,
         year: int,
-        month: int
+        month: int,
+        organization_id: Optional[int] = None
     ) -> bytes:
         """Export income statement to Excel"""
         # Similar to balance sheet but with multiple columns (Period, YTD, %)
-        property_obj = self.db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        query = self.db.query(Property).filter(Property.property_code == property_code)
+        if organization_id is not None:
+            query = query.filter(Property.organization_id == organization_id)
+        property_obj = query.first()
         
         period = self.db.query(FinancialPeriod).filter(
             FinancialPeriod.property_id == property_obj.id,
@@ -196,7 +200,8 @@ class ExportService:
         property_code: str,
         year: int,
         month: int,
-        document_type: str
+        document_type: str,
+        organization_id: Optional[int] = None
     ) -> bytes:
         """
         Export financial data to CSV
@@ -210,9 +215,10 @@ class ExportService:
         Returns:
             bytes: CSV file content
         """
-        property_obj = self.db.query(Property).filter(
-            Property.property_code == property_code
-        ).first()
+        query = self.db.query(Property).filter(Property.property_code == property_code)
+        if organization_id is not None:
+            query = query.filter(Property.organization_id == organization_id)
+        property_obj = query.first()
         
         period = self.db.query(FinancialPeriod).filter(
             FinancialPeriod.property_id == property_obj.id,
@@ -264,4 +270,3 @@ class ExportService:
         
         output.seek(0)
         return output.getvalue()
-

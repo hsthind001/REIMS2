@@ -57,8 +57,9 @@ class ReviewService:
     - Smart metrics recalculation based on table
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id: Optional[int] = None):
         self.db = db
+        self.organization_id = organization_id
         self.impact_calculator = AnomalyImpactCalculator(db)
         self.high_risk_threshold = Decimal('10000')  # $10,000 variance threshold
         self.learning_service = SelfLearningExtractionService(db)
@@ -107,6 +108,8 @@ class ReviewService:
             ).join(
                 DocumentUpload, model.upload_id == DocumentUpload.id
             )
+            if self.organization_id is not None:
+                query = query.filter(Property.organization_id == self.organization_id)
 
             # Apply severity filter
             if severity == 'critical':
@@ -226,7 +229,12 @@ class ReviewService:
         model = TABLE_MODEL_MAP[table_name]
         
         # Get record
-        record = self.db.query(model).filter(model.id == record_id).first()
+        record_query = self.db.query(model).filter(model.id == record_id)
+        if self.organization_id is not None:
+            record_query = record_query.join(
+                Property, model.property_id == Property.id
+            ).filter(Property.organization_id == self.organization_id)
+        record = record_query.first()
         
         if not record:
             raise ValueError(f"Record {record_id} not found in {table_name}")
@@ -348,7 +356,12 @@ class ReviewService:
         model = TABLE_MODEL_MAP[table_name]
         
         # Get record
-        record = self.db.query(model).filter(model.id == record_id).first()
+        record_query = self.db.query(model).filter(model.id == record_id)
+        if self.organization_id is not None:
+            record_query = record_query.join(
+                Property, model.property_id == Property.id
+            ).filter(Property.organization_id == self.organization_id)
+        record = record_query.first()
         
         if not record:
             raise ValueError(f"Record {record_id} not found in {table_name}")
@@ -1026,7 +1039,7 @@ class ReviewService:
         model = TABLE_MODEL_MAP[table_name]
         
         # Query with joins
-        result = self.db.query(
+        query = self.db.query(
             model,
             Property.property_code,
             Property.property_name,
@@ -1038,7 +1051,12 @@ class ReviewService:
             FinancialPeriod, model.period_id == FinancialPeriod.id
         ).filter(
             model.id == record_id
-        ).first()
+        )
+
+        if self.organization_id is not None:
+            query = query.filter(Property.organization_id == self.organization_id)
+
+        result = query.first()
         
         if not result:
             raise ValueError(f"Record {record_id} not found in {table_name}")

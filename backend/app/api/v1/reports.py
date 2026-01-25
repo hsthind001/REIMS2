@@ -10,6 +10,8 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_organization
+from app.models.organization import Organization
 from app.services.reports_service import ReportsService
 from app.schemas.reports import (
     FinancialSummaryResponse,
@@ -27,7 +29,8 @@ async def financial_summary(
     property_code: str = Path(..., description="Property code"),
     year: int = Path(..., ge=2000, le=2100, description="Financial year"),
     month: int = Path(..., ge=1, le=12, description="Financial month"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get complete financial summary for a property/period
@@ -55,7 +58,7 @@ async def financial_summary(
     rent_roll, and performance sections
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         summary = reports_service.get_financial_summary(
             property_code=property_code,
             year=year,
@@ -84,7 +87,8 @@ async def period_comparison(
     end_year: int = Query(..., ge=2000, le=2100, description="End period year"),
     end_month: int = Query(..., ge=1, le=12, description="End period month"),
     account_codes: Optional[List[str]] = Query(None, description="Optional filter for specific account codes"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Compare financial data between two periods
@@ -123,7 +127,7 @@ async def period_comparison(
     ```
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         comparison = reports_service.get_period_comparison(
             property_code=property_code,
             start_year=start_year,
@@ -152,7 +156,8 @@ async def annual_trends(
     property_code: str = Path(..., description="Property code"),
     year: int = Path(..., ge=2000, le=2100, description="Year to analyze"),
     account_codes: Optional[List[str]] = Query(None, description="Filter for specific account codes"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Show 12-month trends for specific accounts
@@ -193,7 +198,7 @@ async def annual_trends(
     Perfect for frontend charting libraries (Chart.js, Recharts, etc.)
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         trends = reports_service.get_annual_trends(
             property_code=property_code,
             year=year,
@@ -219,7 +224,8 @@ async def export_to_excel(
     property_code: str = Path(..., description="Property code"),
     year: int = Path(..., ge=2000, le=2100, description="Financial year"),
     month: int = Path(..., ge=1, le=12, description="Financial month"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Export financial summary to Excel (.xlsx)
@@ -266,7 +272,7 @@ async def export_to_excel(
     Downloads: `WEND001_2024-12_Financial_Report.xlsx`
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         
         # Generate Excel file
         excel_stream = reports_service.export_to_excel(
@@ -312,7 +318,8 @@ async def comprehensive_balance_sheet(
     property_code: str = Path(..., description="Property code (e.g., esp, hmnd, tcsh, wend)"),
     year: int = Path(..., ge=2000, le=2100, description="Financial year"),
     month: int = Path(..., ge=1, le=12, description="Financial month"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get comprehensive balance sheet report (Template v1.0 compliant)
@@ -345,7 +352,7 @@ async def comprehensive_balance_sheet(
     **Performance:** < 200ms
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         balance_sheet = reports_service.get_comprehensive_balance_sheet(
             property_code=property_code,
             year=year,
@@ -371,7 +378,8 @@ async def multi_property_balance_sheet_comparison(
     year: int = Path(..., ge=2000, le=2100, description="Financial year"),
     month: int = Path(..., ge=1, le=12, description="Financial month"),
     property_codes: Optional[List[str]] = Query(None, description="Property codes to compare (default: all)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Compare balance sheets across multiple properties (Template v1.0 Section H)
@@ -410,7 +418,7 @@ async def multi_property_balance_sheet_comparison(
     ```
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         comparison = reports_service.get_multi_property_balance_sheet(
             year=year,
             month=month,
@@ -438,7 +446,8 @@ async def balance_sheet_trend_analysis(
     start_month: int = Query(1, ge=1, le=12, description="Start month"),
     end_year: int = Query(..., ge=2000, le=2100, description="End year"),
     end_month: int = Query(12, ge=1, le=12, description="End month"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Balance sheet trend analysis over time (Template v1.0 Section I)
@@ -474,7 +483,7 @@ async def balance_sheet_trend_analysis(
     ```
     """
     try:
-        reports_service = ReportsService(db)
+        reports_service = ReportsService(db, organization_id=current_org.id)
         trends = reports_service.get_balance_sheet_trends(
             property_code=property_code,
             start_year=start_year,
@@ -495,4 +504,3 @@ async def balance_sheet_trend_analysis(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate balance sheet trends: {str(e)}"
         )
-

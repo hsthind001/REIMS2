@@ -31,6 +31,30 @@ class MarketIntelligenceAIService:
         self.llm_service = get_local_llm_service()
         logger.info("Initialized MarketIntelligenceAIService with local LLM")
 
+    def _record_llm_usage(self, models_used: set[str], providers_used: set[str]) -> None:
+        model = getattr(self.llm_service, "last_model_used", None)
+        provider = getattr(self.llm_service, "last_provider", None)
+        if model:
+            models_used.add(str(model))
+        if provider:
+            providers_used.add(provider.value if hasattr(provider, "value") else str(provider))
+
+    def _swot_item_to_text(self, item: Any) -> str:
+        if isinstance(item, dict):
+            title = item.get("title") or item.get("name") or item.get("opportunity") or item.get("category")
+            description = item.get("description") or item.get("detail")
+            if title and description:
+                return f"{title}: {description}"
+            return title or description or json.dumps(item)
+        return str(item)
+
+    def _normalize_swot_analysis(self, swot_analysis: Dict[str, Any]) -> Dict[str, list]:
+        normalized = {}
+        for key in ("strengths", "weaknesses", "opportunities", "threats"):
+            items = swot_analysis.get(key, [])
+            normalized[key] = [self._swot_item_to_text(item) for item in items if item]
+        return normalized
+
     async def generate_ai_insights(
         self,
         property_data: Dict[str, Any],
@@ -51,6 +75,9 @@ class MarketIntelligenceAIService:
         logger.info(f"Generating AI insights for property {property_data.get('property_code')}")
 
         try:
+            models_used: set[str] = set()
+            providers_used: set[str] = set()
+
             # Prepare market data for prompts
             market_data = {
                 "property_code": property_data.get("property_code"),
@@ -60,6 +87,8 @@ class MarketIntelligenceAIService:
             # Step 1: Generate SWOT Analysis
             logger.info("Generating SWOT analysis with LLM...")
             swot_analysis = await self._generate_swot_with_llm(market_data)
+            swot_analysis = self._normalize_swot_analysis(swot_analysis)
+            self._record_llm_usage(models_used, providers_used)
 
             # Step 2: Generate Investment Recommendation
             logger.info("Generating investment recommendation...")
@@ -67,6 +96,7 @@ class MarketIntelligenceAIService:
                 market_data,
                 swot_analysis
             )
+            self._record_llm_usage(models_used, providers_used)
 
             # Step 3: Generate Risk Assessment
             logger.info("Generating risk assessment...")
@@ -74,6 +104,7 @@ class MarketIntelligenceAIService:
                 market_data,
                 swot_analysis
             )
+            self._record_llm_usage(models_used, providers_used)
 
             # Step 4: Generate Competitive Analysis (if data available)
             competitive_analysis = None
@@ -83,23 +114,48 @@ class MarketIntelligenceAIService:
                     market_data,
                     property_data
                 )
+                self._record_llm_usage(models_used, providers_used)
 
             # Step 5: Generate Market Trends Synthesis
             logger.info("Generating market trends synthesis...")
             market_trends = await self._generate_market_trends_with_llm(market_data)
+            self._record_llm_usage(models_used, providers_used)
 
             # Combine all insights
+            recommendation_payload = recommendation or {}
+            rec_action = recommendation_payload.get("recommendation") or "REVIEW"
+            key_factors = recommendation_payload.get("key_factors")
+            if not key_factors:
+                strengths = swot_analysis.get("strengths", [])
+                weaknesses = swot_analysis.get("weaknesses", [])
+                opportunities = swot_analysis.get("opportunities", [])
+                threats = swot_analysis.get("threats", [])
+                if rec_action == "BUY":
+                    key_factors = (strengths + opportunities)[:4]
+                elif rec_action == "SELL":
+                    key_factors = (threats + weaknesses)[:4]
+                else:
+                    key_factors = (strengths + weaknesses)[:4]
+
             ai_insights = {
                 "swot_analysis": swot_analysis,
-                "investment_recommendation": recommendation.get("recommendation"),
-                "confidence": recommendation.get("confidence"),
-                "rationale": recommendation.get("rationale"),
-                "priority": recommendation.get("priority"),
-                "key_risks": recommendation.get("key_risks", []),
-                "risk_mitigation_strategies": recommendation.get("risk_mitigation_strategies", []),
-                "expected_return_scenarios": recommendation.get("expected_return_scenarios", {}),
-                "optimal_holding_period": recommendation.get("optimal_holding_period"),
-                "action_items": recommendation.get("action_items", []),
+                "investment_recommendation": {
+                    "recommendation": rec_action,
+                    "confidence_score": recommendation_payload.get("confidence")
+                    or recommendation_payload.get("confidence_score")
+                    or 0,
+                    "rationale": recommendation_payload.get("rationale") or "",
+                    "key_factors": key_factors or [],
+                },
+                "confidence": recommendation_payload.get("confidence")
+                or recommendation_payload.get("confidence_score"),
+                "rationale": recommendation_payload.get("rationale"),
+                "priority": recommendation_payload.get("priority"),
+                "key_risks": recommendation_payload.get("key_risks", []),
+                "risk_mitigation_strategies": recommendation_payload.get("risk_mitigation_strategies", []),
+                "expected_return_scenarios": recommendation_payload.get("expected_return_scenarios", {}),
+                "optimal_holding_period": recommendation_payload.get("optimal_holding_period"),
+                "action_items": recommendation_payload.get("action_items", []),
                 "risk_assessment": risk_assessment.get("narrative"),
                 "overall_risk_score": risk_assessment.get("overall_risk_score"),
                 "risk_level": risk_assessment.get("risk_level"),
@@ -110,7 +166,8 @@ class MarketIntelligenceAIService:
                 "supply_constraints": market_trends.get("supply_constraints", []),
                 "competitive_intelligence": competitive_analysis,
                 "generated_by": "local_llm",
-                "model_used": "llama3.3:70b-instruct-q4_K_M"
+                "model_used": ", ".join(sorted(models_used)) if models_used else None,
+                "provider_used": ", ".join(sorted(providers_used)) if providers_used else None
             }
 
             logger.info("AI insights generation complete")
@@ -367,14 +424,7 @@ Be specific about what you observe in the image."""
         """Extract formatted opportunities from SWOT analysis"""
         opportunities = swot_analysis.get("opportunities", [])
 
-        return [
-            {
-                "opportunity": opp.get("title"),
-                "description": opp.get("description"),
-                "impact": opp.get("impact", "Medium")
-            }
-            for opp in opportunities
-        ]
+        return [self._swot_item_to_text(opp) for opp in opportunities if opp]
 
     def _generate_fallback_insights(
         self,
@@ -411,17 +461,29 @@ Be specific about what you observe in the image."""
         if economic.get("unemployment_rate", 0) > 6:
             threats.append({"title": "Economic Headwinds", "description": "Elevated unemployment may pressure demand", "impact": "Medium"})
 
+        swot_analysis = self._normalize_swot_analysis({
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "opportunities": opportunities,
+            "threats": threats,
+        })
+
+        opportunities_list = self._extract_opportunities_from_swot(swot_analysis)
+
         return {
-            "swot_analysis": {
-                "strengths": strengths,
-                "weaknesses": weaknesses,
-                "opportunities": opportunities,
-                "threats": threats
+            "swot_analysis": swot_analysis,
+            "investment_recommendation": {
+                "recommendation": "REVIEW",
+                "confidence_score": 50,
+                "rationale": "Automated analysis. LLM service unavailable for detailed insights.",
+                "key_factors": swot_analysis.get("weaknesses", [])[:2] or ["Limited data availability"],
             },
-            "investment_recommendation": "REVIEW",
+            "risk_assessment": "Risk assessment unavailable due to limited data.",
+            "opportunities": opportunities_list,
+            "market_trend_synthesis": "Market trend synthesis unavailable for fallback analysis.",
             "confidence": 50,
             "rationale": "Automated analysis. LLM service unavailable for detailed insights.",
-            "generated_by": "fallback_rules"
+            "generated_by": "fallback_rules",
         }
 
 

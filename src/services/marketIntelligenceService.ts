@@ -5,6 +5,7 @@
  */
 
 import axios from 'axios';
+import { useAuthStore } from '../store/authStore';
 import type {
   MarketIntelligence,
   DemographicsResponse,
@@ -31,11 +32,27 @@ import type {
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_V1 = `${API_BASE_URL}/api/v1`;
 
+const api = axios.create({
+  baseURL: API_V1,
+  withCredentials: true,
+});
+
+api.interceptors.request.use((config) => {
+  const currentOrg = useAuthStore.getState().currentOrganization;
+  if (currentOrg) {
+    config.headers = {
+      ...(config.headers || {}),
+      'X-Organization-ID': currentOrg.id.toString(),
+    };
+  }
+  return config;
+});
+
 /**
  * Get system-wide market intelligence statistics
  */
 export async function getStatistics(): Promise<StatisticsResponse> {
-  const response = await axios.get(`${API_V1}/market-intelligence/statistics`);
+  const response = await api.get(`${API_V1}/market-intelligence/statistics`);
   return response.data;
 }
 
@@ -43,7 +60,7 @@ export async function getStatistics(): Promise<StatisticsResponse> {
  * Get complete market intelligence for a property
  */
 export async function getMarketIntelligence(propertyCode: string): Promise<MarketIntelligence> {
-  const response = await axios.get(`${API_V1}/properties/${propertyCode}/market-intelligence`);
+  const response = await api.get(`${API_V1}/properties/${propertyCode}/market-intelligence`);
   return response.data;
 }
 
@@ -58,7 +75,7 @@ export async function getDemographics(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/demographics`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -74,7 +91,7 @@ export async function getEconomicIndicators(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/economic`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -89,7 +106,7 @@ export async function getLocationIntelligence(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/location`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -104,7 +121,7 @@ export async function getESGAssessment(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/esg`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -119,7 +136,7 @@ export async function getForecasts(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/forecasts`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -134,7 +151,7 @@ export async function getCompetitiveAnalysis(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/competitive`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -149,7 +166,7 @@ export async function getAIInsights(
   if (options?.refresh) params.append('refresh', 'true');
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/insights`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -166,7 +183,7 @@ export async function refreshMarketIntelligence(
   }
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/refresh`;
-  const response = await axios.post(params.toString() ? `${url}?${params}` : url);
+  const response = await api.post(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 
@@ -182,7 +199,7 @@ export async function getDataLineage(
   if (options?.limit) params.append('limit', options.limit.toString());
 
   const url = `${API_V1}/properties/${propertyCode}/market-intelligence/lineage`;
-  const response = await axios.get(params.toString() ? `${url}?${params}` : url);
+  const response = await api.get(params.toString() ? `${url}?${params}` : url);
   return response.data;
 }
 

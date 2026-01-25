@@ -17,6 +17,8 @@ import logging
 from datetime import datetime
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_organization
+from app.models.organization import Organization
 from app.models.property import Property
 from app.models.market_intelligence import MarketIntelligence
 from app.models.market_data_lineage import MarketDataLineage
@@ -30,10 +32,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/properties/{property_identifier}/market-intelligence")
+@router.get("/properties/{property_identifier}/market-intelligence/summary")
 async def get_market_intelligence_summary(
     property_identifier: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get comprehensive market intelligence summary for a property.
@@ -50,11 +53,8 @@ async def get_market_intelligence_summary(
         property_identifier: Property ID (int) or Property Code (str)
     """
     try:
-        # Resolve property
-        if property_identifier.isdigit():
-            property_obj = db.query(Property).filter(Property.id == int(property_identifier)).first()
-        else:
-            property_obj = db.query(Property).filter(Property.property_code == property_identifier).first()
+        # Resolve property (scoped to org)
+        property_obj = get_property_for_org(db, current_org, property_identifier)
             
         if not property_obj:
             raise HTTPException(status_code=404, detail="Property not found")
@@ -70,7 +70,9 @@ async def get_market_intelligence_summary(
             "economic_indicators": mi.economic_indicators,
             "esg_assessment": mi.esg_assessment,
             "forecasts": mi.forecasts,
-            "competitive_analysis": mi.competitive_analysis
+            "competitive_analysis": mi.competitive_analysis,
+            "comparables": mi.comparables,
+            "ai_insights": mi.ai_insights,
         }
         
         # Calculate executive summary using the internal helper
@@ -250,6 +252,18 @@ def get_or_create_market_intelligence(db: Session, property_id: int) -> MarketIn
     return mi
 
 
+def get_property_for_org(
+    db: Session,
+    current_org: Organization,
+    property_identifier: str
+) -> Optional[Property]:
+    """Resolve property by code or id within the current organization."""
+    query = Property.filter_by_org(db.query(Property), current_org.id)
+    if property_identifier.isdigit():
+        return query.filter(Property.id == int(property_identifier)).first()
+    return query.filter(Property.property_code == property_identifier).first()
+
+
 # ========== Demographics ==========
 
 @router.get("/properties/{property_code}/market-intelligence/demographics")
@@ -257,7 +271,8 @@ async def get_demographics(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh from Census API"),
     enhanced: bool = Query(True, description="Include supplementary data sources"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get demographics data for a property.
@@ -276,7 +291,7 @@ async def get_demographics(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -356,7 +371,8 @@ async def get_economic_indicators(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh from FRED API"),
     msa_code: Optional[str] = Query(None, description="MSA code for local indicators"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get economic indicators for a property's market.
@@ -372,7 +388,7 @@ async def get_economic_indicators(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -427,7 +443,8 @@ async def get_economic_indicators(
 async def get_location_intelligence(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh from external APIs"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get location intelligence data for a property.
@@ -450,7 +467,7 @@ async def get_location_intelligence(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -526,7 +543,8 @@ async def get_location_intelligence(
 async def get_esg_assessment(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh ESG assessment"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get ESG (Environmental, Social, Governance) assessment for a property.
@@ -547,7 +565,7 @@ async def get_esg_assessment(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -648,7 +666,8 @@ async def get_esg_assessment(
 async def get_forecasts(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh forecasts"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get predictive forecasts for a property.
@@ -671,7 +690,7 @@ async def get_forecasts(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -771,7 +790,8 @@ async def get_forecasts(
 async def get_competitive_analysis(
     property_code: str,
     refresh: bool = Query(False, description="Force refresh competitive analysis"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get competitive analysis for a property within its submarket.
@@ -792,7 +812,7 @@ async def get_competitive_analysis(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -890,7 +910,8 @@ async def get_competitive_analysis(
 async def get_ai_insights(
     property_code: str,
     refresh: bool = Query(False, description="Force regenerate AI insights"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get AI-powered insights and recommendations for a property.
@@ -912,7 +933,7 @@ async def get_ai_insights(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -1005,7 +1026,8 @@ async def get_ai_insights(
 async def get_market_intelligence(
     property_code: str,
     include_executive_summary: bool = Query(True, description="Include calculated executive metrics"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get complete market intelligence data for a property.
@@ -1023,7 +1045,7 @@ async def get_market_intelligence(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -1107,7 +1129,8 @@ async def refresh_market_intelligence(
         description="Categories to refresh (demographics, economic, location, esg, forecasts, competitive, comparables, insights). If not specified, refreshes all."
     ),
     use_celery: bool = Query(False, description="If true, enqueue refresh via Celery"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Refresh market intelligence data for a property.
@@ -1117,7 +1140,7 @@ async def refresh_market_intelligence(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -1152,7 +1175,7 @@ async def refresh_market_intelligence(
         if use_celery:
             try:
                 from app.tasks.market_intelligence_tasks import refresh_market_intelligence_task
-                task = refresh_market_intelligence_task.delay(property_code)
+                task = refresh_market_intelligence_task.delay(property_code=property_code, property_id=property_obj.id)
                 return {"status": "queued", "task_id": task.id}
             except Exception as e:
                 logger.error(f"Failed to enqueue Celery task: {e} — falling back to sync refresh")
@@ -1335,7 +1358,8 @@ async def get_data_lineage(
     property_code: str,
     category: Optional[str] = Query(None, description="Filter by data category"),
     limit: int = Query(50, ge=1, le=500, description="Maximum records to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get data lineage/audit trail for market intelligence.
@@ -1344,7 +1368,7 @@ async def get_data_lineage(
     """
     try:
         # Get property
-        property_obj = db.query(Property).filter(Property.property_code == property_code).first()
+        property_obj = get_property_for_org(db, current_org, property_code)
         if not property_obj:
             raise HTTPException(status_code=404, detail=f"Property {property_code} not found")
 
@@ -1391,7 +1415,8 @@ async def get_data_lineage(
 
 @router.get("/market-intelligence/statistics")
 async def get_market_intelligence_statistics(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get statistics about market intelligence coverage.
@@ -1399,22 +1424,36 @@ async def get_market_intelligence_statistics(
     Returns counts of properties with various data types.
     """
     try:
-        total_properties = db.query(Property).filter(Property.status == 'active').count()
+        total_properties = db.query(Property).filter(
+            Property.status == 'active',
+            Property.organization_id == current_org.id
+        ).count()
 
-        properties_with_mi = db.query(MarketIntelligence).count()
+        properties_with_mi = db.query(MarketIntelligence).join(
+            Property, MarketIntelligence.property_id == Property.id
+        ).filter(Property.organization_id == current_org.id).count()
 
         # Count by data type (non-null)
-        demographics_count = db.query(MarketIntelligence).filter(
+        demographics_count = db.query(MarketIntelligence).join(
+            Property, MarketIntelligence.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id,
             MarketIntelligence.demographics.isnot(None)
         ).count()
 
-        economic_count = db.query(MarketIntelligence).filter(
+        economic_count = db.query(MarketIntelligence).join(
+            Property, MarketIntelligence.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id,
             MarketIntelligence.economic_indicators.isnot(None)
         ).count()
 
         # Data pulls in last 30 days
         from datetime import timedelta
-        recent_pulls = db.query(MarketDataLineage).filter(
+        recent_pulls = db.query(MarketDataLineage).join(
+            Property, MarketDataLineage.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id,
             MarketDataLineage.fetched_at >= datetime.utcnow() - timedelta(days=30)
         ).count()
 

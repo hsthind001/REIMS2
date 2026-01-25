@@ -11,8 +11,9 @@ import logging
 
 from app.db.database import get_db
 from app.services.nlq_service_integrated import IntegratedNLQService
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
+from app.models.organization import Organization
 
 router = APIRouter(prefix="/nlq", tags=["natural_language_query"])
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ class NLQueryRequest(BaseModel):
 def natural_language_query(
     request: NLQueryRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Process natural language query with integrated caching
@@ -48,7 +50,7 @@ def natural_language_query(
     logger.info(f"Integrated NLQ query received from user {current_user.id}: {request.question}")
     user_id = current_user.id
 
-    service = IntegratedNLQService(db)
+    service = IntegratedNLQService(db, organization_id=current_org.id)
 
     try:
         # Process query with integrated caching
@@ -91,7 +93,8 @@ def natural_language_query(
 def get_cache_statistics(
     hours: int = 24,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get cache statistics for monitoring
@@ -99,7 +102,7 @@ def get_cache_statistics(
     Returns:
         Dict with cache hit/miss rates and Component A statistics
     """
-    service = IntegratedNLQService(db)
+    service = IntegratedNLQService(db, organization_id=current_org.id)
     stats = service.get_cache_statistics(hours=hours)
     return stats
 
@@ -107,7 +110,8 @@ def get_cache_statistics(
 @router.get("/health")
 def get_service_health(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get health status of integrated service components
@@ -115,7 +119,6 @@ def get_service_health(
     Returns:
         Dict with health status of Component A, Component B, and integration
     """
-    service = IntegratedNLQService(db)
+    service = IntegratedNLQService(db, organization_id=current_org.id)
     health = service.get_health_status()
     return health
-

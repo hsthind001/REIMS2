@@ -39,9 +39,16 @@ from app.core.config import settings
 class ReconciliationService:
     """Service for PDF-to-Database reconciliation"""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id: Optional[int] = None):
         self.db = db
+        self.organization_id = organization_id
         self.extraction_orchestrator = ExtractionOrchestrator(db)
+
+    def _property_query(self):
+        query = self.db.query(Property)
+        if self.organization_id is not None:
+            query = query.filter(Property.organization_id == self.organization_id)
+        return query
     
     def start_reconciliation_session(
         self,
@@ -67,7 +74,7 @@ class ReconciliationService:
             ReconciliationSession object or None
         """
         # Get property and period
-        property_obj = self.db.query(Property).filter(
+        property_obj = self._property_query().filter(
             Property.property_code == property_code
         ).first()
         
@@ -130,7 +137,7 @@ class ReconciliationService:
             Presigned URL string or None
         """
         # Get property and period
-        property_obj = self.db.query(Property).filter(
+        property_obj = self._property_query().filter(
             Property.property_code == property_code
         ).first()
         
@@ -794,7 +801,7 @@ class ReconciliationService:
             Comparison result with differences and summary
         """
         # Get property and period
-        property_obj = self.db.query(Property).filter(
+        property_obj = self._property_query().filter(
             Property.property_code == property_code
         ).first()
         
@@ -1195,9 +1202,13 @@ class ReconciliationService:
     ) -> List[Dict]:
         """Get list of reconciliation sessions"""
         query = self.db.query(ReconciliationSession)
+        if self.organization_id is not None:
+            query = query.join(Property, ReconciliationSession.property_id == Property.id).filter(
+                Property.organization_id == self.organization_id
+            )
         
         if property_code:
-            property_obj = self.db.query(Property).filter(
+            property_obj = self._property_query().filter(
                 Property.property_code == property_code
             ).first()
             

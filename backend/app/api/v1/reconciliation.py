@@ -15,8 +15,10 @@ from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel
 
-from app.api.dependencies import get_current_user, get_db
+from app.api.dependencies import get_current_user, get_current_organization, get_db
 from app.models.user import User
+from app.models.organization import Organization
+from app.models.property import Property
 from app.services.reconciliation_service import ReconciliationService
 
 
@@ -47,7 +49,8 @@ class BulkResolveRequest(BaseModel):
 async def create_reconciliation_session(
     request: ReconciliationSessionCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Start a new reconciliation session
@@ -55,7 +58,7 @@ async def create_reconciliation_session(
     Creates a session to track reconciliation of PDF vs database data
     for a specific property, period, and document type.
     """
-    service = ReconciliationService(db)
+    service = ReconciliationService(db, organization_id=current_org.id)
     
     session = service.start_reconciliation_session(
         property_code=request.property_code,
@@ -85,7 +88,8 @@ async def compare_pdf_to_database(
     month: int = Query(..., description="Period month"),
     doc_type: str = Query(..., description="Document type"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Compare PDF extraction with database records
@@ -93,7 +97,7 @@ async def compare_pdf_to_database(
     Performs field-by-field comparison and returns differences with
     color-coded match statuses.
     """
-    service = ReconciliationService(db)
+    service = ReconciliationService(db, organization_id=current_org.id)
     
     result = service.compare_pdf_to_database(
         property_code=property_code,
@@ -116,14 +120,15 @@ async def get_pdf_url(
     month: int = Query(..., description="Period month"),
     doc_type: str = Query(..., description="Document type"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get MinIO presigned URL for PDF viewing
     
     Returns a temporary URL (1 hour expiry) to view the PDF document.
     """
-    service = ReconciliationService(db)
+    service = ReconciliationService(db, organization_id=current_org.id)
     
     url = service.get_pdf_url(
         property_code=property_code,
@@ -143,14 +148,15 @@ async def resolve_difference(
     difference_id: int,
     request: ResolveDifferenceRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Resolve a single difference
     
     Applies correction and creates audit trail.
     """
-    service = ReconciliationService(db)
+    service = ReconciliationService(db, organization_id=current_org.id)
     
     new_value = Decimal(str(request.new_value)) if request.new_value is not None else None
     
@@ -172,14 +178,15 @@ async def resolve_difference(
 async def bulk_resolve_differences(
     request: BulkResolveRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Bulk resolve multiple differences
     
     Applies same action to multiple differences in a transaction.
     """
-    service = ReconciliationService(db)
+    service = ReconciliationService(db, organization_id=current_org.id)
     
     result = service.bulk_resolve_differences(
         difference_ids=request.difference_ids,
@@ -195,14 +202,15 @@ async def list_reconciliation_sessions(
     property_code: Optional[str] = Query(None, description="Filter by property code"),
     limit: int = Query(50, description="Maximum number of sessions to return"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     List reconciliation sessions
     
     Returns recent reconciliation sessions with summary statistics.
     """
-    service = ReconciliationService(db)
+    service = ReconciliationService(db, organization_id=current_org.id)
     
     sessions = service.get_sessions(
         property_code=property_code,
@@ -216,7 +224,8 @@ async def list_reconciliation_sessions(
 async def get_session_details(
     session_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get details of a specific reconciliation session
@@ -226,8 +235,11 @@ async def get_session_details(
     from app.models.reconciliation_session import ReconciliationSession
     from app.models.reconciliation_difference import ReconciliationDifference
     
-    session = db.query(ReconciliationSession).filter(
-        ReconciliationSession.id == session_id
+    session = db.query(ReconciliationSession).join(
+        Property, ReconciliationSession.property_id == Property.id
+    ).filter(
+        ReconciliationSession.id == session_id,
+        Property.organization_id == current_org.id
     ).first()
     
     if not session:
@@ -366,4 +378,3 @@ async def generate_reconciliation_report(
     
     else:
         raise HTTPException(status_code=400, detail="Invalid format. Use 'excel' or 'pdf'")
-

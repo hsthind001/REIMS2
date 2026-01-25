@@ -4,6 +4,7 @@ Leverages existing market_data_service routines; uses sample generators as fallb
 """
 
 from celery import shared_task
+from typing import Optional
 from app.db.database import SessionLocal
 from app.models.property import Property
 from app.models.market_intelligence import MarketIntelligence
@@ -19,16 +20,21 @@ def _service(db):
 
 
 @shared_task(name="market_intelligence.refresh_all")
-def refresh_market_intelligence_task(property_code: str):
+def refresh_market_intelligence_task(property_code: str, property_id: Optional[int] = None):
     """
     Refresh all market intelligence categories for a property (async).
     """
     db = SessionLocal()
     try:
-        prop = db.query(Property).filter(Property.property_code == property_code).first()
+        if property_id is not None:
+            prop = db.query(Property).filter(Property.id == property_id).first()
+        else:
+            prop = db.query(Property).filter(Property.property_code == property_code).first()
         if not prop:
             logger.error(f"[MI] Property {property_code} not found")
             return {"status": "error", "error": "property_not_found"}
+
+        property_code = prop.property_code
 
         mi = get_or_create_market_intelligence(db, prop.id)
         service = _service(db)

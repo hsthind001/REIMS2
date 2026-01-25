@@ -54,7 +54,8 @@ class RAGRetrievalService:
         property_id: Optional[int] = None,
         period_id: Optional[int] = None,
         document_type: Optional[str] = None,
-        min_similarity: float = 0.3
+        min_similarity: float = 0.3,
+        organization_id: Optional[int] = None
     ) -> List[Dict]:
         """
         Retrieve relevant document chunks for a query
@@ -76,7 +77,7 @@ class RAGRetrievalService:
             
             if not query_embedding:
                 logger.warning("Could not generate query embedding, falling back to text search")
-                return self._fallback_text_search(query, top_k, property_id, period_id, document_type)
+                return self._fallback_text_search(query, top_k, property_id, period_id, document_type, organization_id)
             
             # Build query for chunks
             chunk_query = self.db.query(DocumentChunk).filter(
@@ -92,6 +93,13 @@ class RAGRetrievalService:
             
             if document_type:
                 chunk_query = chunk_query.filter(DocumentChunk.document_type == document_type)
+            
+            if organization_id is not None:
+                chunk_query = chunk_query.join(
+                    Property, DocumentChunk.property_id == Property.id
+                ).filter(
+                    Property.organization_id == organization_id
+                )
             
             # Get all chunks (we'll calculate similarity in Python)
             chunks = chunk_query.all()
@@ -116,10 +124,13 @@ class RAGRetrievalService:
                     
                     property_obj = None
                     period = None
-                    if chunk.property_id:
-                        property_obj = self.db.query(Property).filter(
-                            Property.id == chunk.property_id
-                        ).first()
+                if chunk.property_id:
+                    property_query = self.db.query(Property).filter(
+                        Property.id == chunk.property_id
+                    )
+                    if organization_id is not None:
+                        property_query = property_query.filter(Property.organization_id == organization_id)
+                    property_obj = property_query.first()
                     if chunk.period_id:
                         period = self.db.query(FinancialPeriod).filter(
                             FinancialPeriod.id == chunk.period_id
@@ -155,7 +166,8 @@ class RAGRetrievalService:
         top_k: int,
         property_id: Optional[int],
         period_id: Optional[int],
-        document_type: Optional[str]
+        document_type: Optional[str],
+        organization_id: Optional[int] = None
     ) -> List[Dict]:
         """
         Fallback text-based search when embeddings unavailable
@@ -173,6 +185,12 @@ class RAGRetrievalService:
             chunk_query = chunk_query.filter(DocumentChunk.period_id == period_id)
         if document_type:
             chunk_query = chunk_query.filter(DocumentChunk.document_type == document_type)
+        if organization_id is not None:
+            chunk_query = chunk_query.join(
+                Property, DocumentChunk.property_id == Property.id
+            ).filter(
+                Property.organization_id == organization_id
+            )
         
         chunks = chunk_query.all()
         
@@ -193,10 +211,13 @@ class RAGRetrievalService:
                     
                     property_obj = None
                     period = None
-                    if chunk.property_id:
-                        property_obj = self.db.query(Property).filter(
-                            Property.id == chunk.property_id
-                        ).first()
+                if chunk.property_id:
+                    property_query = self.db.query(Property).filter(
+                        Property.id == chunk.property_id
+                    )
+                    if organization_id is not None:
+                        property_query = property_query.filter(Property.organization_id == organization_id)
+                    property_obj = property_query.first()
                     if chunk.period_id:
                         period = self.db.query(FinancialPeriod).filter(
                             FinancialPeriod.id == chunk.period_id
@@ -238,4 +259,3 @@ class RAGRetrievalService:
             context_parts.append(f"[Chunk {chunk.chunk_index} from {chunk.document_type}]\n{chunk.chunk_text}")
         
         return "\n\n---\n\n".join(context_parts)
-

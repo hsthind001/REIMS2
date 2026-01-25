@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, case
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_organization
+from app.models.organization import Organization
+from app.models.property import Property
 from app.services.validation_service import ValidationService
 from app.models.document_upload import DocumentUpload
 from app.models.validation_rule import ValidationRule
@@ -16,6 +19,15 @@ from app.models.validation_result import ValidationResult
 
 
 router = APIRouter()
+
+
+def _get_upload_for_org(db: Session, organization_id: int, upload_id: int) -> Optional[DocumentUpload]:
+    return db.query(DocumentUpload).join(
+        Property, DocumentUpload.property_id == Property.id
+    ).filter(
+        DocumentUpload.id == upload_id,
+        Property.organization_id == organization_id
+    ).first()
 
 
 # Response Models
@@ -220,7 +232,8 @@ class ValidationRunResponse(BaseModel):
 @router.get("/validations/analytics", response_model=ValidationAnalyticsResponse)
 async def get_validation_analytics(
     days: int = Query(90, ge=7, le=365, description="Number of days for trend analysis"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get comprehensive validation analytics
@@ -250,8 +263,13 @@ async def get_validation_analytics(
                 func.date(ValidationResult.created_at).label('date'),
                 func.count(ValidationResult.id).label('total_tests'),
                 func.sum(case((ValidationResult.passed == True, 1), else_=0)).label('passed_count')
+            ).join(
+                DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+            ).join(
+                Property, DocumentUpload.property_id == Property.id
             ).filter(
-                ValidationResult.created_at >= start_date
+                ValidationResult.created_at >= start_date,
+                Property.organization_id == current_org.id
             ).group_by(
                 func.date(ValidationResult.created_at)
             ).order_by(
@@ -276,8 +294,13 @@ async def get_validation_analytics(
         severity_failures = db.query(
             ValidationResult.severity,
             func.count(ValidationResult.id).label('count')
+        ).join(
+            DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
         ).filter(
-            ValidationResult.passed == False
+            ValidationResult.passed == False,
+            Property.organization_id == current_org.id
         ).group_by(
             ValidationResult.severity
         ).all()
@@ -299,8 +322,13 @@ async def get_validation_analytics(
             func.count(ValidationResult.id).label('count')
         ).join(
             ValidationResult, ValidationResult.rule_id == ValidationRule.id
+        ).join(
+            DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
         ).filter(
-            ValidationResult.passed == False
+            ValidationResult.passed == False,
+            Property.organization_id == current_org.id
         ).group_by(
             ValidationRule.document_type
         ).all()
@@ -323,12 +351,18 @@ async def get_validation_analytics(
             func.sum(case((ValidationResult.passed == False, 1), else_=0)).label('failure_count')
         ).join(
             ValidationResult, ValidationResult.rule_id == ValidationRule.id
+        ).join(
+            DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
         ).group_by(
             ValidationRule.id,
             ValidationRule.rule_name,
             ValidationRule.document_type
         ).having(
             func.count(ValidationResult.id) > 0
+        ).filter(
+            Property.organization_id == current_org.id
         ).order_by(
             (func.sum(case((ValidationResult.passed == False, 1), else_=0)) / func.count(ValidationResult.id)).desc()
         ).limit(10).all()
@@ -354,8 +388,14 @@ async def get_validation_analytics(
             func.sum(case((ValidationResult.passed == False, 1), else_=0)).label('failure_count')
         ).join(
             ValidationResult, ValidationResult.rule_id == ValidationRule.id
+        ).join(
+            DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
         ).group_by(
             ValidationRule.document_type
+        ).filter(
+            Property.organization_id == current_org.id
         ).all()
         
         document_type_performance = []
@@ -388,7 +428,8 @@ async def list_validation_rules(
     document_type: Optional[str] = Query(None, description="Filter by document type"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     severity: Optional[str] = Query(None, description="Filter by severity (error, warning, info)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     List all available validation rules
@@ -442,7 +483,8 @@ async def get_rule_statistics(
     severity: Optional[str] = Query(None, description="Filter by severity"),
     date_from: Optional[str] = Query(None, description="Filter results from date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Filter results to date (YYYY-MM-DD)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get aggregated statistics for all validation rules
@@ -464,6 +506,12 @@ async def get_rule_statistics(
             func.sum(case((ValidationResult.passed == True, 1), else_=0)).label('passed_count'),
             func.sum(case((ValidationResult.passed == False, 1), else_=0)).label('failed_count'),
             func.max(ValidationResult.created_at).label('last_executed_at')
+        ).join(
+            DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            Property.organization_id == current_org.id
         ).group_by(ValidationResult.rule_id)
         
         # Apply date filters if provided
@@ -593,7 +641,8 @@ async def get_rule_results(
     rule_id: int,
     limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get recent validation results for a specific rule
@@ -617,19 +666,22 @@ async def get_rule_results(
             DocumentUpload
         ).join(
             DocumentUpload, ValidationResult.upload_id == DocumentUpload.id
+        ).join(
+            Property, DocumentUpload.property_id == Property.id
         ).filter(
-            ValidationResult.rule_id == rule_id
+            ValidationResult.rule_id == rule_id,
+            Property.organization_id == current_org.id
         ).order_by(
             ValidationResult.created_at.desc()
         ).limit(limit).offset(offset).all()
         
         # Get property codes for uploads
-        from app.models.property import Property
         property_map = {}
         property_ids = [result[1].property_id for result in results if result[1].property_id]
         if property_ids:
             properties = db.query(Property).filter(
-                Property.id.in_(property_ids)
+                Property.id.in_(property_ids),
+                Property.organization_id == current_org.id
             ).all()
             property_map = {p.id: p.property_code for p in properties}
         
@@ -666,7 +718,8 @@ async def get_rule_results(
 @router.get("/validations/{upload_id}", response_model=ValidationDetailResponse)
 async def get_validation_results(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get all validation results for an upload
@@ -679,31 +732,20 @@ async def get_validation_results(
     Use this endpoint after extraction completes to verify data quality
     """
     try:
-        # Get upload with property info
-        upload_query = db.query(
-            DocumentUpload,
-            ValidationRule.rule_name,
-            ValidationRule.rule_description
-        ).outerjoin(
-            ValidationResult, ValidationResult.upload_id == DocumentUpload.id
-        ).outerjoin(
-            ValidationRule, ValidationResult.rule_id == ValidationRule.id
-        ).filter(
-            DocumentUpload.id == upload_id
-        ).first()
-        
-        if not upload_query:
+        upload = _get_upload_for_org(db, current_org.id, upload_id)
+        if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Upload {upload_id} not found"
             )
         
-        upload = upload_query[0] if isinstance(upload_query, tuple) else upload_query
-        
-        # Get property code
-        from app.models.property import Property
-        property_obj = db.query(Property).filter(Property.id == upload.property_id).first()
-        property_code = property_obj.property_code if property_obj else None
+        property_code = None
+        if upload.property_id:
+            property_obj = db.query(Property).filter(
+                Property.id == upload.property_id,
+                Property.organization_id == current_org.id
+            ).first()
+            property_code = property_obj.property_code if property_obj else None
         
         # Get all validation results for this upload
         results = db.query(
@@ -766,7 +808,8 @@ async def get_validation_results(
 @router.post("/validations/{upload_id}/run", response_model=ValidationRunResponse)
 async def run_validation(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Manually trigger validation for an upload
@@ -782,9 +825,7 @@ async def run_validation(
     """
     try:
         # Verify upload exists
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
-        ).first()
+        upload = _get_upload_for_org(db, current_org.id, upload_id)
         
         if not upload:
             raise HTTPException(
@@ -837,7 +878,8 @@ async def run_validation(
 @router.get("/validations/{upload_id}/summary", response_model=ValidationSummaryResponse)
 async def get_validation_summary(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get quick validation summary
@@ -851,9 +893,7 @@ async def get_validation_summary(
     """
     try:
         # Verify upload exists
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
-        ).first()
+        upload = _get_upload_for_org(db, current_org.id, upload_id)
         
         if not upload:
             raise HTTPException(
@@ -889,4 +929,3 @@ async def get_validation_summary(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get validation summary: {str(e)}"
         )
-

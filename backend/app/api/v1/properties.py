@@ -7,11 +7,90 @@ from app.models.property import Property
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
 from app.api.dependencies import get_current_user, get_current_organization
 from app.core.redis_client import invalidate_portfolio_cache
+from app.core.config import settings
+from sqlalchemy import func
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/properties", tags=["properties"])
+
+
+def _maybe_attach_demo_properties(db: Session, current_org) -> None:
+    """
+    Dev-only helper: if the current org has no properties but demo data exists
+    in exactly one other org (with only superuser members), move those properties
+    into the current org. This preserves strict tenancy while unblocking local UX.
+    """
+    if settings.ENVIRONMENT != "development":
+        return
+
+    # If org already has properties, do nothing
+    has_props = Property.filter_by_org(db.query(Property), current_org.id).limit(1).first()
+    if has_props:
+        return
+
+    # If there are unassigned properties, attach them to the current org
+    null_count = db.query(func.count(Property.id)).filter(Property.organization_id.is_(None)).scalar() or 0
+    if null_count:
+        updated = db.query(Property).filter(
+            Property.organization_id.is_(None)
+        ).update(
+            {Property.organization_id: current_org.id},
+            synchronize_session=False
+        )
+        if updated:
+            db.commit()
+            invalidate_portfolio_cache()
+            logger.info(
+                f"Dev bootstrap: attached {updated} unassigned properties to org {current_org.id}"
+            )
+        return
+
+    # Find other orgs that have properties
+    org_counts = db.query(
+        Property.organization_id,
+        func.count(Property.id)
+    ).filter(
+        Property.organization_id != current_org.id
+    ).group_by(Property.organization_id).all()
+
+    if not org_counts:
+        return
+
+    from app.models.organization import OrganizationMember
+    from app.models.user import User
+
+    eligible = []
+    for org_id, count in org_counts:
+        members = db.query(User.is_superuser).join(
+            OrganizationMember, OrganizationMember.user_id == User.id
+        ).filter(
+            OrganizationMember.organization_id == org_id
+        ).all()
+
+        # Allow moving demo data only if there are no members
+        # or all members are superusers (dev/seed org)
+        if not members or all(m.is_superuser for m in members):
+            eligible.append(org_id)
+
+    # Only auto-attach when there's exactly one clear demo org
+    if len(eligible) != 1:
+        return
+
+    source_org_id = eligible[0]
+    updated = db.query(Property).filter(
+        Property.organization_id == source_org_id
+    ).update(
+        {Property.organization_id: current_org.id},
+        synchronize_session=False
+    )
+    if updated:
+        db.commit()
+        invalidate_portfolio_cache()
+        logger.info(
+            f"Dev bootstrap: moved {updated} properties from org {source_org_id} to org {current_org.id}"
+        )
 
 
 @router.post("/", response_model=PropertyResponse, status_code=status.HTTP_201_CREATED)
@@ -24,12 +103,9 @@ async def create_property(
     """
     Create a new property with unique property_code within organization
     """
-    # Check if property_code already exists IN THIS ORGANIZATION
-    # (Optional: property_code could be globally unique or per-org. Assuming per-org is better for SaaS)
-    query = db.query(Property)
-    existing = Property.filter_by_org(query, current_org.id)\
+    # Check if property_code already exists in this organization
+    existing = Property.filter_by_org(db.query(Property), current_org.id)\
         .filter(Property.property_code == property_data.property_code).first()
-        
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,9 +138,9 @@ async def list_properties(
     """
     List all properties for the current organization
     """
-    query = db.query(Property)
-    # Enforce Tenancy
-    query = Property.filter_by_org(query, current_org.id)
+    _maybe_attach_demo_properties(db, current_org)
+    # Enforce tenancy
+    query = Property.filter_by_org(db.query(Property), current_org.id)
     
     if status:
         query = query.filter(Property.status == status)
@@ -81,9 +157,8 @@ async def get_property(
     """
     Get property by property_code (scoped to organization)
     """
-    query = db.query(Property)
-    property = Property.filter_by_org(query, current_org.id)\
-        .filter(Property.property_code == property_code).first()
+    query = Property.filter_by_org(db.query(Property), current_org.id)
+    property = query.filter(Property.property_code == property_code).first()
         
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
@@ -101,9 +176,8 @@ async def update_property(
     """
     Update property information (scoped to organization)
     """
-    query = db.query(Property)
-    property = Property.filter_by_org(query, current_org.id)\
-        .filter(Property.property_code == property_code).first()
+    query = Property.filter_by_org(db.query(Property), current_org.id)
+    property = query.filter(Property.property_code == property_code).first()
         
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
@@ -128,9 +202,8 @@ async def delete_property(
     """
     Delete property (scoped to organization)
     """
-    query = db.query(Property)
-    property = Property.filter_by_org(query, current_org.id)\
-        .filter(Property.property_code == property_code).first()
+    query = Property.filter_by_org(db.query(Property), current_org.id)
+    property = query.filter(Property.property_code == property_code).first()
         
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")

@@ -53,7 +53,8 @@ def calculate_severity_level(
 @router.get("/quality/document/{upload_id}")
 async def get_document_quality(
     upload_id: int = Path(..., description="Document upload ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get quality metrics for a specific document upload
@@ -72,8 +73,11 @@ async def get_document_quality(
     """
     try:
         # Get upload record
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
+        upload = db.query(DocumentUpload).join(
+            Property, DocumentUpload.property_id == Property.id
+        ).filter(
+            DocumentUpload.id == upload_id,
+            Property.organization_id == current_org.id
         ).first()
         
         if not upload:
@@ -84,7 +88,8 @@ async def get_document_quality(
         
         # Get property and period info
         property_info = db.query(Property).filter(
-            Property.id == upload.property_id
+            Property.id == upload.property_id,
+            Property.organization_id == current_org.id
         ).first()
         
         period_info = db.query(FinancialPeriod).filter(
@@ -605,4 +610,3 @@ async def get_yearly_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get yearly statistics: {str(e)}"
         )
-

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
+from app.models.organization import Organization
 from app.services.review_service import ReviewService
 from app.schemas.review import (
     ReviewQueueResponse,
@@ -32,7 +33,8 @@ async def get_review_queue(
     period_month: Optional[int] = Query(None, ge=1, le=12, description="Filter by period month (1-12)"),
     skip: int = Query(0, ge=0, description="Number of records to skip (pagination)"),
     limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get all items needing review across all financial tables
@@ -59,7 +61,7 @@ async def get_review_queue(
     - Pagination metadata
     """
     try:
-        review_service = ReviewService(db)
+        review_service = ReviewService(db, organization_id=current_org.id)
         result = review_service.get_review_queue(
             property_code=property_code,
             document_type=document_type,
@@ -83,7 +85,8 @@ async def get_review_queue(
 async def get_record_details(
     record_id: int = Path(..., description="Record ID"),
     table_name: str = Query(..., description="Table name (balance_sheet_data, income_statement_data, etc.)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Get detailed information about a specific record
@@ -102,7 +105,7 @@ async def get_record_details(
     - Complete record details with all fields
     """
     try:
-        review_service = ReviewService(db)
+        review_service = ReviewService(db, organization_id=current_org.id)
         record = review_service.get_record_details(record_id, table_name)
         
         return RecordDetailResponse(**record)
@@ -124,7 +127,8 @@ async def approve_record(
     record_id: int = Path(..., description="Record ID to approve"),
     request: ApproveRecordRequest = ...,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Mark a record as reviewed and approved without changes
@@ -151,7 +155,7 @@ async def approve_record(
     **Authentication Required**
     """
     try:
-        review_service = ReviewService(db)
+        review_service = ReviewService(db, organization_id=current_org.id)
         
         # Get user ID from current_user
         user_id = current_user.get("id", 1)  # Default to 1 if not available
@@ -182,7 +186,8 @@ async def correct_record(
     record_id: int = Path(..., description="Record ID to correct"),
     request: CorrectRecordRequest = ...,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization)
 ):
     """
     Correct field values in a record and mark as reviewed
@@ -231,7 +236,7 @@ async def correct_record(
     ```
     """
     try:
-        review_service = ReviewService(db)
+        review_service = ReviewService(db, organization_id=current_org.id)
         
         # Get user ID from current_user
         user_id = current_user.get("id", 1)  # Default to 1 if not available
