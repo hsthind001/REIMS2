@@ -2410,11 +2410,9 @@ class MarketDataService:
                     return self.tag_data_source(
                         ai_insights,
                         source='local_llm',
-                        vintage='2025-01',
+                        vintage=datetime.utcnow().strftime('%Y-%m'),
                         confidence=ai_insights.get('confidence', 85)
                     )
-            except Exception as ai_error:
-                logger.warning(f"AI service unavailable, falling back to rule-based: {ai_error}")
             except Exception as ai_error:
                 logger.warning(f"AI service unavailable, falling back to rule-based: {ai_error}")
 
@@ -2472,7 +2470,7 @@ class MarketDataService:
             return self.tag_data_source(
                 ai_insights,
                 source='rule_based_fallback',
-                vintage='2025-01',
+                vintage=datetime.utcnow().strftime('%Y-%m'),
                 confidence=min(60, coverage.get("coverage_percent", 60))
             )
 
