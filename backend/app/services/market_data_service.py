@@ -1823,11 +1823,15 @@ class MarketDataService:
             return None
 
     def _percentile_rank(self, value: Optional[float], values: List[float]) -> Optional[float]:
-        """Return percentile rank (0-100) of value within values."""
+        """Return percentile rank (0-100) of value within values.
+
+        Returns None if insufficient comparison data (need at least 2 peers).
+        """
         if value is None or not values:
             return None
-        if len(values) == 1:
-            return 50.0
+        if len(values) < 2:
+            # Need at least 2 data points for meaningful percentile
+            return None
         ordered = sorted(values)
         count = sum(1 for v in ordered if v <= value)
         return round((count / len(ordered)) * 100.0, 1)
