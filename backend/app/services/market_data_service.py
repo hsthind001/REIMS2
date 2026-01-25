@@ -1268,10 +1268,15 @@ class MarketDataService:
 
             self.log_data_pull('esg_composite', 'esg_assessment', 'success', records_fetched=1)
 
+            # Dynamic quarter calculation
+            now = datetime.utcnow()
+            quarter = (now.month - 1) // 3 + 1
+            vintage_quarter = f"{now.year}-Q{quarter}"
+
             return self.tag_data_source(
                 esg_assessment,
                 source='esg_composite',
-                vintage='2025-Q4',
+                vintage=vintage_quarter,
                 confidence=75
             )
 
@@ -1634,7 +1639,7 @@ class MarketDataService:
             return self.tag_data_source(
                 forecasts,
                 source='forecast_model',
-                vintage='2025-12',
+                vintage=datetime.utcnow().strftime('%Y-%m'),
                 confidence=70  # Lower confidence for simplified forecasts
             )
 
@@ -2143,7 +2148,7 @@ class MarketDataService:
             return self.tag_data_source(
                 competitive_analysis,
                 source='competitive_model',
-                vintage='2025-12',
+                vintage=datetime.utcnow().strftime('%Y-%m'),
                 confidence=65
             )
 
