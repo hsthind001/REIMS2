@@ -222,13 +222,12 @@ Generate a detailed SWOT analysis in the following JSON format:
 }}
 
 **REQUIREMENTS:**
-1. Identify 4-6 items per category (Strengths, Weaknesses, Opportunities, Threats)
+1. Identify 2-3 items per category (Strengths, Weaknesses, Opportunities, Threats)
 2. Each item must reference specific metrics from the data above
-3. Prioritize items by impact (include at least 2 High impact items per category)
-4. For Opportunities, suggest specific actions or strategies
-5. For Threats, quantify the risk level and potential financial impact
-6. Use professional real estate terminology
-7. Be specific - avoid generic statements
+3. For Opportunities, suggest specific actions or strategies
+4. For Threats, quantify the risk level and potential financial impact
+5. Use professional real estate terminology
+6. Be specific - avoid generic statements
 
 Respond ONLY with the JSON object. No markdown formatting, no explanations."""
 
@@ -294,17 +293,15 @@ Generate an investment recommendation in the following JSON format:
 {{
   "recommendation": "BUY|HOLD|SELL|REVIEW",
   "confidence": 85,
-  "rationale": "3-4 paragraph investment thesis explaining the recommendation. Include:\n- Summary of key findings from SWOT\n- Financial justification with specific metrics\n- Risk assessment and mitigation strategies\n- Expected return scenarios (base case, bull case, bear case)\n- Recommended holding period",
+  "rationale": "1 paragraph (4-6 sentences) investment thesis. Include: key SWOT findings, financial justification, and risk considerations.",
   "priority": "High|Medium|Low",
   "key_risks": [
     "Specific risk 1 with quantification",
-    "Specific risk 2 with quantification",
-    "Specific risk 3 with quantification"
+    "Specific risk 2 with quantification"
   ],
   "risk_mitigation_strategies": [
     "Actionable mitigation strategy 1",
-    "Actionable mitigation strategy 2",
-    "Actionable mitigation strategy 3"
+    "Actionable mitigation strategy 2"
   ],
   "expected_return_scenarios": {{
     "base_case": {{
@@ -329,15 +326,14 @@ Generate an investment recommendation in the following JSON format:
   "optimal_holding_period": 5,
   "action_items": [
     "Immediate action item 1",
-    "Near-term action item 2",
-    "Strategic action item 3"
+    "Near-term action item 2"
   ]
 }}
 
 **REQUIREMENTS:**
 1. Recommendation must be one of: BUY, HOLD, SELL, or REVIEW
 2. Confidence should be 0-100 (consider data quality and market volatility)
-3. Rationale should be 3-4 paragraphs, institutional-grade writing
+3. Rationale should be 4-6 sentences, institutional-grade writing
 4. Expected returns should be realistic based on market data
 5. Include specific dollar amounts or percentages where possible
 6. Action items should be concrete and time-bound
@@ -414,7 +410,7 @@ Generate a comprehensive risk assessment in the following JSON format:
 {{
   "overall_risk_score": 65,
   "risk_level": "High|Medium|Low",
-  "narrative": "3-paragraph risk assessment covering:\n- Overall risk profile and key concerns\n- Quantification of potential financial impact\n- Comparison to market benchmarks",
+  "narrative": "1 paragraph risk assessment covering: overall profile, key concerns, and financial impact.",
   "risk_categories": [
     {{
       "category": "Environmental Risk",
@@ -425,12 +421,6 @@ Generate a comprehensive risk assessment in the following JSON format:
     {{
       "category": "Market Risk",
       "score": 70,
-      "factors": ["Factor 1", "Factor 2"],
-      "impact": "Potential financial impact description"
-    }},
-    {{
-      "category": "Financial Risk",
-      "score": 60,
       "factors": ["Factor 1", "Factor 2"],
       "impact": "Potential financial impact description"
     }}
@@ -448,7 +438,7 @@ Generate a comprehensive risk assessment in the following JSON format:
 **REQUIREMENTS:**
 1. Overall risk score: 0-100 (0 = no risk, 100 = extreme risk)
 2. Risk level: High (>70), Medium (40-70), Low (<40)
-3. Identify 4-6 risk categories
+3. Identify 2-3 risk categories
 4. Quantify financial impact in dollars where possible
 5. Provide actionable mitigation strategies
 6. Include cost estimates for risk mitigation
@@ -546,10 +536,10 @@ Generate a competitive intelligence analysis in the following JSON format:
 
 **REQUIREMENTS:**
 1. Assess positioning relative to submarket average
-2. Identify 3-5 differentiation factors
-3. List 2-4 competitive threats with quantified risk
+2. Identify 2-3 differentiation factors
+3. List 1-2 competitive threats with quantified risk
 4. Provide pricing power analysis with specific percentages
-5. Suggest 3-5 strategic recommendations with ROI estimates
+5. Suggest 2-3 strategic recommendations with ROI estimates
 
 Respond ONLY with the JSON object."""
 
@@ -613,7 +603,7 @@ def generate_market_trends_prompt(
 Generate a market trends synthesis in the following JSON format:
 
 {{
-  "executive_summary": "2-3 paragraph synthesis of key market trends",
+  "executive_summary": "1 paragraph synthesis of key market trends",
   "macro_trends": [
     {{
       "trend": "Trend name",
@@ -631,12 +621,10 @@ Generate a market trends synthesis in the following JSON format:
   ],
   "demand_drivers": [
     "Demand driver 1",
-    "Demand driver 2",
-    "Demand driver 3"
+    "Demand driver 2"
   ],
   "supply_constraints": [
-    "Supply constraint 1",
-    "Supply constraint 2"
+    "Supply constraint 1"
   ],
   "outlook": {{
     "timeframe": "12-month",
@@ -648,9 +636,9 @@ Generate a market trends synthesis in the following JSON format:
 
 **REQUIREMENTS:**
 1. Synthesize macro trends with local market context
-2. Identify 4-6 macro trends
-3. Highlight 3-5 local market dynamics
-4. List demand drivers and supply constraints
+2. Identify 2-3 macro trends
+3. Highlight 2-3 local market dynamics
+4. List 2 demand drivers and 1-2 supply constraints
 5. Provide 12-month outlook with sentiment
 
 Respond ONLY with the JSON object."""

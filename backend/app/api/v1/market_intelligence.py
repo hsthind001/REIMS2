@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
 import logging
+import asyncio
 from datetime import datetime
 
 from app.db.database import get_db
@@ -1373,146 +1374,175 @@ async def refresh_market_intelligence(
             'open_data': open_data
         }
 
-        # Refresh demographics
-        if 'demographics' in categories:
-            try:
-                demographics = None
-                if latitude and longitude:
-                    demographics = service.fetch_enhanced_demographics(latitude, longitude)
-                
-                if demographics:
-                    mi.demographics = demographics
-                    refreshed.append('demographics')
-                else:
-                    logger.warning(f"No demographics data found for {property_code}")
-                    # No sample data fallback
-            except Exception as e:
-                logger.error(f"Failed to refresh demographics: {e}")
-                errors.append({'category': 'demographics', 'error': str(e)})
+        # =====================================================================
+        # PARALLEL DATA FETCHING - Run independent categories concurrently
+        # =====================================================================
 
-        # Refresh economic indicators
-        if 'economic' in categories:
+        async def fetch_demographics():
+            """Fetch demographics in thread pool"""
+            if 'demographics' not in categories or not latitude or not longitude:
+                return ('demographics', None, None)
             try:
-                economic = service.fetch_fred_economic_indicators()
-                if economic:
-                    mi.economic_indicators = economic
-                    refreshed.append('economic')
-                else:
-                     logger.warning(f"No economic data available")
-                     # No sample data fallback
+                result = await asyncio.to_thread(
+                    service.fetch_enhanced_demographics, latitude, longitude
+                )
+                return ('demographics', result, None)
             except Exception as e:
-                logger.error(f"Failed to refresh economic indicators: {e}")
-                errors.append({'category': 'economic', 'error': str(e)})
+                return ('demographics', None, str(e))
 
-        # Refresh location intelligence
-        if 'location' in categories:
+        async def fetch_economic():
+            """Fetch economic indicators in thread pool"""
+            if 'economic' not in categories:
+                return ('economic', None, None)
             try:
-                location_intel = None
-                if latitude and longitude:
-                    location_intel = service.fetch_location_intelligence(
-                        latitude,
-                        longitude,
-                        cache_bust=datetime.utcnow().isoformat()
-                    )
-                
-                if location_intel:
-                    mi.location_intelligence = location_intel
-                    refreshed.append('location')
-                else:
-                    logger.warning(f"No location intelligence found for {property_code}")
-                    if mi.location_intelligence:
-                        # Keep existing data when refresh fails
-                        refreshed.append('location')
+                result = await asyncio.to_thread(service.fetch_fred_economic_indicators)
+                return ('economic', result, None)
             except Exception as e:
-                logger.error(f"Failed to refresh location intelligence: {e}")
-                errors.append({'category': 'location', 'error': str(e)})
+                return ('economic', None, str(e))
 
-        # Refresh ESG assessment
-        if 'esg' in categories:
+        async def fetch_location():
+            """Fetch location intelligence in thread pool"""
+            if 'location' not in categories or not latitude or not longitude:
+                return ('location', None, None)
             try:
-                esg_assessment = None
-                if latitude and longitude:
-                    prop_meta = {
-                        'property_code': property_code,
-                        'property_type': property_obj.property_type,
-                        'year_built': getattr(property_obj, 'year_built', None)
-                    }
-                    esg_assessment = service.fetch_esg_assessment(latitude, longitude, prop_meta)
-                
-                if esg_assessment:
-                    mi.esg_assessment = esg_assessment
-                    refreshed.append('esg')
-                else:
-                     logger.warning(f"No ESG assessment found for {property_code}")
-                     # No sample data fallback
-            except Exception as e:
-                logger.error(f"Failed to refresh ESG assessment: {e}")
-                errors.append({'category': 'esg', 'error': str(e)})
-
-        # Refresh forecasts
-        if 'forecasts' in categories:
-            try:
-                forecasts = service.generate_forecasts(base_property_data, None)
-                if forecasts:
-                    mi.forecasts = forecasts
-                    refreshed.append('forecasts')
-                else:
-                    logger.warning(f"Could not generate forecasts for {property_code}")
-                    # No sample data fallback
-            except Exception as e:
-                logger.error(f"Failed to refresh forecasts: {e}")
-                errors.append({'category': 'forecasts', 'error': str(e)})
-
-        # Refresh competitive analysis
-        if 'competitive' in categories:
-            try:
-                competitive = service.analyze_competitive_position(
-                    base_property_data,
-                    None,
+                result = await asyncio.to_thread(
+                    service.fetch_location_intelligence,
+                    latitude, longitude,
                     cache_bust=datetime.utcnow().isoformat()
                 )
-                if competitive:
-                    # Best-effort LLM narrative
-                    try:
-                        from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
-                        ai_service = get_market_intelligence_ai_service()
-                        loc_prompt = {}
-                        if mi.location_intelligence and isinstance(mi.location_intelligence, dict):
-                            loc_data = mi.location_intelligence.get('data') or {}
-                            amenities = loc_data.get('amenities') or {}
-                            loc_prompt = {
-                                'walk_score': loc_data.get('walk_score'),
-                                'nearby_restaurants': amenities.get('restaurants_1mi'),
-                                'nearby_grocery': amenities.get('grocery_stores_1mi')
-                            }
-                        market_data = {
-                            'property_code': property_code,
-                            'competitive_analysis': competitive,
-                            'location_intelligence': {'data': loc_prompt}
-                        }
-                        property_metrics = {
-                            'current_rent_psf': base_property_data.get('avg_rent_psf') or base_property_data.get('avg_rent'),
-                            'current_occupancy': base_property_data.get('occupancy_rate')
-                        }
-                        llm_narrative = await ai_service._generate_competitive_analysis_with_llm(
-                            market_data,
-                            property_metrics
-                        )
-                        if llm_narrative:
-                            competitive.setdefault('data', {})['llm_narrative'] = llm_narrative
-                    except Exception as llm_err:
-                        logger.warning(f"Competitive narrative generation skipped: {llm_err}")
-
-                    mi.competitive_analysis = competitive
-                    refreshed.append('competitive')
-                else:
-                    logger.warning(f"Could not generate competitive analysis for {property_code}")
-                    # No sample data fallback
+                return ('location', result, None)
             except Exception as e:
-                logger.error(f"Failed to refresh competitive analysis: {e}")
-                errors.append({'category': 'competitive', 'error': str(e)})
+                return ('location', None, str(e))
 
-        # Refresh AI insights
+        async def fetch_esg():
+            """Fetch ESG assessment in thread pool"""
+            if 'esg' not in categories or not latitude or not longitude:
+                return ('esg', None, None)
+            try:
+                prop_meta = {
+                    'property_code': property_code,
+                    'property_type': property_obj.property_type,
+                    'year_built': getattr(property_obj, 'year_built', None)
+                }
+                result = await asyncio.to_thread(
+                    service.fetch_esg_assessment, latitude, longitude, prop_meta
+                )
+                return ('esg', result, None)
+            except Exception as e:
+                return ('esg', None, str(e))
+
+        async def fetch_forecasts():
+            """Generate forecasts in thread pool"""
+            if 'forecasts' not in categories:
+                return ('forecasts', None, None)
+            try:
+                result = await asyncio.to_thread(
+                    service.generate_forecasts, base_property_data, None
+                )
+                return ('forecasts', result, None)
+            except Exception as e:
+                return ('forecasts', None, str(e))
+
+        async def fetch_competitive():
+            """Fetch competitive analysis in thread pool"""
+            if 'competitive' not in categories:
+                return ('competitive', None, None)
+            try:
+                result = await asyncio.to_thread(
+                    service.analyze_competitive_position,
+                    base_property_data, None,
+                    cache_bust=datetime.utcnow().isoformat()
+                )
+                return ('competitive', result, None)
+            except Exception as e:
+                return ('competitive', None, str(e))
+
+        # Run all fetches in parallel
+        logger.info(f"Starting parallel fetch for {property_code} with categories: {categories}")
+        fetch_start = datetime.utcnow()
+
+        parallel_results = await asyncio.gather(
+            fetch_demographics(),
+            fetch_economic(),
+            fetch_location(),
+            fetch_esg(),
+            fetch_forecasts(),
+            fetch_competitive(),
+            return_exceptions=True
+        )
+
+        fetch_elapsed = (datetime.utcnow() - fetch_start).total_seconds()
+        logger.info(f"Parallel fetch completed in {fetch_elapsed:.1f}s for {property_code}")
+
+        # Process parallel results
+        for result in parallel_results:
+            if isinstance(result, Exception):
+                logger.error(f"Parallel fetch exception: {result}")
+                continue
+
+            category, data, error = result
+            if error:
+                logger.error(f"Failed to refresh {category}: {error}")
+                errors.append({'category': category, 'error': error})
+            elif data:
+                if category == 'demographics':
+                    mi.demographics = data
+                    refreshed.append('demographics')
+                elif category == 'economic':
+                    mi.economic_indicators = data
+                    refreshed.append('economic')
+                elif category == 'location':
+                    mi.location_intelligence = data
+                    refreshed.append('location')
+                elif category == 'esg':
+                    mi.esg_assessment = data
+                    refreshed.append('esg')
+                elif category == 'forecasts':
+                    mi.forecasts = data
+                    refreshed.append('forecasts')
+                elif category == 'competitive':
+                    mi.competitive_analysis = data
+                    refreshed.append('competitive')
+            else:
+                logger.warning(f"No {category} data found for {property_code}")
+
+        # Add LLM narrative to competitive analysis (best-effort, non-blocking timeout)
+        if 'competitive' in refreshed and mi.competitive_analysis:
+            try:
+                from app.services.market_intelligence_ai_service import get_market_intelligence_ai_service
+                ai_service = get_market_intelligence_ai_service()
+                loc_prompt = {}
+                if mi.location_intelligence and isinstance(mi.location_intelligence, dict):
+                    loc_data = mi.location_intelligence.get('data') or {}
+                    amenities = loc_data.get('amenities') or {}
+                    loc_prompt = {
+                        'walk_score': loc_data.get('walk_score'),
+                        'nearby_restaurants': amenities.get('restaurants_1mi'),
+                        'nearby_grocery': amenities.get('grocery_stores_1mi')
+                    }
+                market_data = {
+                    'property_code': property_code,
+                    'competitive_analysis': mi.competitive_analysis,
+                    'location_intelligence': {'data': loc_prompt}
+                }
+                property_metrics = {
+                    'current_rent_psf': base_property_data.get('avg_rent_psf') or base_property_data.get('avg_rent'),
+                    'current_occupancy': base_property_data.get('occupancy_rate')
+                }
+                # Short timeout for competitive narrative (30s)
+                try:
+                    llm_narrative = await asyncio.wait_for(
+                        ai_service._generate_competitive_analysis_with_llm(market_data, property_metrics),
+                        timeout=30.0
+                    )
+                    if llm_narrative:
+                        mi.competitive_analysis.setdefault('data', {})['llm_narrative'] = llm_narrative
+                except asyncio.TimeoutError:
+                    logger.warning(f"Competitive narrative timed out for {property_code}")
+            except Exception as llm_err:
+                logger.warning(f"Competitive narrative generation skipped: {llm_err}")
+
+        # Refresh AI insights (with timeout for fast-fail)
         if 'insights' in categories:
             try:
                 market_intelligence_data = {
@@ -1523,12 +1553,29 @@ async def refresh_market_intelligence(
                     'forecasts': mi.forecasts,
                     'competitive_analysis': mi.competitive_analysis
                 }
-                ai_insights = await service.generate_ai_insights(base_property_data, market_intelligence_data)
-                
+
+                # AI insights with 120s timeout (instead of waiting for individual section timeouts)
+                logger.info(f"Generating AI insights for {property_code}...")
+                insights_start = datetime.utcnow()
+                try:
+                    ai_insights = await asyncio.wait_for(
+                        service.generate_ai_insights(base_property_data, market_intelligence_data),
+                        timeout=120.0  # 2 minute max for entire AI insights
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"AI insights timed out after 120s for {property_code}, using fallback")
+                    ai_insights = None
+
+                insights_elapsed = (datetime.utcnow() - insights_start).total_seconds()
+                logger.info(f"AI insights completed in {insights_elapsed:.1f}s for {property_code}")
+
                 if ai_insights:
                     ai_insights['property_code'] = property_code
+                    # Run embeddings in background (non-blocking)
                     try:
-                        embeddings_meta = service.generate_ai_embeddings(ai_insights)
+                        embeddings_meta = await asyncio.to_thread(
+                            service.generate_ai_embeddings, ai_insights
+                        )
                         if embeddings_meta:
                             ai_insights['embeddings'] = embeddings_meta
                     except Exception as emb_err:
@@ -1537,7 +1584,6 @@ async def refresh_market_intelligence(
                     refreshed.append('insights')
                 else:
                     logger.warning(f"Could not generate AI insights for {property_code}")
-                    # No sample data fallback
             except Exception as e:
                 logger.error(f"Failed to refresh AI insights: {e}")
                 errors.append({'category': 'insights', 'error': str(e)})
