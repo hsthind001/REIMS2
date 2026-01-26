@@ -172,12 +172,20 @@ export default function Financials() {
   const [varianceSearchQuery, setVarianceSearchQuery] = useState('');
   const [availablePeriods, setAvailablePeriods] = useState<FinancialPeriod[]>([]);
   const [selectedVariancePeriod, setSelectedVariancePeriod] = useState<number | null>(null);
+  const getItemAmount = (item?: { amounts?: { amount?: number; period_amount?: number; ytd_amount?: number; monthly_rent?: number } } | null) =>
+    item?.amounts?.amount ??
+    item?.amounts?.period_amount ??
+    item?.amounts?.ytd_amount ??
+    item?.amounts?.monthly_rent ??
+    0;
   const balanceSheetSnapshot = useMemo(() => {
     if (!financialData || financialData.document_type !== 'balance_sheet' || !financialData.items) return null;
-    const assets =
-      financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('asset'))?.amounts?.amount || 0;
-    const liabilities =
-      financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('liabilit'))?.amounts?.amount || 0;
+    const assets = getItemAmount(
+      financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('asset'))
+    );
+    const liabilities = getItemAmount(
+      financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('liabilit'))
+    );
     return {
       assets,
       liabilities,
@@ -1394,11 +1402,12 @@ export default function Financials() {
                                <tbody className="divide-y divide-border">
                                   {financialData?.items?.map((item: any) => {
                                      const isHeader = item.account_name?.toLowerCase().includes('total') || item.account_name?.toLowerCase().includes('net');
-                                     const amount = item.amounts?.amount || 0;
+                                     const amount = getItemAmount(item);
                                      // Simulation of prior/delta - normally would match by account code from comparePeriod data
                                      const priorAmount = amount * (0.9 + Math.random() * 0.2); // Stubbed for visual
                                      const delta = amount - priorAmount;
-                                     const deltaPercent = (delta / priorAmount) * 100;
+                                     const hasPrior = priorAmount !== 0;
+                                     const deltaPercent = hasPrior ? (delta / priorAmount) * 100 : 0;
                                      // Use unique key: prefer id, then account_code, fallback to account_name
                                      const itemKey = item.id || item.account_code || `${item.account_name}-${amount}`;
 
@@ -1420,8 +1429,8 @@ export default function Financials() {
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right font-mono">
                                                    <span className={`flex items-center justify-end gap-1 ${delta >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                      {delta >= 0 ? '+' : ''}{deltaPercent.toFixed(1)}%
-                                                      {delta >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                                      {hasPrior ? `${delta >= 0 ? '+' : ''}${deltaPercent.toFixed(1)}%` : '—'}
+                                                      {hasPrior && (delta >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                                    </span>
                                                 </td>
                                               </>
@@ -1682,8 +1691,9 @@ export default function Financials() {
                                       <span>Revenue</span>
                                       <span className="font-semibold">
                                         ${(
-                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('revenue'))?.amounts?.amount ||
-                                          0
+                                          getItemAmount(
+                                            financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('revenue'))
+                                          )
                                         ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
@@ -1691,8 +1701,9 @@ export default function Financials() {
                                       <span>Expenses</span>
                                       <span className="font-semibold">
                                         ${(
-                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('expense'))?.amounts?.amount ||
-                                          0
+                                          getItemAmount(
+                                            financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('expense'))
+                                          )
                                         ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
@@ -1700,8 +1711,9 @@ export default function Financials() {
                                       <span>Net Income</span>
                                       <span className="font-semibold text-success">
                                         ${(
-                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('net income'))?.amounts?.amount ||
-                                          0
+                                          getItemAmount(
+                                            financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('net income'))
+                                          )
                                         ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
@@ -1716,22 +1728,22 @@ export default function Financials() {
                                       <div className="mt-2 space-y-1 text-xs">
                                         {financialData.items
                                           .filter((i: any) => i.account_name?.toLowerCase().includes('revenue'))
-                                          .sort((a: any, b: any) => (b.amounts?.amount || 0) - (a.amounts?.amount || 0))
+                                          .sort((a: any, b: any) => getItemAmount(b) - getItemAmount(a))
                                           .slice(0, 3)
                                           .map((i: any) => (
                                             <div key={i.id} className="flex justify-between">
                                               <span>{i.account_name}</span>
-                                              <span>${(i.amounts?.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                              <span>${getItemAmount(i).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                             </div>
                                           ))}
                                         {financialData.items
                                           .filter((i: any) => i.account_name?.toLowerCase().includes('expense'))
-                                          .sort((a: any, b: any) => (b.amounts?.amount || 0) - (a.amounts?.amount || 0))
+                                          .sort((a: any, b: any) => getItemAmount(b) - getItemAmount(a))
                                           .slice(0, 3)
                                           .map((i: any) => (
                                             <div key={i.id} className="flex justify-between">
                                               <span>{i.account_name}</span>
-                                              <span>${(i.amounts?.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                              <span>${getItemAmount(i).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                             </div>
                                           ))}
                                       </div>
@@ -1775,8 +1787,9 @@ export default function Financials() {
                                       <span>Operating Cash Flow</span>
                                       <span className="font-semibold">
                                         ${(
-                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('operating'))?.amounts?.amount ||
-                                          0
+                                          getItemAmount(
+                                            financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('operating'))
+                                          )
                                         ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
@@ -1784,8 +1797,9 @@ export default function Financials() {
                                       <span>Net Cash Flow</span>
                                       <span className="font-semibold text-success">
                                         ${(
-                                          financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('net cash'))?.amounts?.amount ||
-                                          0
+                                          getItemAmount(
+                                            financialData.items?.find((i: any) => i.account_name?.toLowerCase().includes('net cash'))
+                                          )
                                         ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
