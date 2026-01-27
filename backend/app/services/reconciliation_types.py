@@ -1,3 +1,5 @@
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel
 
 class ReconciliationResult(BaseModel):
@@ -12,3 +14,4 @@ class ReconciliationResult(BaseModel):
     details: str
     severity: str = "medium"
     formula: str | None = None
+    intermediate_calculations: Optional[Dict[str, Any]] = None

@@ -3,23 +3,27 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.services.reconciliation_types import ReconciliationResult
 
+from app.services.rules.period_alignment_mixin import PeriodAlignmentMixin
 from app.services.rules.balance_sheet_rules import BalanceSheetRulesMixin
 from app.services.rules.income_statement_rules import IncomeStatementRulesMixin
 from app.services.rules.three_statement_rules import ThreeStatementRulesMixin
 from app.services.rules.cash_flow_rules import CashFlowRulesMixin
 from app.services.rules.mortgage_rules import MortgageRulesMixin
 from app.services.rules.rent_roll_rules import RentRollRulesMixin
+from app.services.rules.audit_rules_mixin import AuditRulesMixin
 
 from app.services.rules.safe_query_mixin import SafeQueryMixin
 
 class ReconciliationRuleEngine(
     SafeQueryMixin,
+    PeriodAlignmentMixin,
     BalanceSheetRulesMixin,
     IncomeStatementRulesMixin,
     ThreeStatementRulesMixin,
     CashFlowRulesMixin,
     MortgageRulesMixin,
-    RentRollRulesMixin
+    RentRollRulesMixin,
+    AuditRulesMixin
 ):
     """
     Executes all 135+ reconciliation rules (Synchronous)
@@ -74,6 +78,47 @@ class ReconciliationRuleEngine(
         self.property_id = property_id
         self.period_id = period_id
         self.results = []
+        self.alignment_context = None
+
+        # Period alignment is the critical foundation for rolling-window reconciliations.
+        try:
+            alignment_context = self._initialize_period_alignment()
+            print(
+                "Period alignment resolved: "
+                f"begin={alignment_context.begin_period_id} "
+                f"end={alignment_context.end_period_id} "
+                f"window_months={alignment_context.window_months} "
+                f"method={alignment_context.alignment_method}"
+            )
+        except Exception as alignment_error:
+            print(f"Period alignment initialization failed: {alignment_error}")
+
+        # Emit alignment context as a visible rule result for debugging/transparency.
+        try:
+            ctx = self._get_alignment_context()
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="PAL-CTX",
+                    rule_name="Period Alignment Context",
+                    category="System",
+                    status="INFO",
+                    source_value=float(ctx.window_months),
+                    target_value=float(ctx.window_months),
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details=(
+                        f"Begin={ctx.begin_period_id} End={ctx.end_period_id} "
+                        f"WindowMonths={ctx.window_months} Method={ctx.alignment_method} "
+                        f"CashDiff=${ctx.cash_match_diff:,.2f}"
+                    ),
+                    severity="info",
+                    formula="PAL / FA-PAL alignment context",
+                    intermediate_calculations={"alignment": ctx.to_dict()},
+                )
+            )
+        except Exception:
+            # Alignment context is best-effort; do not block other rules.
+            pass
         
         # DEBUG RULE: Verify Engine Update
         self.results.append(ReconciliationResult(
@@ -116,6 +161,7 @@ class ReconciliationRuleEngine(
         run_module("Three Statement", self._execute_three_statement_rules)
         run_module("Cash Flow", self._execute_cash_flow_rules)
         run_module("Mortgage", self._execute_mortgage_rules)
+        run_module("Audit", self._execute_audit_rules)
         # Rent Roll usually robust, but wrap it too
         # Custom execution for Rent Roll to debug
         try:
@@ -139,6 +185,30 @@ class ReconciliationRuleEngine(
         """Save results to cross_document_reconciliations table with deduplication"""
         if not self.results:
             return
+
+        alignment_summary = None
+        try:
+            ctx = self._get_alignment_context()
+            alignment_summary = {
+                "alignment": {
+                    "begin_period_id": ctx.begin_period_id,
+                    "end_period_id": ctx.end_period_id,
+                    "window_months": ctx.window_months,
+                    "method": ctx.alignment_method,
+                    "confidence": ctx.alignment_confidence,
+                    "cf_beginning_cash": ctx.cf_beginning_cash,
+                    "cf_ending_cash": ctx.cf_ending_cash,
+                    "bs_beginning_cash": ctx.bs_beginning_cash,
+                    "bs_ending_cash": ctx.bs_ending_cash,
+                    "cash_match_period_id": ctx.cash_match_period_id,
+                    "cash_match_bs_cash": ctx.cash_match_bs_cash,
+                    "cash_match_diff": ctx.cash_match_diff,
+                    "cash_match_candidate_count": ctx.cash_match_candidate_count,
+                    "cash_match_within_tolerance": ctx.cash_match_within_tolerance,
+                }
+            }
+        except Exception:
+            alignment_summary = None
             
         # DEDUPLICATION: Last Write Wins
         unique_results = {}
@@ -175,7 +245,8 @@ class ReconciliationRuleEngine(
                     "threshold": 0.0, 
                     "is_material": is_material,
                     "explanation": res.details,
-                    "recommendation": res.formula
+                    "recommendation": res.formula,
+                    "intermediate_calculations": res.intermediate_calculations or alignment_summary,
                 })
 
             # Bulk Insert using executemany optimization if supported, or loop
@@ -187,6 +258,7 @@ class ReconciliationRuleEngine(
                     source_value, target_value, difference,
                     materiality_threshold, is_material,
                     explanation, recommendation,
+                    intermediate_calculations,
                     created_at, updated_at
                 ) VALUES (
                     :p_id, :period_id, :rule_name, :rule_id, :status,
@@ -194,6 +266,7 @@ class ReconciliationRuleEngine(
                     :src, :tgt, :diff,
                     :threshold, :is_material,
                     :explanation, :recommendation,
+                    :intermediate_calculations,
                     NOW(), NOW()
                 )
             """)

@@ -104,95 +104,136 @@ class ThreeStatementRulesMixin:
     def _rule_3s_8_cash_flow_reconciliation(self):
         """3S-8/CF-2: Cash Flow Net Change matches Balance Sheet Cash Change"""
         cf_net = self._get_cf_value(account_name_pattern="%NET CHANGE%CASH%")
-        
-        bs_cash_curr = self._get_bs_value(account_name_pattern="%TOTAL CASH%") 
-        if bs_cash_curr == 0:
-             bs_cash_curr = self._get_bs_value(account_code_pattern="01%") 
-             if bs_cash_curr == 0:
-                 bs_cash_curr = self._get_bs_value(account_name_pattern="%CASH%")
+        ctx = self._get_alignment_context()
 
-        prior_id = self._get_prior_period_id()
-        if not prior_id:
-            self.results.append(ReconciliationResult(
-                rule_id="3S-8",
-                rule_name="Cash Flow Recon",
-                category="Three-Statement",
-                status="SKIP",
-                source_value=cf_net,
-                target_value=0,
-                difference=0,
-                variance_pct=0,
-                details="No prior period for BS comparison",
-                severity="critical"
-            ))
+        # Prefer alignment-aware total cash calculations.
+        bs_cash_end = self._get_bs_total_cash(self.period_id)
+        if abs(bs_cash_end) <= 0.01:
+            bs_cash_end = self._get_bs_value(account_name_pattern="%TOTAL CASH%")
+            if bs_cash_end == 0:
+                bs_cash_end = self._get_bs_value(account_code_pattern="01%")
+                if bs_cash_end == 0:
+                    bs_cash_end = self._get_bs_value(account_name_pattern="%CASH%")
+
+        begin_period_id = ctx.begin_period_id or self._get_prior_period_id()
+        if not begin_period_id:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="3S-8",
+                    rule_name="Cash Flow Recon",
+                    category="Three-Statement",
+                    status="SKIP",
+                    source_value=cf_net,
+                    target_value=0,
+                    difference=0,
+                    variance_pct=0,
+                    details="No begin period available for BS comparison",
+                    severity="critical",
+                )
+            )
             return
-            
-        bs_cash_prior = self._get_bs_value(account_name_pattern="%CASH%", period_id=prior_id)
-        
-        bs_change = bs_cash_curr - bs_cash_prior
+
+        bs_cash_begin = self._get_bs_total_cash(begin_period_id)
+        if abs(bs_cash_begin) <= 0.01:
+            bs_cash_begin = self._get_bs_value(
+                account_name_pattern="%CASH%", period_id=begin_period_id
+            )
+
+        bs_change = bs_cash_end - bs_cash_begin
         diff = cf_net - bs_change
-        
+
         status = "PASS" if abs(diff) < 1.0 else "FAIL"
-        
-        self.results.append(ReconciliationResult(
-            rule_id="3S-8",
-            rule_name="Cash Flow Recon (BS Delta)",
-            category="Three-Statement",
-            status=status,
-            source_value=cf_net,
-            target_value=bs_change,
-            difference=diff,
-            variance_pct=0,
-            details=f"CF Net Change ${cf_net:,.2f} vs BS Cash Change ${bs_change:,.2f}",
-            severity="critical"
-        ))
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-8",
+                rule_name="Cash Flow Recon (Aligned BS Delta)",
+                category="Three-Statement",
+                status=status,
+                source_value=cf_net,
+                target_value=bs_change,
+                difference=diff,
+                variance_pct=0,
+                details=(
+                    f"CF Net Change ${cf_net:,.2f} vs BS Cash Change ${bs_change:,.2f} "
+                    f"(Begin period {begin_period_id}, method={ctx.alignment_method})"
+                ),
+                severity="critical",
+                intermediate_calculations={
+                    "begin_period_id": begin_period_id,
+                    "bs_cash_begin": bs_cash_begin,
+                    "bs_cash_end": bs_cash_end,
+                    "bs_change": bs_change,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
 
     def _rule_3s_5_depreciation_three_way(self):
         """3S-5: Depreciation Three-Way Match"""
         is_depr = self._get_is_value(account_name_pattern="%DEPRECIATION%")
         cf_depr = self._get_cf_value(account_name_pattern="%DEPRECIATION%", category="Operating")
-        
-        prior_id = self._get_prior_period_id()
+
+        begin_period_id = self._get_effective_begin_period_id()
+        ctx = self._get_alignment_context()
         bs_diff = 0
-        if prior_id:
+        if begin_period_id:
             curr_accum = self._get_bs_value(account_name_pattern="%ACCUM%DEPR%")
-            prior_accum = self._get_bs_value(account_name_pattern="%ACCUM%DEPR%", period_id=prior_id)
-            bs_diff = abs(curr_accum - prior_accum) 
-        
+            begin_accum = self._get_bs_value(
+                account_name_pattern="%ACCUM%DEPR%", period_id=begin_period_id
+            )
+            bs_diff = abs(curr_accum - begin_accum)
+
         # 1. IS vs CF
         diff1 = abs(is_depr) - cf_depr
         status1 = "PASS" if abs(diff1) < 1.0 else "WARNING"
-        
-        self.results.append(ReconciliationResult(
-            rule_id="3S-5a",
-            rule_name="Depr (IS vs CF)",
-            category="Three-Statement",
-            status=status1,
-            source_value=abs(is_depr),
-            target_value=cf_depr,
-            difference=diff1,
-            variance_pct=0,
-            details=f"IS ${abs(is_depr):,.0f} vs CF ${cf_depr:,.0f}",
-            severity="high"
-        ))
-        
-        # 2. IS vs BS Delta (if prior exists)
-        if prior_id:
-            diff2 = abs(is_depr) - bs_diff
-            status2 = "PASS" if abs(diff2) < 1.0 else "WARNING" 
-            
-            self.results.append(ReconciliationResult(
-                rule_id="3S-5b",
-                rule_name="Depr (IS vs BS Delta)",
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-5a",
+                rule_name="Depr (IS vs CF)",
                 category="Three-Statement",
-                status=status2,
+                status=status1,
                 source_value=abs(is_depr),
-                target_value=bs_diff,
-                difference=diff2,
+                target_value=cf_depr,
+                difference=diff1,
                 variance_pct=0,
-                details=f"IS ${abs(is_depr):,.0f} vs BS Delta ${bs_diff:,.0f}",
-                severity="high"
-            ))
+                details=f"IS ${abs(is_depr):,.0f} vs CF ${cf_depr:,.0f}",
+                severity="high",
+                intermediate_calculations={
+                    "alignment_window_months": ctx.window_months,
+                    "alignment_method": ctx.alignment_method,
+                },
+            )
+        )
+
+        # 2. IS vs BS Delta (if prior exists)
+        if begin_period_id:
+            diff2 = abs(is_depr) - bs_diff
+            status2 = "PASS" if abs(diff2) < 1.0 else "WARNING"
+
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="3S-5b",
+                    rule_name="Depr (IS vs BS Delta)",
+                    category="Three-Statement",
+                    status=status2,
+                    source_value=abs(is_depr),
+                    target_value=bs_diff,
+                    difference=diff2,
+                    variance_pct=0,
+                    details=(
+                        f"IS ${abs(is_depr):,.0f} vs BS Delta ${bs_diff:,.0f} "
+                        f"(Begin period {begin_period_id})"
+                    ),
+                    severity="high",
+                    intermediate_calculations={
+                        "begin_period_id": begin_period_id,
+                        "bs_accum_delta": bs_diff,
+                        "alignment": ctx.to_dict(),
+                    },
+                )
+            )
 
     def _rule_3s_1_cash_balance_check(self):
         """3S-1: BS Cash = CF Ending Cash"""
@@ -314,64 +355,143 @@ class ThreeStatementRulesMixin:
 
     def _rule_3s_10_ar_three_way(self):
         """3S-10: A/R Three-Way"""
-        # Sales (IS) vs Collections (CF) vs AR Change (BS)
-        # CF Adj = (Sales - Cash Coll) -> Wait, CF Adj = -Delta AR
-        # So CF Adj + Delta AR = 0 ideally (if only cash vs AR movement)
-        
-        prior = self._get_prior_period_id()
-        if not prior: return
-        
-        ar_curr = self._get_bs_value(account_name_pattern="%A/R%Tenants%")
-        ar_prior = self._get_bs_value(account_name_pattern="%A/R%Tenants%", period_id=prior)
-        delta_bs = ar_curr - ar_prior # If positive, AR grew, Cash used (negative adj)
-        
-        # CF Adj should be -delta_bs
-        cf_adj = self._get_cf_value(account_name_pattern="%A/R%Tenants%")
-        
-        # Check: cf_adj + delta_bs ~= 0
-        chk = cf_adj + delta_bs
-        
-        self.results.append(ReconciliationResult(
-            rule_id="3S-10",
-            rule_name="A/R Three-Way",
-            category="Three-Statement",
-            status="PASS" if abs(chk) < 1.0 else "WARNING",
-            source_value=cf_adj,
-            target_value=-delta_bs,
-            difference=chk,
-            variance_pct=0,
-            details=f"CF Adj ${cf_adj:,.2f} vs BS Change ${delta_bs:,.2f}",
-            severity="high",
-            formula="CF = -Delta BS"
-        ))
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        ar_patterns = [
+            "%A/R%TENANT%",
+            "%ACCOUNTS RECEIVABLE%TENANT%",
+            "%A/R%TRADE%",
+            "%ACCOUNTS RECEIVABLE%TRADE%",
+        ]
+        cf_patterns = [
+            "%A/R%TENANT%",
+            "%ACCOUNTS RECEIVABLE%TENANT%",
+            "%A/R%TRADE%",
+            "%ACCOUNTS RECEIVABLE%TRADE%",
+        ]
+
+        bs_begin_count = self._count_bs_accounts(ar_patterns, begin_period_id)
+        bs_end_count = self._count_bs_accounts(ar_patterns, self.period_id)
+        bs_begin = self._sum_bs_accounts(ar_patterns, begin_period_id)
+        bs_end = self._sum_bs_accounts(ar_patterns, self.period_id)
+        delta_bs = bs_end - bs_begin
+
+        cf_adj = self._sum_cf_accounts(cf_patterns)
+        expected_cf = -delta_bs  # A/R is an asset.
+        diff = cf_adj - expected_cf
+
+        no_bs_data = bs_begin_count == 0 and bs_end_count == 0
+        no_cf_data = abs(cf_adj) <= 0.01
+        if no_bs_data and no_cf_data:
+            status = "SKIP"
+            details = "No A/R accounts detected on BS or CF"
+        else:
+            status = "PASS" if abs(diff) <= 1.0 else "WARNING"
+            details = (
+                f"CF ${cf_adj:,.2f} vs expected ${expected_cf:,.2f} "
+                f"(ΔBS ${delta_bs:,.2f}, begin {begin_period_id}, method={ctx.alignment_method})"
+            )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-10",
+                rule_name="A/R Three-Way (Aligned)",
+                category="Three-Statement",
+                status=status,
+                source_value=cf_adj,
+                target_value=expected_cf,
+                difference=diff,
+                variance_pct=0,
+                details=details,
+                severity="high",
+                formula="CF A/R = -(BS[end] - BS[begin])",
+                intermediate_calculations={
+                    "begin_period_id": begin_period_id,
+                    "bs_begin": bs_begin,
+                    "bs_end": bs_end,
+                    "delta_bs": delta_bs,
+                    "expected_cf": expected_cf,
+                    "bs_begin_count": bs_begin_count,
+                    "bs_end_count": bs_end_count,
+                    "bs_patterns": ar_patterns,
+                    "cf_patterns": cf_patterns,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
 
     def _rule_3s_11_ap_three_way(self):
         """3S-11: A/P Three-Way"""
-        prior = self._get_prior_period_id()
-        if not prior: return
-        
-        ap_curr = self._get_bs_value(account_name_pattern="%A/P%Trade%")
-        ap_prior = self._get_bs_value(account_name_pattern="%A/P%Trade%", period_id=prior)
-        delta_bs = ap_curr - ap_prior # If positive, AP grew, Cash saved (positive adj)
-        
-        cf_adj = self._get_cf_value(account_name_pattern="%A/P%Trade%")
-        
-        # Check: cf_adj ~= delta_bs
-        diff = cf_adj - delta_bs
-        
-        self.results.append(ReconciliationResult(
-            rule_id="3S-11",
-            rule_name="A/P Three-Way",
-            category="Three-Statement",
-            status="PASS" if abs(diff) < 1.0 else "WARNING",
-            source_value=cf_adj,
-            target_value=delta_bs,
-            difference=diff,
-            variance_pct=0,
-            details=f"CF Adj ${cf_adj:,.2f} vs BS Change ${delta_bs:,.2f}",
-            severity="high",
-            formula="CF = Delta BS"
-        ))
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        ap_patterns = [
+            "%A/P%TRADE%",
+            "%ACCOUNTS PAYABLE%TRADE%",
+            "%ACCOUNTS PAYABLE%",
+        ]
+        cf_patterns = [
+            "%A/P%TRADE%",
+            "%ACCOUNTS PAYABLE%TRADE%",
+            "%ACCOUNTS PAYABLE%",
+        ]
+
+        bs_begin_count = self._count_bs_accounts(ap_patterns, begin_period_id)
+        bs_end_count = self._count_bs_accounts(ap_patterns, self.period_id)
+        bs_begin = self._sum_bs_accounts(ap_patterns, begin_period_id)
+        bs_end = self._sum_bs_accounts(ap_patterns, self.period_id)
+        delta_bs = bs_end - bs_begin
+
+        cf_adj = self._sum_cf_accounts(cf_patterns)
+        expected_cf = delta_bs  # A/P is a liability.
+        diff = cf_adj - expected_cf
+
+        no_bs_data = bs_begin_count == 0 and bs_end_count == 0
+        no_cf_data = abs(cf_adj) <= 0.01
+        if no_bs_data and no_cf_data:
+            status = "SKIP"
+            details = "No A/P accounts detected on BS or CF"
+        else:
+            status = "PASS" if abs(diff) <= 1.0 else "WARNING"
+            details = (
+                f"CF ${cf_adj:,.2f} vs expected ${expected_cf:,.2f} "
+                f"(ΔBS ${delta_bs:,.2f}, begin {begin_period_id}, method={ctx.alignment_method})"
+            )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-11",
+                rule_name="A/P Three-Way (Aligned)",
+                category="Three-Statement",
+                status=status,
+                source_value=cf_adj,
+                target_value=expected_cf,
+                difference=diff,
+                variance_pct=0,
+                details=details,
+                severity="high",
+                formula="CF A/P = (BS[end] - BS[begin])",
+                intermediate_calculations={
+                    "begin_period_id": begin_period_id,
+                    "bs_begin": bs_begin,
+                    "bs_end": bs_end,
+                    "delta_bs": delta_bs,
+                    "expected_cf": expected_cf,
+                    "bs_begin_count": bs_begin_count,
+                    "bs_end_count": bs_end_count,
+                    "bs_patterns": ap_patterns,
+                    "cf_patterns": cf_patterns,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
 
     def _rule_3s_12_property_tax_flow(self):
         # Placeholder for complex flow IS -> BS -> CF
@@ -391,61 +511,119 @@ class ThreeStatementRulesMixin:
 
     def _rule_3s_13_capex_flow(self):
         """3S-13: CapEx Flow"""
-        # CF CapEx (neg) matches BS Asset Increase (pos)
-        prior = self._get_prior_period_id()
-        if not prior: return
-        
-        # Example TI
-        ti_curr = self._get_bs_value(account_name_pattern="%Tenant%Imp%")
-        ti_prior = self._get_bs_value(account_name_pattern="%Tenant%Imp%", period_id=prior)
-        bs_growth = ti_curr - ti_prior
-        
-        cf_capex = self._get_cf_value(account_name_pattern="%TI%Current%Imp%") # Negative
-        
-        diff = abs(cf_capex) - bs_growth
-        
-        self.results.append(ReconciliationResult(
-            rule_id="3S-13",
-            rule_name="CapEx (TI) Flow",
-            category="Three-Statement",
-            status="PASS" if abs(diff) < 1.0 else "WARNING",
-            source_value=abs(cf_capex),
-            target_value=bs_growth,
-            difference=diff,
-            variance_pct=0,
-            details=f"CF TI ${cf_capex:,.2f} vs BS Growth ${bs_growth:,.2f}",
-            severity="medium",
-            formula="|CF| = BS Delta"
-        ))
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        bs_patterns = [
+            "%TENANT%IMPROV%",
+            "%TI%CURRENT%IMPROV%",
+            "%CURRENT%IMPROV%",
+        ]
+        cf_patterns = [
+            "%TI%CURRENT%IMPROV%",
+            "%TENANT%IMPROV%",
+            "%CURRENT%IMPROV%",
+        ]
+
+        bs_begin_count = self._count_bs_accounts(bs_patterns, begin_period_id)
+        bs_end_count = self._count_bs_accounts(bs_patterns, self.period_id)
+        bs_begin = self._sum_bs_accounts(bs_patterns, begin_period_id)
+        bs_end = self._sum_bs_accounts(bs_patterns, self.period_id)
+        bs_delta = bs_end - bs_begin  # Asset increase is positive.
+
+        cf_capex = self._sum_cf_accounts(cf_patterns)
+        expected_cf = -bs_delta  # CapEx cash use should be negative.
+        diff = cf_capex - expected_cf
+
+        no_bs_data = bs_begin_count == 0 and bs_end_count == 0
+        no_cf_data = abs(cf_capex) <= 0.01
+        if no_bs_data and no_cf_data:
+            status = "SKIP"
+            details = "No TI/CapEx activity detected on BS or CF"
+        else:
+            status = "PASS" if abs(diff) <= 1.0 else "WARNING"
+            details = (
+                f"CF ${cf_capex:,.2f} vs expected ${expected_cf:,.2f} "
+                f"(ΔBS ${bs_delta:,.2f}, begin {begin_period_id}, method={ctx.alignment_method})"
+            )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-13",
+                rule_name="CapEx (TI) Flow (Aligned)",
+                category="Three-Statement",
+                status=status,
+                source_value=cf_capex,
+                target_value=expected_cf,
+                difference=diff,
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="CF CapEx = -(BS[end] - BS[begin])",
+                intermediate_calculations={
+                    "begin_period_id": begin_period_id,
+                    "bs_begin": bs_begin,
+                    "bs_end": bs_end,
+                    "bs_delta": bs_delta,
+                    "expected_cf": expected_cf,
+                    "bs_begin_count": bs_begin_count,
+                    "bs_end_count": bs_end_count,
+                    "bs_patterns": bs_patterns,
+                    "cf_patterns": cf_patterns,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
 
     def _rule_3s_15_mortgage_principal_flow(self):
         """3S-15: Mortgage Principal Flow"""
-        prior = self._get_prior_period_id()
-        if not prior: return
-        
-        # BS Liability Change
-        m_curr = self._get_bs_value(account_name_pattern="%Wells%Fargo%")
-        m_prior = self._get_bs_value(account_name_pattern="%Wells%Fargo%", period_id=prior)
-        reduction = m_prior - m_curr # Positive number representing reduction
-        
-        # CF Payment
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        # BS Liability Change across aligned window
+        m_end = self._get_bs_value(account_name_pattern="%Wells%Fargo%")
+        m_begin = self._get_bs_value(
+            account_name_pattern="%Wells%Fargo%", period_id=begin_period_id
+        )
+        reduction = m_begin - m_end  # Positive number representing reduction
+
+        # CF Payment over the same aligned window
         cf_pymt = abs(self._get_cf_value(account_name_pattern="%Wells%Fargo%"))
-        
+
         diff = cf_pymt - reduction
-        
-        self.results.append(ReconciliationResult(
-            rule_id="3S-15",
-            rule_name="Mortgage Principal Flow",
-            category="Three-Statement",
-            status="PASS" if abs(diff) < 1.0 else "WARNING",
-            source_value=cf_pymt,
-            target_value=reduction,
-            difference=diff,
-            variance_pct=0,
-            details=f"CF ${cf_pymt:,.2f} vs BS Reduction ${reduction:,.2f}",
-            severity="high",
-            formula="|CF| = BS Reduction"
-        ))
+        status = "PASS" if abs(diff) < 1.0 else "WARNING"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-15",
+                rule_name="Mortgage Principal Flow (Aligned)",
+                category="Three-Statement",
+                status=status,
+                source_value=cf_pymt,
+                target_value=reduction,
+                difference=diff,
+                variance_pct=0,
+                details=(
+                    f"CF ${cf_pymt:,.2f} vs BS Reduction ${reduction:,.2f} "
+                    f"(Begin period {begin_period_id}, method={ctx.alignment_method})"
+                ),
+                severity="high",
+                formula="|CF| = BS Reduction across aligned window",
+                intermediate_calculations={
+                    "begin_period_id": begin_period_id,
+                    "bs_wells_begin": m_begin,
+                    "bs_wells_end": m_end,
+                    "bs_reduction": reduction,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
 
     def _rule_3s_16_mortgage_interest_flow(self):
         """3S-16: Mortgage Interest Flow"""
@@ -482,42 +660,102 @@ class ThreeStatementRulesMixin:
 
     def _rule_3s_18_distributions_flow(self):
         """3S-18: Distributions Flow"""
-        # CF vs BS
-        cf_dist = abs(self._get_cf_value(account_name_pattern="Distributions"))
-        # BS Distributions is a cumulative contra-equity usually, or expense?
-        # In this case it seems to be an accumulating debit (negative equity)
-        # So we check change in BS Distributions
-        # logic covered in BS-32 tracking but linking here would be good
-        self.results.append(ReconciliationResult(
-            rule_id="3S-18",
-            rule_name="Distributions Flow",
-            category="Three-Statement",
-            status="INFO",
-            source_value=cf_dist,
-            target_value=0,
-            difference=0,
-            variance_pct=0,
-            details="Tracking CF Distributions",
-            severity="medium",
-            formula="Tracking"
-        ))
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        patterns = ["%DISTRIBUT%"]
+        bs_begin = self._sum_bs_accounts(patterns, begin_period_id)
+        bs_end = self._sum_bs_accounts(patterns, self.period_id)
+        bs_delta = bs_end - bs_begin
+
+        cf_dist = self._sum_cf_accounts(patterns)
+        diff = cf_dist - bs_delta
+
+        status = "PASS" if abs(diff) <= 1.0 else "WARNING"
+        details = (
+            f"CF ${cf_dist:,.2f} vs ΔBS ${bs_delta:,.2f} "
+            f"(begin {begin_period_id}, method={ctx.alignment_method})"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-18",
+                rule_name="Distributions Flow (Aligned)",
+                category="Three-Statement",
+                status=status,
+                source_value=cf_dist,
+                target_value=bs_delta,
+                difference=diff,
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="CF Distributions = BS[end] - BS[begin]",
+                intermediate_calculations={
+                    "begin_period_id": begin_period_id,
+                    "bs_begin": bs_begin,
+                    "bs_end": bs_end,
+                    "bs_delta": bs_delta,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
 
     def _rule_3s_19_equity_reconciliation(self):
         """3S-19: Complete Equity Recon"""
-        # Sum of parts
-        self.results.append(ReconciliationResult(
-            rule_id="3S-19",
-            rule_name="Equity Recon",
-            category="Three-Statement",
-            status="PASS",
-            source_value=0,
-            target_value=0,
-            difference=0,
-            variance_pct=0,
-            details="See BS-34",
-            severity="high",
-            formula="Alias"
-        ))
+        total_capital = self._get_bs_value(account_name_pattern="%TOTAL CAPITAL%")
+        if abs(total_capital) <= 0.01:
+            total_capital = self._get_bs_value(account_name_pattern="Total Capital")
+
+        contributions = self._sum_bs_accounts(["%PARTNER%CONTRIBUT%"], self.period_id)
+        if abs(contributions) <= 0.01:
+            contributions = self._get_bs_value(account_name_pattern="%CONTRIBUT%")
+
+        beginning_equity = self._sum_bs_accounts(["%BEGINNING EQUITY%"], self.period_id)
+        if abs(beginning_equity) <= 0.01:
+            beginning_equity = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%")
+
+        current_earnings = self._sum_bs_accounts(
+            ["%CURRENT PERIOD EARNINGS%"], self.period_id
+        )
+        if abs(current_earnings) <= 0.01:
+            current_earnings = self._get_bs_value(account_name_pattern="%CURRENT%EARNINGS%")
+
+        distributions = self._sum_bs_accounts(["%DISTRIBUT%"], self.period_id)
+
+        expected_capital = contributions + beginning_equity + current_earnings + distributions
+        diff = total_capital - expected_capital
+        status = "PASS" if abs(diff) <= 1.0 else "WARNING"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="3S-19",
+                rule_name="Equity Reconciliation",
+                category="Three-Statement",
+                status=status,
+                source_value=total_capital,
+                target_value=expected_capital,
+                difference=diff,
+                variance_pct=0,
+                details=(
+                    f"Total Capital ${total_capital:,.2f} vs components ${expected_capital:,.2f} "
+                    f"(Contrib ${contributions:,.2f}, Begin ${beginning_equity:,.2f}, "
+                    f"Earnings ${current_earnings:,.2f}, Dist ${distributions:,.2f})"
+                ),
+                severity="high",
+                formula="Capital = Contributions + Beginning Equity + Earnings + Distributions",
+                intermediate_calculations={
+                    "total_capital": total_capital,
+                    "contributions": contributions,
+                    "beginning_equity": beginning_equity,
+                    "current_earnings": current_earnings,
+                    "distributions": distributions,
+                    "expected_capital": expected_capital,
+                },
+            )
+        )
 
     def _rule_3s_22_golden_rules(self):
         """3S-22: Golden Rules Summary"""

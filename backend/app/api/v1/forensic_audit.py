@@ -157,6 +157,7 @@ class ReconciliationResult(BaseModel):
     is_material: bool
     explanation: str
     recommendation: Optional[str] = None
+    intermediate_calculations: Optional[Dict[str, Any]] = None
 
 
 class FraudIndicator(BaseModel):
@@ -818,7 +819,8 @@ def get_cross_document_reconciliations(
                 materiality_threshold,
                 is_material,
                 explanation,
-                recommendation
+                recommendation,
+                intermediate_calculations
             FROM cross_document_reconciliations
             WHERE property_id = :property_id
             AND period_id = :period_id
@@ -851,7 +853,8 @@ def get_cross_document_reconciliations(
                 materiality_threshold=float(row[8]),
                 is_material=row[9],
                 explanation=row[10],
-                recommendation=row[11]
+                recommendation=row[11],
+                intermediate_calculations=row[12],
             )
             reconciliations.append(recon)
 
