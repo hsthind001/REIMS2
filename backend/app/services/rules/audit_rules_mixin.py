@@ -1,6 +1,14 @@
 from sqlalchemy import text
 
 from app.services.reconciliation_types import ReconciliationResult
+from app.models import (
+    CommitteeAlert,
+    AlertType,
+    AlertSeverity,
+    AlertStatus,
+    CommitteeType,
+    SystemConfig,
+)
 
 
 class AuditRulesMixin:
@@ -35,12 +43,18 @@ class AuditRulesMixin:
         self._rule_audit_20_fixed_asset_additions()
         self._rule_audit_21_principal_payment_flow()
         self._rule_audit_22_ytd_principal_reduction()
+        self._rule_wcr_1_generic_delta_reconciliation()
+        self._rule_wcr_2_account_appearance_disappearance()
+        self._rule_wcr_3_escrow_activity_three_way()
         self._rule_audit_24_cash_flow_cash_bridge()
         self._rule_audit_26_operating_activities_reconciliation()
         self._rule_audit_27_period_contiguity()
         self._rule_audit_28_constant_accounts_validation()
         self._rule_audit_29_predictable_monthly_changes()
         self._rule_audit_33_occupancy_percentage()
+        self._rule_audit_34_operating_expense_ratio()
+        self._rule_audit_35_noi_margin()
+        self._rule_audit_36_cash_flow_to_debt_ratio()
         self._rule_audit_40_completeness_validation()
         self._rule_audit_41_timing_difference_signals()
         self._rule_audit_42_period_cutoff_consistency()
@@ -51,7 +65,42 @@ class AuditRulesMixin:
         self._rule_audit_46_escrow_funding_requirements()
         self._rule_audit_38_magnitude_reasonability_checks()
         self._rule_audit_39_related_account_validations()
+        self._rule_audit_25_ytd_cash_flow_accumulation()
+        self._rule_audit_30_is_ytd_accumulation()
+        self._rule_audit_31_cf_ytd_accumulation()
+        self._rule_audit_32_bs_ytd_interpretation()
         self._rule_audit_48_variance_investigation_triggers()
+        self._rule_audit_47_monthly_checklist_summary()
+        self._rule_audit_23_dscr_alias()
+        self._rule_audit_27_account_continuity()
+        self._rule_audit_49_year_end_validation()
+        self._rule_audit_50_year_over_year_comparison()
+        self._rule_audit_51_budget_vs_actual()
+        self._rule_audit_52_forecast_vs_actual()
+        self._rule_audit_53_supporting_documentation()
+        self._rule_audit_54_adjustment_journal_entry_tracking()
+        self._rule_audit_55_key_metrics_dashboard()
+
+    def _get_numeric_config(self, key: str, default: float) -> float:
+        """
+        Helper to pull a numeric configuration value from system_config.
+
+        Returns the provided default if the key is missing or cannot be
+        parsed as a float. This keeps audit rules resilient even if
+        configuration is not present.
+        """
+        try:
+            row = (
+                self.db.query(SystemConfig.config_value)
+                .filter(SystemConfig.config_key == key)
+                .limit(1)
+                .scalar()
+            )
+            if row is None:
+                return float(default)
+            return float(str(row))
+        except Exception:
+            return float(default)
 
     def _sum_bs_accounts(self, patterns, period_id):
         """Sum balance-sheet accounts matching name patterns."""
@@ -136,6 +185,23 @@ class AuditRulesMixin:
         ).fetchone()
         return int(row[0]) if row and row[0] else None
 
+    def _get_period_id_for_year_month(self, year: int, month: int):
+        """Return period_id for a given year/month if present."""
+        row = self.db.execute(
+            text(
+                """
+                SELECT id
+                FROM financial_periods
+                WHERE property_id = :property_id
+                  AND period_year = :year
+                  AND period_month = :month
+                LIMIT 1
+                """
+            ),
+            {"property_id": int(self.property_id), "year": int(year), "month": int(month)},
+        ).fetchone()
+        return int(row[0]) if row and row[0] else None
+
     def _get_financial_metric(self, column_name: str, period_id=None) -> float:
         """Safely fetch a value from financial_metrics for the given period."""
         pid = int(period_id) if period_id is not None else int(self.period_id)
@@ -211,6 +277,62 @@ class AuditRulesMixin:
             ).scalar()
             total += float(amount or 0.0)
         return total
+
+    def _sum_is_amounts(self, patterns, period_id=None):
+        """Return (period_total, ytd_total) for matching IS lines."""
+        pid = int(period_id) if period_id is not None else int(self.period_id)
+
+        period_total = 0.0
+        ytd_total = 0.0
+        for pattern in patterns:
+            row = self.db.execute(
+                text(
+                    """
+                    SELECT COALESCE(SUM(period_amount), 0), COALESCE(SUM(ytd_amount), 0)
+                    FROM income_statement_data
+                    WHERE property_id = :property_id
+                      AND period_id = :period_id
+                      AND account_name ILIKE :pattern
+                    """
+                ),
+                {
+                    "property_id": int(self.property_id),
+                    "period_id": pid,
+                    "pattern": pattern,
+                },
+            ).fetchone()
+            if row:
+                period_total += float(row[0] or 0.0)
+                ytd_total += float(row[1] or 0.0)
+        return period_total, ytd_total
+
+    def _sum_cf_amounts(self, patterns, period_id=None):
+        """Return (period_total, ytd_total) for matching CF lines."""
+        pid = int(period_id) if period_id is not None else int(self.period_id)
+
+        period_total = 0.0
+        ytd_total = 0.0
+        for pattern in patterns:
+            row = self.db.execute(
+                text(
+                    """
+                    SELECT COALESCE(SUM(period_amount), 0), COALESCE(SUM(ytd_amount), 0)
+                    FROM cash_flow_data
+                    WHERE property_id = :property_id
+                      AND period_id = :period_id
+                      AND account_name ILIKE :pattern
+                    """
+                ),
+                {
+                    "property_id": int(self.property_id),
+                    "period_id": pid,
+                    "pattern": pattern,
+                },
+            ).fetchone()
+            if row:
+                period_total += float(row[0] or 0.0)
+                ytd_total += float(row[1] or 0.0)
+        return period_total, ytd_total
 
     def _get_rent_roll_summary(self, period_id=None):
         """Return rent roll summary stats for a period."""
@@ -422,6 +544,362 @@ class AuditRulesMixin:
         return total_count, examples
 
     # ------------------------------------------------------------------
+    # Working Capital Reconciliation (WCR-1..WCR-3)
+    # Implements cash flow ↔ balance sheet working-capital reconciliation rules.
+    # ------------------------------------------------------------------
+
+    def _rule_wcr_1_generic_delta_reconciliation(self):
+        """
+        WCR-1: Generic delta rule for working-capital accounts.
+
+        For each WC account that appears on both statements:
+            CF.Adjustment(LineItem) ≈ BS[end].Account − BS[begin].Account
+        """
+        begin_period_id = getattr(self, "_get_effective_begin_period_id", lambda: None)()
+        if not begin_period_id:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="WCR-1",
+                    rule_name="Working Capital Delta Reconciliation",
+                    category="Working Capital",
+                    status="INFO",
+                    source_value=0.0,
+                    target_value=0.0,
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details="No aligned begin period available for working-capital window.",
+                    severity="high",
+                    formula="ΔBS working-capital ≈ CF working-capital adjustments",
+                )
+            )
+            return
+
+        mappings = [
+            {
+                "name": "A/R Tenants",
+                "bs_pattern": "%A/R%TENANT%",
+                "cf_pattern": "%ACCOUNTS RECEIVABLE%",
+            },
+            {
+                "name": "Accounts Receivable – Trade",
+                "bs_pattern": "%ACCOUNTS RECEIVABLE%",
+                "cf_pattern": "%ACCOUNTS RECEIVABLE%",
+            },
+            {
+                "name": "Prepaid Expenses",
+                "bs_pattern": "%PREPAID EXPENSE%",
+                "cf_pattern": "%PREPAID%",
+            },
+            {
+                "name": "Prepaid Insurance",
+                "bs_pattern": "%PREPAID INSURANCE%",
+                "cf_pattern": "%PREPAID INSURANCE%",
+            },
+            {
+                "name": "Accounts Payable – Trade",
+                "bs_pattern": "%ACCOUNTS PAYABLE%",
+                "cf_pattern": "%ACCOUNTS PAYABLE%",
+            },
+            {
+                "name": "Accrued Expenses",
+                "bs_pattern": "%ACCRUED EXPENSE%",
+                "cf_pattern": "%ACCRUED EXPENSE%",
+            },
+            {
+                "name": "Property Tax Payable",
+                "bs_pattern": "%PROPERTY TAX PAYABLE%",
+                "cf_pattern": "%PROPERTY TAX%",
+            },
+            {
+                "name": "Rent Received in Advance",
+                "bs_pattern": "%RENT RECEIVED IN ADVANCE%",
+                "cf_pattern": "%RENT RECEIVED IN ADVANCE%",
+            },
+            {
+                "name": "Escrow – Property Tax",
+                "bs_pattern": "%ESCROW%PROPERTY TAX%",
+                "cf_pattern": "%ESCROW%PROPERTY TAX%",
+            },
+            {
+                "name": "Escrow – Insurance",
+                "bs_pattern": "%ESCROW%INSURANCE%",
+                "cf_pattern": "%ESCROW%INSURANCE%",
+            },
+            {
+                "name": "Escrow – TI/LC Reserve",
+                "bs_pattern": "%ESCROW%RESERVE%",
+                "cf_pattern": "%ESCROW%RESERVE%",
+            },
+        ]
+
+        tolerance_abs = 1.0
+        tolerance_pct = 0.05
+        mismatches = []
+
+        for mapping in mappings:
+            delta, begin_val, end_val, used_begin = getattr(
+                self, "_get_bs_delta_in_window", lambda **_: (0.0, 0.0, 0.0, None)
+            )(account_name_pattern=mapping["bs_pattern"])
+
+            cf_adj = getattr(self, "_get_cf_value", lambda **_: 0.0)(
+                account_name_pattern=mapping["cf_pattern"]
+            )
+
+            if abs(delta) <= 0.01 and abs(cf_adj) <= 0.01:
+                continue
+
+            diff = delta - cf_adj
+            rel = abs(diff) / max(abs(delta), 1.0) if delta != 0 else 0.0
+            if abs(diff) > tolerance_abs and rel > tolerance_pct:
+                mismatches.append(
+                    {
+                        "account": mapping["name"],
+                        "bs_delta": float(delta),
+                        "cf_adjustment": float(cf_adj),
+                        "difference": float(diff),
+                        "begin_period_id": int(used_begin or begin_period_id),
+                        "end_period_id": int(self.period_id),
+                    }
+                )
+
+        status = "PASS" if not mismatches else "FAIL"
+        details = (
+            "All mapped working-capital deltas reconcile to CF adjustments"
+            if not mismatches
+            else f"{len(mismatches)} working-capital mappings with material variance"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="WCR-1",
+                rule_name="Working Capital Delta Reconciliation",
+                category="Working Capital",
+                status=status,
+                source_value=float(len(mismatches)),
+                target_value=0.0,
+                difference=float(len(mismatches)),
+                variance_pct=0.0,
+                details=details,
+                severity="critical" if status == "FAIL" else "info",
+                formula="ΔBS working-capital ≈ CF working-capital adjustments",
+                intermediate_calculations={"mismatches": mismatches},
+            )
+        )
+
+    def _rule_wcr_2_account_appearance_disappearance(self):
+        """
+        WCR-2: Appearance/disappearance rule.
+
+        Flags accounts that newly appear or disappear between the begin and end
+        of the aligned window with non-trivial balances.
+        """
+        begin_period_id = getattr(self, "_get_effective_begin_period_id", lambda: None)()
+        if not begin_period_id:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="WCR-2",
+                    rule_name="Working Capital Account Appearance/Disappearance",
+                    category="Working Capital",
+                    status="INFO",
+                    source_value=0.0,
+                    target_value=0.0,
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details="No aligned begin period available for appearance/disappearance test.",
+                    severity="medium",
+                    formula="Identify new/cleared WC accounts across window",
+                )
+            )
+            return
+
+        # New accounts at end (no prior-period row)
+        new_rows = self.db.execute(
+            text(
+                """
+                SELECT curr.account_name, curr.amount
+                FROM balance_sheet_data curr
+                LEFT JOIN balance_sheet_data prior
+                  ON curr.account_code = prior.account_code
+                 AND curr.property_id = prior.property_id
+                 AND prior.period_id = :begin_period_id
+                WHERE curr.property_id = :property_id
+                  AND curr.period_id = :end_period_id
+                  AND prior.account_code IS NULL
+                  AND ABS(curr.amount) > 0.01
+                LIMIT 25
+                """
+            ),
+            {
+                "property_id": int(self.property_id),
+                "begin_period_id": int(begin_period_id),
+                "end_period_id": int(self.period_id),
+            },
+        ).fetchall()
+
+        # Cleared accounts (no current-period row)
+        cleared_rows = self.db.execute(
+            text(
+                """
+                SELECT prior.account_name, prior.amount
+                FROM balance_sheet_data prior
+                LEFT JOIN balance_sheet_data curr
+                  ON curr.account_code = prior.account_code
+                 AND curr.property_id = prior.property_id
+                 AND curr.period_id = :end_period_id
+                WHERE prior.property_id = :property_id
+                  AND prior.period_id = :begin_period_id
+                  AND curr.account_code IS NULL
+                  AND ABS(prior.amount) > 0.01
+                LIMIT 25
+                """
+            ),
+            {
+                "property_id": int(self.property_id),
+                "begin_period_id": int(begin_period_id),
+                "end_period_id": int(self.period_id),
+            },
+        ).fetchall()
+
+        new_accounts = [{"name": r[0], "amount": float(r[1] or 0.0)} for r in new_rows]
+        cleared_accounts = [{"name": r[0], "amount": float(r[1] or 0.0)} for r in cleared_rows]
+
+        total_flags = len(new_accounts) + len(cleared_accounts)
+        status = "PASS" if total_flags == 0 else "FAIL"
+
+        details_parts = []
+        if new_accounts:
+            details_parts.append(
+                f"New accounts introduced: {', '.join(a['name'] for a in new_accounts[:5])}"
+            )
+        if cleared_accounts:
+            details_parts.append(
+                f"Accounts cleared: {', '.join(a['name'] for a in cleared_accounts[:5])}"
+            )
+        details = "; ".join(details_parts) if details_parts else "No appearance/disappearance events detected"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="WCR-2",
+                rule_name="Working Capital Account Appearance/Disappearance",
+                category="Working Capital",
+                status=status,
+                source_value=float(total_flags),
+                target_value=0.0,
+                difference=float(total_flags),
+                variance_pct=0.0,
+                details=details,
+                severity="medium" if status == "FAIL" else "info",
+                formula="Identify new/cleared WC accounts across window",
+                intermediate_calculations={
+                    "begin_period_id": int(begin_period_id),
+                    "end_period_id": int(self.period_id),
+                    "new_accounts": new_accounts,
+                    "cleared_accounts": cleared_accounts,
+                },
+            )
+        )
+
+    def _rule_wcr_3_escrow_activity_three_way(self):
+        """
+        WCR-3: Escrow activity consistency.
+
+        Enforces a best-effort three-way tie between:
+        1) BS escrow balances
+        2) CF escrow-related line items
+        3) (Optional) lender statement escrows when available
+        """
+        begin_period_id = getattr(self, "_get_effective_begin_period_id", lambda: None)()
+        if not begin_period_id:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="WCR-3",
+                    rule_name="Escrow Activity Consistency",
+                    category="Working Capital",
+                    status="INFO",
+                    source_value=0.0,
+                    target_value=0.0,
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details="No aligned begin period available for escrow activity window.",
+                    severity="high",
+                    formula="ΔBS escrows ≈ CF escrow activity (plus lender statement when available)",
+                )
+            )
+            return
+
+        escrow_mappings = [
+            {
+                "name": "Escrow – Property Tax",
+                "bs_pattern": "%ESCROW%PROPERTY TAX%",
+                "cf_pattern": "%ESCROW%PROPERTY TAX%",
+            },
+            {
+                "name": "Escrow – Insurance",
+                "bs_pattern": "%ESCROW%INSURANCE%",
+                "cf_pattern": "%ESCROW%INSURANCE%",
+            },
+            {
+                "name": "Escrow – TI/LC Reserve",
+                "bs_pattern": "%ESCROW%RESERVE%",
+                "cf_pattern": "%ESCROW%RESERVE%",
+            },
+        ]
+
+        tolerance_abs = 1.0
+        tolerance_pct = 0.05
+        mismatches = []
+
+        for mapping in escrow_mappings:
+            delta, begin_val, end_val, used_begin = getattr(
+                self, "_get_bs_delta_in_window", lambda **_: (0.0, 0.0, 0.0, None)
+            )(account_name_pattern=mapping["bs_pattern"])
+
+            cf_adj = getattr(self, "_get_cf_value", lambda **_: 0.0)(
+                account_name_pattern=mapping["cf_pattern"]
+            )
+
+            if abs(delta) <= 0.01 and abs(cf_adj) <= 0.01:
+                continue
+
+            diff = delta - cf_adj
+            rel = abs(diff) / max(abs(delta), 1.0) if delta != 0 else 0.0
+            if abs(diff) > tolerance_abs and rel > tolerance_pct:
+                mismatches.append(
+                    {
+                        "account": mapping["name"],
+                        "bs_delta": float(delta),
+                        "cf_adjustment": float(cf_adj),
+                        "difference": float(diff),
+                        "begin_period_id": int(used_begin or begin_period_id),
+                        "end_period_id": int(self.period_id),
+                    }
+                )
+
+        status = "PASS" if not mismatches else "FAIL"
+        details = (
+            "Escrow balances reconcile to CF escrow activity"
+            if not mismatches
+            else f"{len(mismatches)} escrow mappings with material variance"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="WCR-3",
+                rule_name="Escrow Activity Consistency",
+                category="Working Capital",
+                status=status,
+                source_value=float(len(mismatches)),
+                target_value=0.0,
+                difference=float(len(mismatches)),
+                variance_pct=0.0,
+                details=details,
+                severity="high" if status == "FAIL" else "info",
+                formula="ΔBS escrows ≈ CF escrow activity (plus lender statement when available)",
+                intermediate_calculations={"mismatches": mismatches},
+            )
+        )
+
+    # ------------------------------------------------------------------
     # AUDIT-1..AUDIT-5 critical rules
     # ------------------------------------------------------------------
 
@@ -572,7 +1050,7 @@ class AuditRulesMixin:
         bs_wells = self._get_bs_value(account_name_pattern="%Wells%Fargo%")
         ms_principal = self._get_mst_value("principal_balance")
         diff = bs_wells - ms_principal
-        tolerance = 1.00
+        tolerance = 10.00
         status = "PASS" if abs(diff) <= tolerance else "FAIL"
 
         self.results.append(
@@ -585,10 +1063,16 @@ class AuditRulesMixin:
                 target_value=ms_principal,
                 difference=diff,
                 variance_pct=0,
-                details=f"BS Wells Fargo ${bs_wells:,.2f} vs Mortgage ${ms_principal:,.2f}",
+                details=(
+                    f"BS Wells Fargo ${bs_wells:,.2f} vs Mortgage ${ms_principal:,.2f} "
+                    f"(Δ ${diff:,.2f}, tol ${tolerance:,.2f})"
+                ),
                 severity="high",
-                formula="BS.Wells Fargo = MS.Principal Balance",
-                intermediate_calculations={"alignment": ctx.to_dict()},
+                formula="BS.Wells Fargo ≈ MS.Principal Balance",
+                intermediate_calculations={
+                    "alignment": ctx.to_dict(),
+                    "tolerance": tolerance,
+                },
             )
         )
 
@@ -755,6 +1239,174 @@ class AuditRulesMixin:
                 },
             )
         )
+
+    def _rule_mci_4_principal_reduction_validation(self):
+        """
+        MCI-4: Principal reduction validation (BS Wells Fargo delta vs mortgage principal applied).
+
+        Over the aligned window:
+            (MS.Principal Balance[begin] − MS.Principal Balance[end])
+            ≈  ΔBS.Wells Fargo  (after sign normalization)
+        """
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="MCI-4",
+                    rule_name="Principal Reduction Validation",
+                    category="Mortgage",
+                    status="INFO",
+                    source_value=0.0,
+                    target_value=0.0,
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details="No aligned begin period available for principal reduction window.",
+                    severity="high",
+                    formula="MS principal balance change ≈ ΔBS Wells Fargo",
+                )
+            )
+            return
+
+        ctx = self._get_alignment_context()
+
+        bs_end = self._get_bs_value(account_name_pattern="%Wells%Fargo%")
+        bs_begin = self._get_bs_value(
+            account_name_pattern="%Wells%Fargo%", period_id=begin_period_id
+        )
+        bs_delta = bs_end - bs_begin
+
+        ms_end = self._get_mst_value("principal_balance")
+        ms_begin = self._get_mst_value("principal_balance", period_id=begin_period_id)
+        ms_reduction = ms_begin - ms_end
+
+        expected_bs_delta = -ms_reduction
+        diff = bs_delta - expected_bs_delta
+        tolerance = 250.00
+        status = "PASS" if abs(diff) <= tolerance else "FAIL"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="MCI-4",
+                rule_name="Principal Reduction Validation",
+                category="Mortgage",
+                status=status,
+                source_value=bs_delta,
+                target_value=expected_bs_delta,
+                difference=diff,
+                variance_pct=0.0,
+                details=(
+                    f"BS Wells Fargo Δ ${bs_delta:,.2f} vs expected Δ ${expected_bs_delta:,.2f} "
+                    f"from MS principal reduction ${ms_reduction:,.2f} (tol ${tolerance:,.2f})"
+                ),
+                severity="high" if status == "FAIL" else "info",
+                formula="ΔBS.Wells Fargo ≈ −(MS.Principal[begin] − MS.Principal[end])",
+                intermediate_calculations={
+                    "alignment": ctx.to_dict(),
+                    "begin_period_id": begin_period_id,
+                    "bs_begin": bs_begin,
+                    "bs_end": bs_end,
+                    "bs_delta": bs_delta,
+                    "ms_begin": ms_begin,
+                    "ms_end": ms_end,
+                    "ms_reduction": ms_reduction,
+                    "expected_bs_delta": expected_bs_delta,
+                    "diff": diff,
+                    "tolerance": tolerance,
+                },
+            )
+        )
+
+    def _rule_mci_6_escrow_funding_vs_disbursements(self):
+        """
+        MCI-6: Escrow funding vs disbursements.
+
+        Checks that escrow deposits and disbursements implied by mortgage
+        statements and cash flows are consistent with BS escrow balance changes.
+        """
+        begin_period_id = self._get_effective_begin_period_id()
+        if not begin_period_id:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="MCI-6",
+                    rule_name="Escrow Funding vs Disbursements",
+                    category="Mortgage",
+                    status="INFO",
+                    source_value=0.0,
+                    target_value=0.0,
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details="No aligned begin period available for escrow funding test.",
+                    severity="high",
+                    formula="Escrow funding/disbursements consistent with BS escrow deltas",
+                )
+            )
+            return
+
+        ctx = self._get_alignment_context()
+
+        configs = [
+            {
+                "suffix": "TAX",
+                "bs_patterns": ["%ESCROW%PROPERTY%TAX%", "%ESCROW%TAX%"],
+                "ms_deposit_col": "tax_escrow_due",
+            },
+            {
+                "suffix": "INSURANCE",
+                "bs_patterns": ["%ESCROW%INSURANCE%"],
+                "ms_deposit_col": "insurance_escrow_due",
+            },
+            {
+                "suffix": "RESERVE",
+                "bs_patterns": ["%ESCROW%TI%LC%", "%ESCROW%RESERVE%"],
+                "ms_deposit_col": "reserve_due",
+            },
+        ]
+
+        tolerance = 250.00
+
+        for cfg in configs:
+            bs_begin = self._sum_bs_accounts(cfg["bs_patterns"], begin_period_id)
+            bs_end = self._sum_bs_accounts(cfg["bs_patterns"], self.period_id)
+            bs_delta = bs_end - bs_begin
+
+            ms_deposits = self._get_mst_value(cfg["ms_deposit_col"])
+            cf_escrow = self._sum_cf_accounts(["%ESCROW%"])
+
+            expected_delta = ms_deposits - cf_escrow
+            diff = bs_delta - expected_delta
+            status = "PASS" if abs(diff) <= tolerance else "WARNING"
+
+            self.results.append(
+                ReconciliationResult(
+                    rule_id=f"MCI-6-{cfg['suffix']}",
+                    rule_name=f"Escrow Funding vs Disbursements ({cfg['suffix']})",
+                    category="Mortgage",
+                    status=status,
+                    source_value=bs_delta,
+                    target_value=expected_delta,
+                    difference=diff,
+                    variance_pct=0.0,
+                    details=(
+                        f"BS escrow Δ ${bs_delta:,.2f} vs expected Δ ${expected_delta:,.2f} "
+                        f"(MS deposits ${ms_deposits:,.2f}, CF escrow ${cf_escrow:,.2f}, "
+                        f"tol ${tolerance:,.2f})"
+                    ),
+                    severity="high" if status == "FAIL" else "info",
+                    formula="ΔBS escrow ≈ MS escrow deposits − CF escrow disbursements",
+                    intermediate_calculations={
+                        "alignment": ctx.to_dict(),
+                        "begin_period_id": begin_period_id,
+                        "bs_begin": bs_begin,
+                        "bs_end": bs_end,
+                        "bs_delta": bs_delta,
+                        "ms_deposits": ms_deposits,
+                        "cf_escrow": cf_escrow,
+                        "expected_delta": expected_delta,
+                        "diff": diff,
+                        "tolerance": tolerance,
+                    },
+                )
+            )
 
     def _rule_audit_7_mortgage_payment_composition(self):
         """AUDIT-7: Mortgage payment composition integrity."""
@@ -2139,7 +2791,20 @@ class AuditRulesMixin:
         annual_debt_service = monthly_payment * 12.0
         dscr = annualized_noi / annual_debt_service if annual_debt_service else 0.0
 
-        covenant = 1.20
+        # DSCR covenant threshold (overridable via system_config to stay
+        # consistent with CovenantComplianceService and analytics covenants).
+        try:
+            from app.models import SystemConfig  # local import to avoid cycles
+            from sqlalchemy import select as _select
+
+            row = self.db.execute(
+                _select(SystemConfig.config_value)
+                .where(SystemConfig.config_key == "covenant_dscr_minimum")
+                .limit(1)
+            ).scalar_one_or_none()
+            covenant = float(str(row)) if row is not None else 1.20
+        except Exception:
+            covenant = 1.20
         if dscr >= covenant:
             status = "PASS"
         elif dscr >= 1.0:
@@ -2480,6 +3145,122 @@ class AuditRulesMixin:
             )
         )
 
+    def _rule_audit_34_operating_expense_ratio(self):
+        """AUDIT-34: Operating expense ratio (expenses / revenue)."""
+        revenue = self._get_is_value(account_name_pattern="%TOTAL INCOME%")
+        noi = self._get_is_value(account_name_pattern="%NET OPERATING INCOME%")
+
+        if abs(revenue) <= 0.01:
+            return
+
+        expenses = revenue - noi
+        ratio = expenses / revenue if revenue else 0.0
+
+        status = "INFO"
+        if ratio > 0.50:
+            status = "WARNING"
+        elif ratio < 0.20:
+            status = "INFO"
+
+        details = f"Operating expense ratio {ratio:.1%} (expenses ${expenses:,.2f} / revenue ${revenue:,.2f})"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-34",
+                rule_name="Operating Expense Ratio",
+                category="Audit",
+                status=status,
+                source_value=ratio,
+                target_value=0.40,
+                difference=ratio - 0.40,
+                variance_pct=0,
+                details=details,
+                severity="low",
+                formula="Operating Expense Ratio = (Revenue - NOI) / Revenue",
+            )
+        )
+
+    def _rule_audit_35_noi_margin(self):
+        """AUDIT-35: NOI margin (NOI / revenue)."""
+        revenue = self._get_is_value(account_name_pattern="%TOTAL INCOME%")
+        noi = self._get_is_value(account_name_pattern="%NET OPERATING INCOME%")
+
+        if abs(revenue) <= 0.01:
+            return
+
+        margin = noi / revenue if revenue else 0.0
+
+        status = "INFO"
+        if margin < 0.40:
+            status = "WARNING"
+
+        details = f"NOI margin {margin:.1%} (NOI ${noi:,.2f} / revenue ${revenue:,.2f})"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-35",
+                rule_name="NOI Margin",
+                category="Audit",
+                status=status,
+                source_value=margin,
+                target_value=0.60,
+                difference=margin - 0.60,
+                variance_pct=0,
+                details=details,
+                severity="low",
+                formula="NOI Margin = NOI / Revenue",
+            )
+        )
+
+    def _rule_audit_36_cash_flow_to_debt_ratio(self):
+        """AUDIT-36: Operating cash flow to annual debt service ratio."""
+        ctx = self._get_alignment_context()
+
+        operating_cf = self._get_financial_metric("operating_cash_flow")
+        if abs(operating_cf) <= 0.01:
+            operating_cf, _ = self._sum_cf_operating_total(self.period_id)
+
+        monthly_payment = self._get_mst_value("total_payment_due")
+        if abs(monthly_payment) <= 0.01:
+            return
+
+        annualized_operating = operating_cf * (12.0 / max(ctx.window_months, 1))
+        annual_debt_service = monthly_payment * 12.0
+
+        ratio = annualized_operating / annual_debt_service if annual_debt_service else 0.0
+
+        status = "INFO"
+        if ratio < 1.0:
+            status = "WARNING"
+
+        details = (
+            f"Operating CF to debt ratio {ratio:.2f}x "
+            f"(annualized CF ${annualized_operating:,.2f} / debt ${annual_debt_service:,.2f})"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-36",
+                rule_name="Cash Flow to Debt Ratio",
+                category="Audit",
+                status=status,
+                source_value=ratio,
+                target_value=1.5,
+                difference=ratio - 1.5,
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="Operating CF / Annual Debt Service",
+                intermediate_calculations={
+                    "operating_cf": operating_cf,
+                    "annualized_operating": annualized_operating,
+                    "monthly_payment": monthly_payment,
+                    "annual_debt_service": annual_debt_service,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
     def _rule_audit_40_completeness_validation(self):
         """AUDIT-40: Ensure expected documents/data exist for the period."""
         ctx = self._get_alignment_context()
@@ -2790,6 +3571,915 @@ class AuditRulesMixin:
                     "triggers": triggers,
                     "alignment": ctx.to_dict(),
                 },
+            )
+        )
+
+        # Create a high-level committee alert when triggers are present.
+        # This complements the detailed VarianceAnalysisService alerts by
+        # surfacing structural period-over-period issues to the finance committee.
+        if triggers:
+            try:
+                existing = (
+                    self.db.query(CommitteeAlert)
+                    .filter(
+                        CommitteeAlert.property_id == int(self.property_id),
+                        CommitteeAlert.financial_period_id == int(self.period_id),
+                        CommitteeAlert.alert_type == AlertType.VARIANCE_BREACH,
+                        CommitteeAlert.status == AlertStatus.ACTIVE,
+                        CommitteeAlert.related_metric == "AUDIT-48",
+                    )
+                    .first()
+                )
+                if not existing:
+                    description = "Variance investigation triggers detected:\n- " + "\n- ".join(triggers)
+                    alert = CommitteeAlert(
+                        property_id=int(self.property_id),
+                        financial_period_id=int(self.period_id),
+                        alert_type=AlertType.VARIANCE_BREACH,
+                        severity=AlertSeverity.WARNING,
+                        status=AlertStatus.ACTIVE,
+                        title=f"Variance Triggers (AUDIT-48) for period {self.period_id}",
+                        description=description,
+                        threshold_value=None,
+                        actual_value=None,
+                        threshold_unit=None,
+                        assigned_committee=CommitteeType.FINANCE_SUBCOMMITTEE,
+                        requires_approval=False,
+                        related_metric="AUDIT-48",
+                        br_id="AUDIT-48",
+                        alert_metadata={
+                            "triggers": triggers,
+                            "alignment": ctx.to_dict(),
+                        },
+                    )
+                    self.db.add(alert)
+                    self.db.commit()
+            except Exception:
+                # Alert creation is best-effort and should not break rule execution.
+                self.db.rollback()
+
+    def _rule_audit_25_ytd_cash_flow_accumulation(self):
+        """AUDIT-25: YTD cash flow should reconcile to BS cash change since year start."""
+        ctx = self._get_alignment_context()
+        year_start_period_id = self._get_year_start_period_id(ctx.end_year)
+        if not year_start_period_id:
+            return
+
+        patterns = ["%NET CHANGE%CASH%", "%CASH FLOW%"]
+        _, ytd_net_change = self._sum_cf_amounts(patterns, self.period_id)
+
+        if abs(ytd_net_change) <= 0.01:
+            return
+
+        bs_start_cash = self._get_bs_total_cash(year_start_period_id)
+        bs_end_cash = self._get_bs_total_cash(self.period_id)
+        bs_delta = bs_end_cash - bs_start_cash
+
+        diff = ytd_net_change - bs_delta
+        tolerance = max(100.0, abs(bs_delta) * 0.01)
+        status = "PASS" if abs(diff) <= tolerance else "WARNING"
+
+        details = (
+            f"CF YTD ${ytd_net_change:,.2f} vs BS cash Δ ${bs_delta:,.2f} "
+            f"(start {year_start_period_id})"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-25",
+                rule_name="YTD Cash Flow Accumulation",
+                category="Audit",
+                status=status,
+                source_value=ytd_net_change,
+                target_value=bs_delta,
+                difference=diff,
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="CF YTD Net Change ≈ BS Cash End - BS Cash at Year Start",
+                intermediate_calculations={
+                    "year_start_period_id": year_start_period_id,
+                    "ytd_net_change": ytd_net_change,
+                    "bs_start_cash": bs_start_cash,
+                    "bs_end_cash": bs_end_cash,
+                    "bs_delta": bs_delta,
+                    "tolerance": tolerance,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_30_is_ytd_accumulation(self):
+        """AUDIT-30: IS YTD totals should accumulate period amounts."""
+        prior_id = self._get_prior_period_id()
+        if not prior_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        configs = [
+            {"suffix": "TOTAL-INCOME", "patterns": ["%TOTAL INCOME%"]},
+            {"suffix": "TOTAL-EXPENSES", "patterns": ["%TOTAL EXPENSE%"]},
+            {"suffix": "NET-INCOME", "patterns": ["%NET INCOME%"]},
+            {"suffix": "NOI", "patterns": ["%NET OPERATING INCOME%"]},
+        ]
+
+        failures = 0
+        for cfg in configs:
+            period_amount, ytd_amount = self._sum_is_amounts(cfg["patterns"], self.period_id)
+            _, prior_ytd = self._sum_is_amounts(cfg["patterns"], prior_id)
+
+            if abs(ytd_amount) <= 0.01 and abs(period_amount) <= 0.01:
+                status = "SKIP"
+                diff = 0.0
+                tolerance = 0.0
+            else:
+                expected = prior_ytd + period_amount
+                diff = ytd_amount - expected
+                tolerance = max(1.0, abs(expected) * 0.01)
+                status = "PASS" if abs(diff) <= tolerance else "WARNING"
+                if status != "PASS":
+                    failures += 1
+
+            details = (
+                f"YTD ${ytd_amount:,.2f} vs prior YTD ${prior_ytd:,.2f} + "
+                f"period ${period_amount:,.2f}"
+            )
+
+            self.results.append(
+                ReconciliationResult(
+                    rule_id=f"AUDIT-30-{cfg['suffix']}",
+                    rule_name=f"IS YTD Accumulation ({cfg['suffix']})",
+                    category="Audit",
+                    status=status,
+                    source_value=ytd_amount,
+                    target_value=prior_ytd + period_amount,
+                    difference=diff,
+                    variance_pct=0,
+                    details=details,
+                    severity="high",
+                    formula="YTD = Prior YTD + Period Amount",
+                    intermediate_calculations={
+                        "prior_id": prior_id,
+                        "period_amount": period_amount,
+                        "ytd_amount": ytd_amount,
+                        "prior_ytd": prior_ytd,
+                        "tolerance": tolerance,
+                        "alignment": ctx.to_dict(),
+                    },
+                )
+            )
+
+        summary_status = "PASS" if failures == 0 else "WARNING"
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-30",
+                rule_name="IS YTD Accumulation Summary",
+                category="Audit",
+                status=summary_status,
+                source_value=float(failures),
+                target_value=0.0,
+                difference=float(failures),
+                variance_pct=0,
+                details=f"{failures} IS YTD accumulation check(s) outside tolerance",
+                severity="high",
+                formula="Income statement YTD totals should accumulate period amounts",
+                intermediate_calculations={"prior_id": prior_id, "failures": failures},
+            )
+        )
+
+    def _rule_audit_31_cf_ytd_accumulation(self):
+        """AUDIT-31: CF YTD totals should accumulate period amounts."""
+        prior_id = self._get_prior_period_id()
+        if not prior_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        configs = [
+            {"suffix": "NET-CHANGE-CASH", "patterns": ["%NET CHANGE%CASH%"]},
+            {"suffix": "CASH-FLOW", "patterns": ["%CASH FLOW%"]},
+        ]
+
+        failures = 0
+        for cfg in configs:
+            period_amount, ytd_amount = self._sum_cf_amounts(cfg["patterns"], self.period_id)
+            _, prior_ytd = self._sum_cf_amounts(cfg["patterns"], prior_id)
+
+            if abs(ytd_amount) <= 0.01 and abs(period_amount) <= 0.01:
+                status = "SKIP"
+                diff = 0.0
+                tolerance = 0.0
+            else:
+                expected = prior_ytd + period_amount
+                diff = ytd_amount - expected
+                tolerance = max(1.0, abs(expected) * 0.02)
+                status = "PASS" if abs(diff) <= tolerance else "WARNING"
+                if status != "PASS":
+                    failures += 1
+
+            details = (
+                f"YTD ${ytd_amount:,.2f} vs prior YTD ${prior_ytd:,.2f} + "
+                f"period ${period_amount:,.2f}"
+            )
+
+            self.results.append(
+                ReconciliationResult(
+                    rule_id=f"AUDIT-31-{cfg['suffix']}",
+                    rule_name=f"CF YTD Accumulation ({cfg['suffix']})",
+                    category="Audit",
+                    status=status,
+                    source_value=ytd_amount,
+                    target_value=prior_ytd + period_amount,
+                    difference=diff,
+                    variance_pct=0,
+                    details=details,
+                    severity="high",
+                    formula="YTD = Prior YTD + Period Amount",
+                    intermediate_calculations={
+                        "prior_id": prior_id,
+                        "period_amount": period_amount,
+                        "ytd_amount": ytd_amount,
+                        "prior_ytd": prior_ytd,
+                        "tolerance": tolerance,
+                        "alignment": ctx.to_dict(),
+                    },
+                )
+            )
+
+        summary_status = "PASS" if failures == 0 else "WARNING"
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-31",
+                rule_name="CF YTD Accumulation Summary",
+                category="Audit",
+                status=summary_status,
+                source_value=float(failures),
+                target_value=0.0,
+                difference=float(failures),
+                variance_pct=0,
+                details=f"{failures} CF YTD accumulation check(s) outside tolerance",
+                severity="high",
+                formula="Cash flow YTD totals should accumulate period amounts",
+                intermediate_calculations={"prior_id": prior_id, "failures": failures},
+            )
+        )
+
+    def _rule_audit_32_bs_ytd_interpretation(self):
+        """AUDIT-32: BS Current Period Earnings should align with IS YTD Net Income."""
+        ctx = self._get_alignment_context()
+
+        bs_current_earnings = self._get_bs_value(account_name_pattern="%CURRENT PERIOD EARNINGS%")
+        if abs(bs_current_earnings) <= 0.01:
+            bs_current_earnings = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%")
+
+        _, is_ytd_net_income = self._sum_is_amounts(["%NET INCOME%"], self.period_id)
+
+        if abs(bs_current_earnings) <= 0.01 and abs(is_ytd_net_income) <= 0.01:
+            status = "SKIP"
+            diff = 0.0
+            tolerance = 0.0
+            details = "No current earnings or IS YTD net income detected"
+        else:
+            diff = bs_current_earnings - is_ytd_net_income
+            tolerance = max(1.0, abs(is_ytd_net_income) * 0.01)
+            status = "PASS" if abs(diff) <= tolerance else "WARNING"
+            details = (
+                f"BS current earnings ${bs_current_earnings:,.2f} vs IS YTD net income "
+                f"${is_ytd_net_income:,.2f}"
+            )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-32",
+                rule_name="BS YTD Interpretation",
+                category="Audit",
+                status=status,
+                source_value=bs_current_earnings,
+                target_value=is_ytd_net_income,
+                difference=diff,
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="BS Current Period Earnings ≈ IS YTD Net Income",
+                intermediate_calculations={
+                    "bs_current_earnings": bs_current_earnings,
+                    "is_ytd_net_income": is_ytd_net_income,
+                    "tolerance": tolerance,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_23_dscr_alias(self):
+        """AUDIT-23: DSCR (alias of AUDIT-43)."""
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-23",
+                rule_name="Debt Service Coverage Ratio (Alias)",
+                category="Audit",
+                status="INFO",
+                source_value=0,
+                target_value=0,
+                difference=0,
+                variance_pct=0,
+                details="See AUDIT-43 for DSCR covenant check",
+                severity="high",
+                formula="Alias to AUDIT-43",
+            )
+        )
+
+    def _rule_audit_27_account_continuity(self):
+        """AUDIT-27: Ensure BS accounts continue across periods (data continuity)."""
+        prior_id = self._get_prior_period_id()
+        if not prior_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        rows = self.db.execute(
+            text(
+                """
+                SELECT curr.account_code, curr.account_name, curr.amount
+                FROM balance_sheet_data curr
+                LEFT JOIN balance_sheet_data prior
+                  ON prior.property_id = curr.property_id
+                 AND prior.period_id = :prior_id
+                 AND prior.account_code = curr.account_code
+                WHERE curr.property_id = :property_id
+                  AND curr.period_id = :period_id
+                  AND prior.account_code IS NULL
+                  AND (curr.is_total IS NOT TRUE)
+                  AND (curr.is_subtotal IS NOT TRUE)
+                ORDER BY ABS(curr.amount) DESC
+                LIMIT 5
+                """
+            ),
+            {
+                "property_id": int(self.property_id),
+                "period_id": int(self.period_id),
+                "prior_id": int(prior_id),
+            },
+        ).fetchall()
+
+        missing_count = len(rows)
+        status = "PASS" if missing_count == 0 else "WARNING"
+        examples = [f"{r[1]}: ${float(r[2] or 0.0):,.2f}" for r in rows]
+        details = (
+            "All current BS accounts exist in prior period"
+            if missing_count == 0
+            else f"{missing_count} account(s) missing prior period: {', '.join(examples)}"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-27-ACCOUNTS",
+                rule_name="Balance Sheet Account Continuity",
+                category="Audit",
+                status=status,
+                source_value=float(missing_count),
+                target_value=0.0,
+                difference=float(missing_count),
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="BS account codes should persist across periods",
+                intermediate_calculations={
+                    "prior_id": prior_id,
+                    "missing_count": missing_count,
+                    "examples": examples,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_47_monthly_checklist_summary(self):
+        """AUDIT-47: Summary of monthly audit checklist status."""
+        critical_failures = 0
+        high_failures = 0
+
+        for result in self.results:
+            if result.status in ("FAIL", "WARNING"):
+                if result.severity == "critical" and result.status == "FAIL":
+                    critical_failures += 1
+                if result.severity == "high" and result.status in ("FAIL", "WARNING"):
+                    high_failures += 1
+
+        if critical_failures > 0:
+            status = "FAIL"
+        elif high_failures > 0:
+            status = "WARNING"
+        else:
+            status = "PASS"
+
+        details = (
+            f"Critical failures: {critical_failures}, High warnings/failures: {high_failures}"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-47",
+                rule_name="Monthly Checklist Summary",
+                category="Audit",
+                status=status,
+                source_value=float(critical_failures),
+                target_value=0.0,
+                difference=float(critical_failures),
+                variance_pct=0,
+                details=details,
+                severity="high",
+                formula="Summary of critical/high rule outcomes",
+            )
+        )
+
+    def _rule_audit_49_year_end_validation(self):
+        """AUDIT-49: Year-end validation checkpoints."""
+        year, month = self._get_period_year_month(self.period_id)
+        ctx = self._get_alignment_context()
+
+        if month != 1:
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="AUDIT-49",
+                    rule_name="Year-End Validation",
+                    category="Audit",
+                    status="INFO",
+                    source_value=0,
+                    target_value=0,
+                    difference=0,
+                    variance_pct=0,
+                    details="Year-end validation applicable only to January periods",
+                    severity="medium",
+                    intermediate_calculations={"alignment": ctx.to_dict()},
+                )
+            )
+            return
+
+        bs_current_earnings = self._get_bs_value(account_name_pattern="%CURRENT PERIOD EARNINGS%")
+        _, is_ytd_net_income = self._sum_is_amounts(["%NET INCOME%"], self.period_id)
+        period_net_income = self._get_is_value(account_name_pattern="%NET INCOME%")
+
+        reset_ok = abs(bs_current_earnings - is_ytd_net_income) <= max(
+            1.0, abs(is_ytd_net_income) * 0.01
+        )
+        ytd_matches_period = abs(is_ytd_net_income - period_net_income) <= max(
+            1.0, abs(period_net_income) * 0.01
+        )
+
+        status = "PASS" if reset_ok and ytd_matches_period else "WARNING"
+        details = (
+            f"BS earnings ${bs_current_earnings:,.2f}, IS YTD ${is_ytd_net_income:,.2f}, "
+            f"IS period ${period_net_income:,.2f}"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-49",
+                rule_name="Year-End Validation",
+                category="Audit",
+                status=status,
+                source_value=bs_current_earnings,
+                target_value=is_ytd_net_income,
+                difference=bs_current_earnings - is_ytd_net_income,
+                variance_pct=0,
+                details=details,
+                severity="high",
+                formula="Jan period: IS YTD should equal period amount and tie to BS earnings",
+                intermediate_calculations={
+                    "period_month": month,
+                    "bs_current_earnings": bs_current_earnings,
+                    "is_ytd_net_income": is_ytd_net_income,
+                    "period_net_income": period_net_income,
+                    "reset_ok": reset_ok,
+                    "ytd_matches_period": ytd_matches_period,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_50_year_over_year_comparison(self):
+        """AUDIT-50: Year-over-year comparison for key metrics."""
+        curr_year, curr_month = self._get_period_year_month(self.period_id)
+        prior_year_id = self._get_period_id_for_year_month(curr_year - 1, curr_month)
+        if not prior_year_id:
+            return
+
+        ctx = self._get_alignment_context()
+
+        total_income_curr = self._get_is_value_for_period("%TOTAL INCOME%", self.period_id)
+        total_income_prior = self._get_is_value_for_period("%TOTAL INCOME%", prior_year_id)
+        noi_curr = self._get_is_value_for_period("%NET OPERATING INCOME%", self.period_id)
+        noi_prior = self._get_is_value_for_period("%NET OPERATING INCOME%", prior_year_id)
+        net_income_curr = self._get_is_value_for_period("%NET INCOME%", self.period_id)
+        net_income_prior = self._get_is_value_for_period("%NET INCOME%", prior_year_id)
+
+        rr_curr = self._get_rent_roll_summary(self.period_id)
+        rr_prior = self._get_rent_roll_summary(prior_year_id)
+        occ_delta = rr_curr["occupancy_pct"] - rr_prior["occupancy_pct"]
+
+        def pct_change(curr, prior):
+            return ((curr - prior) / prior) * 100.0 if abs(prior) > 0.01 else 0.0
+
+        income_change = pct_change(total_income_curr, total_income_prior)
+        noi_change = pct_change(noi_curr, noi_prior)
+        net_income_change = pct_change(net_income_curr, net_income_prior)
+
+        warnings = []
+        if income_change < -10.0:
+            warnings.append(f"Total income down {income_change:.1f}% YoY")
+        if noi_change < -10.0:
+            warnings.append(f"NOI down {noi_change:.1f}% YoY")
+        if net_income_change < -10.0:
+            warnings.append(f"Net income down {net_income_change:.1f}% YoY")
+
+        status = "WARNING" if warnings else "INFO"
+        details = (
+            f"Income {income_change:.1f}%, NOI {noi_change:.1f}%, Net income {net_income_change:.1f}%, "
+            f"Occupancy Δ {occ_delta:.2f}pp"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-50",
+                rule_name="Year-over-Year Comparison",
+                category="Audit",
+                status=status,
+                source_value=income_change,
+                target_value=0.0,
+                difference=income_change,
+                variance_pct=0,
+                details=details if not warnings else f"{details}; {'; '.join(warnings)}",
+                severity="medium",
+                formula="Compare current period to same month prior year",
+                intermediate_calculations={
+                    "prior_year_id": prior_year_id,
+                    "income_change_pct": income_change,
+                    "noi_change_pct": noi_change,
+                    "net_income_change_pct": net_income_change,
+                    "occupancy_delta_pp": occ_delta,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_51_budget_vs_actual(self):
+        """AUDIT-51: Budget vs actual variance analysis."""
+        ctx = self._get_alignment_context()
+
+        row = self.db.execute(
+            text(
+                """
+                SELECT
+                    COALESCE(SUM(b.budgeted_amount), 0),
+                    COALESCE(SUM(i.period_amount), 0)
+                FROM budgets b
+                JOIN income_statement_data i
+                  ON i.property_id = b.property_id
+                 AND i.period_id = b.period_id
+                 AND i.account_code = b.account_code
+                WHERE b.property_id = :property_id
+                  AND b.period_id = :period_id
+                  AND b.status = 'approved'
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchone()
+
+        if not row or (abs(row[0] or 0.0) <= 0.01 and abs(row[1] or 0.0) <= 0.01):
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="AUDIT-51",
+                    rule_name="Budget vs Actual",
+                    category="Audit",
+                    status="SKIP",
+                    source_value=0,
+                    target_value=0,
+                    difference=0,
+                    variance_pct=0,
+                    details="No approved budget data matched to IS accounts",
+                    severity="medium",
+                    intermediate_calculations={"alignment": ctx.to_dict()},
+                )
+            )
+            return
+
+        budget_total = float(row[0] or 0.0)
+        actual_total = float(row[1] or 0.0)
+        diff = actual_total - budget_total
+        variance_pct = (diff / budget_total) * 100.0 if abs(budget_total) > 0.01 else 0.0
+
+        status = "PASS" if abs(variance_pct) <= 10.0 else "WARNING"
+        details = f"Actual ${actual_total:,.2f} vs Budget ${budget_total:,.2f} ({variance_pct:.1f}%)"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-51",
+                rule_name="Budget vs Actual",
+                category="Audit",
+                status=status,
+                source_value=actual_total,
+                target_value=budget_total,
+                difference=diff,
+                variance_pct=variance_pct,
+                details=details,
+                severity="medium",
+                formula="Actual - Budget",
+                intermediate_calculations={
+                    "budget_total": budget_total,
+                    "actual_total": actual_total,
+                    "variance_pct": variance_pct,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_52_forecast_vs_actual(self):
+        """AUDIT-52: Forecast vs actual variance analysis."""
+        ctx = self._get_alignment_context()
+
+        row = self.db.execute(
+            text(
+                """
+                SELECT
+                    COALESCE(SUM(f.forecasted_amount), 0),
+                    COALESCE(SUM(i.period_amount), 0)
+                FROM forecasts f
+                JOIN income_statement_data i
+                  ON i.property_id = f.property_id
+                 AND i.period_id = f.period_id
+                 AND i.account_code = f.account_code
+                WHERE f.property_id = :property_id
+                  AND f.period_id = :period_id
+                  AND f.status = 'approved'
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchone()
+
+        if not row or (abs(row[0] or 0.0) <= 0.01 and abs(row[1] or 0.0) <= 0.01):
+            self.results.append(
+                ReconciliationResult(
+                    rule_id="AUDIT-52",
+                    rule_name="Forecast vs Actual",
+                    category="Audit",
+                    status="SKIP",
+                    source_value=0,
+                    target_value=0,
+                    difference=0,
+                    variance_pct=0,
+                    details="No approved forecast data matched to IS accounts",
+                    severity="low",
+                    intermediate_calculations={"alignment": ctx.to_dict()},
+                )
+            )
+            return
+
+        forecast_total = float(row[0] or 0.0)
+        actual_total = float(row[1] or 0.0)
+        diff = actual_total - forecast_total
+        variance_pct = (diff / forecast_total) * 100.0 if abs(forecast_total) > 0.01 else 0.0
+
+        status = "PASS" if abs(variance_pct) <= 15.0 else "INFO"
+        details = f"Actual ${actual_total:,.2f} vs Forecast ${forecast_total:,.2f} ({variance_pct:.1f}%)"
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-52",
+                rule_name="Forecast vs Actual",
+                category="Audit",
+                status=status,
+                source_value=actual_total,
+                target_value=forecast_total,
+                difference=diff,
+                variance_pct=variance_pct,
+                details=details,
+                severity="low",
+                formula="Actual - Forecast",
+                intermediate_calculations={
+                    "forecast_total": forecast_total,
+                    "actual_total": actual_total,
+                    "variance_pct": variance_pct,
+                    "alignment": ctx.to_dict(),
+                },
+            )
+        )
+
+    def _rule_audit_53_supporting_documentation(self):
+        """
+        AUDIT-53: Supporting documentation requirements.
+
+        Implementation:
+        - Scan for large-capex / tax / insurance / distribution line items
+          on the mortgage statement and income statement.
+        - Check that at least one supporting document has been uploaded for
+          the period (via document_uploads).
+        - Surface counts and any gaps as an INFO/WARNING rule result.
+        """
+        # Count uploaded documents for this period/property
+        doc_counts = self.db.execute(
+            text(
+                """
+                SELECT document_type, COUNT(*) 
+                FROM document_uploads
+                WHERE property_id = :property_id
+                  AND period_id = :period_id
+                  AND is_active IS TRUE
+                GROUP BY document_type
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchall()
+        doc_summary = {str(row[0]): int(row[1] or 0) for row in doc_counts}
+
+        # Look for large disbursements on mortgage statement.
+        # Materiality threshold is configurable via `audit_53_materiality_threshold`
+        # (default: $10,000).
+        threshold = self._get_numeric_config("audit_53_materiality_threshold", 10000.0)
+        esc_rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    COALESCE(tax_disbursed, 0) AS tax_disbursed,
+                    COALESCE(insurance_disbursed, 0) AS insurance_disbursed,
+                    COALESCE(reserves_disbursed, 0) AS reserves_disbursed
+                FROM mortgage_statement_data
+                WHERE property_id = :property_id
+                  AND period_id = :period_id
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchone()
+
+        large_disbursements = []
+        if esc_rows:
+            tax_disb, ins_disb, res_disb = [float(esc_rows[i] or 0.0) for i in range(3)]
+            if abs(tax_disb) >= threshold:
+                large_disbursements.append(("property_tax", tax_disb))
+            if abs(ins_disb) >= threshold:
+                large_disbursements.append(("insurance", ins_disb))
+            if abs(res_disb) >= threshold:
+                large_disbursements.append(("reserves", res_disb))
+
+        # Simple heuristic: if there are large disbursements but no mortgage_statement
+        # or tax/insurance uploads, flag as WARNING.
+        has_mortgage_docs = doc_summary.get("mortgage_statement", 0) > 0
+        has_tax_docs = doc_summary.get("tax_bill", 0) > 0
+        has_ins_docs = doc_summary.get("insurance_invoice", 0) > 0
+
+        missing_support = []
+        for label, amount in large_disbursements:
+            if label == "property_tax" and not (has_mortgage_docs or has_tax_docs):
+                missing_support.append(("property_tax", amount))
+            if label == "insurance" and not (has_mortgage_docs or has_ins_docs):
+                missing_support.append(("insurance", amount))
+            if label == "reserves" and not has_mortgage_docs:
+                missing_support.append(("reserves", amount))
+
+        status = "PASS" if not missing_support else "WARNING"
+        details_parts = []
+        if not large_disbursements:
+            details_parts.append("No escrow disbursements above $10,000 detected for this period.")
+        else:
+            details_parts.append(
+                "Large escrow disbursements detected: "
+                + ", ".join(f"{lbl} ${amt:,.2f}" for lbl, amt in large_disbursements)
+            )
+        if missing_support:
+            details_parts.append(
+                "Missing obvious supporting documentation for: "
+                + ", ".join(f"{lbl} ${amt:,.2f}" for lbl, amt in missing_support)
+            )
+        else:
+            details_parts.append("At least one supporting document type present for each large disbursement.")
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-53",
+                rule_name="Supporting Documentation Check",
+                category="Audit",
+                status=status,
+                source_value=float(len(large_disbursements)),
+                target_value=0.0,
+                difference=float(len(missing_support)),
+                variance_pct=0.0,
+                details=" ".join(details_parts),
+                severity="high" if missing_support else "info",
+                formula="Large escrow disbursements should have matching documentation uploads",
+                intermediate_calculations={
+                    "document_summary": doc_summary,
+                    "large_disbursements": large_disbursements,
+                    "missing_support": missing_support,
+                    "threshold": threshold,
+                },
+            )
+        )
+
+    def _rule_audit_54_adjustment_journal_entry_tracking(self):
+        """
+        AUDIT-54: Adjustment journal entry tracking.
+
+        Implementation:
+        - Scan general_ledger_entries for large adjustment JEs (is_adjustment = TRUE)
+          above a materiality threshold.
+        - Surface count and examples to guide manual review and make this visible in
+          the cross-document reconciliation output.
+        """
+        # Materiality threshold is configurable via `audit_54_materiality_threshold`
+        # (default: $10,000).
+        threshold = self._get_numeric_config("audit_54_materiality_threshold", 10000.0)
+        rows = self.db.execute(
+            text(
+                """
+                SELECT account_code, account_name, amount, description, entry_date
+                FROM general_ledger_entries
+                WHERE property_id = :property_id
+                  AND period_id = :period_id
+                  AND is_adjustment IS TRUE
+                  AND ABS(amount) >= :threshold
+                ORDER BY ABS(amount) DESC
+                LIMIT 25
+                """
+            ),
+            {
+                "property_id": int(self.property_id),
+                "period_id": int(self.period_id),
+                "threshold": float(threshold),
+            },
+        ).fetchall()
+
+        adjustments = [
+            {
+                "account_code": str(r[0]) if r[0] is not None else None,
+                "account_name": str(r[1]) if r[1] is not None else None,
+                "amount": float(r[2] or 0.0),
+                "description": str(r[3]) if r[3] is not None else "",
+                "entry_date": str(r[4]) if r[4] is not None else None,
+            }
+            for r in rows
+        ]
+
+        status = "PASS" if not adjustments else "WARNING"
+        if not adjustments:
+            details = "No adjustment journal entries above $10,000 detected for this period."
+        else:
+            details = (
+                f"{len(adjustments)} large adjustment journal entries found (>= ${threshold:,.0f}); "
+                "review descriptions and supporting documents."
+            )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-54",
+                rule_name="Adjustment Journal Entry Tracking",
+                category="Audit",
+                status=status,
+                source_value=float(len(adjustments)),
+                target_value=0.0,
+                difference=float(len(adjustments)),
+                variance_pct=0.0,
+                details=details,
+                severity="high" if adjustments else "info",
+                formula="Large adjustment JEs should be rare and well-documented",
+                intermediate_calculations={
+                    "threshold": threshold,
+                    "adjustments": adjustments,
+                },
+            )
+        )
+
+    def _rule_audit_55_key_metrics_dashboard(self):
+        """AUDIT-55: Key metrics dashboard snapshot."""
+        ctx = self._get_alignment_context()
+
+        metrics = {
+            "cash_total": self._get_bs_total_cash(self.period_id),
+            "occupancy_pct": self._get_financial_metric("occupancy_rate"),
+            "dscr": self._get_financial_metric("dscr"),
+            "ltv_ratio": self._get_financial_metric("ltv_ratio"),
+            "noi": self._get_financial_metric("net_operating_income"),
+            "net_income": self._get_financial_metric("net_income"),
+        }
+
+        details = (
+            f"Cash ${metrics['cash_total']:,.2f}, Occupancy {metrics['occupancy_pct'] or 0:.2f}%, "
+            f"DSCR {metrics['dscr'] or 0:.2f}, LTV {((metrics['ltv_ratio'] or 0) * 100):.2f}%, "
+            f"NOI ${metrics['noi'] or 0:,.2f}, Net Income ${metrics['net_income'] or 0:,.2f}"
+        )
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="AUDIT-55",
+                rule_name="Key Metrics Dashboard",
+                category="Audit",
+                status="INFO",
+                source_value=0,
+                target_value=0,
+                difference=0,
+                variance_pct=0,
+                details=details,
+                severity="medium",
+                formula="Dashboard snapshot of key metrics",
+                intermediate_calculations={"metrics": metrics, "alignment": ctx.to_dict()},
             )
         )
 

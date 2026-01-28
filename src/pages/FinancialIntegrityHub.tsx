@@ -213,7 +213,27 @@ export default function FinancialIntegrityHub() {
             }
         } catch (error) {
             console.error("Reconciliation failed", error);
-            const errorMessage = error instanceof Error ? error.message : String(error);
+            // Extract error message from various error formats
+            let errorMessage = 'Unknown error';
+            if (error instanceof Error) {
+                errorMessage = error.message;
+            } else if (typeof error === 'object' && error !== null) {
+                // Handle response error objects from API
+                if ('response' in error && typeof error.response === 'object' && error.response !== null) {
+                    const response = error.response as any;
+                    errorMessage = response.data?.detail || response.data?.message || response.statusText || 'API request failed';
+                } else if ('message' in error) {
+                    errorMessage = String((error as any).message);
+                } else if ('detail' in error) {
+                    errorMessage = String((error as any).detail);
+                } else {
+                    errorMessage = JSON.stringify(error);
+                }
+            } else if (typeof error === 'string') {
+                errorMessage = error;
+            }
+            
+            // Show user-friendly error message
             alert(`Failed to run reconciliation: ${errorMessage}\n\nPlease check that documents have been uploaded and extracted for this property and period.`);
         } finally {
             setIsRunningReconciliation(false);

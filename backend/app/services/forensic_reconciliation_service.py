@@ -162,20 +162,39 @@ class ForensicReconciliationService:
         """
         Execute all matching engines - Orchestrator Method.
         """
+        logger.info(f"Starting find_all_matches for session {session_id}")
+        
         session = self.db.query(ForensicReconciliationSession).filter(
             ForensicReconciliationSession.id == session_id
         ).first()
 
         if not session:
-             return {'error': 'Session not found'}
+            logger.error(f"Session {session_id} not found")
+            return {'error': 'Session not found'}
+        
+        logger.info(f"Session found: property={session.property_id}, period={session.period_id}, status={session.status}")
 
         # Delegate to processor
-        result = self.match_processor.process_matches(
-            session_id,
-            session.property_id,
-            session.period_id,
-            use_exact, use_fuzzy, use_calculated, use_inferred, use_rules
-        )
+        try:
+            logger.info(f"Delegating to match_processor.process_matches")
+            result = self.match_processor.process_matches(
+                session_id,
+                session.property_id,
+                session.period_id,
+                use_exact, use_fuzzy, use_calculated, use_inferred, use_rules
+            )
+            logger.info(f"Match processing completed: {len(result.get('stored_matches', []))} stored matches, {len(result.get('failed_matches', []))} failed matches")
+        except Exception as e:
+            logger.error(f"Match processing failed with exception: {e}", exc_info=True)
+            return {
+                'error': f'Match processing failed: {str(e)}',
+                'session_id': session_id,
+                'matches_count': 0,
+                'diagnostic': {
+                    'failed': 0,
+                    'exception': str(e)
+                }
+            }
         
         # Summary update and other orchestration logic could happen here
         # Note: We do NOT commit here. The API route calling this should handle the commit.
@@ -186,14 +205,21 @@ class ForensicReconciliationService:
         # This ensures the "By Document" tab is updated with fresh rule evaluations
         if use_rules:
             try:
+                logger.info(f"Starting ReconciliationRuleEngine for session {session_id}")
                 from app.services.reconciliation_rule_engine import ReconciliationRuleEngine
                 rule_engine = ReconciliationRuleEngine(self.db)
-                rule_engine.execute_all_rules(session.property_id, session.period_id)
+                logger.info(f"Executing all rules for property={session.property_id}, period={session.period_id}")
+                results = rule_engine.execute_all_rules(session.property_id, session.period_id)
+                logger.info(f"Rules executed: {len(results)} results generated")
                 rule_engine.save_results()
-                logger.info(f"Executed ReconciliationRuleEngine for session {session_id}")
+                logger.info(f"Rule results saved to database for session {session_id}")
             except Exception as e:
-                logger.error(f"Failed to execute ReconciliationRuleEngine: {e}")
+                logger.error(f"Failed to execute ReconciliationRuleEngine: {e}", exc_info=True)
                 # Don't fail the whole request, but log it
+                # Add error info to result
+                if 'errors' not in result:
+                    result['errors'] = []
+                result['errors'].append(f"Rule engine failed: {str(e)}")
         
         return {
             'session_id': session_id,

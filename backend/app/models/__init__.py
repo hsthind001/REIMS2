@@ -36,7 +36,13 @@ from app.models.report_audit import ReportAudit
 from app.models.tenant_performance_history import TenantPerformanceHistory
 
 # Risk management models
-from app.models.committee_alert import CommitteeAlert
+from app.models.committee_alert import (
+    CommitteeAlert,
+    AlertType,
+    AlertSeverity,
+    AlertStatus,
+    CommitteeType
+)
 from app.models.workflow_lock import WorkflowLock
 from app.models.account_mapping_rule import AccountMappingRule
 from app.models.review_approval_chain import ReviewApprovalChain, ApprovalStatus
@@ -62,6 +68,8 @@ from app.models.anomaly_feedback import AnomalyFeedback, AnomalyLearningPattern
 from app.models.anomaly_explanation import AnomalyExplanation
 from app.models.anomaly_model_cache import AnomalyModelCache
 from app.models.cross_property_benchmark import CrossPropertyBenchmark
+from app.models.data_governance import DataOwner, DataGovernancePolicy, DataAccessControl, DataRetentionPolicy, DataQualityIssue, DataQualityCorrection
+from app.models.general_ledger import GLImportBatch, GeneralLedgerEntry
 from app.models.batch_reprocessing_job import BatchReprocessingJob
 from app.models.pdf_field_coordinate import PDFFieldCoordinate
 from app.models.pyod_model_selection_log import PyODModelSelectionLog
@@ -152,6 +160,10 @@ __all__ = [
     "TenantPerformanceHistory",
     # Risk management
     "CommitteeAlert",
+    "AlertType",
+    "AlertSeverity",
+    "AlertStatus",
+    "CommitteeType",
     "WorkflowLock",
     "AlertRule",
     "AlertHistory",
@@ -176,6 +188,14 @@ __all__ = [
     "AnomalyExplanation",
     "AnomalyModelCache",
     "CrossPropertyBenchmark",
+    "DataOwner",
+    "DataGovernancePolicy",
+    "DataAccessControl",
+    "DataRetentionPolicy",
+    "DataQualityIssue",
+    "DataQualityCorrection",
+    "GLImportBatch",
+    "GeneralLedgerEntry",
     "BatchReprocessingJob",
     "PDFFieldCoordinate",
     "PyODModelSelectionLog",

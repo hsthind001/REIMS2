@@ -11,6 +11,11 @@ from app.services.rules.cash_flow_rules import CashFlowRulesMixin
 from app.services.rules.mortgage_rules import MortgageRulesMixin
 from app.services.rules.rent_roll_rules import RentRollRulesMixin
 from app.services.rules.audit_rules_mixin import AuditRulesMixin
+from app.services.rules.analytics_rules_mixin import AnalyticsRulesMixin
+from app.services.rules.data_quality_rules_mixin import DataQualityRulesMixin
+from app.services.rules.forensic_anomaly_rules_mixin import ForensicAnomalyRulesMixin
+from app.services.rules.rent_roll_balance_sheet_rules_mixin import RentRollBalanceSheetRulesMixin
+from app.services.market_data_integration import MarketDataIntegration
 
 from app.services.rules.safe_query_mixin import SafeQueryMixin
 
@@ -23,7 +28,11 @@ class ReconciliationRuleEngine(
     CashFlowRulesMixin,
     MortgageRulesMixin,
     RentRollRulesMixin,
-    AuditRulesMixin
+    AuditRulesMixin,
+    AnalyticsRulesMixin,
+    DataQualityRulesMixin,
+    ForensicAnomalyRulesMixin,
+    RentRollBalanceSheetRulesMixin
 ):
     """
     Executes all 135+ reconciliation rules (Synchronous)
@@ -34,6 +43,13 @@ class ReconciliationRuleEngine(
         self.results: List[ReconciliationResult] = []
         self.property_id = None
         self.period_id = None
+        self.market_data_service = None
+        self.market_data_integration = MarketDataIntegration()
+
+    def set_market_data_service(self, service):
+        """Optional hook for external market data service integration."""
+        self.market_data_service = service
+        self.market_data_integration.market_data_service = service
         
     def _get_prior_period_id(self) -> Optional[int]:
         """Get ID of the previous financial period"""
@@ -162,6 +178,10 @@ class ReconciliationRuleEngine(
         run_module("Cash Flow", self._execute_cash_flow_rules)
         run_module("Mortgage", self._execute_mortgage_rules)
         run_module("Audit", self._execute_audit_rules)
+        run_module("Analytics", self._execute_analytics_rules)
+        run_module("Data Quality", self._execute_data_quality_rules)
+        run_module("Forensic", self._execute_forensic_anomaly_rules)
+        run_module("RR-BS", self._execute_rent_roll_balance_sheet_rules)
         # Rent Roll usually robust, but wrap it too
         # Custom execution for Rent Roll to debug
         try:

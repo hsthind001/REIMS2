@@ -144,6 +144,35 @@ class MarketDataService:
         self.fred_api_key = fred_api_key
         self.osrm_base_url = os.getenv('OSRM_BASE_URL')
 
+    def get_market_intelligence(self, property_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Return latest market intelligence record for a property.
+        Placeholder hook for analytics benchmarks.
+        """
+        try:
+            record = (
+                self.db.query(MarketIntelligence)
+                .filter(MarketIntelligence.property_id == property_id)
+                .order_by(MarketIntelligence.id.desc())
+                .first()
+            )
+            if not record:
+                return None
+            # Provide a lightweight dict to downstream integrations
+            return {
+                "demographics": record.demographics,
+                "economic_indicators": record.economic_indicators,
+                "location_intelligence": record.location_intelligence,
+                "esg_assessment": record.esg_assessment,
+                "forecasts": record.forecasts,
+                "competitive_analysis": record.competitive_analysis,
+                "comparables": record.comparables,
+                "ai_insights": record.ai_insights,
+            }
+        except Exception as exc:
+            logger.warning(f"Failed to load market intelligence for property {property_id}: {exc}")
+            return None
+
     def _check_rate_limit(self, source: str) -> bool:
         """
         Check if we can make a request without exceeding rate limit.

@@ -14,7 +14,9 @@ from uuid import UUID
 from decimal import Decimal
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, select
+
+from app.models import SystemConfig
 
 
 class CovenantComplianceService:
@@ -25,28 +27,110 @@ class CovenantComplianceService:
     """
 
     # DSCR thresholds (industry standard for CRE)
-    DSCR_COVENANT_MINIMUM = 1.25  # Typical lender requirement
-    DSCR_STRONG = 1.50  # Strong performance
-    DSCR_ADEQUATE = 1.25  # Minimum covenant
-    DSCR_WARNING = 1.15  # Warning zone
-    DSCR_CRITICAL = 1.00  # Break-even
+    # NOTE: These class-level constants act as sane defaults.
+    #       Actual runtime thresholds can be overridden from the
+    #       `system_config` table via the helper methods below.
+    DSCR_COVENANT_MINIMUM = Decimal("1.25")  # Typical lender requirement
+    DSCR_STRONG = Decimal("1.50")  # Strong performance
+    DSCR_ADEQUATE = Decimal("1.25")  # Minimum covenant
+    DSCR_WARNING = Decimal("1.15")  # Warning zone
+    DSCR_CRITICAL = Decimal("1.00")  # Break-even
 
     # LTV thresholds
-    LTV_COVENANT_MAXIMUM = 75.0  # Typical lender limit
-    LTV_CONSERVATIVE = 65.0  # Conservative
-    LTV_WARNING = 70.0  # Approaching covenant
-    LTV_CRITICAL = 75.0  # At covenant limit
+    LTV_COVENANT_MAXIMUM = Decimal("75.0")  # Typical lender limit (percent)
+    LTV_CONSERVATIVE = Decimal("65.0")  # Conservative
+    LTV_WARNING = Decimal("70.0")  # Approaching covenant
+    LTV_CRITICAL = Decimal("75.0")  # At covenant limit
 
     # Interest Coverage Ratio thresholds
-    ICR_MINIMUM = 2.0  # Typical covenant
-    ICR_STRONG = 3.0  # Strong coverage
+    ICR_MINIMUM = Decimal("2.0")  # Typical covenant
+    ICR_STRONG = Decimal("3.0")  # Strong coverage
 
     # Liquidity thresholds
-    CURRENT_RATIO_MINIMUM = 1.5
-    QUICK_RATIO_MINIMUM = 1.0
+    CURRENT_RATIO_MINIMUM = Decimal("1.5")
+    QUICK_RATIO_MINIMUM = Decimal("1.0")
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _get_config_threshold(
+        self,
+        key: str,
+        default: Decimal,
+    ) -> Decimal:
+        """
+        Fetch a numeric covenant threshold from system_config, with a safe default.
+
+        - Values are stored as strings in `system_config.config_value`
+        - If the key is missing or unparsable, the provided default is returned.
+        """
+        try:
+            result = await self.db.execute(
+                select(SystemConfig.config_value).where(SystemConfig.config_key == key).limit(1)
+            )
+            value = result.scalar_one_or_none()
+            if value is None:
+                return default
+            # Allow either plain numeric strings (e.g. "1.25") or percentages ("75.0")
+            return Decimal(str(value))
+        except Exception:
+            # Never let configuration issues break covenant calculations
+            return default
+
+    async def _get_dscr_minimum(self) -> Decimal:
+        """
+        Get the DSCR minimum covenant threshold, overridable via `system_config`.
+
+        Config key: `covenant_dscr_minimum`
+        """
+        return await self._get_config_threshold(
+            key="covenant_dscr_minimum",
+            default=self.DSCR_COVENANT_MINIMUM,
+        )
+
+    async def _get_ltv_maximum(self) -> Decimal:
+        """
+        Get the LTV maximum covenant threshold, overridable via `system_config`.
+
+        Config key: `covenant_ltv_maximum`
+        """
+        return await self._get_config_threshold(
+            key="covenant_ltv_maximum",
+            default=self.LTV_COVENANT_MAXIMUM,
+        )
+
+    async def _get_icr_minimum(self) -> Decimal:
+        """
+        Get the Interest Coverage Ratio minimum covenant threshold.
+
+        Config key: `covenant_icr_minimum`
+        """
+        return await self._get_config_threshold(
+            key="covenant_icr_minimum",
+            default=self.ICR_MINIMUM,
+        )
+
+    async def _get_current_ratio_minimum(self) -> Decimal:
+        """
+        Get the Current Ratio minimum covenant threshold.
+
+        Config key: `covenant_current_ratio_minimum`
+        """
+        return await self._get_config_threshold(
+            key="covenant_current_ratio_minimum",
+            default=self.CURRENT_RATIO_MINIMUM,
+        )
+
+    async def _get_quick_ratio_minimum(self) -> Decimal:
+        """
+        Get the Quick Ratio minimum covenant threshold.
+
+        Config key: `covenant_quick_ratio_minimum`
+        """
+        return await self._get_config_threshold(
+            key="covenant_quick_ratio_minimum",
+            default=self.QUICK_RATIO_MINIMUM,
+        )
 
     async def calculate_all_covenants(
         self,
@@ -235,10 +319,11 @@ class CovenantComplianceService:
         else:
             dscr = 0
 
-        # Calculate cushion
-        covenant_threshold = self.DSCR_COVENANT_MINIMUM
-        cushion = dscr - covenant_threshold
-        cushion_pct = (cushion / covenant_threshold) * 100 if covenant_threshold > 0 else 0
+        # Calculate cushion using configurable DSCR minimum
+        covenant_threshold = await self._get_dscr_minimum()
+        covenant_threshold_f = float(covenant_threshold)
+        cushion = dscr - covenant_threshold_f
+        cushion_pct = (cushion / covenant_threshold_f) * 100 if covenant_threshold_f > 0 else 0
 
         # Determine status and compliance
         if dscr >= self.DSCR_STRONG:
@@ -393,12 +478,12 @@ class CovenantComplianceService:
         else:
             ltv_ratio = None
 
-        # Calculate cushion
-        # Calculate cushion
-        covenant_threshold = self.LTV_COVENANT_MAXIMUM
+        # Calculate cushion using configurable LTV maximum
+        covenant_threshold = await self._get_ltv_maximum()
         if ltv_ratio is not None:
-            cushion = covenant_threshold - ltv_ratio
-            cushion_pct = (cushion / covenant_threshold) * 100 if covenant_threshold > 0 else 0
+            covenant_threshold_f = float(covenant_threshold)
+            cushion = covenant_threshold_f - ltv_ratio
+            cushion_pct = (cushion / covenant_threshold_f) * 100 if covenant_threshold_f > 0 else 0
         else:
             cushion = 0.0
             cushion_pct = 0.0
@@ -561,11 +646,13 @@ class CovenantComplianceService:
         else:
             icr = 0
 
-        # Determine compliance
-        in_compliance = icr >= self.ICR_MINIMUM
+        # Determine compliance using configurable ICR minimum
+        icr_minimum = await self._get_icr_minimum()
+        icr_minimum_f = float(icr_minimum)
+        in_compliance = icr >= icr_minimum_f
         
         # Determine status based on ICR value
-        if icr >= self.ICR_STRONG:
+        if icr >= float(self.ICR_STRONG):
             status = 'GREEN'
             interpretation = 'Strong interest coverage'
         elif icr >= self.ICR_MINIMUM:
@@ -579,7 +666,7 @@ class CovenantComplianceService:
             'interest_coverage_ratio': round(icr, 2),
             'noi': round(annual_noi, 2),
             'interest_expense': round(interest_expense, 2),
-            'covenant_threshold': self.ICR_MINIMUM,
+            'covenant_threshold': icr_minimum_f,
             'in_compliance': in_compliance,
             'status': status,
             'interpretation': interpretation
@@ -649,16 +736,20 @@ class CovenantComplianceService:
             current_ratio = current_assets / current_liabilities
             quick_ratio = (current_assets - inventory) / current_liabilities
         else:
-            current_ratio = 0
-            quick_ratio = 0
+            current_ratio = 0.0
+            quick_ratio = 0.0
+
+        # Allow liquidity thresholds to be configured
+        current_min = float(await self._get_current_ratio_minimum())
+        quick_min = float(await self._get_quick_ratio_minimum())
 
         return {
             'current_ratio': round(current_ratio, 2),
             'quick_ratio': round(quick_ratio, 2),
             'current_assets': round(current_assets, 2),
             'current_liabilities': round(current_liabilities, 2),
-            'current_ratio_compliant': current_ratio >= self.CURRENT_RATIO_MINIMUM,
-            'quick_ratio_compliant': quick_ratio >= self.QUICK_RATIO_MINIMUM
+            'current_ratio_compliant': current_ratio >= current_min,
+            'quick_ratio_compliant': quick_ratio >= quick_min
         }
 
     async def _calculate_dscr_trend(

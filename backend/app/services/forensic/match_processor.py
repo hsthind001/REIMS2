@@ -55,6 +55,10 @@ class ForensicMatchProcessor:
         session_id: int,
         property_id: int,
         period_id: int,
+        use_exact: bool = True,
+        use_fuzzy: bool = True,
+        use_calculated: bool = True,
+        use_inferred: bool = True,
         use_rules: bool = True
     ) -> Dict[str, Any]:
         """
