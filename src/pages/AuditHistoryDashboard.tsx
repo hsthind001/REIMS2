@@ -14,11 +14,21 @@ import type { Property } from '../types/api';
 
 export default function AuditHistoryDashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(() => {
+    const saved = localStorage.getItem('reims_forensic_property_id');
+    return saved || '';
+  });
   const [history, setHistory] = useState<AuditHistoryItem[]>([]);
   const [limit, setLimit] = useState<number>(12);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Persist property selection to localStorage
+  useEffect(() => {
+    if (selectedPropertyId) {
+      localStorage.setItem('reims_forensic_property_id', selectedPropertyId);
+    }
+  }, [selectedPropertyId]);
 
   useEffect(() => {
     loadProperties();
@@ -34,7 +44,14 @@ export default function AuditHistoryDashboard() {
     try {
       const data = await propertyService.getAllProperties();
       setProperties(data);
-      if (data.length > 0) {
+
+      // Restore from localStorage if available
+      const savedPropId = localStorage.getItem('reims_forensic_property_id');
+      const savedPropExists = data.find(p => String(p.id) === savedPropId);
+
+      if (savedPropExists) {
+        setSelectedPropertyId(String(savedPropId));
+      } else if (data.length > 0) {
         setSelectedPropertyId(String(data[0].id));
       }
     } catch (err) {

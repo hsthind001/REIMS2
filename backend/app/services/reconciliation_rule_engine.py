@@ -1,6 +1,7 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import json
 from app.services.reconciliation_types import ReconciliationResult
 
 from app.services.rules.period_alignment_mixin import PeriodAlignmentMixin
@@ -251,6 +252,10 @@ class ReconciliationRuleEngine(
                 # Determine is_material
                 is_material = res.status != "PASS" and abs(res.difference) > 0.01
                 
+                # Convert intermediate_calculations dict to JSON string
+                intermediate_calc = res.intermediate_calculations or alignment_summary
+                intermediate_calc_json = json.dumps(intermediate_calc) if intermediate_calc else None
+                
                 formatted_params.append({
                     "p_id": self.property_id,
                     "period_id": self.period_id,
@@ -266,7 +271,7 @@ class ReconciliationRuleEngine(
                     "is_material": is_material,
                     "explanation": res.details,
                     "recommendation": res.formula,
-                    "intermediate_calculations": res.intermediate_calculations or alignment_summary,
+                    "intermediate_calculations": intermediate_calc_json,
                 })
 
             # Bulk Insert using executemany optimization if supported, or loop

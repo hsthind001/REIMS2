@@ -27,12 +27,32 @@ import MetricCard from '../components/forensic-audit/MetricCard';
 
 export default function CovenantComplianceDashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(() => {
+    const saved = localStorage.getItem('reims_forensic_property_id');
+    return saved || '';
+  });
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => {
+    const saved = localStorage.getItem('reims_forensic_period_id');
+    return saved || '';
+  });
   const [periods, setPeriods] = useState<any[]>([]);
   const [results, setResults] = useState<CovenantComplianceResults | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Persist property selection to localStorage
+  useEffect(() => {
+    if (selectedPropertyId) {
+      localStorage.setItem('reims_forensic_property_id', selectedPropertyId);
+    }
+  }, [selectedPropertyId]);
+
+  // Persist period selection to localStorage
+  useEffect(() => {
+    if (selectedPeriodId) {
+      localStorage.setItem('reims_forensic_period_id', selectedPeriodId);
+    }
+  }, [selectedPeriodId]);
 
   useEffect(() => {
     loadProperties();
@@ -57,7 +77,14 @@ export default function CovenantComplianceDashboard() {
     try {
       const data = await propertyService.getAllProperties();
       setProperties(data);
-      if (data.length > 0) {
+
+      // Restore from localStorage if available
+      const savedPropId = localStorage.getItem('reims_forensic_property_id');
+      const savedPropExists = data.find(p => String(p.id) === savedPropId);
+
+      if (savedPropExists) {
+        setSelectedPropertyId(String(savedPropId));
+      } else if (data.length > 0) {
         setSelectedPropertyId(String(data[0].id));
       }
     } catch (err) {
@@ -69,8 +96,21 @@ export default function CovenantComplianceDashboard() {
     try {
       const data = await financialPeriodsService.getPeriods(Number(propertyId));
       setPeriods(data);
-      if (data.length > 0) {
-        setSelectedPeriodId(String(data[0].id));
+
+      // Restore from localStorage if available
+      const savedPeriodId = localStorage.getItem('reims_forensic_period_id');
+      const savedPeriodExists = data.find(p => String(p.id) === savedPeriodId);
+
+      if (savedPeriodExists) {
+        setSelectedPeriodId(String(savedPeriodId));
+      } else if (data.length > 0) {
+        const latestCompletePeriod = data.find(p => p.is_complete);
+        
+        if (latestCompletePeriod) {
+          setSelectedPeriodId(String(latestCompletePeriod.id));
+        } else {
+          setSelectedPeriodId(String(data[0].id));
+        }
       }
     } catch (err) {
       console.error('Error loading periods:', err);
