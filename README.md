@@ -11,7 +11,7 @@
 [![React](https://img.shields.io/badge/react-19.1-blue.svg)](https://reactjs.org/)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.115-green.svg)](https://fastapi.tiangolo.com/)
 
-**Last Updated**: January 28, 2026
+**Last Updated**: January 29, 2026
 
 [Features](#-key-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Architecture](#-architecture) • [API](#-api-reference)
 
@@ -209,6 +209,11 @@ docker compose ps  # Check all services are healthy
    - 🌺 **Celery Monitor**: http://localhost:5555
    - 🐘 **pgAdmin**: http://localhost:5050
 
+6. **Optional: Seed reconciliation config** (AUDIT-48, COVENANT-6, BENCHMARK, FA-MORT-4 thresholds, etc.):
+   ```bash
+   docker exec -i reims-postgres psql -U reims -d reims < backend/scripts/seed_reconciliation_config.sql
+   ```
+
 ### First Steps
 
 1. **Register an account** at http://localhost:5173
@@ -225,6 +230,8 @@ docker compose ps  # Check all services are healthy
 ### User Guides
 - **Getting Started** - [USER_GUIDE.md](docs/USER_GUIDE.md)
 - **Reconciliation Rules** - [RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md](RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md)
+- **Reconciliation Deep Dive & Plan** - [docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md](docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md)
+- **Reconciliation Implementation Summary** - [docs/RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md](docs/RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md)
 - **Filter Persistence** - [FILTER_PERSISTENCE_IMPLEMENTATION.md](FILTER_PERSISTENCE_IMPLEMENTATION.md)
 - **API Reference** - http://localhost:8000/docs (when running)
 
@@ -318,6 +325,7 @@ docker compose ps  # Check all services are healthy
 
 #### Document Management
 - `document_uploads` - PDF uploads and metadata
+- `escrow_document_links` - FA-MORT-4: links supporting documents to escrow activity (property/period/type)
 - `extraction_logs` - Processing history
 - `extraction_learning_cases` - Self-learning data
 - `document_summaries` - AI-generated summaries
@@ -564,6 +572,9 @@ http://localhost:8000/api/v1
 | `/documents/uploads/{id}/data` | GET | Get extracted data |
 | `/documents/uploads/{id}/download` | GET | Download PDF |
 | `/documents/uploads/{id}/reprocess` | POST | Reprocess extraction |
+| `/documents/escrow-links` | GET | List escrow document links (FA-MORT-4; optional `property_id`, `period_id`) |
+| `/documents/escrow-links` | POST | Create escrow document link (property_id, period_id, document_upload_id, escrow_type) |
+| `/documents/escrow-links/{id}` | DELETE | Remove escrow document link |
 
 ### Reconciliation
 
@@ -616,8 +627,10 @@ http://localhost:8000/api/v1
 
 ## 📅 Changelog
 
-### Version 2.1.0 (January 28, 2026) - **Current**
+### Version 2.1.0 (January 29, 2026) - **Current**
 - ✅ **311+ Reconciliation Rules** - Complete implementation across 13 mixins
+- ✅ **FA-MORT-4 Escrow Documentation** - EscrowDocumentLink model, rule, and API (`GET/POST/DELETE /documents/escrow-links`)
+- ✅ **Reconciliation Config Seed** - Optional `backend/scripts/seed_reconciliation_config.sql` (AUDIT-48, COVENANT-6, BENCHMARK, RRBS-1, FA-CASH-4, FA-MORT-4 thresholds)
 - ✅ **Filter Persistence** - Context maintained across 9 forensic dashboards
 - ✅ **General Ledger Integration** - CSV/Excel import with auto-mapping
 - ✅ **Data Governance** - Complete lineage and quality tracking
@@ -655,6 +668,8 @@ http://localhost:8000/api/v1
 1. **Read Documentation**:
    - [COMPLETE_IMPLEMENTATION_SUMMARY.md](COMPLETE_IMPLEMENTATION_SUMMARY.md)
    - [RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md](RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md)
+   - [docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md](docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md)
+   - [docs/RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md](docs/RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md)
 
 2. **Pick a Task**: Check open issues or backlog
 

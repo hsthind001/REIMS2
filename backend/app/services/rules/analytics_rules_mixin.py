@@ -1,10 +1,11 @@
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from sqlalchemy import text, select
 
 from app.models import SystemConfig
 
 from app.services.reconciliation_types import ReconciliationResult
+from app.services.rules.covenant_resolver import resolve_covenant_threshold_sync
 
 
 class AnalyticsRulesMixin:
@@ -370,18 +371,103 @@ class AnalyticsRulesMixin:
         )
 
     def _rule_analytics_8_retention_rate(self):
+        """ANALYTICS-8: Tenant Retention Rate = Renewed Leases / Expiring Leases (lookback 12 months)."""
+        period_end = self._get_period_end_date()
+        if not period_end:
+            self._add_result(
+                rule_id="ANALYTICS-8",
+                rule_name="Tenant Retention Rate",
+                category="Analytics",
+                status="INFO",
+                source_value=0.0,
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Period end date unavailable",
+                severity="info",
+                formula="Retention Rate = Renewed Leases / Expiring Leases",
+            )
+            return
+        # Lookback 12 months: same month, previous year
+        start_year = period_end.year - 1
+        start_month = period_end.month
+        last_day = calendar.monthrange(start_year, start_month)[1]
+        start_day = min(period_end.day, last_day)
+        lookback_start = date(start_year, start_month, start_day)
+        rows = self.db.execute(
+            text(
+                """
+                SELECT renewal_status, COUNT(*) AS cnt
+                FROM rent_roll_data
+                WHERE property_id = :property_id
+                  AND period_id = :period_id
+                  AND lease_end_date IS NOT NULL
+                  AND lease_end_date >= :lookback_start
+                  AND lease_end_date <= :period_end
+                  AND (occupancy_status IS NULL OR occupancy_status NOT ILIKE 'vacant')
+                GROUP BY renewal_status
+                """
+            ),
+            {
+                "property_id": int(self.property_id),
+                "period_id": int(self.period_id),
+                "lookback_start": lookback_start,
+                "period_end": period_end,
+            },
+        ).fetchall()
+        if not rows:
+            self._add_result(
+                rule_id="ANALYTICS-8",
+                rule_name="Tenant Retention Rate",
+                category="Analytics",
+                status="INFO",
+                source_value=0.0,
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="No leases expiring in the last 12 months",
+                severity="info",
+                formula="Retention Rate = Renewed Leases / Expiring Leases",
+            )
+            return
+        expiring = sum(int(r[1]) for r in rows)
+        renewed = sum(int(r[1]) for r in rows if r[0] and str(r[0]).strip().lower() == "renewed")
+        has_renewal_data = any(r[0] is not None and str(r[0]).strip() for r in rows)
+        if not has_renewal_data:
+            self._add_result(
+                rule_id="ANALYTICS-8",
+                rule_name="Tenant Retention Rate",
+                category="Analytics",
+                status="INFO",
+                source_value=0.0,
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Retention rate requires renewal_status (New/Renewed/Expired) in rent roll",
+                severity="info",
+                formula="Retention Rate = Renewed Leases / Expiring Leases",
+            )
+            return
+        retention = (renewed / expiring) if expiring else 0.0
+        status = "PASS" if expiring else "INFO"
         self._add_result(
             rule_id="ANALYTICS-8",
             rule_name="Tenant Retention Rate",
             category="Analytics",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
+            status=status,
+            source_value=float(retention),
+            target_value=float(retention),
             difference=0.0,
             variance_pct=0.0,
-            details="Retention rate requires renewal tracking data (not available in current dataset)",
+            details=f"Retention {retention:.1%} ({renewed} renewed / {expiring} expiring in last 12 months)",
             severity="info",
             formula="Retention Rate = Renewed Leases / Expiring Leases",
+            intermediate_calculations={
+                "expiring": expiring,
+                "renewed": renewed,
+                "lookback_start": str(lookback_start),
+                "period_end": str(period_end),
+            },
         )
 
     def _rule_analytics_9_walt(self):
@@ -1236,7 +1322,9 @@ class AnalyticsRulesMixin:
             noi = self._get_metric("net_operating_income")
             debt_service = self._get_metric("total_annual_debt_service")
             dscr = noi / debt_service if debt_service else 0.0
-        threshold = self._get_config_threshold("covenant_dscr_minimum", 1.25)
+        threshold = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "DSCR"
+        )
         status = "PASS" if dscr >= threshold else "FAIL"
         self._add_result(
             rule_id="COVENANT-1",
@@ -1258,9 +1346,10 @@ class AnalyticsRulesMixin:
             debt = self._get_metric("total_debt")
             value = self._get_metric("net_property_value") or self._get_metric("gross_property_value")
             ltv = debt / value if value else 0.0
-        # LTV is stored as a fraction (e.g. 0.66 = 66%), but config is in percent.
-        threshold_pct = self._get_config_threshold("covenant_ltv_maximum", 75.0)
-        threshold = threshold_pct / 100.0
+        # Resolver returns ratio (0.75) for LTV when stored as percent (75).
+        threshold = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "LTV"
+        )
         status = "PASS" if ltv <= threshold and ltv > 0 else "FAIL"
         self._add_result(
             rule_id="COVENANT-2",
@@ -1295,8 +1384,9 @@ class AnalyticsRulesMixin:
                 formula="Cash >= 3 months debt service",
             )
             return
-        # Allow the required months of coverage to be configured.
-        min_months = self._get_config_threshold("covenant_liquidity_months", 3.0)
+        min_months = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "MIN_LIQUIDITY"
+        )
         required = debt_service * min_months
         available = cash + escrow
         status = "PASS" if available >= required else "FAIL"
@@ -1316,8 +1406,9 @@ class AnalyticsRulesMixin:
 
     def _rule_covenant_4_occupancy(self):
         occ = self._get_metric("occupancy_rate")
-        # Occupancy threshold is expressed as a fraction; config expects percent.
-        occ_min_pct = self._get_config_threshold("covenant_occupancy_minimum", 85.0)
+        occ_min_pct = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "OCCUPANCY"
+        )
         threshold = occ_min_pct / 100.0
         if occ == 0.0 and hasattr(self, "_get_rent_roll_summary"):
             occ = (self._get_rent_roll_summary(self.period_id).get("occupancy_pct", 0.0) / 100.0)
@@ -1367,8 +1458,9 @@ class AnalyticsRulesMixin:
         total = sum(float(r[0] or 0.0) for r in rows)
         top = max(float(r[0] or 0.0) for r in rows) if total else 0.0
         pct = top / total if total else 0.0
-        # Single-tenant concentration threshold in percent (e.g. 20.0).
-        tenant_max_pct = self._get_config_threshold("covenant_single_tenant_maximum", 20.0)
+        tenant_max_pct = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "SINGLE_TENANT_MAX"
+        )
         threshold = tenant_max_pct / 100.0
         status = "PASS" if pct <= threshold else "FAIL"
         self._add_result(
@@ -1386,118 +1478,245 @@ class AnalyticsRulesMixin:
         )
 
     def _rule_covenant_6_reporting_requirements(self):
+        """COVENANT-6: Reporting requirements – documents must be submitted by deadline (config: covenant_reporting_deadline_days)."""
+        deadline_days = int(self._get_config_threshold("covenant_reporting_deadline_days", 0))
+        if deadline_days <= 0:
+            self._add_result(
+                rule_id="COVENANT-6",
+                rule_name="Reporting Requirements",
+                category="Covenant",
+                status="INFO",
+                source_value=0.0,
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Configure covenant_reporting_deadline_days in system_config for compliance check (days after period end).",
+                severity="info",
+                formula="Timely submission of required reports",
+            )
+            return
+        period_end = self._get_period_end_date()
+        if not period_end:
+            self._add_result(
+                rule_id="COVENANT-6",
+                rule_name="Reporting Requirements",
+                category="Covenant",
+                status="INFO",
+                source_value=0.0,
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Period end date unavailable",
+                severity="info",
+                formula="Timely submission of required reports",
+            )
+            return
+        deadline_date = period_end + timedelta(days=deadline_days)
+        row = self.db.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE (upload_date AT TIME ZONE 'UTC')::date <= :deadline) AS on_time,
+                    COUNT(*) AS total
+                FROM document_uploads
+                WHERE property_id = :property_id AND period_id = :period_id AND is_active
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id), "deadline": deadline_date},
+        ).fetchone()
+        on_time = int(row[0] or 0)
+        total = int(row[1] or 0)
+        if total == 0:
+            self._add_result(
+                rule_id="COVENANT-6",
+                rule_name="Reporting Requirements",
+                category="Covenant",
+                status="INFO",
+                source_value=0.0,
+                target_value=float(deadline_days),
+                difference=0.0,
+                variance_pct=0.0,
+                details=f"No documents uploaded for period (deadline {deadline_date})",
+                severity="info",
+                formula="Timely submission of required reports",
+            )
+            return
+        if on_time == 0:
+            status = "FAIL"
+            details = f"No documents submitted by deadline {deadline_date} ({total} uploaded after)"
+        else:
+            status = "PASS"
+            details = f"Reporting submitted by deadline {deadline_date} ({on_time} document(s) on time)"
         self._add_result(
             rule_id="COVENANT-6",
             rule_name="Reporting Requirements",
             category="Covenant",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
-            difference=0.0,
+            status=status,
+            source_value=float(on_time),
+            target_value=float(total),
+            difference=float(on_time - total),
             variance_pct=0.0,
-            details="Reporting timeliness tracked in document uploads (see DQ-16)",
-            severity="info",
+            details=details,
+            severity="high" if status == "FAIL" else "info",
             formula="Timely submission of required reports",
         )
 
     def _rule_benchmark_1_market_rent(self):
-        # Placeholder: attempt to pull market benchmarks from market_data_service
-        market_rent = None
-        if hasattr(self, "market_data_integration"):
-            try:
-                market_rent = self.market_data_integration.get_market_rent_per_sf(self.property_id)
-            except Exception:
+        target = self._get_config_threshold("benchmark_market_rent_per_sf", 0)
+        revenue = self._get_metric("total_revenue")
+        sqft = self._get_metric("total_leasable_sqft")
+        actual = (revenue * 12 / sqft) if sqft else 0.0
+        if target <= 0:
+            if hasattr(self, "market_data_integration"):
+                try:
+                    market_rent = self.market_data_integration.get_market_rent_per_sf(self.property_id)
+                except Exception:
+                    market_rent = None
+            else:
                 market_rent = None
+            self._add_result(
+                rule_id="BENCHMARK-1",
+                rule_name="Market Rent Comparison",
+                category="Benchmark",
+                status="INFO",
+                source_value=float(actual),
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details=(
+                    "Set benchmark_market_rent_per_sf in system_config to compare. "
+                    "Market rent data not available in REIMS (external data required)"
+                    if market_rent is None and actual == 0
+                    else f"Rent/SF ${actual:,.2f}. Set benchmark_market_rent_per_sf to compare to market."
+                ),
+                severity="info",
+                formula="Compare rent/SF to market",
+            )
+            return
+        variance_pct = ((actual - target) / target * 100.0) if target else 0.0
+        status = "PASS" if abs(variance_pct) <= 10.0 else "WARNING"
         self._add_result(
             rule_id="BENCHMARK-1",
             rule_name="Market Rent Comparison",
             category="Benchmark",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
-            difference=0.0,
-            variance_pct=0.0,
-            details=(
-                "Market rent data not available in REIMS (external data required)"
-                if market_rent is None
-                else f"Market rent/SF: {market_rent}"
-            ),
-            severity="info",
+            status=status,
+            source_value=float(actual),
+            target_value=float(target),
+            difference=float(actual - target),
+            variance_pct=variance_pct,
+            details=f"Rent/SF ${actual:,.2f} vs target ${target:,.2f} ({variance_pct:+.1f}%)",
+            severity="info" if status == "PASS" else "medium",
             formula="Compare rent/SF to market",
         )
 
     def _rule_benchmark_2_opex_benchmark(self):
-        market_opex = None
-        if hasattr(self, "market_data_integration"):
-            try:
-                market_opex = self.market_data_integration.get_market_opex_per_sf(self.property_id)
-            except Exception:
-                market_opex = None
+        target = self._get_config_threshold("benchmark_market_opex_per_sf", 0)
+        expenses = self._get_metric("total_expenses")
+        sqft = self._get_metric("total_leasable_sqft")
+        actual = (expenses * 12 / sqft) if sqft else 0.0
+        if target <= 0:
+            self._add_result(
+                rule_id="BENCHMARK-2",
+                rule_name="Operating Expense Benchmark",
+                category="Benchmark",
+                status="INFO",
+                source_value=float(actual),
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Set benchmark_market_opex_per_sf in system_config to compare to peers.",
+                severity="info",
+                formula="Compare OpEx/SF to peers",
+            )
+            return
+        variance_pct = ((actual - target) / target * 100.0) if target else 0.0
+        status = "PASS" if abs(variance_pct) <= 15.0 else "WARNING"
         self._add_result(
             rule_id="BENCHMARK-2",
             rule_name="Operating Expense Benchmark",
             category="Benchmark",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
-            difference=0.0,
-            variance_pct=0.0,
-            details=(
-                "Market benchmark data not available in REIMS"
-                if market_opex is None
-                else f"Market OpEx/SF: {market_opex}"
-            ),
-            severity="info",
+            status=status,
+            source_value=float(actual),
+            target_value=float(target),
+            difference=float(actual - target),
+            variance_pct=variance_pct,
+            details=f"OpEx/SF ${actual:,.2f} vs target ${target:,.2f} ({variance_pct:+.1f}%)",
+            severity="info" if status == "PASS" else "medium",
             formula="Compare OpEx/SF to peers",
         )
 
     def _rule_benchmark_3_occupancy_vs_market(self):
-        market_occ = None
-        if hasattr(self, "market_data_integration"):
-            try:
-                market_occ = self.market_data_integration.get_market_occupancy(self.property_id)
-            except Exception:
-                market_occ = None
+        target_pct = self._get_config_threshold("benchmark_market_occupancy_pct", 0)
+        occ = self._get_metric("occupancy_rate")
+        if occ == 0.0 and hasattr(self, "_get_rent_roll_summary"):
+            rr = self._get_rent_roll_summary(self.period_id)
+            if rr and rr.get("occupancy_pct") is not None:
+                occ = rr["occupancy_pct"] / 100.0
+        actual_pct = occ * 100.0
+        if target_pct <= 0:
+            self._add_result(
+                rule_id="BENCHMARK-3",
+                rule_name="Occupancy vs Market",
+                category="Benchmark",
+                status="INFO",
+                source_value=float(actual_pct),
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Set benchmark_market_occupancy_pct in system_config (e.g. 90 for 90%) to compare.",
+                severity="info",
+                formula="Compare occupancy to market",
+            )
+            return
+        variance_pct = (actual_pct - target_pct) if target_pct else 0.0
+        status = "PASS" if actual_pct >= target_pct - 5.0 else "WARNING"
         self._add_result(
             rule_id="BENCHMARK-3",
             rule_name="Occupancy vs Market",
             category="Benchmark",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
-            difference=0.0,
-            variance_pct=0.0,
-            details=(
-                "Market occupancy data not available in REIMS"
-                if market_occ is None
-                else f"Market occupancy: {market_occ:.1%}"
-            ),
-            severity="info",
+            status=status,
+            source_value=float(actual_pct),
+            target_value=float(target_pct),
+            difference=float(actual_pct - target_pct),
+            variance_pct=variance_pct,
+            details=f"Occupancy {actual_pct:.1f}% vs target {target_pct:.1f}% ({variance_pct:+.1f} pp)",
+            severity="info" if status == "PASS" else "medium",
             formula="Compare occupancy to market",
         )
 
     def _rule_benchmark_4_cap_rate_vs_market(self):
-        market_cap_rate = None
-        if hasattr(self, "market_data_integration"):
-            try:
-                market_cap_rate = self.market_data_integration.get_market_cap_rate(self.property_id)
-            except Exception:
-                market_cap_rate = None
+        target_pct = self._get_config_threshold("benchmark_market_cap_rate_pct", 0)
+        noi = self._get_metric("net_operating_income")
+        value = self._get_metric("net_property_value") or self._get_metric("gross_property_value")
+        actual_pct = (noi / value * 100.0) if value else 0.0
+        if target_pct <= 0:
+            self._add_result(
+                rule_id="BENCHMARK-4",
+                rule_name="Cap Rate vs Market",
+                category="Benchmark",
+                status="INFO",
+                source_value=float(actual_pct),
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="Set benchmark_market_cap_rate_pct in system_config (e.g. 5 for 5%) to compare.",
+                severity="info",
+                formula="Compare cap rate to market",
+            )
+            return
+        variance_pp = actual_pct - target_pct
+        status = "PASS" if abs(variance_pp) <= 1.5 else "WARNING"
         self._add_result(
             rule_id="BENCHMARK-4",
             rule_name="Cap Rate vs Market",
             category="Benchmark",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
-            difference=0.0,
-            variance_pct=0.0,
-            details=(
-                "Market cap rate data not available in REIMS"
-                if market_cap_rate is None
-                else f"Market cap rate: {market_cap_rate:.2%}"
-            ),
-            severity="info",
+            status=status,
+            source_value=float(actual_pct),
+            target_value=float(target_pct),
+            difference=float(variance_pp),
+            variance_pct=variance_pp,
+            details=f"Cap rate {actual_pct:.2f}% vs target {target_pct:.2f}% ({variance_pp:+.2f} pp)",
+            severity="info" if status == "PASS" else "medium",
             formula="Compare cap rate to market",
         )
 
@@ -1602,16 +1821,66 @@ class AnalyticsRulesMixin:
         )
 
     def _rule_trend_3_variance_analysis(self):
+        """TREND-3: Variance analysis – budget vs actual by account (summary); complements AUDIT-51."""
+        rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    b.account_code,
+                    COALESCE(b.account_name, '') AS account_name,
+                    COALESCE(SUM(b.budgeted_amount), 0) AS budgeted,
+                    COALESCE(SUM(i.period_amount), 0) AS actual
+                FROM budgets b
+                LEFT JOIN income_statement_data i
+                  ON i.property_id = b.property_id
+                 AND i.period_id = b.period_id
+                 AND i.account_code = b.account_code
+                WHERE b.property_id = :property_id
+                  AND b.period_id = :period_id
+                  AND b.status = 'approved'
+                GROUP BY b.account_code, b.account_name
+                HAVING ABS(COALESCE(SUM(b.budgeted_amount), 0)) > 0.01
+                ORDER BY ABS(COALESCE(SUM(b.budgeted_amount), 0)) DESC
+                LIMIT 10
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchall()
+        if not rows:
+            self._add_result(
+                rule_id="TREND-3",
+                rule_name="Variance Analysis",
+                category="Trend",
+                status="INFO",
+                source_value=0.0,
+                target_value=0.0,
+                difference=0.0,
+                variance_pct=0.0,
+                details="No approved budget data for period; see AUDIT-51/52 when budget/forecast exist.",
+                severity="info",
+                formula="Actual vs Budget variance",
+            )
+            return
+        parts = []
+        total_budget = total_actual = 0.0
+        for r in rows:
+            code, name, budgeted, actual = r[0], (r[1] or ""), float(r[2] or 0), float(r[3] or 0)
+            total_budget += budgeted
+            total_actual += actual
+            var_pct = ((actual - budgeted) / budgeted * 100.0) if budgeted else 0.0
+            parts.append(f"{code}: ${actual:,.0f} vs ${budgeted:,.0f} ({var_pct:+.1f}%)")
+        overall_pct = ((total_actual - total_budget) / total_budget * 100.0) if total_budget else 0.0
+        status = "PASS" if abs(overall_pct) <= 10.0 else "INFO"
         self._add_result(
             rule_id="TREND-3",
             rule_name="Variance Analysis",
             category="Trend",
-            status="INFO",
-            source_value=0.0,
-            target_value=0.0,
-            difference=0.0,
-            variance_pct=0.0,
-            details="Variance vs budget/forecast tracked in AUDIT-51/52",
+            status=status,
+            source_value=float(total_actual),
+            target_value=float(total_budget),
+            difference=float(total_actual - total_budget),
+            variance_pct=overall_pct,
+            details="Top accounts: " + "; ".join(parts),
             severity="info",
             formula="Actual vs Budget variance",
         )

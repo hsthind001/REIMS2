@@ -1,6 +1,7 @@
 from sqlalchemy import text
 
 from app.services.reconciliation_types import ReconciliationResult
+from app.services.rules.covenant_resolver import get_numeric_config_sync
 
 
 class RentRollBalanceSheetRulesMixin:
@@ -45,7 +46,8 @@ class RentRollBalanceSheetRulesMixin:
             {"property_id": int(self.property_id), "period_id": int(self.period_id)},
         ).scalar() or 0.0
         diff = float(bs_deposits) - float(rr_deposits)
-        status = "PASS" if diff >= -1.0 else "FAIL"
+        tolerance = get_numeric_config_sync(self.db, "rrbs_1_tolerance_usd", 1.0)
+        status = "PASS" if diff >= -abs(tolerance) else "FAIL"
         self._add_result(
             rule_id="RRBS-1",
             rule_name="Security Deposits Liability Floor",
@@ -55,12 +57,13 @@ class RentRollBalanceSheetRulesMixin:
             target_value=float(rr_deposits),
             difference=float(diff),
             variance_pct=0.0,
-            details=f"BS deposits ${bs_deposits:,.2f} vs RR deposits ${rr_deposits:,.2f}",
+            details=f"BS deposits ${bs_deposits:,.2f} vs RR deposits ${rr_deposits:,.2f} (tolerance ${tolerance:,.2f})",
             severity="high" if status == "FAIL" else "info",
             formula="BS deposit liability >= rent roll deposits",
         )
 
     def _rule_rrbs_2_ar_reasonableness(self):
+        """FA-RR-2: A/R reasonableness with AR_Months bands (Excellent/Good/Acceptable/Concerning/Critical)."""
         ar = self.db.execute(
             text(
                 """
@@ -85,21 +88,45 @@ class RentRollBalanceSheetRulesMixin:
             ),
             {"property_id": int(self.property_id), "period_id": int(self.period_id)},
         ).scalar() or 0.0
+        ar_f = float(ar)
+        rr_monthly_f = float(rr_monthly)
+        # AR_Months = BS.AR_Tenants / Monthly_Scheduled_Rent (spec)
+        ar_months = (ar_f / rr_monthly_f) if rr_monthly_f > 0 else 0.0
+        # Bands: <0.5 Excellent, 0.5-1.0 Good, 1.0-2.0 Acceptable, 2.0-3.0 Concerning, 3.0+ Critical
+        if ar_months < 0.5:
+            band = "Excellent"
+        elif ar_months < 1.0:
+            band = "Good"
+        elif ar_months < 2.0:
+            band = "Acceptable"
+        elif ar_months < 3.0:
+            band = "Concerning"
+        else:
+            band = "Critical"
         threshold_months = 2.0
-        allowed = float(rr_monthly) * threshold_months
-        status = "PASS" if ar <= allowed else "FAIL"
+        allowed = rr_monthly_f * threshold_months
+        status = "PASS" if ar_f <= allowed else "FAIL"
+        details = (
+            f"A/R ${ar_f:,.2f} vs {threshold_months} months rent ${allowed:,.2f}; "
+            f"AR_Months={ar_months:.2f} (band: {band})"
+        )
         self._add_result(
             rule_id="RRBS-2",
             rule_name="Tenant A/R Reasonableness",
             category="Rent Roll/BS",
             status=status,
-            source_value=float(ar),
+            source_value=float(ar_f),
             target_value=float(allowed),
-            difference=float(ar - allowed),
+            difference=float(ar_f - allowed),
             variance_pct=0.0,
-            details=f"A/R ${ar:,.2f} vs {threshold_months} months rent ${allowed:,.2f}",
+            details=details,
             severity="medium" if status == "FAIL" else "info",
-            formula="A/R <= 2 months scheduled rent",
+            formula="A/R <= 2 months scheduled rent; AR_Months = A/R / Monthly_Scheduled_Rent",
+            intermediate_calculations={
+                "ar_months": ar_months,
+                "band": band,
+                "monthly_scheduled_rent": rr_monthly_f,
+            },
         )
 
     def _rule_rrbs_3_prepaid_rent(self):
@@ -144,7 +171,11 @@ class RentRollBalanceSheetRulesMixin:
             {"property_id": int(self.property_id), "period_id": int(prior_id)},
         ).scalar() or 0.0
         delta = float(curr) - float(prior)
-        status = "PASS" if abs(delta) <= 50000 else "FAIL"
+        # Spec: flag changes > $20,000; configurable via system_config
+        threshold = 20000.0
+        if hasattr(self, "_get_config_threshold"):
+            threshold = float(self._get_config_threshold("forensic_prepaid_rent_material_threshold", 20000.0))
+        status = "PASS" if abs(delta) <= threshold else "FAIL"
         self._add_result(
             rule_id="RRBS-3",
             rule_name="Prepaid Rent / Rent Received in Advance",
@@ -154,9 +185,9 @@ class RentRollBalanceSheetRulesMixin:
             target_value=0.0,
             difference=float(delta),
             variance_pct=0.0,
-            details=f"Change in prepaid rent ${delta:,.2f}",
+            details=f"Change in prepaid rent ${delta:,.2f} (material threshold ${threshold:,.0f})",
             severity="medium" if status == "FAIL" else "info",
-            formula="Large increases require explanation",
+            formula="Large increases require explanation (threshold config: forensic_prepaid_rent_material_threshold)",
         )
 
     def _rule_rrbs_4_lease_roster_completeness(self):

@@ -56,6 +56,7 @@ class RentRollData(Base):
     # Status
     occupancy_status = Column(String(50), default='occupied', index=True)  # occupied, vacant, notice
     lease_status = Column(String(50), default='active')  # active, expired, terminated
+    renewal_status = Column(String(50), index=True)  # New, Renewed, Expired, NotApplicable (for retention rate)
     
     # Extraction metadata
     extraction_confidence = Column(DECIMAL(5, 2))

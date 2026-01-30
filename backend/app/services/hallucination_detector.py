@@ -21,6 +21,7 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.cash_flow_data import CashFlowData
 from app.models.document_chunk import DocumentChunk
 from app.models.financial_period import FinancialPeriod
+from app.models.hallucination_review import HallucinationReview
 
 logger = logging.getLogger(__name__)
 

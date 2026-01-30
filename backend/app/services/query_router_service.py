@@ -11,7 +11,7 @@ import time
 import re
 import hashlib
 from typing import Dict, Optional, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from app.config.query_router_config import query_router_config
@@ -98,6 +98,7 @@ class QueryRouterService:
             cached_result = self._get_from_cache(query)
             if cached_result:
                 logger.debug(f"Using cached routing for query: {query[:50]}...")
+                cached_result.setdefault('decision_time_ms', 0)
                 return cached_result
         
         start_time = time.time()
@@ -314,7 +315,7 @@ Return JSON only with this exact format:
             
             # Check TTL
             if cached_at:
-                age = datetime.utcnow() - cached_at
+                age = datetime.now(timezone.utc) - cached_at
                 if age < timedelta(minutes=query_router_config.CACHE_TTL_MINUTES):
                     result = cached_entry.copy()
                     result['cached'] = True
@@ -334,7 +335,7 @@ Return JSON only with this exact format:
             'route': result['route'],
             'confidence': result['confidence'],
             'method': result['method'],
-            'cached_at': datetime.utcnow()
+            'cached_at': datetime.now(timezone.utc)
         }
     
     def clear_cache(self):

@@ -409,3 +409,40 @@ class DocumentDownloadResponse(BaseModel):
             }
         }
 
+
+# FA-MORT-4: Escrow document link schemas
+
+class EscrowTypeEnum(str, Enum):
+    """Escrow type for documentation link (FA-MORT-4)"""
+    property_tax = "property_tax"
+    insurance = "insurance"
+    reserves = "reserves"
+    general = "general"
+
+
+class EscrowLinkCreate(BaseModel):
+    """Request to link a document to escrow activity for a property/period/type"""
+    property_id: int = Field(..., description="Property ID")
+    period_id: int = Field(..., description="Financial period ID")
+    document_upload_id: int = Field(..., description="Document upload ID (must belong to same property/period)")
+    escrow_type: EscrowTypeEnum = Field(..., description="Escrow type: property_tax, insurance, reserves, general")
+
+
+class EscrowLinkResponse(BaseModel):
+    """Single escrow document link"""
+    id: int
+    property_id: int
+    period_id: int
+    document_upload_id: int
+    escrow_type: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EscrowLinkListResponse(BaseModel):
+    """List of escrow document links for a property/period"""
+    links: List[EscrowLinkResponse]
+    total: int
+

@@ -3,6 +3,7 @@ from typing import Dict, List
 from sqlalchemy import text
 
 from app.services.reconciliation_types import ReconciliationResult
+from app.services.rules.covenant_resolver import get_numeric_config_sync
 
 class CashFlowRulesMixin:
     
@@ -977,6 +978,9 @@ class CashFlowRulesMixin:
             return
 
         tolerance = 1.00
+        min_balance_to_flag = get_numeric_config_sync(
+            self.db, "fa_cash_4_min_balance_to_flag", 0.0
+        )
         rows = self.db.execute(
             text(
                 """
@@ -1013,9 +1017,11 @@ class CashFlowRulesMixin:
             end_is_zero = abs(end_val) <= tolerance
 
             if begin_is_zero and not end_is_zero:
-                appeared.append(f"{name} (${end_val:,.2f})")
+                if abs(end_val) >= min_balance_to_flag:
+                    appeared.append(f"{name} (${end_val:,.2f})")
             elif not begin_is_zero and end_is_zero:
-                disappeared.append(f"{name} (${begin_val:,.2f} → 0)")
+                if abs(begin_val) >= min_balance_to_flag:
+                    disappeared.append(f"{name} (${begin_val:,.2f} → 0)")
 
         issue_count = len(appeared) + len(disappeared)
         self._fa_cash_appearance_issue_count = issue_count

@@ -289,10 +289,10 @@ class TestRRFParameters:
         
         config = service.get_config()
         
-        assert config['alpha'] == 0.7
+        assert config['alpha'] == pytest.approx(0.7)
         assert config['k'] == 60
-        assert config['semantic_weight'] == 0.7
-        assert config['keyword_weight'] == 0.3
+        assert config['semantic_weight'] == pytest.approx(0.7)
+        assert config['keyword_weight'] == pytest.approx(0.3)
 
 
 class TestRRFEdgeCases:

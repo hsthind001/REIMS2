@@ -19,6 +19,7 @@ from app.models.rent_roll_data import RentRollData
 from app.models.financial_metrics import FinancialMetrics
 from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.mortgage_payment_history import MortgagePaymentHistory
+from app.models.escrow_document_link import EscrowDocumentLink
 from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
 from app.models.audit_trail import AuditTrail
@@ -51,6 +52,9 @@ from app.models.alert_history import AlertHistory
 
 # Budget and forecast models
 from app.models.budget import Budget, Forecast
+
+# Covenant per-property thresholds
+from app.models.covenant_threshold import CovenantThreshold
 
 # Document summarization models
 from app.models.document_summary import DocumentSummary
@@ -144,6 +148,7 @@ __all__ = [
     "FinancialMetrics",
     "MortgageStatementData",
     "MortgagePaymentHistory",
+    "EscrowDocumentLink",
     "ValidationRule",
     "ValidationResult",
     "AuditTrail",

@@ -17,6 +17,7 @@ from app.services.pdf_generator_service import PDFGeneratorService
 from app.tasks.extraction_tasks import extract_document
 from fastapi.responses import StreamingResponse
 from app.models.document_upload import DocumentUpload
+from app.models.escrow_document_link import EscrowDocumentLink
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.balance_sheet_data import BalanceSheetData
@@ -41,7 +42,10 @@ from app.schemas.document import (
     RentRollDataItem,
     FinancialMetricsData,
     ValidationResultItem,
-    DocumentDownloadResponse
+    DocumentDownloadResponse,
+    EscrowLinkCreate,
+    EscrowLinkResponse,
+    EscrowLinkListResponse,
 )
 
 # Import rate limiter from main app
@@ -2227,3 +2231,113 @@ def get_document_availability_matrix(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get document availability matrix: {str(e)}"
         )
+
+
+# ---------- FA-MORT-4: Escrow document links ----------
+
+@router.get("/documents/escrow-links", response_model=EscrowLinkListResponse)
+def list_escrow_document_links(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    period_id: Optional[int] = Query(None, description="Filter by financial period ID"),
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """
+    List escrow document links (FA-MORT-4). Optionally filter by property_id and/or period_id.
+    Only returns links for properties in the current organization.
+    """
+    query = (
+        db.query(EscrowDocumentLink)
+        .join(Property, EscrowDocumentLink.property_id == Property.id)
+        .filter(Property.organization_id == current_org.id)
+    )
+    if property_id is not None:
+        query = query.filter(EscrowDocumentLink.property_id == property_id)
+    if period_id is not None:
+        query = query.filter(EscrowDocumentLink.period_id == period_id)
+    links = query.order_by(EscrowDocumentLink.created_at.desc()).all()
+    return EscrowLinkListResponse(
+        links=[EscrowLinkResponse(
+            id=l.id,
+            property_id=l.property_id,
+            period_id=l.period_id,
+            document_upload_id=l.document_upload_id,
+            escrow_type=l.escrow_type,
+            created_at=l.created_at,
+        ) for l in links],
+        total=len(links),
+    )
+
+
+@router.post("/documents/escrow-links", response_model=EscrowLinkResponse, status_code=status.HTTP_201_CREATED)
+def create_escrow_document_link(
+    body: EscrowLinkCreate,
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """
+    Link a document upload to escrow activity for a property/period/type (FA-MORT-4).
+    The document_upload must belong to the same property_id and period_id.
+    """
+    # Ensure property is in org
+    prop = (
+        db.query(Property)
+        .filter(Property.id == body.property_id, Property.organization_id == current_org.id)
+        .first()
+    )
+    if not prop:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found or not in organization")
+    # Ensure upload exists and matches property/period
+    upload = (
+        db.query(DocumentUpload)
+        .join(Property, DocumentUpload.property_id == Property.id)
+        .filter(
+            DocumentUpload.id == body.document_upload_id,
+            DocumentUpload.property_id == body.property_id,
+            DocumentUpload.period_id == body.period_id,
+            Property.organization_id == current_org.id,
+            DocumentUpload.is_active.is_(True),
+        )
+        .first()
+    )
+    if not upload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document upload not found or does not match property/period, or is inactive",
+        )
+    link = EscrowDocumentLink(
+        property_id=body.property_id,
+        period_id=body.period_id,
+        document_upload_id=body.document_upload_id,
+        escrow_type=body.escrow_type.value,
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    return EscrowLinkResponse(
+        id=link.id,
+        property_id=link.property_id,
+        period_id=link.period_id,
+        document_upload_id=link.document_upload_id,
+        escrow_type=link.escrow_type,
+        created_at=link.created_at,
+    )
+
+
+@router.delete("/documents/escrow-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_escrow_document_link(
+    link_id: int,
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """Remove an escrow document link (FA-MORT-4). Only links for org properties can be deleted."""
+    link = (
+        db.query(EscrowDocumentLink)
+        .join(Property, EscrowDocumentLink.property_id == Property.id)
+        .filter(EscrowDocumentLink.id == link_id, Property.organization_id == current_org.id)
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Escrow link not found")
+    db.delete(link)
+    db.commit()

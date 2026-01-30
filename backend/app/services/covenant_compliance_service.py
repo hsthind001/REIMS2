@@ -17,6 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
 
 from app.models import SystemConfig
+from app.services.rules.covenant_resolver import (
+    resolve_covenant_threshold_async,
+    get_covenant_threshold_async,
+)
 
 
 class CovenantComplianceService:
@@ -319,8 +323,10 @@ class CovenantComplianceService:
         else:
             dscr = 0
 
-        # Calculate cushion using configurable DSCR minimum
-        covenant_threshold = await self._get_dscr_minimum()
+        # Covenant: per-property covenant_thresholds first, else system_config
+        covenant_threshold = await resolve_covenant_threshold_async(
+            self.db, int(property_id), int(period_id), "DSCR"
+        )
         covenant_threshold_f = float(covenant_threshold)
         cushion = dscr - covenant_threshold_f
         cushion_pct = (cushion / covenant_threshold_f) * 100 if covenant_threshold_f > 0 else 0
@@ -478,8 +484,15 @@ class CovenantComplianceService:
         else:
             ltv_ratio = None
 
-        # Calculate cushion using configurable LTV maximum
-        covenant_threshold = await self._get_ltv_maximum()
+        # Covenant: per-property covenant_thresholds first (LTV stored as percent), else system_config
+        covenant_threshold_raw = await get_covenant_threshold_async(
+            self.db, int(property_id), int(period_id), "LTV"
+        )
+        covenant_threshold = (
+            await self._get_ltv_maximum()
+            if covenant_threshold_raw is None
+            else Decimal(str(covenant_threshold_raw))
+        )
         if ltv_ratio is not None:
             covenant_threshold_f = float(covenant_threshold)
             cushion = covenant_threshold_f - ltv_ratio

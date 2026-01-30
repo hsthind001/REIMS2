@@ -2,6 +2,7 @@
 ## REIMS2 System - Gap Analysis & Implementation Plan
 
 **Date**: January 28, 2026  
+**Status as of**: January 2026 (post–gap implementation) — see **docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md** for current gap list and phased plan.  
 **Analysis Scope**: Downloaded rules from `/home/hsthind/Downloads/Reconciliation - Audit - Rules 2`  
 **Current Implementation**: REIMS2 backend reconciliation engine
 
@@ -10,24 +11,24 @@
 ## EXECUTIVE SUMMARY
 
 ### Overview
-The downloaded rules represent a comprehensive **325+ rule framework** from Eastern Shore Plaza, LLC financial analysis. The REIMS2 system has **already implemented a significant portion** of these rules through various mixin classes, but there are important gaps and opportunities for enhancement.
+The downloaded rules represent a comprehensive **325+ rule framework** from Eastern Shore Plaza, LLC financial analysis. The REIMS2 system has **implemented the vast majority** of these rules through various mixin classes. Gaps identified below have been addressed in follow-up work (Jan 2026).
 
-### Implementation Status
-- **✅ IMPLEMENTED**: ~60% of core rules (Critical/High priority)
-- **⚠️ PARTIALLY IMPLEMENTED**: ~25% of rules (need enhancement)
-- **❌ NOT IMPLEMENTED**: ~15% of rules (advanced analytics, some forensic rules)
+### Implementation Status (updated Jan 2026)
+- **✅ IMPLEMENTED**: ~90%+ of core rules (Critical/High/Medium priority)
+- **⚠️ DATA-DEPENDENT**: Some rules emit INFO/SKIP when budget, forecast, or financial_metrics are missing (APIs and population paths exist)
+- **❌ NOT IMPLEMENTED**: FA-MORT-4 escrow→document linkage (workflow enhancement); optional Phase 4 doc/rule matrix maintenance
 
-### Key Findings
+### Key Findings (updated)
 1. **Period Alignment Rules (FA-PAL-1 to FA-PAL-5)**: ✅ **IMPLEMENTED** via `PeriodAlignmentMixin`
-2. **Cash Flow Consistency (FA-CASH-1 to FA-CASH-4)**: ✅ **IMPLEMENTED** in `ForensicAnomalyRulesMixin`
-3. **Cross-Document Audit (AUDIT-1 to AUDIT-55)**: ✅ **MOSTLY IMPLEMENTED** in `AuditRulesMixin`
+2. **Cash Flow Consistency (FA-CASH-1 to FA-CASH-4)**: ✅ **IMPLEMENTED** — FA-CASH-4 in `cash_flow_rules.py`; configurable materiality via `fa_cash_4_min_balance_to_flag`
+3. **Cross-Document Audit (AUDIT-1 to AUDIT-55)**: ✅ **IMPLEMENTED** in `AuditRulesMixin` (AUDIT-48 configurable; AUDIT-51/52 full when budget/forecast data present)
 4. **Data Quality Rules (DQ-1 to DQ-33)**: ✅ **IMPLEMENTED** in `DataQualityRulesMixin`
-5. **Forensic Rules (Enhanced)**: ⚠️ **PARTIALLY IMPLEMENTED** - missing some advanced detection
-6. **Advanced Analytics (ANALYTICS-1 to ANALYTICS-33)**: ⚠️ **PARTIALLY IMPLEMENTED** via `AnalyticsRulesMixin`
-7. **Covenant Rules (COVENANT-1 to COVENANT-6)**: ❌ **NOT FULLY IMPLEMENTED**
-8. **Benchmark Rules**: ❌ **NOT IMPLEMENTED**
-9. **Trend Analysis Rules**: ❌ **NOT IMPLEMENTED**
-10. **Stress Testing Rules**: ❌ **NOT IMPLEMENTED**
+5. **Rent Roll Forensics (FA-RR-1 to FA-RR-4)**: ✅ **IMPLEMENTED** as RRBS-1..4 in `rent_roll_balance_sheet_rules_mixin.py` (configurable RRBS-1 tolerance, RRBS-3 threshold)
+6. **Advanced Analytics (ANALYTICS-1 to ANALYTICS-33)**: ✅ **IMPLEMENTED** via `AnalyticsRulesMixin` (INFO when metrics missing)
+7. **Covenant Rules (COVENANT-1 to COVENANT-6)**: ✅ **IMPLEMENTED** — per-property thresholds via `covenant_thresholds` + resolver; COVENANT-6 reporting deadline check via `covenant_reporting_deadline_days`
+8. **Benchmark Rules (BENCHMARK-1 to 4)**: ✅ **IMPLEMENTED** — configurable targets in `system_config`; compare to property metrics
+9. **Trend Analysis (TREND-1 to 3)**: ✅ **IMPLEMENTED** — TREND-3 variance breakdown from budget/actual
+10. **Stress Testing (STRESS-1 to 5)**: ✅ **IMPLEMENTED** in `AnalyticsRulesMixin`
 
 ---
 
@@ -62,26 +63,16 @@ class PeriodAlignmentMixin:
 
 #### 1.2 Cash Flow Internal Consistency (FA-CASH-1 to FA-CASH-4)
 **Source**: `FORENSIC_ACCOUNTING_RULES_ENHANCED.md` Section 2  
-**Status**: ✅ **IMPLEMENTED**  
-**Location**: `backend/app/services/rules/forensic_anomaly_rules_mixin.py`
+**Status**: ✅ **FULLY IMPLEMENTED** (Jan 2026)  
+**Location**: FA-CASH-1..3 in `forensic_anomaly_rules_mixin.py`; FA-CASH-4 in `cash_flow_rules.py`
 
 **Rules Covered**:
 - FA-CASH-1: Cash Flow Internal Consistency ✅ (`_rule_fa_1_cash_flow_internal_consistency`)
 - FA-CASH-2: Working Capital Sign Convention Test ✅ (`_rule_fa_2_working_capital_sign_test`)
 - FA-CASH-3: Non-Cash Journal Entry Detector ✅ (`_rule_fa_3_non_cash_journal_detector`)
-- FA-CASH-4: Appearance/Disappearance Detector ⚠️ **NEEDS ENHANCEMENT**
+- FA-CASH-4: Appearance/Disappearance Detector ✅ (`_rule_fa_cash_4_appearance_disappearance` in `cash_flow_rules.py`; configurable materiality via `fa_cash_4_min_balance_to_flag`)
 
-**Gap**: FA-CASH-4 is mentioned in the rules but not fully implemented as a dedicated detector for accounts appearing/disappearing.
-
-**Recommendation**: 
-```python
-def _rule_fa_cash_4_account_appearance_disappearance(self):
-    """
-    Flag when accounts appear or disappear unexpectedly.
-    Implement as per FA-CASH-4 specification.
-    """
-    # Implementation needed
-```
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -131,44 +122,16 @@ def _rule_fa_cash_4_account_appearance_disappearance(self):
 
 #### 1.6 Rent Roll Forensic Validation (FA-RR-1 to FA-RR-4)
 **Source**: `FORENSIC_ACCOUNTING_RULES_ENHANCED.md` Section 6  
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED** (Jan 2026)  
+**Location**: `rent_roll_balance_sheet_rules_mixin.py` (RRBS-1..4)
 
 **Rules Covered**:
-- FA-RR-1: Security Deposit Floor Test ⚠️ **NEEDS IMPLEMENTATION**
-- FA-RR-2: Tenant A/R Reasonableness Bands ⚠️ **NEEDS IMPLEMENTATION**
-- FA-RR-3: Prepaid Rent Reasonability ⚠️ **NEEDS IMPLEMENTATION**
-- FA-RR-4: Lease Roster Completeness ✅ (in `_rule_fa_rr_1_lease_term_consistency`)
+- FA-RR-1: Security Deposit Floor Test ✅ (`_rule_rrbs_1_security_deposits_floor`; configurable tolerance `rrbs_1_tolerance_usd`)
+- FA-RR-2: Tenant A/R Reasonableness Bands ✅ (`_rule_rrbs_2_ar_reasonableness`; AR_Months + bands Excellent/Good/Acceptable/Concerning/Critical)
+- FA-RR-3: Prepaid Rent Reasonability ✅ (`_rule_rrbs_3_prepaid_rent`; default $20k threshold via `forensic_prepaid_rent_material_threshold`)
+- FA-RR-4: Lease Roster Completeness ✅ (`_rule_rrbs_4_lease_roster_completeness`)
 
-**Gap**: FA-RR-1, FA-RR-2, and FA-RR-3 are specific forensic checks that are not yet implemented.
-
-**Recommendation**: **IMPLEMENT THESE RULES** (High Priority)
-
-```python
-# Add to forensic_anomaly_rules_mixin.py
-
-def _rule_fa_rr_1_security_deposit_floor_test(self):
-    """
-    BS deposits must be >= rent roll deposits.
-    Alert if BS < RR (critical) or document variance if BS > RR.
-    """
-    # Implementation per FA-RR-1 spec
-    
-def _rule_fa_rr_2_ar_reasonableness_bands(self):
-    """
-    A/R Tenants should be <2 months of rent.
-    Calculate AR_Months = BS.AR_Tenants / Monthly_Scheduled_Rent
-    Apply bands: <0.5 (Excellent), 0.5-1.0 (Good), 1.0-2.0 (Acceptable), 
-                 2.0-3.0 (Concerning), 3.0+ (Critical)
-    """
-    # Implementation per FA-RR-2 spec
-    
-def _rule_fa_rr_3_prepaid_rent_reasonability(self):
-    """
-    Flag large changes in Rent Received in Advance (>$20,000).
-    Require explanation for material changes.
-    """
-    # Implementation per FA-RR-3 spec
-```
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -298,20 +261,20 @@ def _rule_fa_rr_3_prepaid_rent_reasonability(self):
 
 #### 2.13 Covenant Compliance (AUDIT-43 to AUDIT-46)
 **Source**: `CROSS_DOCUMENT_AUDIT_RULES.md` Section 14  
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED** (Jan 2026) — per-property thresholds via `covenant_thresholds` + `covenant_resolver.py`
 
 **Rules Covered**:
-- AUDIT-43: DSCR ✅ (`_rule_audit_43_dscr`)
-- AUDIT-44: LTV Ratio ✅ (`_rule_audit_44_ltv_ratio`)
-- AUDIT-45: Minimum Liquidity ✅ (`_rule_audit_45_minimum_liquidity`)
+- AUDIT-43: DSCR ✅ (`_rule_audit_43_dscr`; uses resolver)
+- AUDIT-44: LTV Ratio ✅ (`_rule_audit_44_ltv_ratio`; uses resolver)
+- AUDIT-45: Minimum Liquidity ✅ (`_rule_audit_45_minimum_liquidity`; uses resolver)
 - AUDIT-46: Escrow Funding Requirements ✅ (`_rule_audit_46_escrow_funding_requirements`)
 
-**Gap**: These are implemented but need to be enhanced with **configurable covenant thresholds**.
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
-**Recommendation**: 
+**Reference** (schema already in place):
 ```sql
--- Create covenant_thresholds table
-CREATE TABLE covenant_thresholds (
+-- covenant_thresholds table exists (see alembic 20260129_0001)
+-- CREATE TABLE covenant_thresholds (
     id SERIAL PRIMARY KEY,
     property_id INTEGER REFERENCES properties(id),
     covenant_type VARCHAR(50) NOT NULL, -- 'DSCR', 'LTV', 'MIN_LIQUIDITY', etc.
@@ -342,42 +305,25 @@ VALUES
 ---
 
 #### 2.15 Variance Investigation (AUDIT-48)
-**Status**: ⚠️ **NEEDS ENHANCEMENT**
+**Status**: ✅ **IMPLEMENTED** (Jan 2026) — configurable thresholds via `system_config`
 
-**Gap**: AUDIT-48 requires automatic variance investigation triggers which should be implemented as alert rules.
+**Implementation**: `_rule_audit_48_variance_investigation_triggers` in `audit_rules_mixin.py`; thresholds from `audit48_assets_change_pct`, `audit48_revenue_decrease_pct`, `audit48_cash_decrease_pct` (defaults 5%, 10%, 30%); creates CommitteeAlert when exceeded.
 
-**Recommendation**: **IMPLEMENT ALERT SYSTEM** (Medium Priority)
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
+**Reference** (optional config):
 ```python
-# Add to backend/app/services/alert_service.py
-class VarianceAlertService:
-    """
-    Implements AUDIT-48 variance investigation triggers.
-    Creates alerts when thresholds are exceeded.
-    """
-    
-    THRESHOLDS = {
-        'balance_sheet': {
-            'account_change_pct': 0.20,  # 20% month-over-month
-            'total_assets_change_pct': 0.05,  # 5%
-        },
-        'income_statement': {
-            'revenue_decrease_pct': 0.10,  # 10%
-            'expense_increase_pct': 0.25,  # 25%
-            'noi_margin_decrease_pp': 5.0,  # 5 percentage points
-        },
-        'cash_flow': {
-            'cash_balance_decrease_pct': 0.30,  # 30%
-        },
-        'rent_roll': {
-            'occupancy_decrease_pp': 3.0,  # 3 percentage points
-            'avg_rent_per_sf_change_pct': 0.10,  # 10%
-        }
-    }
-    
-    def check_variances(self, property_id, period_id):
-        """Check all variance thresholds and create alerts."""
-        # Implementation
+# system_config keys (see backend/scripts/seed_reconciliation_config.sql):
+# audit48_assets_change_pct, audit48_revenue_decrease_pct, audit48_cash_decrease_pct
+# Legacy placeholder below kept for reference only:
+# class VarianceAlertService:
+#     THRESHOLDS = {
+#         'balance_sheet': {
+#             'account_change_pct': 0.20,  # 20% month-over-month
+#             'total_assets_change_pct': 0.05,  # 5%
+#         },
+#         'income_statement': { ... }, 'cash_flow': { ... }, 'rent_roll': { ... }
+#     def check_variances(...): ...
 ```
 
 ---
@@ -392,23 +338,20 @@ class VarianceAlertService:
 ---
 
 #### 2.17 Budget & Forecast Tracking (AUDIT-51 to AUDIT-52)
-**Status**: ❌ **NOT IMPLEMENTED**
+**Status**: ✅ **IMPLEMENTED** (Jan 2026) — rules run when budget/forecast data present; SKIP when not
 
-**Gap**: Budget vs actual and forecast tracking are not yet implemented. These require:
-1. Budget data model
-2. Budget entry UI
-3. Variance analysis calculations
+**Implementation**: `_rule_audit_51_budget_vs_actual`, `_rule_audit_52_forecast_vs_actual` in `audit_rules_mixin.py`; `Budget` and `Forecast` models in `backend/app/models/budget.py`; variance APIs and bulk import in `variance_analysis.py` and `bulk_import.py`.
 
-**Recommendation**: **DEFER TO PHASE 2** - This is a major feature requiring budget management module
+**Recommendation**: ✅ **NO ACTION NEEDED** — Ensure budget/forecast entry (API/UI) so rules have data; see docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md Phase 2.
 
 ---
 
 #### 2.18 Documentation & Audit Trail (AUDIT-53 to AUDIT-54)
-**Status**: ❌ **NOT IMPLEMENTED**
+**Status**: ✅ **IMPLEMENTED** — rules check supporting docs and adjustment journal tracking
 
-**Gap**: Supporting documentation tracking and journal entry audit trail are workflow features, not rules.
+**Implementation**: `_rule_audit_53_supporting_documentation`, `_rule_audit_54_adjustment_journal_entry_tracking` in `audit_rules_mixin.py` (materiality configurable via `audit_53_materiality_threshold`, `audit_54_materiality_threshold`).
 
-**Recommendation**: **DEFER TO PHASE 2** - Implement as part of document management system
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -441,35 +384,17 @@ class VarianceAlertService:
 
 #### 4.1 Property Operating Metrics (ANALYTICS-1 to ANALYTICS-5)
 **Source**: `ADVANCED_ANALYTICS_COVENANTS_RULES.md` Section 1  
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED** (Jan 2026)  
+**Location**: `analytics_rules_mixin.py`
 
 **Rules Covered**:
-- ANALYTICS-1: NOI Calculation ✅ (basic)
-- ANALYTICS-2: NOI Margin ✅ (basic)
-- ANALYTICS-3: Operating Expense Ratio ✅ (basic)
-- ANALYTICS-4: Cash-on-Cash Return ❌ **NOT IMPLEMENTED**
-- ANALYTICS-5: Cap Rate ❌ **NOT IMPLEMENTED**
+- ANALYTICS-1: NOI Calculation ✅ (`_rule_analytics_1_noi`)
+- ANALYTICS-2: NOI Margin ✅ (`_rule_analytics_2_noi_margin`)
+- ANALYTICS-3: Operating Expense Ratio ✅ (`_rule_analytics_3_operating_expense_ratio`)
+- ANALYTICS-4: Cash-on-Cash Return ✅ (`_rule_analytics_4_cash_on_cash`)
+- ANALYTICS-5: Cap Rate ✅ (`_rule_analytics_5_cap_rate`; uses net_property_value / gross_property_value from financial_metrics)
 
-**Gap**: Cash-on-Cash Return and Cap Rate calculations are not implemented.
-
-**Recommendation**: **IMPLEMENT INVESTMENT METRICS** (Medium Priority)
-
-```python
-# Add to analytics_rules_mixin.py
-
-def _rule_analytics_4_cash_on_cash_return(self):
-    """
-    Cash-on-Cash Return = (Annual Cash Flow Before Tax / Total Equity Invested) × 100%
-    """
-    # Implementation per ANALYTICS-4 spec
-    
-def _rule_analytics_5_cap_rate(self):
-    """
-    Cap Rate = (NOI / Property Value) × 100%
-    Requires property_value in properties table
-    """
-    # Implementation per ANALYTICS-5 spec
-```
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -544,23 +469,22 @@ ALTER TABLE rent_roll_data ADD COLUMN renewal_status VARCHAR(50);
 ### SECTION 5: COVENANT RULES (Priority: HIGH)
 
 **Source**: `ADVANCED_ANALYTICS_COVENANTS_RULES.md` Section 6  
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED** (Jan 2026) — per-property thresholds + COVENANT-6 deadline check
 
 **Rules Covered**:
-- COVENANT-1: DSCR ≥ 1.25x ✅ (implemented as AUDIT-43)
-- COVENANT-2: LTV ≤ 75% ✅ (implemented as AUDIT-44)
-- COVENANT-3: Minimum Liquidity ✅ (implemented as AUDIT-45)
-- COVENANT-4: Occupancy ≥ 85% ❌ **NOT IMPLEMENTED**
-- COVENANT-5: Single Tenant Limit ❌ **NOT IMPLEMENTED**
-- COVENANT-6: Reporting Requirements ❌ **NOT IMPLEMENTED**
+- COVENANT-1: DSCR ≥ 1.25x ✅ (`_rule_covenant_1_dscr`; resolver)
+- COVENANT-2: LTV ≤ 75% ✅ (`_rule_covenant_2_ltv`; resolver)
+- COVENANT-3: Minimum Liquidity ✅ (`_rule_covenant_3_min_liquidity`; resolver)
+- COVENANT-4: Occupancy ≥ 85% ✅ (`_rule_covenant_4_occupancy`; resolver)
+- COVENANT-5: Single Tenant Limit ✅ (`_rule_covenant_5_tenant_concentration`; resolver)
+- COVENANT-6: Reporting Requirements ✅ (`_rule_covenant_6_reporting_requirements`; `covenant_reporting_deadline_days` in system_config)
 
-**Gap**: Need covenant configuration and monitoring system.
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
-**Recommendation**: **IMPLEMENT COVENANT MANAGEMENT** (High Priority)
-
+**Reference** (covenant_thresholds table exists; optional covenant_rules for extended tracking):
 ```sql
--- Create covenant tracking system
-CREATE TABLE covenant_rules (
+-- covenant_thresholds table exists (alembic 20260129_0001)
+-- Optional: CREATE TABLE covenant_rules (
     id SERIAL PRIMARY KEY,
     property_id INTEGER REFERENCES properties(id),
     covenant_name VARCHAR(100) NOT NULL,
@@ -594,15 +518,16 @@ CREATE TABLE covenant_compliance_history (
 ### SECTION 6: BENCHMARK, TREND & STRESS TESTING RULES (Priority: LOW)
 
 **Source**: `ADVANCED_ANALYTICS_COVENANTS_RULES.md` Sections 7-9  
-**Status**: ❌ **NOT IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED** (Jan 2026)  
+**Location**: `analytics_rules_mixin.py`
 
 **Rules**:
-- BENCHMARK-1 to BENCHMARK-4: Market comparison rules ❌
-- TREND-1 to TREND-3: Trend analysis rules ❌
-- STRESS-1 to STRESS-5: Stress testing scenarios ❌
+- BENCHMARK-1 to BENCHMARK-4: Configurable targets in `system_config`; compare property metrics to target ✅
+- TREND-1 to TREND-3: 3-month MA, YoY, variance breakdown from budget/actual ✅
+- STRESS-1 to STRESS-5: Occupancy, rent rate, expense inflation, interest rate, tenant loss scenarios ✅
 - DASHBOARD-1 to DASHBOARD-3: Dashboard requirements ✅ (dashboards exist)
 
-**Recommendation**: **DEFER TO PHASE 3** - These are advanced features for mature system
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -992,33 +917,42 @@ pytest backend/tests/services/test_reconciliation_rules*.py -v
 
 ---
 
+## RULE COVERAGE MATRIX (as of Jan 2026)
+
+| Category | Rule IDs | Status | File / Method |
+|----------|----------|--------|----------------|
+| FA-PAL | FA-PAL-1..5 | Full | period_alignment_mixin.py |
+| FA-CASH | FA-CASH-1..4 | Full | forensic_anomaly_rules_mixin.py; cash_flow_rules.py (_rule_fa_cash_4_*; config: fa_cash_4_min_balance_to_flag) |
+| FA-FRAUD | FA-FRAUD-1..4 | Full | forensic_anomaly_rules_mixin.py |
+| FA-WC, FA-MORT, FA-RR (lease) | FA-WC-1, FA-MORT-1..2, FA-RR-1 (lease) | Full | forensic_anomaly_rules_mixin.py; audit_rules_mixin (WCR) |
+| RRBS | RRBS-1..4 (FA-RR-1..3 + roster) | Full | rent_roll_balance_sheet_rules_mixin.py (config: rrbs_1_tolerance_usd, forensic_prepaid_rent_material_threshold) |
+| AUDIT | AUDIT-1..55 | Full | audit_rules_mixin.py (AUDIT-48 config; AUDIT-51/52 when data present) |
+| DQ | DQ-1..33 | Full | data_quality_rules_mixin.py |
+| ANALYTICS | ANALYTICS-1..33 | Full | analytics_rules_mixin.py (INFO when metrics missing) |
+| COVENANT | COVENANT-1..6 | Full | analytics_rules_mixin.py + covenant_resolver.py (config: covenant_reporting_deadline_days) |
+| BENCHMARK | BENCHMARK-1..4 | Full | analytics_rules_mixin.py (config: benchmark_market_* in system_config) |
+| TREND | TREND-1..3 | Full | analytics_rules_mixin.py |
+| STRESS | STRESS-1..5 | Full | analytics_rules_mixin.py |
+| FA-MORT-4 | Escrow documentation linkage | Not implemented | Optional workflow enhancement |
+
+---
+
 ## CONCLUSION
 
-The REIMS2 system has **excellent coverage** of the core reconciliation and audit rules (~60% fully implemented). The downloaded rules provide a comprehensive blueprint for enhancement, particularly in areas of:
+The REIMS2 system has **high rule coverage** of the reconciliation and audit framework. As of January 2026, the gaps identified in the original analysis have been addressed: covenant management (per-property thresholds + COVENANT-6), rent roll forensics (RRBS-1..4), variance alerting (AUDIT-48 configurable), investment and leasing analytics (ANALYTICS-4..33), benchmark/trend/stress (configurable or full), and budget/forecast (AUDIT-51/52 + TREND-3 when data present). The only remaining optional item is FA-MORT-4 escrow→document linkage (workflow enhancement).
 
-1. **Covenant Management** (High Priority)
-2. **Rent Roll Forensics** (High Priority)
-3. **Variance Alerting** (High Priority)
-4. **Investment Analytics** (Medium Priority)
-5. **Leasing Analytics** (Medium-Long Term)
-6. **Budget Management** (Long Term)
-
-By following the phased implementation plan, REIMS2 can achieve **95%+ rule coverage** while maintaining stability and delivering high-value features to users.
-
-The system is well-architected for these enhancements, and the gaps identified are primarily feature additions rather than fundamental redesigns.
+For current gap list and phased plan, see **docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md**.
 
 ---
 
 ## NEXT STEPS
 
-1. **Review this analysis** with the development team
-2. **Prioritize Phase 1 items** based on business needs
-3. **Create detailed tickets** for each implementation item
-4. **Set up development environment** for testing
-5. **Begin implementation** with Quick Wins (FA-RR rules)
+1. **Keep rule coverage matrix** (above) updated when adding or changing rules.
+2. **Ensure data population** for maximum rule effectiveness: recalculate financial_metrics, load budget/forecast data (see deep dive Phase 2).
+3. **Optional**: Implement FA-MORT-4 escrow documentation linkage if required by workflow.
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: January 28, 2026  
-**Next Review**: After Phase 1 completion
+**Document Version**: 1.1  
+**Last Updated**: January 29, 2026  
+**Next Review**: After FA-MORT-4 or major rule changes

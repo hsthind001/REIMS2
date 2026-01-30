@@ -106,7 +106,7 @@ docker exec reims-postgres psql -U reims -d reims \
 
 ## 📁 Seed File Locations
 
-All seed files are in: `/home/gurpyar/Documents/R/REIMS2/backend/scripts/`
+All seed files are in: `backend/scripts/` (from repo root).
 
 - `seed_extraction_templates.sql` - 4 PDF extraction templates
 - `seed_validation_rules.sql` - 8 validation rules
@@ -114,6 +114,8 @@ All seed files are in: `/home/gurpyar/Documents/R/REIMS2/backend/scripts/`
 - `seed_income_statement_template_accounts.sql` - Income statement accounts
 - `seed_cash_flow_accounts_comprehensive.sql` - Cash flow accounts
 - `seed_lenders.sql` - 30+ lenders
+- **`seed_reconciliation_config.sql`** - Reconciliation rule config (optional): `system_config` keys for AUDIT-48, COVENANT-6, BENCHMARK-1–4, RRBS-1, FA-CASH-4, FA-MORT-4. Run after migrations:  
+  `docker exec -i reims-postgres psql -U reims -d reims < backend/scripts/seed_reconciliation_config.sql`
 
 ## 🔍 Verify Seeding Status
 
@@ -165,5 +167,5 @@ docker compose logs db-init
 
 **Status:** ✅ All seed data is persistent  
 **Location:** PostgreSQL database + Version-controlled seed files  
-**Last Updated:** November 7, 2025
+**Last Updated:** January 29, 2026
 

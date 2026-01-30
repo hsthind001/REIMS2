@@ -1,6 +1,7 @@
 from sqlalchemy import text
 
 from app.services.reconciliation_types import ReconciliationResult
+from app.services.rules.covenant_resolver import resolve_covenant_threshold_sync
 from app.models import (
     CommitteeAlert,
     AlertType,
@@ -78,6 +79,7 @@ class AuditRulesMixin:
         self._rule_audit_51_budget_vs_actual()
         self._rule_audit_52_forecast_vs_actual()
         self._rule_audit_53_supporting_documentation()
+        self._rule_fa_mort_4_escrow_documentation_link()
         self._rule_audit_54_adjustment_journal_entry_tracking()
         self._rule_audit_55_key_metrics_dashboard()
 
@@ -2791,20 +2793,10 @@ class AuditRulesMixin:
         annual_debt_service = monthly_payment * 12.0
         dscr = annualized_noi / annual_debt_service if annual_debt_service else 0.0
 
-        # DSCR covenant threshold (overridable via system_config to stay
-        # consistent with CovenantComplianceService and analytics covenants).
-        try:
-            from app.models import SystemConfig  # local import to avoid cycles
-            from sqlalchemy import select as _select
-
-            row = self.db.execute(
-                _select(SystemConfig.config_value)
-                .where(SystemConfig.config_key == "covenant_dscr_minimum")
-                .limit(1)
-            ).scalar_one_or_none()
-            covenant = float(str(row)) if row is not None else 1.20
-        except Exception:
-            covenant = 1.20
+        # Covenant: per-property covenant_thresholds first, else system_config
+        covenant = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "DSCR"
+        )
         if dscr >= covenant:
             status = "PASS"
         elif dscr >= 1.0:
@@ -2852,7 +2844,9 @@ class AuditRulesMixin:
             return
 
         coverage_months = total_cash / monthly_payment if monthly_payment else 0.0
-        required_months = 1.0
+        required_months = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "MIN_LIQUIDITY"
+        )
         status = "PASS" if coverage_months >= required_months else "WARNING"
 
         details = (
@@ -3446,7 +3440,9 @@ class AuditRulesMixin:
                 "total_assets"
             )
 
-        covenant = 0.75
+        covenant = resolve_covenant_threshold_sync(
+            self.db, int(self.property_id), int(self.period_id), "LTV"
+        )
         if ltv_ratio <= covenant:
             status = "PASS"
         elif ltv_ratio <= 0.80:
@@ -3484,12 +3480,17 @@ class AuditRulesMixin:
         )
 
     def _rule_audit_48_variance_investigation_triggers(self):
-        """AUDIT-48: Trigger variance investigations for large swings."""
+        """AUDIT-48: Trigger variance investigations for large swings. Thresholds configurable via system_config."""
         prior_id = self._get_prior_period_id()
         if not prior_id:
             return
 
         ctx = self._get_alignment_context()
+
+        # Configurable thresholds (keys: audit48_assets_change_pct, audit48_revenue_decrease_pct, audit48_cash_decrease_pct)
+        assets_threshold_pct = self._get_numeric_config("audit48_assets_change_pct", 5.0)
+        revenue_decrease_threshold_pct = self._get_numeric_config("audit48_revenue_decrease_pct", 10.0)
+        cash_decrease_threshold_pct = self._get_numeric_config("audit48_cash_decrease_pct", 30.0)
 
         total_assets_curr = self._get_bs_value(account_name_pattern="%TOTAL ASSETS%")
         total_assets_prior = self._get_bs_value(
@@ -3521,12 +3522,18 @@ class AuditRulesMixin:
         distributions_cf = self._sum_cf_accounts(["%DISTRIBUT%"])
 
         triggers = []
-        if abs(assets_change_pct) > 5.0:
-            triggers.append(f"Total assets change {assets_change_pct:.1f}% (>5%)")
-        if revenue_prior > 0.01 and revenue_change_pct < -10.0:
-            triggers.append(f"Revenue change {revenue_change_pct:.1f}% (<-10%)")
-        if cash_prior > 0.01 and cash_change_pct < -30.0:
-            triggers.append(f"Cash change {cash_change_pct:.1f}% (<-30%)")
+        if abs(assets_change_pct) > assets_threshold_pct:
+            triggers.append(
+                f"Total assets change {assets_change_pct:.1f}% (>{assets_threshold_pct:.0f}%)"
+            )
+        if revenue_prior > 0.01 and revenue_change_pct < -revenue_decrease_threshold_pct:
+            triggers.append(
+                f"Revenue change {revenue_change_pct:.1f}% (<-{revenue_decrease_threshold_pct:.0f}%)"
+            )
+        if cash_prior > 0.01 and cash_change_pct < -cash_decrease_threshold_pct:
+            triggers.append(
+                f"Cash change {cash_change_pct:.1f}% (<-{cash_decrease_threshold_pct:.0f}%)"
+            )
         if op_curr < 0 and op_prior < 0:
             triggers.append("Operating cash flow negative for 2 consecutive periods")
         if op_curr < 0 and distributions_cf < 0:
@@ -3554,6 +3561,9 @@ class AuditRulesMixin:
                 formula="Trigger investigation on large period-over-period swings",
                 intermediate_calculations={
                     "prior_id": prior_id,
+                    "assets_threshold_pct": assets_threshold_pct,
+                    "revenue_decrease_threshold_pct": revenue_decrease_threshold_pct,
+                    "cash_decrease_threshold_pct": cash_decrease_threshold_pct,
                     "total_assets_curr": total_assets_curr,
                     "total_assets_prior": total_assets_prior,
                     "assets_change_pct": assets_change_pct,
@@ -4291,34 +4301,42 @@ class AuditRulesMixin:
         ).fetchall()
         doc_summary = {str(row[0]): int(row[1] or 0) for row in doc_counts}
 
-        # Look for large disbursements on mortgage statement.
+        # Look for large disbursements on mortgage statement (period delta of YTD columns).
         # Materiality threshold is configurable via `audit_53_materiality_threshold`
         # (default: $10,000).
         threshold = self._get_numeric_config("audit_53_materiality_threshold", 10000.0)
-        esc_rows = self.db.execute(
-            text(
-                """
-                SELECT
-                    COALESCE(tax_disbursed, 0) AS tax_disbursed,
-                    COALESCE(insurance_disbursed, 0) AS insurance_disbursed,
-                    COALESCE(reserves_disbursed, 0) AS reserves_disbursed
-                FROM mortgage_statement_data
-                WHERE property_id = :property_id
-                  AND period_id = :period_id
-                """
-            ),
-            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
-        ).fetchone()
+        begin_period_id = getattr(self, "_get_effective_begin_period_id", lambda: None)()
+        if begin_period_id:
+            tax_disb = getattr(self, "_get_ytd_delta", lambda _c, _b: 0.0)("ytd_taxes_disbursed", begin_period_id)
+            ins_disb = getattr(self, "_get_ytd_delta", lambda _c, _b: 0.0)("ytd_insurance_disbursed", begin_period_id)
+            res_disb = getattr(self, "_get_ytd_delta", lambda _c, _b: 0.0)("ytd_reserve_disbursed", begin_period_id)
+        else:
+            esc_rows = self.db.execute(
+                text(
+                    """
+                    SELECT
+                        COALESCE(ytd_taxes_disbursed, 0) AS tax_disb,
+                        COALESCE(ytd_insurance_disbursed, 0) AS ins_disb,
+                        COALESCE(ytd_reserve_disbursed, 0) AS res_disb
+                    FROM mortgage_statement_data
+                    WHERE property_id = :property_id
+                      AND period_id = :period_id
+                    """
+                ),
+                {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+            ).fetchone()
+            if esc_rows:
+                tax_disb, ins_disb, res_disb = [float(esc_rows[i] or 0.0) for i in range(3)]
+            else:
+                tax_disb, ins_disb, res_disb = 0.0, 0.0, 0.0
 
         large_disbursements = []
-        if esc_rows:
-            tax_disb, ins_disb, res_disb = [float(esc_rows[i] or 0.0) for i in range(3)]
-            if abs(tax_disb) >= threshold:
-                large_disbursements.append(("property_tax", tax_disb))
-            if abs(ins_disb) >= threshold:
-                large_disbursements.append(("insurance", ins_disb))
-            if abs(res_disb) >= threshold:
-                large_disbursements.append(("reserves", res_disb))
+        if abs(tax_disb) >= threshold:
+            large_disbursements.append(("property_tax", tax_disb))
+        if abs(ins_disb) >= threshold:
+            large_disbursements.append(("insurance", ins_disb))
+        if abs(res_disb) >= threshold:
+            large_disbursements.append(("reserves", res_disb))
 
         # Simple heuristic: if there are large disbursements but no mortgage_statement
         # or tax/insurance uploads, flag as WARNING.
@@ -4369,6 +4387,128 @@ class AuditRulesMixin:
                     "document_summary": doc_summary,
                     "large_disbursements": large_disbursements,
                     "missing_support": missing_support,
+                    "threshold": threshold,
+                },
+            )
+        )
+
+    def _rule_fa_mort_4_escrow_documentation_link(self):
+        """
+        FA-MORT-4: Escrow disbursement documentation linkage.
+
+        When material escrow activity (tax, insurance, reserves) exists for the period,
+        requires either (a) an explicit EscrowDocumentLink for that type, or (b) a
+        supporting document upload (mortgage_statement, tax_bill, insurance_invoice).
+        """
+        threshold = self._get_numeric_config(
+            "fa_mort_4_materiality_threshold",
+            self._get_numeric_config("audit_53_materiality_threshold", 10000.0),
+        )
+        begin_period_id = getattr(self, "_get_effective_begin_period_id", lambda: None)()
+        if begin_period_id:
+            tax_disb = getattr(self, "_get_ytd_delta", lambda _c, _b: 0.0)("ytd_taxes_disbursed", begin_period_id)
+            ins_disb = getattr(self, "_get_ytd_delta", lambda _c, _b: 0.0)("ytd_insurance_disbursed", begin_period_id)
+            res_disb = getattr(self, "_get_ytd_delta", lambda _c, _b: 0.0)("ytd_reserve_disbursed", begin_period_id)
+        else:
+            esc_rows = self.db.execute(
+                text(
+                    """
+                    SELECT
+                        COALESCE(ytd_taxes_disbursed, 0), COALESCE(ytd_insurance_disbursed, 0),
+                        COALESCE(ytd_reserve_disbursed, 0)
+                    FROM mortgage_statement_data
+                    WHERE property_id = :property_id AND period_id = :period_id
+                    """
+                ),
+                {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+            ).fetchone()
+            if esc_rows:
+                tax_disb, ins_disb, res_disb = [float(esc_rows[i] or 0.0) for i in range(3)]
+            else:
+                tax_disb, ins_disb, res_disb = 0.0, 0.0, 0.0
+
+        material = []
+        if abs(tax_disb) >= threshold:
+            material.append(("property_tax", tax_disb))
+        if abs(ins_disb) >= threshold:
+            material.append(("insurance", ins_disb))
+        if abs(res_disb) >= threshold:
+            material.append(("reserves", res_disb))
+
+        # EscrowDocumentLink coverage for this period
+        link_rows = self.db.execute(
+            text(
+                """
+                SELECT escrow_type FROM escrow_document_links
+                WHERE property_id = :property_id AND period_id = :period_id
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchall()
+        linked_types = {str(row[0]) for row in link_rows}
+
+        doc_counts = self.db.execute(
+            text(
+                """
+                SELECT document_type, COUNT(*) FROM document_uploads
+                WHERE property_id = :property_id AND period_id = :period_id AND is_active IS TRUE
+                GROUP BY document_type
+                """
+            ),
+            {"property_id": int(self.property_id), "period_id": int(self.period_id)},
+        ).fetchall()
+        doc_summary = {str(row[0]): int(row[1] or 0) for row in doc_counts}
+        has_mortgage = doc_summary.get("mortgage_statement", 0) > 0
+        has_tax_doc = doc_summary.get("tax_bill", 0) > 0
+        has_ins_doc = doc_summary.get("insurance_invoice", 0) > 0
+
+        missing = []
+        for label, amount in material:
+            has_link = label in linked_types
+            has_generic = (
+                has_mortgage
+                or (label == "property_tax" and (has_mortgage or has_tax_doc))
+                or (label == "insurance" and (has_mortgage or has_ins_doc))
+                or (label == "reserves" and has_mortgage)
+            )
+            if not (has_link or has_generic):
+                missing.append((label, amount))
+
+        status = "PASS" if not missing else "WARNING"
+        details_parts = []
+        if not material:
+            details_parts.append("No material escrow disbursements for this period.")
+        else:
+            details_parts.append(
+                "Material escrow disbursements: "
+                + ", ".join(f"{lbl} ${amt:,.2f}" for lbl, amt in material)
+            )
+        if missing:
+            details_parts.append(
+                "Missing escrow documentation link or supporting upload for: "
+                + ", ".join(f"{lbl} ${amt:,.2f}" for lbl, amt in missing)
+            )
+        else:
+            details_parts.append("Each material escrow type has a link or supporting document.")
+
+        self.results.append(
+            ReconciliationResult(
+                rule_id="FA-MORT-4",
+                rule_name="Escrow Documentation Link",
+                category="Forensic",
+                status=status,
+                source_value=float(len(material)),
+                target_value=0.0,
+                difference=float(len(missing)),
+                variance_pct=0.0,
+                details=" ".join(details_parts),
+                severity="high" if missing else "info",
+                formula="Material escrow disbursements require EscrowDocumentLink or supporting document upload",
+                intermediate_calculations={
+                    "document_summary": doc_summary,
+                    "material_disbursements": material,
+                    "missing_link": missing,
+                    "linked_escrow_types": list(linked_types),
                     "threshold": threshold,
                 },
             )

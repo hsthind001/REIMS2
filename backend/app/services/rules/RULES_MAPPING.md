@@ -3,6 +3,8 @@
 This document maps rule IDs defined in the reconciliation/audit rule markdown
 files to their concrete implementations in the REIMS backend.
 
+**Status & coverage**: For implementation status and a rule coverage matrix (as of Jan 2026), see repo root **RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md** and **docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md**.
+
 ### Period Alignment / PAL & FA-PAL
 
 - **PAL / FA-PAL-1..5**  
@@ -46,6 +48,12 @@ files to their concrete implementations in the REIMS backend.
   - Implemented in `forensic_anomaly_rules_mixin.py`:
     - `_rule_fa_mort_1_payment_history_continuity`
     - `_rule_fa_mort_2_escrow_balance_reasonableness`
+
+- **FA-MORT-4** (escrow disbursement documentation linkage)  
+  - Implemented in `audit_rules_mixin.py`:
+    - `_rule_fa_mort_4_escrow_documentation_link()` — requires `EscrowDocumentLink` or supporting document upload for material escrow disbursements (tax/insurance/reserves).
+  - Data: `EscrowDocumentLink` model (`escrow_document_links` table); config `fa_mort_4_materiality_threshold` (optional, falls back to `audit_53_materiality_threshold`).
+  - API: `GET/POST /documents/escrow-links`, `DELETE /documents/escrow-links/{id}` (see `app/api/v1/documents.py`).
 
 - **FA-RR-1** (lease term consistency)  
   - Implemented in `forensic_anomaly_rules_mixin.py`:

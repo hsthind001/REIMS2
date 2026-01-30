@@ -1,22 +1,28 @@
 # REIMS2 Documentation Index
 
-**Generated:** 2025-12-26 20:26:36
+**Generated:** 2026-01-29
 
 This index helps you find documentation quickly and prevents duplicate documentation from being created.
 
 ## 📚 Active Documentation
 
 ### Essential Documentation
-- [DATABASE_QUICK_REFERENCE.md](../DATABASE_QUICK_REFERENCE.md)
+- [DATABASE_QUICK_REFERENCE.md](DATABASE_QUICK_REFERENCE.md)
 - [GETTING_STARTED.md](../GETTING_STARTED.md)
 - [MINIO_QUICK_REFERENCE.md](../MINIO_QUICK_REFERENCE.md)
-- [PRODUCTION_DEPLOYMENT_GUIDE.md](../PRODUCTION_DEPLOYMENT_GUIDE.md)
+- [PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md)
 - [QUICK_REFERENCE.md](../QUICK_REFERENCE.md)
 - [README.md](../README.md)
-- [SEED_DATA_QUICK_REFERENCE.md](../SEED_DATA_QUICK_REFERENCE.md)
+- [SEED_DATA_QUICK_REFERENCE.md](SEED_DATA_QUICK_REFERENCE.md)
 - [START_HERE.md](../START_HERE.md)
 - [USER_GUIDE.md](../USER_GUIDE.md)
 - [VERSIONING_GUIDE.md](../VERSIONING_GUIDE.md)
+
+### Reconciliation Rules (Required for Rule Implementation)
+- **Rules Analysis** - [RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md](../RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md) (repo root)
+- **Deep Dive & Plan** - [RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md](RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md)
+- **Implementation Summary** - [RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md](RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md)
+- **Rule Mapping** - [backend/app/services/rules/RULES_MAPPING.md](../backend/app/services/rules/RULES_MAPPING.md)
 
 ### Feature Documentation
 

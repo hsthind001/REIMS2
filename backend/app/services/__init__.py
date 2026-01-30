@@ -2,7 +2,6 @@
 Services layer for business logic
 """
 from app.services.document_service import DocumentService
-from app.services.extraction_orchestrator import ExtractionOrchestrator
 from app.services.validation_service import ValidationService
 from app.services.metrics_service import MetricsService
 from app.services.review_service import ReviewService
@@ -17,6 +16,14 @@ from app.services.health_score_service import HealthScoreService
 from app.services.anomaly_ensemble_service import AnomalyEnsembleService
 from app.services.real_estate_anomaly_rules import RealEstateAnomalyRules
 from app.services.alert_workflow_service import AlertWorkflowService
+
+def __getattr__(name: str):
+    """Lazy-load ExtractionOrchestrator to avoid pulling in extraction stack (pdfplumber, etc.) on rules-only imports."""
+    if name == "ExtractionOrchestrator":
+        from app.services.extraction_orchestrator import ExtractionOrchestrator
+        return ExtractionOrchestrator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "DocumentService",

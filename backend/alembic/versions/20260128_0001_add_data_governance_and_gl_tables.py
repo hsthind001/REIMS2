@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20260128_0001"
-down_revision = "20260125_0002_add_property_coordinates"
+down_revision = "20260125_0002_prop_coords"
 branch_labels = None
 depends_on = None
 
