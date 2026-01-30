@@ -16,6 +16,7 @@ from app.services.rules.analytics_rules_mixin import AnalyticsRulesMixin
 from app.services.rules.data_quality_rules_mixin import DataQualityRulesMixin
 from app.services.rules.forensic_anomaly_rules_mixin import ForensicAnomalyRulesMixin
 from app.services.rules.rent_roll_balance_sheet_rules_mixin import RentRollBalanceSheetRulesMixin
+from app.services.rules.rule_registry import ALL_RULE_IDS
 from app.services.market_data_integration import MarketDataIntegration
 
 from app.services.rules.safe_query_mixin import SafeQueryMixin
@@ -36,7 +37,12 @@ class ReconciliationRuleEngine(
     RentRollBalanceSheetRulesMixin
 ):
     """
-    Executes all 135+ reconciliation rules (Synchronous)
+    Executes all reconciliation rules (synchronous).
+
+    Emits a result for every defined rule (see rule_registry.ALL_RULE_IDS) each run:
+    rules that run produce PASS/FAIL/INFO; rules that do not run or emit get SKIPPED.
+    Results are persisted to cross_document_reconciliations so the Financial Integrity
+    Hub can list all rules with a status (Pass / Variance / Skipped).
     """
     
     def __init__(self, db: Session):
@@ -199,7 +205,27 @@ class ReconciliationRuleEngine(
                 details=str(e),
                 severity="critical"
              ))
-            
+
+        # Emit a result for every defined rule so the hub can list "all rules" with a status.
+        # Any rule that did not run or emit a result gets SKIPPED (e.g. no data, not applicable).
+        seen_ids = {r.rule_id for r in self.results}
+        for rule_id in ALL_RULE_IDS:
+            if rule_id not in seen_ids:
+                self.results.append(ReconciliationResult(
+                    rule_id=rule_id,
+                    rule_name=rule_id,
+                    category="System",
+                    status="SKIPPED",
+                    source_value=0.0,
+                    target_value=0.0,
+                    difference=0.0,
+                    variance_pct=0.0,
+                    details="Rule did not run or no result emitted (e.g. missing data or not applicable).",
+                    severity="info",
+                    formula="N/A (Python Rule)",
+                ))
+                seen_ids.add(rule_id)
+
         return self.results
 
     def save_results(self):

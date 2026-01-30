@@ -41,6 +41,9 @@
 | STRESS-1..5 | Occupancy, rent, expense, interest, tenant loss | Full | analytics_rules_mixin.py | |
 | DASHBOARD-1..3 | Dashboard requirements | Full | analytics_rules_mixin.py | |
 
+**Financial Integrity Hub (all rules)**  
+The reconciliation engine emits a result for every defined rule each run (see `rule_registry.ALL_RULE_IDS`). Rules that run produce PASS/FAIL/INFO; rules that do not run or emit get SKIPPED. Results are persisted to `cross_document_reconciliations`, so the hub at `#forensic-reconciliation` lists all rules with a status (Pass / Variance / Skipped).
+
 ---
 
 ## Data Population (Phase 2)

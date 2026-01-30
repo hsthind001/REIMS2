@@ -15,8 +15,7 @@ from app.db.database import get_db
 from app.services.variance_analysis_service import VarianceAnalysisService
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
-from app.models.budget import Budget, BudgetStatus
-from app.models.forecast import Forecast
+from app.models.budget import Budget, BudgetStatus, Forecast
 from app.models.financial_metrics import FinancialMetrics
 
 router = APIRouter(prefix="/variance-analysis", tags=["variance_analysis"])

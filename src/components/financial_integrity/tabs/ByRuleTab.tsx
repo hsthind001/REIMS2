@@ -4,7 +4,8 @@ import {
   Calculator, 
   CheckCircle2, 
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  Info
 } from 'lucide-react';
 import type { CalculatedRuleEvaluation } from '../../../lib/forensic_reconciliation';
 
@@ -13,17 +14,23 @@ interface ByRuleTabProps {
   onRuleClick?: (ruleId: string) => void;
 }
 
+type StatusFilter = 'all' | 'passed' | 'variance' | 'skipped';
+
 export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
   // State for filtering
-  const [statusFilter, setStatusFilter] = useState<'all' | 'passed' | 'variance'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Calculate statistics
+  // Calculate statistics (Variance = FAIL/WARNING etc.; Skipped = SKIPPED)
+  const passedCount = rules.filter(r => r.status === 'PASS').length;
+  const skippedCount = rules.filter(r => r.status === 'SKIPPED').length;
+  const varianceCount = rules.filter(r => r.status !== 'PASS' && r.status !== 'SKIPPED').length;
   const stats = {
     total: rules.length,
-    passed: rules.filter(r => r.status === 'PASS').length,
-    variance: rules.filter(r => r.status !== 'PASS').length,
-    passRate: rules.length > 0 ? Math.round((rules.filter(r => r.status === 'PASS').length / rules.length) * 100) : 0
+    passed: passedCount,
+    variance: varianceCount,
+    skipped: skippedCount,
+    passRate: rules.length > 0 ? Math.round((passedCount / rules.length) * 100) : 0
   };
 
   // Filter logic
@@ -33,20 +40,23 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
       if (statusFilter === 'passed') {
         matchesStatus = rule.status === 'PASS';
       } else if (statusFilter === 'variance') {
-        matchesStatus = rule.status !== 'PASS';
+        matchesStatus = rule.status !== 'PASS' && rule.status !== 'SKIPPED';
+      } else if (statusFilter === 'skipped') {
+        matchesStatus = rule.status === 'SKIPPED';
       }
       
-      // Apply search filter
-      const name = rule.rule_name || '';
-      const desc = rule.description || '';
-      const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            desc.toLowerCase().includes(searchQuery.toLowerCase());
+      // Apply search filter (rule_id, rule_name, description)
+      const q = searchQuery.toLowerCase();
+      const id = (rule.rule_id || '').toLowerCase();
+      const name = (rule.rule_name || '').toLowerCase();
+      const desc = (rule.description || '').toLowerCase();
+      const matchesSearch = id.includes(q) || name.includes(q) || desc.includes(q);
       
       return matchesStatus && matchesSearch;
   });
 
   // Click handlers for filter cards
-  const handleFilterClick = (filter: 'all' | 'passed' | 'variance') => {
+  const handleFilterClick = (filter: StatusFilter) => {
     // Toggle: if clicking the same filter, reset to 'all'
     setStatusFilter(statusFilter === filter ? 'all' : filter);
   };
@@ -54,7 +64,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
   return (
     <div className="space-y-6">
        {/* Summary Statistics */}
-       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
            {/* Total Rules */}
            <div 
                onClick={() => handleFilterClick('all')}
@@ -124,6 +134,29 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
                </div>
            </div>
 
+           {/* Skipped Rules */}
+           <div 
+               onClick={() => handleFilterClick('skipped')}
+               className={`bg-gradient-to-br from-gray-50 to-gray-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+                   statusFilter === 'skipped' 
+                       ? 'border-gray-500 border-2 shadow-lg ring-2 ring-gray-200' 
+                       : 'border-gray-200 hover:border-gray-300'
+               }`}
+           >
+               <div className="flex items-center justify-between">
+                   <div>
+                       <p className="text-sm font-medium text-gray-700 mb-1">Skipped</p>
+                       <p className="text-3xl font-bold text-gray-900">{stats.skipped}</p>
+                       {statusFilter === 'skipped' && (
+                           <p className="text-xs text-gray-600 mt-1 font-medium">Filtered</p>
+                       )}
+                   </div>
+                   <div className="p-3 bg-gray-200 rounded-lg">
+                       <Info className="w-6 h-6 text-gray-600" />
+                   </div>
+               </div>
+           </div>
+
            {/* Pass Rate */}
            <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-4">
                <div className="flex items-center justify-between">
@@ -145,7 +178,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
                {statusFilter !== 'all' && (
                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg">
                        <span className="text-sm text-blue-700">
-                           Showing: <strong>{statusFilter === 'passed' ? 'Passed' : 'Variance'} Rules</strong>
+                           Showing: <strong>{statusFilter === 'passed' ? 'Passed' : statusFilter === 'skipped' ? 'Skipped' : 'Variance'} Rules</strong>
                        </span>
                        <button 
                            onClick={() => setStatusFilter('all')}
@@ -181,6 +214,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
                         {searchQuery ? 'No rules match your search.' : 
                          statusFilter === 'passed' ? 'No passed rules found.' :
                          statusFilter === 'variance' ? 'No variance rules found.' :
+                         statusFilter === 'skipped' ? 'No skipped rules found.' :
                          'No rules found for this selection.'}
                     </div>
                     {(searchQuery || statusFilter !== 'all') && (
@@ -201,7 +235,8 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
                    <div className="flex justify-between items-start">
                        <div className="flex gap-4">
                            <div className={`mt-1 p-2 rounded-lg ${
-                               rule.status === 'PASS' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'
+                               rule.status === 'PASS' ? 'bg-green-50 text-green-600' :
+                               rule.status === 'SKIPPED' ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-600'
                            }`}>
                                <Calculator className="w-4 h-4" />
                            </div>
@@ -226,6 +261,10 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
                            {rule.status === 'PASS' ? (
                                <div className="flex items-center gap-1.5 text-sm font-bold text-green-600 bg-green-50 px-3 py-1 rounded-full">
                                    <CheckCircle2 className="w-4 h-4" /> Passed
+                               </div>
+                           ) : rule.status === 'SKIPPED' ? (
+                               <div className="flex items-center gap-1.5 text-sm font-bold text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+                                   <Info className="w-4 h-4" /> Skipped
                                </div>
                            ) : (
                                <div className="flex items-center gap-1.5 text-sm font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">

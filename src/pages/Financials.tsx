@@ -227,7 +227,6 @@ export default function Financials() {
   
   // Mortgage statement state
   const [selectedMortgageId, setSelectedMortgageId] = useState<number | null>(null);
-  const [currentPeriodId, setCurrentPeriodId] = useState<number | null>(null);
 
   // Accounts state
   const [showChartOfAccounts, setShowChartOfAccounts] = useState(false);
@@ -1081,7 +1080,6 @@ export default function Financials() {
   const loadCurrentPeriod = async (): Promise<number | null> => {
     if (!selectedProperty) {
       console.warn('Cannot load period: no property selected');
-      setCurrentPeriodId(null);
       return null;
     }
 
@@ -1098,12 +1096,10 @@ export default function Financials() {
         selectedMonth
       );
 
-      setCurrentPeriodId(period.id);
       console.log('Financial period loaded:', period);
       return period.id;
     } catch (err) {
       console.error('Failed to load financial period:', err);
-      setCurrentPeriodId(null);
       return null;
     }
   };
