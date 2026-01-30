@@ -114,6 +114,8 @@ files to their concrete implementations in the REIMS backend.
     - **AUDIT-7** – `_rule_audit_7_mortgage_payment_composition`
     - **AUDIT-24** – `_rule_audit_24_cash_flow_cash_bridge`
     - **AUDIT-26** – `_rule_audit_26_operating_activities_reconciliation`
+    - **AUDIT-49** – `_rule_audit_49_year_end_validation` (enhanced Jan 2026): config `audit49_earnings_tolerance_pct`; optional retained earnings roll; checklist in details.
+    - **AUDIT-50** – `_rule_audit_50_year_over_year_comparison` (enhanced Jan 2026): config `audit50_income_decrease_pct`, `audit50_noi_decrease_pct`, `audit50_net_income_decrease_pct`, `audit50_occupancy_decrease_pp`.
 
 This file is intentionally high-level; for any given rule ID, search for the
 `rule_id` in the corresponding mixin to see the exact implementation details.

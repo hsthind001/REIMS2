@@ -2,7 +2,7 @@
 ## REIMS2 System - Gap Analysis & Implementation Plan
 
 **Date**: January 28, 2026  
-**Status as of**: January 2026 (post–gap implementation) — see **docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md** for current gap list and phased plan.  
+**Status as of**: January 2026 (post–gap implementation) — **Quick entry**: [docs/RECONCILIATION_QUICK_REFERENCE.md](docs/RECONCILIATION_QUICK_REFERENCE.md). See **docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md** for codebase alignment; **docs/RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md** for remaining gaps and phased plan.  
 **Analysis Scope**: Downloaded rules from `/home/hsthind/Downloads/Reconciliation - Audit - Rules 2`  
 **Current Implementation**: REIMS2 backend reconciliation engine
 
@@ -16,7 +16,7 @@ The downloaded rules represent a comprehensive **325+ rule framework** from East
 ### Implementation Status (updated Jan 2026)
 - **✅ IMPLEMENTED**: ~90%+ of core rules (Critical/High/Medium priority)
 - **⚠️ DATA-DEPENDENT**: Some rules emit INFO/SKIP when budget, forecast, or financial_metrics are missing (APIs and population paths exist)
-- **❌ NOT IMPLEMENTED**: FA-MORT-4 escrow→document linkage (workflow enhancement); optional Phase 4 doc/rule matrix maintenance
+- **Optional**: FA-MORT-4 escrow→document linkage **rule, model, and API are implemented** (EscrowDocumentLink, `GET/POST /documents/escrow-links`); optional UI workflow for linking escrow disbursements to documents in the frontend
 
 ### Key Findings (updated)
 1. **Period Alignment Rules (FA-PAL-1 to FA-PAL-5)**: ✅ **IMPLEMENTED** via `PeriodAlignmentMixin`
@@ -104,19 +104,15 @@ class PeriodAlignmentMixin:
 
 #### 1.5 Mortgage & Debt Reconciliation (FA-MORT-1 to FA-MORT-4)
 **Source**: `FORENSIC_ACCOUNTING_RULES_ENHANCED.md` Section 5  
-**Status**: ✅ **MOSTLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED**
 
 **Rules Covered**:
 - FA-MORT-1: Principal Balance Exact Match ✅ (`_rule_audit_4_mortgage_principal_balance`)
 - FA-MORT-2: Principal Reduction Flow Validation ✅ (`_rule_audit_21_principal_payment_flow`)
 - FA-MORT-3: Interest Expense Reasonableness ✅ (`_rule_audit_6_mortgage_interest_flow`)
-- FA-MORT-4: Escrow Payment Documentation ⚠️ **PARTIALLY IMPLEMENTED**
+- FA-MORT-4: Escrow Payment Documentation ✅ (`_rule_fa_mort_4_escrow_documentation_link` in `audit_rules_mixin.py`; `EscrowDocumentLink` model; API `/documents/escrow-links`; config `fa_mort_4_materiality_threshold`)
 
-**Gap**: FA-MORT-4 requires documentation tracking which is more of a workflow feature than a rule.
-
-**Recommendation**: 
-- Add metadata table for escrow disbursement documentation tracking
-- Implement document linkage in the API layer
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -329,11 +325,13 @@ VALUES
 ---
 
 #### 2.16 Annual Reconciliation (AUDIT-49 to AUDIT-50)
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **IMPLEMENTED (enhanced)** (Jan 2026)
 
-**Gap**: Year-end and year-over-year rules are basic. Need enhanced year-end close procedures.
+**AUDIT-49**: Year-end validation for January periods. Config: `audit49_earnings_tolerance_pct` (default 1.0). Optional retained earnings roll (prior Dec RE + Jan NI vs Jan beginning RE). Checklist in details: BS=IS YTD ✓/✗; YTD=period ✓/✗; retained earnings roll ✓/✗/N/A. `audit_rules_mixin.py`: `_rule_audit_49_year_end_validation()`.
 
-**Recommendation**: **ENHANCE YEAR-END CLOSE** (Low Priority - can be added later)
+**AUDIT-50**: Year-over-year comparison. Config: `audit50_income_decrease_pct`, `audit50_noi_decrease_pct`, `audit50_net_income_decrease_pct`, `audit50_occupancy_decrease_pp` (defaults 10%, 10%, 10%, 5pp). WARNING when any metric exceeds threshold. `audit_rules_mixin.py`: `_rule_audit_50_year_over_year_comparison()`.
+
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -399,70 +397,72 @@ VALUES
 ---
 
 #### 4.2 Occupancy and Leasing Metrics (ANALYTICS-6 to ANALYTICS-10)
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **IMPLEMENTED** (Jan 2026)
 
-**Rules Covered**:
-- ANALYTICS-6: Economic Occupancy ❌ **NOT IMPLEMENTED**
-- ANALYTICS-7: Lease Rollover Analysis ❌ **NOT IMPLEMENTED**
-- ANALYTICS-8: Tenant Retention Rate ❌ **NOT IMPLEMENTED**
-- ANALYTICS-9: WALT (Weighted Average Lease Term) ❌ **NOT IMPLEMENTED**
-- ANALYTICS-10: Rent Roll Growth Rate ❌ **NOT IMPLEMENTED**
+**Rules Covered** (all in `analytics_rules_mixin.py`):
+- ANALYTICS-6: Economic Occupancy ✅ (`_rule_analytics_6_economic_occupancy`)
+- ANALYTICS-7: Lease Rollover Analysis ✅ (`_rule_analytics_7_lease_rollover`)
+- ANALYTICS-8: Tenant Retention Rate ✅ (`_rule_analytics_8_retention_rate`)
+- ANALYTICS-9: WALT (Weighted Average Lease Term) ✅ (`_rule_analytics_9_walt`)
+- ANALYTICS-10: Rent Roll Growth Rate ✅ (`_rule_analytics_10_rent_roll_growth`)
 
-**Gap**: Advanced leasing metrics are not implemented.
+**Note**: Rules emit INFO when data (e.g. rent roll, financial_metrics) is missing. Full effectiveness requires populated data; see **docs/RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md** Phase 2.
 
-**Recommendation**: **IMPLEMENT LEASING ANALYTICS** (Medium Priority)
-
-These metrics require lease expiration tracking:
-```sql
--- Add to rent_roll_data table
-ALTER TABLE rent_roll_data ADD COLUMN lease_start_date DATE;
-ALTER TABLE rent_roll_data ADD COLUMN lease_end_date DATE;
-ALTER TABLE rent_roll_data ADD COLUMN renewal_status VARCHAR(50);
-```
+**Recommendation**: ✅ **NO ACTION NEEDED** (code complete; ensure data population)
 
 ---
 
 #### 4.3 Financial Leverage Metrics (ANALYTICS-11 to ANALYTICS-14)
-**Status**: ✅ **MOSTLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED**
 
-**Rules Covered**:
-- ANALYTICS-11: LTV Ratio ✅ (via AUDIT-44)
-- ANALYTICS-12: DSCR ✅ (via AUDIT-43)
-- ANALYTICS-13: Interest Coverage Ratio ❌ **NOT IMPLEMENTED**
-- ANALYTICS-14: Debt Yield ❌ **NOT IMPLEMENTED**
+**Rules Covered** (in `analytics_rules_mixin.py`):
+- ANALYTICS-11: LTV Ratio ✅ (`_rule_analytics_11_ltv`)
+- ANALYTICS-12: DSCR ✅ (`_rule_analytics_12_dscr`)
+- ANALYTICS-13: Interest Coverage Ratio ✅ (`_rule_analytics_13_interest_coverage`)
+- ANALYTICS-14: Debt Yield ✅ (`_rule_analytics_14_debt_yield`)
 
-**Recommendation**: **IMPLEMENT REMAINING LEVERAGE METRICS** (Low Priority)
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
 #### 4.4 Liquidity and Cash Flow Metrics (ANALYTICS-15 to ANALYTICS-18)
-**Status**: ⚠️ **PARTIALLY IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED**
 
-**Rules Covered**:
-- ANALYTICS-15: Current Ratio ❌ **NOT IMPLEMENTED**
-- ANALYTICS-16: Cash Flow Coverage ❌ **NOT IMPLEMENTED**
-- ANALYTICS-17: Days Cash on Hand ❌ **NOT IMPLEMENTED**
-- ANALYTICS-18: A/R Days Outstanding ❌ **NOT IMPLEMENTED**
+**Rules Covered** (in `analytics_rules_mixin.py`):
+- ANALYTICS-15: Current Ratio ✅ (`_rule_analytics_15_current_ratio`)
+- ANALYTICS-16: Cash Flow Coverage ✅ (`_rule_analytics_16_cash_flow_coverage`)
+- ANALYTICS-17: Days Cash on Hand ✅ (`_rule_analytics_17_days_cash`)
+- ANALYTICS-18: A/R Days Outstanding ✅ (`_rule_analytics_18_ar_days`)
 
-**Recommendation**: **IMPLEMENT LIQUIDITY METRICS** (Medium Priority)
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
 #### 4.5 Operating Performance Metrics (ANALYTICS-19 to ANALYTICS-24)
-**Status**: ❌ **NOT IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED**
 
-**Gap**: Profitability ratios (ROA, ROE), per-SF metrics, efficiency ratios are not implemented.
+**Rules Covered** (in `analytics_rules_mixin.py`):
+- ANALYTICS-19: ROA ✅ (`_rule_analytics_19_roa`)
+- ANALYTICS-20: ROE ✅ (`_rule_analytics_20_roe`)
+- ANALYTICS-21: Profit Margin ✅ (`_rule_analytics_21_profit_margin`)
+- ANALYTICS-22: Revenue per SF ✅ (`_rule_analytics_22_revenue_per_sf`)
+- ANALYTICS-23: OpEx per SF ✅ (`_rule_analytics_23_opex_per_sf`)
+- ANALYTICS-24: Management Efficiency ✅ (`_rule_analytics_24_management_efficiency`)
 
-**Recommendation**: **IMPLEMENT PERFORMANCE METRICS** (Low Priority)
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
 #### 4.6 Risk Metrics (ANALYTICS-25 to ANALYTICS-33)
-**Status**: ❌ **MOSTLY NOT IMPLEMENTED**
+**Status**: ✅ **FULLY IMPLEMENTED**
 
-**Gap**: Advanced risk metrics including debt-to-equity, concentration risk, volatility measures are not implemented.
+**Rules Covered** (in `analytics_rules_mixin.py`):
+- ANALYTICS-25: Debt-to-Equity ✅ (`_rule_analytics_25_debt_to_equity`)
+- ANALYTICS-26: Equity Multiplier ✅ (`_rule_analytics_26_equity_multiplier`)
+- ANALYTICS-27: Distribution Coverage ✅ (`_rule_analytics_27_distribution_coverage`)
+- ANALYTICS-28 to 33: Same-store NOI growth, revenue growth, capex intensity, tenant concentration, lease expiration risk, occupancy volatility ✅
 
-**Recommendation**: **DEFER TO PHASE 2** - These are sophisticated analytics
+**Recommendation**: ✅ **NO ACTION NEEDED**
 
 ---
 
@@ -933,23 +933,25 @@ pytest backend/tests/services/test_reconciliation_rules*.py -v
 | BENCHMARK | BENCHMARK-1..4 | Full | analytics_rules_mixin.py (config: benchmark_market_* in system_config) |
 | TREND | TREND-1..3 | Full | analytics_rules_mixin.py |
 | STRESS | STRESS-1..5 | Full | analytics_rules_mixin.py |
-| FA-MORT-4 | Escrow documentation linkage | Not implemented | Optional workflow enhancement |
+| FA-MORT-4 | Escrow documentation linkage | Full | audit_rules_mixin._rule_fa_mort_4_escrow_documentation_link; EscrowDocumentLink; API /documents/escrow-links |
 
 ---
 
 ## CONCLUSION
 
-The REIMS2 system has **high rule coverage** of the reconciliation and audit framework. As of January 2026, the gaps identified in the original analysis have been addressed: covenant management (per-property thresholds + COVENANT-6), rent roll forensics (RRBS-1..4), variance alerting (AUDIT-48 configurable), investment and leasing analytics (ANALYTICS-4..33), benchmark/trend/stress (configurable or full), and budget/forecast (AUDIT-51/52 + TREND-3 when data present). The only remaining optional item is FA-MORT-4 escrow→document linkage (workflow enhancement).
+The REIMS2 system has **high rule coverage** of the reconciliation and audit framework. As of January 2026, all identified gaps have been addressed: FA-MORT-4 (escrow→document linkage), covenant management (per-property thresholds + COVENANT-6), rent roll forensics (RRBS-1..4), variance alerting (AUDIT-48 configurable), investment and leasing analytics (ANALYTICS-4..33), benchmark/trend/stress (configurable or full), budget/forecast (AUDIT-51/52 + TREND-3 when data present), and **AUDIT-49/50** (year-end and YoY enhancements with configurable thresholds and optional retained-earnings roll). Remaining work is **data population** so AUDIT-51/52 and analytics rules run with real data; see **docs/RECONCILIATION_DATA_POPULATION_RUNBOOK.md** and **docs/RULES_COVERAGE_MATRIX.md**.
 
-For current gap list and phased plan, see **docs/RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md**.
+For gap list and phased plan, see **docs/RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md**.
 
 ---
 
 ## NEXT STEPS
 
-1. **Keep rule coverage matrix** (above) updated when adding or changing rules.
-2. **Ensure data population** for maximum rule effectiveness: recalculate financial_metrics, load budget/forecast data (see deep dive Phase 2).
-3. **Optional**: Implement FA-MORT-4 escrow documentation linkage if required by workflow.
+1. **Quick entry**: [docs/RECONCILIATION_QUICK_REFERENCE.md](docs/RECONCILIATION_QUICK_REFERENCE.md) – Phase 1/2 summary, APIs, UI locations, rule coverage.
+2. **See docs/RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md** for the consolidated gap list and phased plan to fully implement all rules (AUDIT-49/50 enhancement, data population, documentation).
+3. **Keep rule coverage matrix** (above) updated when adding or changing rules.
+4. **Ensure data population** for maximum rule effectiveness: recalculate financial_metrics, load budget/forecast data (see full implementation plan Phase 2).
+5. **FA-MORT-4** escrow documentation linkage is implemented (EscrowDocumentLink, rule, API); optional: promote escrow linking in UI.
 
 ---
 

@@ -112,6 +112,32 @@ export interface PeriodOverPeriodVarianceResponse {
   alerts_created: number;
 }
 
+export interface DataStatusResponse {
+  property_id: number;
+  period_id: number;
+  has_metrics: boolean;
+  approved_budget_count: number;
+  draft_budget_count: number;
+  approved_forecast_count: number;
+  draft_forecast_count: number;
+}
+
+export interface BudgetLineResponse {
+  id: number;
+  account_code: string;
+  account_name: string | null;
+  budgeted_amount: number;
+  status: string;
+}
+
+export interface ForecastLineResponse {
+  id: number;
+  account_code: string;
+  account_name: string | null;
+  forecasted_amount: number;
+  status: string;
+}
+
 export class VarianceAnalysisService {
   /**
    * Get budget variance for a property and period
@@ -201,6 +227,68 @@ export class VarianceAnalysisService {
    */
   async getThresholds() {
     return api.get('/variance-analysis/thresholds');
+  }
+
+  /**
+   * Get reconciliation data status (metrics, budget, forecast) for property/period
+   */
+  async getDataStatus(
+    propertyId: number,
+    periodId: number
+  ): Promise<DataStatusResponse> {
+    return api.get<DataStatusResponse>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/data-status`
+    );
+  }
+
+  /**
+   * List budget line items for property/period (for display and inline edit)
+   */
+  async listBudgetsForPeriod(
+    propertyId: number,
+    periodId: number
+  ): Promise<BudgetLineResponse[]> {
+    return api.get<BudgetLineResponse[]>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/budgets`
+    );
+  }
+
+  /**
+   * List forecast line items for property/period (for display and inline edit)
+   */
+  async listForecastsForPeriod(
+    propertyId: number,
+    periodId: number
+  ): Promise<ForecastLineResponse[]> {
+    return api.get<ForecastLineResponse[]>(
+      `/variance-analysis/properties/${propertyId}/periods/${periodId}/forecasts`
+    );
+  }
+
+  /**
+   * Update a single budget line (budgeted_amount). Only DRAFT/REVISED.
+   */
+  async updateBudgetLine(
+    budgetId: number,
+    body: { budgeted_amount?: number }
+  ): Promise<BudgetLineResponse> {
+    return api.patch<BudgetLineResponse>(
+      `/variance-analysis/budgets/${budgetId}`,
+      body
+    );
+  }
+
+  /**
+   * Update a single forecast line (forecasted_amount). Only DRAFT/REVISED.
+   */
+  async updateForecastLine(
+    forecastId: number,
+    body: { forecasted_amount?: number }
+  ): Promise<ForecastLineResponse> {
+    return api.patch<ForecastLineResponse>(
+      `/variance-analysis/forecasts/${forecastId}`,
+      body
+    );
   }
 }
 

@@ -9,7 +9,10 @@ import type {
   DocumentUpload,
   DocumentUploadRequest,
   DocumentUploadResponse,
-  PaginatedResponse
+  PaginatedResponse,
+  EscrowLink,
+  EscrowLinkCreate,
+  EscrowLinkListResponse,
 } from '../types/api';
 
 export class DocumentService {
@@ -79,6 +82,29 @@ export class DocumentService {
       `/documents/uploads/${uploadId}/download`,
       expiresIn ? { expires_in: expiresIn } : undefined
     );
+  }
+
+  // ---------- FA-MORT-4: Escrow document links ----------
+
+  /**
+   * List escrow document links, optionally filtered by property and/or period.
+   */
+  async listEscrowLinks(params?: { property_id?: number; period_id?: number }): Promise<EscrowLinkListResponse> {
+    return api.get<EscrowLinkListResponse>('/documents/escrow-links', params);
+  }
+
+  /**
+   * Create an escrow document link (link a document to escrow activity for property/period/type).
+   */
+  async createEscrowLink(body: EscrowLinkCreate): Promise<EscrowLink> {
+    return api.post<EscrowLink>('/documents/escrow-links', body);
+  }
+
+  /**
+   * Delete an escrow document link.
+   */
+  async deleteEscrowLink(linkId: number): Promise<void> {
+    return api.delete(`/documents/escrow-links/${linkId}`);
   }
 }
 

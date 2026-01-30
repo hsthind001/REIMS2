@@ -4003,7 +4003,7 @@ class AuditRulesMixin:
         )
 
     def _rule_audit_49_year_end_validation(self):
-        """AUDIT-49: Year-end validation checkpoints."""
+        """AUDIT-49: Year-end validation checkpoints. Tolerance config: audit49_earnings_tolerance_pct (default 1.0)."""
         year, month = self._get_period_year_month(self.period_id)
         ctx = self._get_alignment_context()
 
@@ -4025,21 +4025,48 @@ class AuditRulesMixin:
             )
             return
 
+        tolerance_pct = self._get_numeric_config("audit49_earnings_tolerance_pct", 1.0)
+        tol_pct_factor = tolerance_pct / 100.0
+
         bs_current_earnings = self._get_bs_value(account_name_pattern="%CURRENT PERIOD EARNINGS%")
         _, is_ytd_net_income = self._sum_is_amounts(["%NET INCOME%"], self.period_id)
         period_net_income = self._get_is_value(account_name_pattern="%NET INCOME%")
 
         reset_ok = abs(bs_current_earnings - is_ytd_net_income) <= max(
-            1.0, abs(is_ytd_net_income) * 0.01
+            1.0, abs(is_ytd_net_income) * tol_pct_factor
         )
         ytd_matches_period = abs(is_ytd_net_income - period_net_income) <= max(
-            1.0, abs(period_net_income) * 0.01
+            1.0, abs(period_net_income) * tol_pct_factor
         )
 
-        status = "PASS" if reset_ok and ytd_matches_period else "WARNING"
+        # Optional: retained earnings roll (prior year end RE + prior year NI = current begin RE; for Jan: RE_begin_Jan = RE_end_Dec_prior)
+        re_roll_ok = None
+        prior_dec_id = self._get_period_id_for_year_month(year - 1, 12)
+        if prior_dec_id:
+            re_prior_end = self._get_bs_value(
+                account_name_pattern="%RETAINED EARNINGS%", period_id=prior_dec_id
+            )
+            re_curr_end = self._get_bs_value(account_name_pattern="%RETAINED EARNINGS%")
+            if abs(re_prior_end) > 0.01 or abs(re_curr_end) > 0.01:
+                period_ni = float(period_net_income) if period_net_income is not None else 0.0
+                re_begin_implied = re_curr_end - period_ni
+                re_roll_tol = max(1.0, abs(re_prior_end) * tol_pct_factor)
+                re_roll_ok = abs(re_begin_implied - re_prior_end) <= re_roll_tol
+
+        checklist_parts = [
+            "BS=IS YTD ✓" if reset_ok else "BS=IS YTD ✗",
+            "YTD=period ✓" if ytd_matches_period else "YTD=period ✗",
+        ]
+        if re_roll_ok is not None:
+            checklist_parts.append("retained earnings roll ✓" if re_roll_ok else "retained earnings roll ✗")
+        else:
+            checklist_parts.append("retained earnings roll N/A")
+
+        all_ok = reset_ok and ytd_matches_period and (re_roll_ok is None or re_roll_ok)
+        status = "PASS" if all_ok else "WARNING"
         details = (
             f"BS earnings ${bs_current_earnings:,.2f}, IS YTD ${is_ytd_net_income:,.2f}, "
-            f"IS period ${period_net_income:,.2f}"
+            f"IS period ${period_net_income:,.2f}. Checklist: {'; '.join(checklist_parts)}"
         )
 
         self.results.append(
@@ -4054,7 +4081,7 @@ class AuditRulesMixin:
                 variance_pct=0,
                 details=details,
                 severity="high",
-                formula="Jan period: IS YTD should equal period amount and tie to BS earnings",
+                formula="Jan period: IS YTD should equal period amount and tie to BS earnings; optional retained earnings roll (config: audit49_earnings_tolerance_pct)",
                 intermediate_calculations={
                     "period_month": month,
                     "bs_current_earnings": bs_current_earnings,
@@ -4062,19 +4089,26 @@ class AuditRulesMixin:
                     "period_net_income": period_net_income,
                     "reset_ok": reset_ok,
                     "ytd_matches_period": ytd_matches_period,
+                    "re_roll_ok": re_roll_ok,
+                    "audit49_earnings_tolerance_pct": tolerance_pct,
                     "alignment": ctx.to_dict(),
                 },
             )
         )
 
     def _rule_audit_50_year_over_year_comparison(self):
-        """AUDIT-50: Year-over-year comparison for key metrics."""
+        """AUDIT-50: Year-over-year comparison for key metrics. Thresholds config: audit50_*_decrease_* (defaults: 10%, 10%, 10%, 5pp)."""
         curr_year, curr_month = self._get_period_year_month(self.period_id)
         prior_year_id = self._get_period_id_for_year_month(curr_year - 1, curr_month)
         if not prior_year_id:
             return
 
         ctx = self._get_alignment_context()
+
+        income_threshold = self._get_numeric_config("audit50_income_decrease_pct", 10.0)
+        noi_threshold = self._get_numeric_config("audit50_noi_decrease_pct", 10.0)
+        net_income_threshold = self._get_numeric_config("audit50_net_income_decrease_pct", 10.0)
+        occupancy_threshold_pp = self._get_numeric_config("audit50_occupancy_decrease_pp", 5.0)
 
         total_income_curr = self._get_is_value_for_period("%TOTAL INCOME%", self.period_id)
         total_income_prior = self._get_is_value_for_period("%TOTAL INCOME%", prior_year_id)
@@ -4095,18 +4129,22 @@ class AuditRulesMixin:
         net_income_change = pct_change(net_income_curr, net_income_prior)
 
         warnings = []
-        if income_change < -10.0:
-            warnings.append(f"Total income down {income_change:.1f}% YoY")
-        if noi_change < -10.0:
-            warnings.append(f"NOI down {noi_change:.1f}% YoY")
-        if net_income_change < -10.0:
-            warnings.append(f"Net income down {net_income_change:.1f}% YoY")
+        if income_change < -income_threshold:
+            warnings.append(f"Total income down {income_change:.1f}% YoY (threshold {income_threshold:.0f}%)")
+        if noi_change < -noi_threshold:
+            warnings.append(f"NOI down {noi_change:.1f}% YoY (threshold {noi_threshold:.0f}%)")
+        if net_income_change < -net_income_threshold:
+            warnings.append(f"Net income down {net_income_change:.1f}% YoY (threshold {net_income_threshold:.0f}%)")
+        if occ_delta < -occupancy_threshold_pp:
+            warnings.append(f"Occupancy down {occ_delta:.2f}pp YoY (threshold {occupancy_threshold_pp:.0f}pp)")
 
         status = "WARNING" if warnings else "INFO"
         details = (
             f"Income {income_change:.1f}%, NOI {noi_change:.1f}%, Net income {net_income_change:.1f}%, "
             f"Occupancy Δ {occ_delta:.2f}pp"
         )
+        if warnings:
+            details = f"{details}; {'; '.join(warnings)}"
 
         self.results.append(
             ReconciliationResult(
@@ -4118,15 +4156,19 @@ class AuditRulesMixin:
                 target_value=0.0,
                 difference=income_change,
                 variance_pct=0,
-                details=details if not warnings else f"{details}; {'; '.join(warnings)}",
+                details=details,
                 severity="medium",
-                formula="Compare current period to same month prior year",
+                formula="Compare current period to same month prior year (thresholds: audit50_*_decrease_*)",
                 intermediate_calculations={
                     "prior_year_id": prior_year_id,
                     "income_change_pct": income_change,
                     "noi_change_pct": noi_change,
                     "net_income_change_pct": net_income_change,
                     "occupancy_delta_pp": occ_delta,
+                    "audit50_income_decrease_pct": income_threshold,
+                    "audit50_noi_decrease_pct": noi_threshold,
+                    "audit50_net_income_decrease_pct": net_income_threshold,
+                    "audit50_occupancy_decrease_pp": occupancy_threshold_pp,
                     "alignment": ctx.to_dict(),
                 },
             )

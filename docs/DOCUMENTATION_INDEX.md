@@ -19,7 +19,11 @@ This index helps you find documentation quickly and prevents duplicate documenta
 - [VERSIONING_GUIDE.md](../VERSIONING_GUIDE.md)
 
 ### Reconciliation Rules (Required for Rule Implementation)
+- **Quick Reference** - [RECONCILIATION_QUICK_REFERENCE.md](RECONCILIATION_QUICK_REFERENCE.md) – entry point: Phase 1/2, APIs, UI, rule coverage
 - **Rules Analysis** - [RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md](../RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md) (repo root)
+- **Full Implementation Plan** - [RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md](RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md) – gap list, phased plan
+- **Data Population Runbook** - [RECONCILIATION_DATA_POPULATION_RUNBOOK.md](RECONCILIATION_DATA_POPULATION_RUNBOOK.md) – metrics recalc, budget/forecast import & approve, data-status API, list/PATCH for inline edit, regression & API tests
+- **Rules Coverage Matrix** - [RULES_COVERAGE_MATRIX.md](RULES_COVERAGE_MATRIX.md) – Rule ID → status, file/method; maintenance guide + `scripts/validate_rules_coverage_matrix.py`
 - **Deep Dive & Plan** - [RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md](RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md)
 - **Implementation Summary** - [RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md](RECONCILIATION_RULES_IMPLEMENTATION_SUMMARY.md)
 - **Rule Mapping** - [backend/app/services/rules/RULES_MAPPING.md](../backend/app/services/rules/RULES_MAPPING.md)

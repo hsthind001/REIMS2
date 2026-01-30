@@ -14,12 +14,16 @@ class DummyDB:
     """
 
     class _Result:
-        def __init__(self, scalar_value=0.0, rows=None):
+        def __init__(self, scalar_value=0.0, rows=None, one=None):
             self._scalar_value = scalar_value
             self._rows = rows or []
+            self._one = one  # for fetchone(); None = no row
 
         def scalar(self):
             return self._scalar_value
+
+        def fetchone(self):
+            return self._one
 
         def fetchall(self):
             return list(self._rows)
@@ -70,6 +74,16 @@ class DummyEngine(AuditRulesMixin, ForensicAnomalyRulesMixin):
     def _get_window_date_range(self, *_args, **_kwargs):
         # return a dummy (start, end) window
         return None, None
+
+    # Stubs so AUDIT-49, AUDIT-50, FA-MORT-4 can run without real DB
+    def _get_period_year_month(self, period_id):
+        return 2025, 1  # January so AUDIT-49 runs full path
+
+    def _get_period_id_for_year_month(self, year, month):
+        return 1  # prior period exists so AUDIT-50 runs
+
+    def _get_numeric_config(self, key, default):
+        return default
 
 
 @pytest.fixture
@@ -124,4 +138,33 @@ def test_forensic_enhancement_rules_do_not_crash(engine: DummyEngine):
     assert "FA-MORT-1" in rule_ids
     assert "FA-MORT-2" in rule_ids
     assert "FA-RR-1" in rule_ids
+
+
+def test_audit_49_50_fa_mort_4_produce_result(engine: DummyEngine):
+    """
+    Regression: AUDIT-49 (year-end), AUDIT-50 (YoY), FA-MORT-4 (escrow docs)
+    run without error and each append exactly one result with expected rule_id.
+    """
+    engine.results = []
+
+    engine._rule_audit_49_year_end_validation()
+    engine._rule_audit_50_year_over_year_comparison()
+    engine._rule_fa_mort_4_escrow_documentation_link()
+
+    rule_ids = [r.rule_id for r in engine.results]
+    assert "AUDIT-49" in rule_ids, "AUDIT-49 should produce a result"
+    assert "AUDIT-50" in rule_ids, "AUDIT-50 should produce a result"
+    assert "FA-MORT-4" in rule_ids, "FA-MORT-4 should produce a result"
+
+    audit_49 = [r for r in engine.results if r.rule_id == "AUDIT-49"]
+    audit_50 = [r for r in engine.results if r.rule_id == "AUDIT-50"]
+    fa_mort_4 = [r for r in engine.results if r.rule_id == "FA-MORT-4"]
+    assert len(audit_49) == 1, "AUDIT-49 should append exactly one result"
+    assert len(audit_50) == 1, "AUDIT-50 should append exactly one result"
+    assert len(fa_mort_4) == 1, "FA-MORT-4 should append exactly one result"
+
+    # With dummy data (zeros/empty), AUDIT-49 runs January path; AUDIT-50 runs YoY; FA-MORT-4 runs with no material disbursements
+    assert audit_49[0].status in ("PASS", "WARNING", "INFO")
+    assert audit_50[0].status in ("PASS", "WARNING", "INFO")
+    assert fa_mort_4[0].status in ("PASS", "WARNING")
 

@@ -29,20 +29,78 @@ import { documentService } from '../lib/document';
 import { financialDataService } from '../lib/financial_data';
 import { reconciliationService, type ReconciliationSession, type ComparisonData } from '../lib/reconciliation';
 import { chartOfAccountsService, type ChartOfAccount, type ChartOfAccountsSummary } from '../lib/chart_of_accounts';
-import { varianceAnalysisService, type PeriodOverPeriodVarianceResponse, type VarianceItem } from '../lib/variance_analysis';
+import { varianceAnalysisService, type PeriodOverPeriodVarianceResponse, type VarianceItem, type DataStatusResponse, type BudgetLineResponse, type ForecastLineResponse } from '../lib/variance_analysis';
 import { financialPeriodsService } from '../lib/financial_periods';
 import { MortgageStatementDetails } from '../components/mortgage/MortgageStatementDetails';
 import { MortgageDataTable } from '../components/mortgage/MortgageDataTable';
 import { MortgageDetail } from '../components/mortgage/MortgageDetail';
 import { MortgageMetrics } from '../components/mortgage/MortgageMetrics';
 import { api } from '../lib/api';
-import type { Property, DocumentUpload as DocumentUploadType, FinancialPeriod } from '../types/api';
+import type { Property, DocumentUpload as DocumentUploadType, FinancialPeriod, EscrowLink, EscrowType } from '../types/api';
 import type { FinancialDataItem, FinancialDataResponse } from '../lib/financial_data';
 import TrendAnalysisChart from '../components/charts/TrendAnalysisChart';
 
 import { useWebSocket } from '../hooks';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
+
+function BudgetLineRow({ row, onSave }: { row: BudgetLineResponse; onSave: (amount: number) => void }) {
+  const [value, setValue] = useState(String(row.budgeted_amount));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setValue(String(row.budgeted_amount)); }, [row.budgeted_amount]);
+  const handleBlur = () => {
+    const n = parseFloat(value);
+    if (!Number.isNaN(n) && n !== row.budgeted_amount && row.status !== 'APPROVED') {
+      setSaving(true);
+      onSave(n);
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 text-sm">
+      <span className="w-24 truncate">{row.account_code}</span>
+      <span className="flex-1 truncate text-text-secondary">{row.account_name || '—'}</span>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        disabled={row.status === 'APPROVED' || saving}
+        className="w-28 rounded border border-border bg-background px-2 py-1 text-right text-sm"
+      />
+      <span className="text-[11px] text-text-tertiary">{row.status}</span>
+    </div>
+  );
+}
+
+function ForecastLineRow({ row, onSave }: { row: ForecastLineResponse; onSave: (amount: number) => void }) {
+  const [value, setValue] = useState(String(row.forecasted_amount));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setValue(String(row.forecasted_amount)); }, [row.forecasted_amount]);
+  const handleBlur = () => {
+    const n = parseFloat(value);
+    if (!Number.isNaN(n) && n !== row.forecasted_amount && row.status !== 'APPROVED') {
+      setSaving(true);
+      onSave(n);
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 text-sm">
+      <span className="w-24 truncate">{row.account_code}</span>
+      <span className="flex-1 truncate text-text-secondary">{row.account_name || '—'}</span>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        disabled={row.status === 'APPROVED' || saving}
+        className="w-28 rounded border border-border bg-background px-2 py-1 text-right text-sm"
+      />
+      <span className="text-[11px] text-text-tertiary">{row.status}</span>
+    </div>
+  );
+}
 
 type FinancialTab = 'ai' | 'statements' | 'variance' | 'exit' | 'chart' | 'reconciliation';
 
@@ -101,6 +159,22 @@ export default function Financials() {
   const [financialMetrics, setFinancialMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showFullFinancialData, setShowFullFinancialData] = useState(false);
+  const [recalculateMetricsLoading, setRecalculateMetricsLoading] = useState(false);
+  const [approveBudgetsLoading, setApproveBudgetsLoading] = useState(false);
+  const [approveForecastsLoading, setApproveForecastsLoading] = useState(false);
+  const [escrowLinks, setEscrowLinks] = useState<EscrowLink[]>([]);
+  const [escrowLinksLoading, setEscrowLinksLoading] = useState(false);
+  const [escrowLinkCreateLoading, setEscrowLinkCreateLoading] = useState(false);
+  const [escrowNewDocumentId, setEscrowNewDocumentId] = useState<number | ''>('');
+  const [escrowNewType, setEscrowNewType] = useState<EscrowType>('property_tax');
+  const [dataStatus, setDataStatus] = useState<DataStatusResponse | null>(null);
+  const [dataStatusLoading, setDataStatusLoading] = useState(false);
+  const [budgetLines, setBudgetLines] = useState<BudgetLineResponse[]>([]);
+  const [forecastLines, setForecastLines] = useState<ForecastLineResponse[]>([]);
+  const [budgetLinesLoading, setBudgetLinesLoading] = useState(false);
+  const [forecastLinesLoading, setForecastLinesLoading] = useState(false);
+  const [showBudgetLines, setShowBudgetLines] = useState(false);
+  const [showForecastLines, setShowForecastLines] = useState(false);
   
   // Ask Finance Enhanced State
   const [savedQueries, setSavedQueries] = useState<string[]>([
@@ -410,6 +484,90 @@ export default function Financials() {
       }
     } catch (err) {
       console.error('Failed to load financial data:', err);
+    }
+  };
+
+  const handleRecalculateMetrics = async () => {
+    if (!selectedProperty) return;
+    setRecalculateMetricsLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/metrics/${selectedProperty.property_code}/${selectedYear}/${selectedMonth}/recalculate`,
+        { method: 'POST', credentials: 'include' }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Recalculate failed');
+      }
+      await loadFinancialData(selectedProperty.id);
+    } catch (err: any) {
+      console.error('Recalculate metrics failed:', err);
+      alert(err.message || 'Failed to recalculate metrics. Try again.');
+    } finally {
+      setRecalculateMetricsLoading(false);
+    }
+  };
+
+  const currentPeriodId = useMemo(() => {
+    const p = availablePeriods.find(
+      (x) => x.period_year === selectedYear && x.period_month === selectedMonth
+    );
+    return p && typeof p.id === 'number' && p.id > 0 ? p.id : null;
+  }, [availablePeriods, selectedYear, selectedMonth]);
+
+  const handleApproveBudgetsByPeriod = async () => {
+    if (!selectedProperty || !currentPeriodId) return;
+    setApproveBudgetsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/variance-analysis/budgets/approve-by-period`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          property_id: selectedProperty.id,
+          financial_period_id: currentPeriodId,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Approve budgets failed');
+      }
+      const data = await res.json();
+      if (data.approved_count > 0) await loadFinancialData(selectedProperty.id);
+      alert(data.approved_count > 0 ? `Approved ${data.approved_count} budget(s).` : 'No DRAFT budgets to approve for this period.');
+    } catch (err: any) {
+      console.error('Approve budgets failed:', err);
+      alert(err.message || 'Failed to approve budgets. Try again.');
+    } finally {
+      setApproveBudgetsLoading(false);
+    }
+  };
+
+  const handleApproveForecastsByPeriod = async () => {
+    if (!selectedProperty || !currentPeriodId) return;
+    setApproveForecastsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/variance-analysis/forecasts/approve-by-period`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          property_id: selectedProperty.id,
+          financial_period_id: currentPeriodId,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Approve forecasts failed');
+      }
+      const data = await res.json();
+      if (data.approved_count > 0) await loadFinancialData(selectedProperty.id);
+      alert(data.approved_count > 0 ? `Approved ${data.approved_count} forecast(s).` : 'No DRAFT forecasts to approve for this period.');
+    } catch (err: any) {
+      console.error('Approve forecasts failed:', err);
+      alert(err.message || 'Failed to approve forecasts. Try again.');
+    } finally {
+      setApproveForecastsLoading(false);
     }
   };
 
@@ -1031,6 +1189,137 @@ export default function Financials() {
     }
   };
 
+  const loadEscrowLinks = async () => {
+    if (!selectedProperty || !currentPeriodId) {
+      setEscrowLinks([]);
+      return;
+    }
+    setEscrowLinksLoading(true);
+    try {
+      const res = await documentService.listEscrowLinks({
+        property_id: selectedProperty.id,
+        period_id: currentPeriodId,
+      });
+      setEscrowLinks(res.links || []);
+    } catch (err) {
+      console.error('Failed to load escrow links:', err);
+      setEscrowLinks([]);
+    } finally {
+      setEscrowLinksLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEscrowLinks();
+  }, [selectedProperty?.id, currentPeriodId]);
+
+  useEffect(() => {
+    if (activeTab === 'variance' && selectedProperty && currentPeriodId) {
+      loadDataStatus();
+    } else {
+      setDataStatus(null);
+    }
+  }, [activeTab, selectedProperty?.id, currentPeriodId]);
+
+  const handleCreateEscrowLink = async () => {
+    if (!selectedProperty || !currentPeriodId || escrowNewDocumentId === '') return;
+    setEscrowLinkCreateLoading(true);
+    try {
+      await documentService.createEscrowLink({
+        property_id: selectedProperty.id,
+        period_id: currentPeriodId,
+        document_upload_id: escrowNewDocumentId,
+        escrow_type: escrowNewType,
+      });
+      setEscrowNewDocumentId('');
+      setEscrowNewType('property_tax');
+      await loadEscrowLinks();
+    } catch (err: any) {
+      console.error('Create escrow link failed:', err);
+      alert(err?.message || 'Failed to create escrow link. Document must be for this property and period.');
+    } finally {
+      setEscrowLinkCreateLoading(false);
+    }
+  };
+
+  const handleDeleteEscrowLink = async (linkId: number) => {
+    if (!confirm('Remove this escrow documentation link?')) return;
+    try {
+      await documentService.deleteEscrowLink(linkId);
+      await loadEscrowLinks();
+    } catch (err: any) {
+      console.error('Delete escrow link failed:', err);
+      alert(err?.message || 'Failed to remove link.');
+    }
+  };
+
+  const loadDataStatus = async () => {
+    if (!selectedProperty || !currentPeriodId) {
+      setDataStatus(null);
+      return;
+    }
+    setDataStatusLoading(true);
+    try {
+      const res = await varianceAnalysisService.getDataStatus(selectedProperty.id, currentPeriodId);
+      setDataStatus(res);
+    } catch (err) {
+      console.error('Failed to load data status:', err);
+      setDataStatus(null);
+    } finally {
+      setDataStatusLoading(false);
+    }
+  };
+
+  const loadBudgetLines = async () => {
+    if (!selectedProperty || !currentPeriodId) return;
+    setBudgetLinesLoading(true);
+    try {
+      const list = await varianceAnalysisService.listBudgetsForPeriod(selectedProperty.id, currentPeriodId);
+      setBudgetLines(list);
+    } catch (err) {
+      console.error('Failed to load budget lines:', err);
+      setBudgetLines([]);
+    } finally {
+      setBudgetLinesLoading(false);
+    }
+  };
+
+  const loadForecastLines = async () => {
+    if (!selectedProperty || !currentPeriodId) return;
+    setForecastLinesLoading(true);
+    try {
+      const list = await varianceAnalysisService.listForecastsForPeriod(selectedProperty.id, currentPeriodId);
+      setForecastLines(list);
+    } catch (err) {
+      console.error('Failed to load forecast lines:', err);
+      setForecastLines([]);
+    } finally {
+      setForecastLinesLoading(false);
+    }
+  };
+
+  const handleUpdateBudgetAmount = async (budgetId: number, budgetedAmount: number) => {
+    try {
+      await varianceAnalysisService.updateBudgetLine(budgetId, { budgeted_amount: budgetedAmount });
+      await loadBudgetLines();
+      await loadDataStatus();
+    } catch (err: any) {
+      console.error('Update budget failed:', err);
+      alert(err?.message || 'Failed to update budget.');
+    }
+  };
+
+  const handleUpdateForecastAmount = async (forecastId: number, forecastedAmount: number) => {
+    try {
+      await varianceAnalysisService.updateForecastLine(forecastId, { forecasted_amount: forecastedAmount });
+      await loadForecastLines();
+      await loadDataStatus();
+    } catch (err: any) {
+      console.error('Update forecast failed:', err);
+      alert(err?.message || 'Failed to update forecast.');
+    }
+  };
+
   const loadVarianceAnalysis = async (periodId?: number) => {
     const usePeriodId = periodId || currentPeriodId;
 
@@ -1306,6 +1595,16 @@ export default function Financials() {
                 </div>
 
                 <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={<Calculator className="w-4 h-4 ml-0" />}
+                    onClick={handleRecalculateMetrics}
+                    disabled={!selectedProperty || recalculateMetricsLoading}
+                    title="Recalculate KPIs for this property/period (metrics, DSCR, etc.)"
+                  >
+                    {recalculateMetricsLoading ? 'Recalculating…' : 'Recalculate metrics'}
+                  </Button>
                   <Button variant="outline" size="sm" icon={<Download className="w-4 h-4 ml-0" />}>Export</Button>
                 </div>
               </div>
@@ -1456,15 +1755,130 @@ export default function Financials() {
 
         {activeTab === 'variance' && (
           <div className="space-y-6">
+            {/* Reconciliation data status & budget/forecast entry */}
+            {selectedProperty && currentPeriodId && (
+              <>
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-3">Reconciliation data status</h3>
+                  <p className="text-sm text-text-secondary mb-4">
+                    Ensure metrics, budget, and forecast are populated so AUDIT-51, AUDIT-52, TREND-3, and analytics rules run with data.
+                  </p>
+                  {dataStatusLoading ? (
+                    <div className="text-sm text-text-tertiary">Loading…</div>
+                  ) : dataStatus ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap gap-4 items-center">
+                        <span className={`flex items-center gap-2 text-sm ${dataStatus.has_metrics ? 'text-success' : 'text-text-secondary'}`}>
+                          {dataStatus.has_metrics ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                          {dataStatus.has_metrics ? 'Metrics calculated' : 'Metrics not calculated'}
+                        </span>
+                        <span className={`flex items-center gap-2 text-sm ${dataStatus.approved_budget_count > 0 ? 'text-success' : 'text-text-secondary'}`}>
+                          {dataStatus.approved_budget_count > 0 ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                          Approved budget: {dataStatus.approved_budget_count} ({dataStatus.draft_budget_count} draft)
+                        </span>
+                        <span className={`flex items-center gap-2 text-sm ${dataStatus.approved_forecast_count > 0 ? 'text-success' : 'text-text-secondary'}`}>
+                          {dataStatus.approved_forecast_count > 0 ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                          Approved forecast: {dataStatus.approved_forecast_count} ({dataStatus.draft_forecast_count} draft)
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={async () => { await handleRecalculateMetrics(); loadDataStatus(); }} disabled={recalculateMetricsLoading} title="Recalculate KPIs for this property/period">
+                          Recalculate metrics
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => { window.location.hash = 'bulk-import'; }} title="Go to Bulk Import to upload budget/forecast CSV or Excel">
+                          Import budget / forecast
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleApproveBudgetsByPeriod} disabled={approveBudgetsLoading || dataStatus.draft_budget_count === 0} title="Approve all DRAFT budgets for this period">
+                          Approve budgets
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleApproveForecastsByPeriod} disabled={approveForecastsLoading || dataStatus.draft_forecast_count === 0} title="Approve all DRAFT forecasts for this period">
+                          Approve forecasts
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-text-tertiary">Select a property and period to see status.</div>
+                  )}
+                </Card>
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-3">Budget & forecast entry</h3>
+                  <p className="text-sm text-text-secondary mb-4">
+                    Bulk import via CSV/Excel, or view and edit line items below (DRAFT/REVISED only).
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <Button variant="outline" size="sm" onClick={() => { window.location.hash = 'bulk-import'; }}>Bulk import budget or forecast</Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setShowBudgetLines(!showBudgetLines); if (!showBudgetLines) loadBudgetLines(); }}>
+                      {showBudgetLines ? 'Hide' : 'View'} budget lines
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setShowForecastLines(!showForecastLines); if (!showForecastLines) loadForecastLines(); }}>
+                      {showForecastLines ? 'Hide' : 'View'} forecast lines
+                    </Button>
+                  </div>
+                  {showBudgetLines && (
+                    <div className="mt-4 border border-border rounded-lg overflow-hidden">
+                      <div className="text-sm font-medium p-2 bg-surface border-b border-border">Budget lines (edit amount and blur to save)</div>
+                      {budgetLinesLoading ? (
+                        <div className="p-4 text-sm text-text-tertiary">Loading…</div>
+                      ) : budgetLines.length === 0 ? (
+                        <div className="p-4 text-sm text-text-tertiary">No budget lines. Use Bulk import to add.</div>
+                      ) : (
+                        <div className="max-h-48 overflow-y-auto">
+                          {budgetLines.map((row) => (
+                            <BudgetLineRow key={row.id} row={row} onSave={(amount) => handleUpdateBudgetAmount(row.id, amount)} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {showForecastLines && (
+                    <div className="mt-4 border border-border rounded-lg overflow-hidden">
+                      <div className="text-sm font-medium p-2 bg-surface border-b border-border">Forecast lines (edit amount and blur to save)</div>
+                      {forecastLinesLoading ? (
+                        <div className="p-4 text-sm text-text-tertiary">Loading…</div>
+                      ) : forecastLines.length === 0 ? (
+                        <div className="p-4 text-sm text-text-tertiary">No forecast lines. Use Bulk import to add.</div>
+                      ) : (
+                        <div className="max-h-48 overflow-y-auto">
+                          {forecastLines.map((row) => (
+                            <ForecastLineRow key={row.id} row={row} onSave={(amount) => handleUpdateForecastAmount(row.id, amount)} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              </>
+            )}
+
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-semibold">Variance Analysis (Budget vs Actual)</h3>
                   <p className="text-sm text-text-secondary">Snapshot for {selectedYear} · waterfall preview</p>
                 </div>
-                <Button variant="ghost" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => setVarianceData(varianceData)}>
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleApproveBudgetsByPeriod}
+                    disabled={!selectedProperty || !currentPeriodId || approveBudgetsLoading}
+                    title="Approve all DRAFT budgets for this property/period so AUDIT-51 and TREND-3 use them"
+                  >
+                    {approveBudgetsLoading ? 'Approving…' : 'Approve budgets'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleApproveForecastsByPeriod}
+                    disabled={!selectedProperty || !currentPeriodId || approveForecastsLoading}
+                    title="Approve all DRAFT forecasts for this property/period so AUDIT-52 uses them"
+                  >
+                    {approveForecastsLoading ? 'Approving…' : 'Approve forecasts'}
+                  </Button>
+                  <Button variant="ghost" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => setVarianceData(varianceData)}>
+                    Refresh
+                  </Button>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[
@@ -1607,6 +2021,85 @@ export default function Financials() {
                           Scroll to see all uploads. Documents may belong to different periods.
                         </div>
                       </Card>
+
+                      {/* Escrow documentation (FA-MORT-4) - only when property + period selected */}
+                      {selectedProperty && currentPeriodId && (
+                        <Card className="p-4">
+                          <div className="text-sm font-semibold text-text-secondary mb-2">Escrow documentation (FA-MORT-4)</div>
+                          <p className="text-[11px] text-text-tertiary mb-3">
+                            Link documents to escrow activity (tax, insurance, reserves) for reconciliation.
+                          </p>
+                          {escrowLinksLoading ? (
+                            <div className="text-xs text-text-tertiary">Loading…</div>
+                          ) : (
+                            <>
+                              <div className="space-y-2 max-h-32 overflow-y-auto pr-1 custom-scrollbar mb-3">
+                                {escrowLinks.length === 0 ? (
+                                  <div className="text-xs text-text-tertiary">No links for this period.</div>
+                                ) : (
+                                  escrowLinks.map((link) => (
+                                    <div
+                                      key={link.id}
+                                      className="flex items-center justify-between gap-2 p-2 rounded border border-border bg-background text-xs"
+                                    >
+                                      <span className="capitalize truncate">{link.escrow_type.replace('_', ' ')}</span>
+                                      <span className="text-text-tertiary shrink-0">#{link.document_upload_id}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteEscrowLink(link.id)}
+                                        className="shrink-0 text-danger hover:underline"
+                                        title="Remove link"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                              <div className="space-y-2 border-t border-border pt-3">
+                                <label className="text-[11px] text-text-secondary block">Add link</label>
+                                <select
+                                  value={escrowNewDocumentId}
+                                  onChange={(e) => setEscrowNewDocumentId(e.target.value === '' ? '' : Number(e.target.value))}
+                                  className="w-full text-xs rounded border border-border bg-background px-2 py-1.5"
+                                >
+                                  <option value="">Select document</option>
+                                  {availableDocuments
+                                    .filter(
+                                      (d) =>
+                                        (d.period_id === currentPeriodId) ||
+                                        (d.period_year === selectedYear && d.period_month === selectedMonth)
+                                    )
+                                    .map((d) => (
+                                      <option key={d.id} value={d.id}>
+                                        #{d.id} {d.document_type.replace('_', ' ')} ({d.extraction_status})
+                                      </option>
+                                    ))}
+                                </select>
+                                <select
+                                  value={escrowNewType}
+                                  onChange={(e) => setEscrowNewType(e.target.value as EscrowType)}
+                                  className="w-full text-xs rounded border border-border bg-background px-2 py-1.5"
+                                >
+                                  <option value="property_tax">Property tax</option>
+                                  <option value="insurance">Insurance</option>
+                                  <option value="reserves">Reserves</option>
+                                  <option value="general">General</option>
+                                </select>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={handleCreateEscrowLink}
+                                  disabled={escrowNewDocumentId === '' || escrowLinkCreateLoading}
+                                  className="w-full"
+                                >
+                                  {escrowLinkCreateLoading ? 'Adding…' : 'Add link'}
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                        </Card>
+                      )}
                     </div>
 
                     {/* Right rail: data display */}

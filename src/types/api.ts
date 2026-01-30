@@ -147,6 +147,31 @@ export interface DocumentUploadResponse {
   };
 }
 
+// ===== Escrow document links (FA-MORT-4) =====
+
+export type EscrowType = 'property_tax' | 'insurance' | 'reserves' | 'general';
+
+export interface EscrowLink {
+  id: number;
+  property_id: number;
+  period_id: number;
+  document_upload_id: number;
+  escrow_type: string;
+  created_at?: string;
+}
+
+export interface EscrowLinkCreate {
+  property_id: number;
+  period_id: number;
+  document_upload_id: number;
+  escrow_type: EscrowType;
+}
+
+export interface EscrowLinkListResponse {
+  links: EscrowLink[];
+  total: number;
+}
+
 // ===== Financial Data =====
 
 export interface BalanceSheetData {
