@@ -6,15 +6,25 @@ Single entry point for reconciliation rules implementation, data population, and
 
 ---
 
+## Recent changes (Jan 2026)
+
+- **Financial Integrity Hub – Overview tab**: Covenant Compliance (current period), Covenant History (table by period; "View in Covenant Compliance" → Covenant Compliance dashboard; tip with **Recalculate metrics** link → Financials → Statements), Variance Alerts (AUDIT-48; "View all" → Risk). Critical Issues "View All" → Exceptions tab.
+- **Covenant**: `covenant_compliance_history` table and CRUD API (`/api/v1/covenant-compliance/history`, `/thresholds`); engine records compliance when reconciliation runs.
+- **Variance alerts**: New variance breach alerts trigger `AlertNotificationService.notify_alert_created` (email if enabled, in-app). `GET /api/v1/variance-analysis/variance-alerts`.
+- **Navigation**: `navigateToPage` supports optional `hash` (e.g. open Financials → Statements from hub tip). Hash `covenant-compliance` sets current page to Risk.
+
+---
+
 ## Key documents
 
 | Document | Purpose |
 |----------|--------|
 | [RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md](../RECONCILIATION_RULES_IMPLEMENTATION_ANALYSIS.md) | Rule-by-rule status and coverage matrix (root). |
-| [RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md](RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md) | Gap list, phased plan, Phase 1/2/3 deliverables. |
-| [RECONCILIATION_DATA_POPULATION_RUNBOOK.md](RECONCILIATION_DATA_POPULATION_RUNBOOK.md) | How to populate metrics, budget, forecast; APIs and UI. |
-| [RULES_COVERAGE_MATRIX.md](RULES_COVERAGE_MATRIX.md) | Rule ID → status, file/method, notes (single table). |
+| [RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md](RECONCILIATION_RULES_FULL_IMPLEMENTATION_PLAN.md) | Gap list, phased plan, Phase 1/2/3 deliverables; §6 Hub Overview tab. |
+| [RECONCILIATION_DATA_POPULATION_RUNBOOK.md](RECONCILIATION_DATA_POPULATION_RUNBOOK.md) | How to populate metrics, budget, forecast; APIs and UI; §7 where to view variance alerts and covenant history. |
+| [RULES_COVERAGE_MATRIX.md](RULES_COVERAGE_MATRIX.md) | Rule ID → status, file/method, notes (single table); Hub Overview tab. |
 | [RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md](RECONCILIATION_RULES_DEEP_DIVE_AND_PLAN.md) | Codebase vs analysis alignment; Phase 2/3 triggers. |
+| [RECONCILIATION_GAPS_STATUS.md](RECONCILIATION_GAPS_STATUS.md) | Gap implementation checklist: enhancement, data/workflow, covenant/variance, optional. |
 
 ---
 
@@ -46,6 +56,14 @@ Single entry point for reconciliation rules implementation, data population, and
 | **Variance** tab | **Budget & forecast entry** | Link to Bulk import; View budget lines / View forecast lines with inline edit (amount, blur to save) for DRAFT/REVISED only. |
 | **Variance** tab (header) | **Approve budgets** | Approve all DRAFT budgets for selected property/period (AUDIT-51, TREND-3). |
 | **Variance** tab (header) | **Approve forecasts** | Approve all DRAFT forecasts for selected property/period (AUDIT-52). |
+
+### UI (Financial Integrity Hub – Overview tab)
+
+| Section | Purpose |
+|---------|--------|
+| **Covenant Compliance** (card) | Current period: X/Y compliant by covenant type (DSCR, LTV, etc.); data from reconciliation results. |
+| **Covenant History** (table) | All periods for selected property: Period, Type, Value, Threshold, Status (Pass/Fail). Uses `GET /api/v1/covenant-compliance/history?property_id=` (no period_id). "View in Covenant Compliance" opens Covenant Compliance dashboard; tip includes **Recalculate metrics** link to Financials → Statements. |
+| **Variance Alerts** (card) | AUDIT-48 variance breach alerts for selected property/period. Uses `GET /api/v1/variance-analysis/variance-alerts`. "View all" opens Risk page. |
 
 ---
 

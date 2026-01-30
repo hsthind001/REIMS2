@@ -3,6 +3,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 import json
 from app.services.reconciliation_types import ReconciliationResult
+from app.models.covenant_compliance_history import CovenantComplianceHistory
+
+# Map COVENANT rule_id to covenant_type for compliance history
+COVENANT_RULE_TO_TYPE = {
+    "COVENANT-1": "DSCR",
+    "COVENANT-2": "LTV",
+    "COVENANT-3": "MIN_LIQUIDITY",
+    "COVENANT-4": "OCCUPANCY",
+    "COVENANT-5": "TENANT_CONCENTRATION",
+    "COVENANT-6": "REPORTING",
+}
 
 from app.services.rules.period_alignment_mixin import PeriodAlignmentMixin
 from app.services.rules.balance_sheet_rules import BalanceSheetRulesMixin
@@ -329,7 +340,29 @@ class ReconciliationRuleEngine(
                 except Exception as row_error:
                     print(f"Skipping rule {params['rule_id']} due to error: {row_error}")
                     # Continue to next row
-                
+
+            # Persist covenant compliance history for Covenant results (dashboard/audit)
+            self.db.query(CovenantComplianceHistory).filter(
+                CovenantComplianceHistory.property_id == self.property_id,
+                CovenantComplianceHistory.period_id == self.period_id,
+            ).delete(synchronize_session=False)
+            for res in final_list:
+                if res.category != "Covenant" or res.rule_id not in COVENANT_RULE_TO_TYPE:
+                    continue
+                covenant_type = COVENANT_RULE_TO_TYPE[res.rule_id]
+                is_compliant = res.status == "PASS"
+                self.db.add(CovenantComplianceHistory(
+                    property_id=self.property_id,
+                    period_id=self.period_id,
+                    covenant_type=covenant_type,
+                    rule_id=res.rule_id,
+                    calculated_value=float(res.source_value) if res.source_value is not None else None,
+                    threshold_value=float(res.target_value) if res.target_value is not None else None,
+                    is_compliant=is_compliant,
+                    variance=float(res.difference) if res.difference is not None else None,
+                    notes=res.details[:2000] if res.details else None,
+                ))
+
             self.db.commit()
             
         except Exception as e:

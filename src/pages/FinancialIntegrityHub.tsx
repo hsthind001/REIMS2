@@ -56,6 +56,16 @@ export default function FinancialIntegrityHub() {
     const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
     // Persist State
+    // Listen for in-hub tab switch (e.g. Overview "View All" -> Exceptions tab)
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const tab = (e as CustomEvent<string>).detail;
+            if (tab && ['overview', 'documents', 'rules', 'exceptions', 'insights'].includes(tab)) setActiveTab(tab);
+        };
+        window.addEventListener('switchTab', handler);
+        return () => window.removeEventListener('switchTab', handler);
+    }, []);
+
     useEffect(() => {
         if (selectedPropertyId) {
             localStorage.setItem('forensic_selectedPropertyId', String(selectedPropertyId));
@@ -519,6 +529,7 @@ export default function FinancialIntegrityHub() {
                             recentActivity={dashboardData?.recent_activity}
                             propertyId={selectedPropertyId || undefined}
                             periodId={selectedPeriodId || undefined}
+                            periods={periods}
                         />
                     ) : activeTab === 'documents' ? (
                         <ByDocumentTab 

@@ -138,6 +138,22 @@ export interface ForecastLineResponse {
   status: string;
 }
 
+/** Variance breach alert (AUDIT-48 / CommitteeAlert VARIANCE_BREACH). */
+export interface VarianceAlertItem {
+  id: number;
+  property_id: number;
+  financial_period_id: number | null;
+  alert_type: string;
+  severity: string;
+  status: string;
+  message: string | null;
+  related_metric: string | null;
+  triggered_at: string | null;
+  property_code: string | null;
+  period_year: number | null;
+  period_month: number | null;
+}
+
 export class VarianceAnalysisService {
   /**
    * Get budget variance for a property and period
@@ -289,6 +305,25 @@ export class VarianceAnalysisService {
       `/variance-analysis/forecasts/${forecastId}`,
       body
     );
+  }
+
+  /**
+   * List variance breach alerts (AUDIT-48 / CommitteeAlert VARIANCE_BREACH).
+   */
+  async getVarianceAlerts(
+    options?: {
+      property_id?: number;
+      period_id?: number;
+      status?: string;
+      limit?: number;
+    }
+  ): Promise<VarianceAlertItem[]> {
+    const params: Record<string, string | number> = {};
+    if (options?.property_id != null) params.property_id = options.property_id;
+    if (options?.period_id != null) params.period_id = options.period_id;
+    if (options?.status) params.status = options.status;
+    if (options?.limit != null) params.limit = options.limit;
+    return api.get<VarianceAlertItem[]>('/variance-analysis/variance-alerts', params);
   }
 }
 

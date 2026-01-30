@@ -191,5 +191,15 @@ To verify that key rules run with data:
 
 ---
 
-**Document version**: 1.1  
+## 7. Where to view variance alerts and covenant history (UI)
+
+- **Financial Integrity Hub** (`#forensic-reconciliation`, Operations): **Overview** tab shows **Covenant Compliance** (current period), **Covenant History** (table by period; “View in Covenant Compliance” opens the Covenant Compliance dashboard), and **Variance Alerts** (AUDIT-48; “View all” opens the Risk page).
+- **Covenant Compliance dashboard** (`#covenant-compliance`, Risk): Full covenant DSCR/LTV and related tests for a selected property/period.
+- **Risk page**: Committee alerts including variance breach (AUDIT-48) and DSCR breach; list and filter by type/status.
+
+New variance breach alerts trigger email (if enabled) and in-app notification via `AlertNotificationService.notify_alert_created`.
+
+---
+
+**Document version**: 1.2  
 **Last updated**: January 29, 2026

@@ -129,6 +129,9 @@ function AppContent() {
       if (routeName.startsWith('anomaly-details') && currentPage !== 'risk') {
         setCurrentPage('risk')
       }
+      if (routeName === 'covenant-compliance' && currentPage !== 'risk') {
+        setCurrentPage('risk')
+      }
       if (routeName === 'nlq-search' && currentPage !== 'ai') {
         setCurrentPage('ai')
       }
@@ -147,6 +150,22 @@ function AppContent() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [currentPage])
+
+  // Allow child components to request top-level page navigation (e.g. Variance Alerts "View all" -> Risk)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ page: Page; hash?: string }>).detail
+      if (detail?.page) {
+        setCurrentPage(detail.page)
+        if (detail.hash) {
+          window.location.hash = detail.hash
+          setHashRoute(detail.hash)
+        }
+      }
+    }
+    window.addEventListener('navigateToPage', handler)
+    return () => window.removeEventListener('navigateToPage', handler)
+  }, [])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

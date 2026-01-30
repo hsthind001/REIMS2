@@ -17,6 +17,7 @@ from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.budget import Budget, BudgetStatus, Forecast
 from app.models.financial_metrics import FinancialMetrics
+from app.models.committee_alert import CommitteeAlert, AlertType
 
 router = APIRouter(prefix="/variance-analysis", tags=["variance_analysis"])
 logger = logging.getLogger(__name__)
@@ -852,3 +853,68 @@ def get_variance_thresholds():
             }
         }
     }
+
+
+class VarianceAlertItem(BaseModel):
+    """Variance breach alert (AUDIT-48 / CommitteeAlert VARIANCE_BREACH)."""
+    id: int
+    property_id: int
+    financial_period_id: Optional[int]
+    alert_type: str
+    severity: str
+    status: str
+    message: Optional[str]
+    related_metric: Optional[str]
+    triggered_at: Optional[datetime]
+    property_code: Optional[str] = None
+    period_year: Optional[int] = None
+    period_month: Optional[int] = None
+
+
+@router.get("/variance-alerts", response_model=List[VarianceAlertItem])
+def list_variance_alerts(
+    property_id: Optional[int] = Query(None, description="Filter by property ID"),
+    period_id: Optional[int] = Query(None, description="Filter by period ID"),
+    status: Optional[str] = Query(None, description="Filter by status: ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED"),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """
+    List variance breach alerts (AUDIT-48 / CommitteeAlert VARIANCE_BREACH).
+    Used by variance alerts dashboard and Financial Integrity Hub.
+    """
+    query = db.query(CommitteeAlert).filter(
+        CommitteeAlert.alert_type == AlertType.VARIANCE_BREACH
+    )
+    if property_id is not None:
+        query = query.filter(CommitteeAlert.property_id == property_id)
+    if period_id is not None:
+        query = query.filter(CommitteeAlert.financial_period_id == period_id)
+    if status:
+        query = query.filter(CommitteeAlert.status == status)
+    query = query.order_by(CommitteeAlert.triggered_at.desc()).limit(limit)
+    alerts = query.all()
+    result = []
+    for a in alerts:
+        period_year = period_month = None
+        if a.financial_period_id:
+            period = db.query(FinancialPeriod).filter(FinancialPeriod.id == a.financial_period_id).first()
+            if period:
+                period_year = period.period_year
+                period_month = period.period_month
+        prop = db.query(Property).filter(Property.id == a.property_id).first()
+        result.append(VarianceAlertItem(
+            id=a.id,
+            property_id=a.property_id,
+            financial_period_id=a.financial_period_id,
+            alert_type=a.alert_type.value if hasattr(a.alert_type, "value") else str(a.alert_type),
+            severity=a.severity.value if hasattr(a.severity, "value") else str(a.severity),
+            status=a.status.value if hasattr(a.status, "value") else str(a.status),
+            message=a.message,
+            related_metric=a.related_metric,
+            triggered_at=a.triggered_at,
+            property_code=prop.property_code if prop else None,
+            period_year=period_year,
+            period_month=period_month,
+        ))
+    return result

@@ -53,8 +53,9 @@ from app.models.alert_history import AlertHistory
 # Budget and forecast models
 from app.models.budget import Budget, Forecast
 
-# Covenant per-property thresholds
+# Covenant per-property thresholds and compliance history
 from app.models.covenant_threshold import CovenantThreshold
+from app.models.covenant_compliance_history import CovenantComplianceHistory
 
 # Document summarization models
 from app.models.document_summary import DocumentSummary
@@ -175,6 +176,9 @@ __all__ = [
     # Budget and forecast
     "Budget",
     "Forecast",
+    # Covenant
+    "CovenantThreshold",
+    "CovenantComplianceHistory",
     # Document summarization
     "DocumentSummary",
     # RAG

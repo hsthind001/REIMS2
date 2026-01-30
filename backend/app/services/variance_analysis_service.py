@@ -20,6 +20,7 @@ from app.models.balance_sheet_data import BalanceSheetData
 from app.models.budget import Budget, BudgetStatus, Forecast
 from app.models.committee_alert import CommitteeAlert, AlertType, AlertSeverity, AlertStatus, CommitteeType
 from app.core.constants import financial_thresholds, account_codes
+from app.services.alert_notification_service import AlertNotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -973,6 +974,11 @@ class VarianceAnalysisService:
             self.db.refresh(alert)
 
             logger.info(f"Variance alert created: {alert.id} for property {property_id}, account {variance_data['account_code']}")
+            try:
+                notification_service = AlertNotificationService(self.db)
+                notification_service.notify_alert_created(alert)
+            except Exception as notif_err:
+                logger.warning(f"Variance alert notification failed for alert {alert.id}: {notif_err}")
             return alert
 
         except Exception as e:

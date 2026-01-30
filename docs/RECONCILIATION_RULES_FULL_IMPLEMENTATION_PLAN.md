@@ -167,7 +167,13 @@ After reconciling the analysis doc with the codebase and deep dive doc, the **on
 
 ---
 
-## 6. Recommended Next Steps
+## 6. Financial Integrity Hub – Overview Tab (Jan 2026)
+
+The hub Overview tab at `#forensic-reconciliation` includes: **Covenant Compliance** (current period), **Covenant History** (table by period; "View in Covenant Compliance" → `#covenant-compliance`), and **Variance Alerts** (AUDIT-48; "View all" → Risk; new alerts trigger `AlertNotificationService.notify_alert_created`). See `docs/RECONCILIATION_QUICK_REFERENCE.md` and `docs/RULES_COVERAGE_MATRIX.md`.
+
+---
+
+## 7. Recommended Next Steps
 
 1. **Phase 1** (AUDIT-49/50 enhancement) — **DONE**.  
 2. **Phase 2**: Use `docs/RECONCILIATION_DATA_POPULATION_RUNBOOK.md`; optionally add UI “Recalculate metrics” and budget/forecast entry flows.  
@@ -176,5 +182,5 @@ After reconciling the analysis doc with the codebase and deep dive doc, the **on
 
 ---
 
-**Document version**: 1.1  
+**Document version**: 1.2  
 **Last updated**: January 29, 2026

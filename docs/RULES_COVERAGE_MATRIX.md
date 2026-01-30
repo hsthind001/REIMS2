@@ -44,6 +44,11 @@
 **Financial Integrity Hub (all rules)**  
 The reconciliation engine emits a result for every defined rule each run (see `rule_registry.ALL_RULE_IDS`). Rules that run produce PASS/FAIL/INFO; rules that do not run or emit get SKIPPED. Results are persisted to `cross_document_reconciliations`, so the hub at `#forensic-reconciliation` lists all rules with a status (Pass / Variance / Skipped).
 
+**Hub Overview tab**  
+- **Covenant Compliance**: Current-period covenant status (DSCR, LTV, etc.) from reconciliation.  
+- **Covenant History**: Table of covenant compliance by period (all periods for selected property); API `GET /api/v1/covenant-compliance/history`.  
+- **Variance Alerts**: AUDIT-48 variance breach alerts; API `GET /api/v1/variance-analysis/variance-alerts`; “View all” navigates to Risk page.
+
 ---
 
 ## Data Population (Phase 2)

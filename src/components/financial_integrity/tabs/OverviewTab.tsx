@@ -1,15 +1,26 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  DollarSign, 
-  ShieldCheck, 
-  AlertTriangle, 
+import {
+  DollarSign,
+  ShieldCheck,
+  AlertTriangle,
   Clock,
   CheckCircle2,
-  Loader2
+  Loader2,
+  History,
+  TrendingDown,
 } from 'lucide-react';
 
 import type { ForensicDiscrepancy, DocumentHealthResponse } from '../../../lib/forensic_reconciliation';
 import { forensicReconciliationService } from '../../../lib/forensic_reconciliation';
+import type { CovenantComplianceHistoryItem } from '../../../lib/covenant_compliance';
+import { covenantComplianceService } from '../../../lib/covenant_compliance';
+import { varianceAnalysisService, type VarianceAlertItem } from '../../../lib/variance_analysis';
+
+interface PeriodOption {
+  id: number;
+  period_year?: number;
+  period_month?: number;
+}
 
 interface OverviewTabProps {
   healthScore: number;
@@ -18,17 +29,62 @@ interface OverviewTabProps {
   recentActivity?: any[];
   propertyId?: number;
   periodId?: number;
+  /** Optional list of periods for property; used to show period labels in Covenant History */
+  periods?: PeriodOption[];
 }
 
-export default function OverviewTab({ healthScore, criticalItems, ruleViolations = [], recentActivity = [], propertyId, periodId }: OverviewTabProps) {
+export default function OverviewTab({ healthScore, criticalItems, ruleViolations = [], recentActivity = [], propertyId, periodId, periods = [] }: OverviewTabProps) {
   const [documentHealth, setDocumentHealth] = useState<DocumentHealthResponse | null>(null);
+  const [covenantHistory, setCovenantHistory] = useState<CovenantComplianceHistoryItem[]>([]);
+  const [covenantHistoryAll, setCovenantHistoryAll] = useState<CovenantComplianceHistoryItem[]>([]);
+  const [varianceAlerts, setVarianceAlerts] = useState<VarianceAlertItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [covenantLoading, setCovenantLoading] = useState(false);
+  const [varianceAlertsLoading, setVarianceAlertsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (propertyId && periodId) {
       loadDocumentHealth();
     }
+  }, [propertyId, periodId]);
+
+  useEffect(() => {
+    if (propertyId && periodId) {
+      covenantComplianceService.getComplianceHistory(propertyId, periodId)
+        .then(setCovenantHistory)
+        .catch(() => setCovenantHistory([]));
+    } else {
+      setCovenantHistory([]);
+    }
+  }, [propertyId, periodId]);
+
+  // Covenant compliance history over time (all periods for selected property)
+  useEffect(() => {
+    if (propertyId) {
+      covenantComplianceService.getComplianceHistory(propertyId)
+        .then(setCovenantHistoryAll)
+        .catch(() => setCovenantHistoryAll([]));
+    } else {
+      setCovenantHistoryAll([]);
+    }
+  }, [propertyId]);
+
+  // Variance breach alerts (AUDIT-48)
+  useEffect(() => {
+    if (!propertyId) {
+      setVarianceAlerts([]);
+      return;
+    }
+    setVarianceAlertsLoading(true);
+    varianceAnalysisService.getVarianceAlerts({
+      property_id: propertyId,
+      period_id: periodId ?? undefined,
+      limit: 25,
+    })
+      .then(setVarianceAlerts)
+      .catch(() => setVarianceAlerts([]))
+      .finally(() => setVarianceAlertsLoading(false));
   }, [propertyId, periodId]);
 
   const loadDocumentHealth = async () => {
@@ -122,7 +178,7 @@ export default function OverviewTab({ healthScore, criticalItems, ruleViolations
     <div className="space-y-6">
        
        {/* Top Cards Grid */}
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
            {/* Card 1: Document Health */}
            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
                <div className="flex justify-between items-center mb-4">
@@ -171,6 +227,32 @@ export default function OverviewTab({ healthScore, criticalItems, ruleViolations
                    </div>
                ) : (
                    <div className="text-center py-4 text-gray-500 text-sm">No data available</div>
+               )}
+           </div>
+
+           {/* Covenant Compliance */}
+           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+               <div className="flex justify-between items-center mb-4">
+                   <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                       <ShieldCheck className="w-5 h-5 text-emerald-600" /> Covenant Compliance
+                   </h3>
+                   <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded-lg text-gray-600">
+                       {covenantHistory.filter(c => c.is_compliant).length}/{covenantHistory.length} compliant
+                   </span>
+               </div>
+               {covenantHistory.length === 0 ? (
+                   <div className="text-center py-4 text-gray-500 text-sm">Run reconciliation to see covenant history</div>
+               ) : (
+                   <div className="space-y-2 max-h-40 overflow-y-auto">
+                       {covenantHistory.map(c => (
+                           <div key={c.id} className="flex justify-between items-center text-sm py-1 border-b border-gray-50 last:border-0">
+                               <span className="text-gray-700 font-medium">{c.covenant_type}</span>
+                               <span className={c.is_compliant ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>
+                                   {c.is_compliant ? 'Pass' : 'Fail'}
+                               </span>
+                           </div>
+                       ))}
+                   </div>
                )}
            </div>
 
@@ -263,6 +345,156 @@ export default function OverviewTab({ healthScore, criticalItems, ruleViolations
                        </div>
                    </div>
                ))}
+           </div>
+       </div>
+
+       {/* Covenant History Over Time & Variance Alerts */}
+       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+           {/* Covenant History (all periods) */}
+           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+               <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center">
+                   <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                       <History className="w-5 h-5 text-emerald-600" /> Covenant History
+                   </h3>
+                   <div className="flex items-center gap-2">
+                       {propertyId && (
+                           <span className="text-xs text-gray-500">
+                               {covenantHistoryAll.length} record{covenantHistoryAll.length !== 1 ? 's' : ''}
+                           </span>
+                       )}
+                       {propertyId && (
+                           <button
+                               type="button"
+                               onClick={() => { window.location.hash = 'covenant-compliance'; }}
+                               className="text-sm text-blue-600 font-medium hover:underline"
+                           >
+                               View in Covenant Compliance
+                           </button>
+                       )}
+                   </div>
+               </div>
+               <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                   {!propertyId ? (
+                       <div className="p-4 text-center text-gray-500 text-sm">Select a property to view covenant history</div>
+                   ) : covenantHistoryAll.length === 0 ? (
+                       <div className="p-4 text-center text-gray-500 text-sm">Run reconciliation to populate covenant history</div>
+                   ) : (
+                       <table className="w-full text-sm">
+                           <thead className="bg-gray-50 sticky top-0">
+                               <tr>
+                                   <th className="text-left px-3 py-2 font-medium text-gray-700">Period</th>
+                                   <th className="text-left px-3 py-2 font-medium text-gray-700">Type</th>
+                                   <th className="text-right px-3 py-2 font-medium text-gray-700">Value</th>
+                                   <th className="text-right px-3 py-2 font-medium text-gray-700">Threshold</th>
+                                   <th className="text-center px-3 py-2 font-medium text-gray-700">Status</th>
+                               </tr>
+                           </thead>
+                           <tbody className="divide-y divide-gray-50">
+                               {covenantHistoryAll
+                                   .sort((a, b) => (b.period_id ?? 0) - (a.period_id ?? 0))
+                                   .slice(0, 50)
+                                   .map((row) => {
+                                     const period = periods.find((p) => p.id === row.period_id);
+                                     const periodLabel = period?.period_year != null && period?.period_month != null
+                                       ? `${period.period_year}-${String(period.period_month).padStart(2, '0')}`
+                                       : String(row.period_id);
+                                     return (
+                                       <tr key={row.id} className="hover:bg-gray-50">
+                                           <td className="px-3 py-2 text-gray-600">{periodLabel}</td>
+                                           <td className="px-3 py-2 font-medium text-gray-800">{row.covenant_type}</td>
+                                           <td className="px-3 py-2 text-right text-gray-700">
+                                               {row.calculated_value != null ? row.calculated_value.toFixed(2) : '—'}
+                                           </td>
+                                           <td className="px-3 py-2 text-right text-gray-600">
+                                               {row.threshold_value != null ? row.threshold_value.toFixed(2) : '—'}
+                                           </td>
+                                           <td className="px-3 py-2 text-center">
+                                               <span className={row.is_compliant ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>
+                                                   {row.is_compliant ? 'Pass' : 'Fail'}
+                                               </span>
+                                           </td>
+                                       </tr>
+                                   );
+                                   })}
+                           </tbody>
+                       </table>
+                   )}
+               </div>
+               {propertyId && (
+                   <p className="px-5 py-2 text-xs text-gray-400 border-t border-gray-50">
+                       Tip:{' '}
+                       <button
+                           type="button"
+                           onClick={() => window.dispatchEvent(new CustomEvent('navigateToPage', { detail: { page: 'reports', hash: 'statements' } }))}
+                           className="text-blue-500 hover:underline font-medium"
+                       >
+                           Recalculate metrics
+                       </button>
+                       {' '}in Financials → Statements to refresh covenant and analytics data.
+                   </p>
+               )}
+           </div>
+
+           {/* Variance Alerts (AUDIT-48) */}
+           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+               <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center">
+                   <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                       <TrendingDown className="w-5 h-5 text-amber-500" /> Variance Alerts
+                   </h3>
+                   <div className="flex items-center gap-2">
+                       {propertyId && varianceAlerts.length > 0 && (
+                           <span className="text-xs font-medium text-amber-600">{varianceAlerts.length} alert{varianceAlerts.length !== 1 ? 's' : ''}</span>
+                       )}
+                       <button
+                           type="button"
+                           onClick={() => window.dispatchEvent(new CustomEvent('navigateToPage', { detail: { page: 'risk' } }))}
+                           className="text-sm text-blue-600 font-medium hover:underline"
+                       >
+                           View all
+                       </button>
+                   </div>
+               </div>
+               <div className="overflow-y-auto max-h-64">
+                   {!propertyId ? (
+                       <div className="p-4 text-center text-gray-500 text-sm">Select a property to view variance alerts</div>
+                   ) : varianceAlertsLoading ? (
+                       <div className="flex items-center justify-center py-8">
+                           <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+                       </div>
+                   ) : varianceAlerts.length === 0 ? (
+                       <div className="p-4 text-center text-gray-500 text-sm">No variance breach alerts for this property</div>
+                   ) : (
+                       <ul className="divide-y divide-gray-50">
+                           {varianceAlerts.map((alert) => (
+                               <li key={alert.id} className="p-4 hover:bg-gray-50">
+                                   <div className="flex justify-between items-start gap-2">
+                                       <div>
+                                           <p className="text-sm font-medium text-gray-900">
+                                               {alert.message || alert.related_metric || 'Variance breach'}
+                                           </p>
+                                           <p className="text-xs text-gray-500 mt-0.5">
+                                               {alert.period_year != null && alert.period_month != null
+                                                   ? `${alert.period_year}-${String(alert.period_month).padStart(2, '0')}`
+                                                   : '—'}
+                                               {alert.property_code ? ` · ${alert.property_code}` : ''}
+                                           </p>
+                                       </div>
+                                       <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                                           alert.severity === 'CRITICAL' || alert.severity === 'URGENT'
+                                               ? 'bg-red-100 text-red-700'
+                                               : alert.severity === 'WARNING'
+                                               ? 'bg-amber-100 text-amber-700'
+                                               : 'bg-gray-100 text-gray-700'
+                                       }`}>
+                                           {alert.severity}
+                                       </span>
+                                   </div>
+                                   <p className="text-xs text-gray-500 mt-1">{alert.status}</p>
+                               </li>
+                           ))}
+                       </ul>
+                   )}
+               </div>
            </div>
        </div>
 
