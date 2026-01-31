@@ -10,8 +10,10 @@ from pydantic import BaseModel
 from datetime import date, datetime
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 from app.services.cross_property_intelligence import CrossPropertyIntelligenceService
 from app.models.property import Property
 import logging
@@ -75,7 +77,8 @@ async def calculate_benchmarks(
     metric_type: str = Query("balance_sheet", description="Metric type: balance_sheet, income_statement"),
     property_group: Optional[str] = Query(None, description="Property group filter (optional)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Calculate portfolio benchmarks for specified accounts.
@@ -149,7 +152,8 @@ async def calculate_benchmarks(
 @router.get("/analytics", response_model=PortfolioAnalyticsResponse)
 async def get_portfolio_analytics(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get portfolio-wide analytics and statistics.
@@ -166,7 +170,10 @@ async def get_portfolio_analytics(
         from sqlalchemy import func
         
         # Get total properties
-        total_properties = db.query(Property).filter(Property.status == 'active').count()
+        total_properties = db.query(Property).filter(
+            Property.status == 'active',
+            Property.organization_id == current_org.id
+        ).count()
         
         # Get total anomalies
         total_anomalies = db.query(AnomalyDetection).filter(
@@ -217,7 +224,7 @@ async def get_portfolio_analytics(
         
         properties_with_most_anomalies = []
         for property_id, count in properties_with_anomalies:
-            property_obj = db.query(Property).filter(Property.id == property_id).first()
+            property_obj = get_property_for_org(db, current_org.id, property_id)
             if property_obj:
                 properties_with_most_anomalies.append({
                     "property_id": property_id,
@@ -248,6 +255,7 @@ async def get_portfolio_analytics(
 
 @router.get("/property/{property_id}/comparison", response_model=PropertyComparisonResponse)
 async def get_property_comparison(
+async def get_property_comparison(
     property_id: int,
     account_code: str = Query(..., description="Account code to compare"),
     metric_type: str = Query("balance_sheet", description="Metric type: balance_sheet, income_statement"),
@@ -270,7 +278,7 @@ async def get_property_comparison(
             )
         
         # Get property
-        property_obj = db.query(Property).filter(Property.id == property_id).first()
+        property_obj = get_property_for_org(db, current_org.id, property_id)
         if not property_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -330,7 +338,8 @@ async def get_portfolio_outliers(
     threshold: float = Query(2.0, description="Z-score threshold for outlier detection"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of outliers to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get portfolio outliers for a specific account.
@@ -424,7 +433,7 @@ async def get_portfolio_outliers(
             z_score = (value - benchmark.mean_value) / benchmark.std_value if benchmark.std_value > 0 else 0
             
             if abs(z_score) >= threshold:
-                property_obj = db.query(Property).filter(Property.id == property_id).first()
+                property_obj = get_property_for_org(db, current_org.id, property_id)
                 if property_obj:
                     percentile_rank = cross_property_service._calculate_percentile_rank(value, benchmark)
                     

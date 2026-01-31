@@ -9,8 +9,10 @@ from celery.result import AsyncResult
 from celery.schedules import crontab
 from app.core.celery_config import celery_app
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_upload_for_org
 from app.models.document_upload import DocumentUpload
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
@@ -212,7 +214,11 @@ def extract_upload_id_from_task(task_info: Dict) -> Optional[int]:
 
 # IMPORTANT: This route must come BEFORE /tasks/{task_id} to avoid route conflicts
 @router.get("/tasks/dashboard")
-async def get_task_dashboard(db: Session = Depends(get_db)):
+async def get_task_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get comprehensive task dashboard data including:
     - Active tasks with progress and metadata
@@ -257,20 +263,17 @@ async def get_task_dashboard(db: Session = Depends(get_db)):
                     # Try to get from task args
                     upload_id = extract_upload_id_from_task({'args': task.get('args', [])})
                 
-                # Get document info if upload_id exists
+                # Get document info if upload_id exists (tenant-scoped)
+                # Skip tasks for uploads not belonging to this org
                 document_name = None
                 property_code = None
                 if upload_id:
-                    upload = db.query(DocumentUpload).filter(
-                        DocumentUpload.id == upload_id
-                    ).first()
-                    if upload:
-                        document_name = upload.file_name
-                        # Get property code
-                        prop = db.query(Property).filter(Property.id == upload.property_id).first()
-                        if prop:
-                            property_code = prop.property_code
-                
+                    upload = get_upload_for_org(db, current_org.id, upload_id)
+                    if not upload:
+                        continue  # Exclude tasks for other orgs' uploads
+                    document_name = upload.file_name
+                    property_code = upload.property.property_code if upload.property else None
+
                 # Parse task type
                 task_type = parse_task_type(task_name)
                 
@@ -319,30 +322,46 @@ async def get_task_dashboard(db: Session = Depends(get_db)):
         processing_count = len(active_tasks)
         reserved_count = sum(len(tasks) for tasks in reserved_tasks_raw.values())
         
-        # Get today's task statistics from database
+        # Get today's task statistics from database (tenant-scoped)
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Count completed extractions today
-        completed_today = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_completed_at >= today_start,
-            DocumentUpload.extraction_status == 'completed'
-        ).count()
-        
-        # Count failed extractions today
-        failed_today = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_completed_at >= today_start,
-            DocumentUpload.extraction_status == 'failed'
-        ).count()
+        completed_today = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_completed_at >= today_start,
+                DocumentUpload.extraction_status == 'completed',
+                Property.organization_id == current_org.id,
+            )
+            .count()
+        )
+        failed_today = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_completed_at >= today_start,
+                DocumentUpload.extraction_status == 'failed',
+                Property.organization_id == current_org.id,
+            )
+            .count()
+        )
         
         # Calculate success rate
         total_today = completed_today + failed_today
         success_rate = (completed_today / total_today * 100) if total_today > 0 else 100.0
         
-        # Get recent tasks (last 50 completed extractions)
-        recent_uploads = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_completed_at.isnot(None),
-            DocumentUpload.extraction_task_id.isnot(None)
-        ).order_by(DocumentUpload.extraction_completed_at.desc()).limit(20).all()
+        # Get recent tasks (tenant-scoped)
+        recent_uploads = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_completed_at.isnot(None),
+                DocumentUpload.extraction_task_id.isnot(None),
+                Property.organization_id == current_org.id,
+            )
+            .order_by(DocumentUpload.extraction_completed_at.desc())
+            .limit(20)
+            .all()
+        )
         
         recent_tasks = []
         for upload in recent_uploads:
@@ -500,22 +519,27 @@ async def cancel_task(task_id: str):
 @router.get("/tasks/history")
 async def get_task_history(
     days: int = 7,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """
-    Get extended task history for the last N days
-    """
+    """Get extended task history for the last N days. Tenant-scoped."""
     try:
         from datetime import datetime, timedelta
-        
+
         cutoff_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Get all completed extractions from the last N days
-        recent_uploads = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_completed_at.isnot(None),
-            DocumentUpload.extraction_completed_at >= cutoff_date,
-            DocumentUpload.extraction_task_id.isnot(None)
-        ).order_by(DocumentUpload.extraction_completed_at.desc()).all()
+        recent_uploads = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_completed_at.isnot(None),
+                DocumentUpload.extraction_completed_at >= cutoff_date,
+                DocumentUpload.extraction_task_id.isnot(None),
+                Property.organization_id == current_org.id,
+            )
+            .order_by(DocumentUpload.extraction_completed_at.desc())
+            .all()
+        )
         
         history = []
         for upload in recent_uploads:
@@ -525,12 +549,7 @@ async def get_task_history(
                 if upload.extraction_started_at and upload.extraction_completed_at:
                     duration_seconds = int((upload.extraction_completed_at - upload.extraction_started_at).total_seconds())
                 
-                # Get property code
-                property_code = None
-                if upload.property_id:
-                    prop = db.query(Property).filter(Property.id == upload.property_id).first()
-                    if prop:
-                        property_code = prop.property_code
+                property_code = upload.property.property_code if upload.property else None
                 
                 history.append({
                     "task_id": upload.extraction_task_id,
@@ -561,7 +580,8 @@ class BulkCancelRequest(BaseModel):
 @router.post("/tasks/bulk/cancel")
 async def bulk_cancel_tasks(
     request: BulkCancelRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Cancel multiple tasks at once

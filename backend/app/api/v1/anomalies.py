@@ -175,23 +175,14 @@ async def trigger_anomaly_detection(
     from app.services.extraction_orchestrator import ExtractionOrchestrator
     from app.services.anomaly_detector import StatisticalAnomalyDetector
     
-    # Verify upload exists
-    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+    from app.repositories.tenant_scoped import get_upload_for_org
+
+    upload = get_upload_for_org(db, current_org.id, upload_id)
     if not upload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Upload {upload_id} not found"
         )
-    
-    # Check tenancy
-    from app.models.property import Property
-    upload_property = db.query(Property).filter(Property.id == upload.property_id).first()
-    if not upload_property or upload_property.organization_id != current_org.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, # 404 to hide existence
-            detail=f"Upload {upload_id} not found"
-        )
-    
     # Check if extraction is completed
     if upload.extraction_status != "completed":
         raise HTTPException(
@@ -201,10 +192,9 @@ async def trigger_anomaly_detection(
     
     try:
         # Get the period for this upload
-        period = db.query(FinancialPeriod).filter(
-            FinancialPeriod.id == upload.period_id
-        ).first()
-        
+        from app.repositories.tenant_scoped import get_period_for_org
+
+        period = get_period_for_org(db, current_org.id, upload.period_id)
         if not period:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -417,25 +407,9 @@ async def get_anomaly(
 ):
     """Get detailed information about a specific anomaly."""
     from sqlalchemy.orm import load_only
-    from app.models.document_upload import DocumentUpload
-    
-    anomaly = db.query(AnomalyDetection).options(
-        load_only(
-            AnomalyDetection.id,
-            AnomalyDetection.document_id,
-            AnomalyDetection.field_name,
-            AnomalyDetection.field_value,
-            AnomalyDetection.expected_value,
-            AnomalyDetection.anomaly_type,
-            AnomalyDetection.severity,
-            AnomalyDetection.confidence,
-            AnomalyDetection.detected_at,
-            AnomalyDetection.metadata_json
-        )
-    ).filter(
-        AnomalyDetection.id == anomaly_id
-    ).first()
-    
+    from app.repositories.tenant_scoped import get_anomaly_for_org
+
+    anomaly = get_anomaly_for_org(db, current_org.id, anomaly_id)
     if not anomaly:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -447,9 +421,10 @@ async def get_anomaly(
     if isinstance(property_id, str) and property_id.isdigit():
         property_id = int(property_id)
     if property_id is None and anomaly.document_id:
-        property_id = db.query(DocumentUpload.property_id).filter(
-            DocumentUpload.id == anomaly.document_id
-        ).scalar()
+        from app.repositories.tenant_scoped import get_upload_for_org
+        doc = get_upload_for_org(db, current_org.id, anomaly.document_id)
+        if doc:
+            property_id = doc.property_id
 
     account_code = metadata.get("account_code") or anomaly.field_name
     account_name = metadata.get("account_name")
@@ -486,7 +461,8 @@ async def get_anomaly_detailed(
 ):
     """
     Get comprehensive detailed information about a specific anomaly.
-    
+    Tenant-scoped: anomaly must belong to current org.
+
     Returns:
         Comprehensive anomaly data including:
         - Anomaly details (all fields)
@@ -501,30 +477,9 @@ async def get_anomaly_detailed(
     import time
     start_time = time.time()
     
-    # Get anomaly - use load_only to avoid loading columns that don't exist in DB
-    from sqlalchemy.orm import load_only
-    from app.models.document_upload import DocumentUpload
-    
-    # Load only the columns we actually use to avoid missing column errors
-    anomaly = db.query(AnomalyDetection).options(
-        load_only(
-            AnomalyDetection.id,
-            AnomalyDetection.document_id,
-            AnomalyDetection.field_name,
-            AnomalyDetection.field_value,
-            AnomalyDetection.expected_value,
-            AnomalyDetection.z_score,
-            AnomalyDetection.percentage_change,
-            AnomalyDetection.anomaly_type,
-            AnomalyDetection.severity,
-            AnomalyDetection.confidence,
-            AnomalyDetection.detected_at,
-            AnomalyDetection.metadata_json
-        )
-    ).filter(
-        AnomalyDetection.id == anomaly_id
-    ).first()
-    
+    from app.repositories.tenant_scoped import get_anomaly_for_org, get_upload_for_org
+
+    anomaly = get_anomaly_for_org(db, current_org.id, anomaly_id)
     if not anomaly:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -532,10 +487,7 @@ async def get_anomaly_detailed(
         )
 
     metadata = _parse_metadata(anomaly.metadata_json)
-    document = None
-    if anomaly.document_id:
-        from app.repositories.tenant_scoped import get_upload_for_org
-        document = get_upload_for_org(db, current_org.id, anomaly.document_id)
+    document = get_upload_for_org(db, current_org.id, anomaly.document_id) if anomaly.document_id else None
 
     property_id = metadata.get("property_id")
     if isinstance(property_id, str) and property_id.isdigit():
@@ -552,23 +504,6 @@ async def get_anomaly_detailed(
     document_type = metadata.get("document_type")
     if document_type is None and document:
         document_type = document.document_type
-
-    # Enforce tenancy
-    from app.models.property import Property
-    if property_id:
-        prop = db.query(Property).filter(Property.id == property_id).first()
-        if not prop or prop.organization_id != current_org.id:
-             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Anomaly {anomaly_id} not found"
-            )
-    elif document:
-        prop = db.query(Property).filter(Property.id == document.property_id).first()
-        if not prop or prop.organization_id != current_org.id:
-             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Anomaly {anomaly_id} not found"
-            )
 
     account_code = metadata.get("account_code") or anomaly.field_name
     account_name = metadata.get("account_name")
@@ -837,7 +772,8 @@ async def get_contribution_waterfall(
     anomaly_id: int,
     top_n: int = Query(5, ge=1, le=20, description="Number of top accounts to include"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get contribution waterfall data for an anomaly using real account values.
@@ -852,7 +788,9 @@ async def get_contribution_waterfall(
     from app.models.rent_roll_data import RentRollData
     from app.models.mortgage_statement_data import MortgageStatementData
 
-    anomaly = db.query(AnomalyDetection).filter(AnomalyDetection.id == anomaly_id).first()
+    from app.repositories.tenant_scoped import get_anomaly_for_org, get_upload_for_org
+
+    anomaly = get_anomaly_for_org(db, current_org.id, anomaly_id)
     if not anomaly:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -860,10 +798,7 @@ async def get_contribution_waterfall(
         )
 
     metadata = _parse_metadata(anomaly.metadata_json)
-    document = None
-    if anomaly.document_id:
-        from app.repositories.tenant_scoped import get_upload_for_org
-        document = get_upload_for_org(db, current_org.id, anomaly.document_id)
+    document = get_upload_for_org(db, current_org.id, anomaly.document_id) if anomaly.document_id else None
 
     property_id = metadata.get("property_id")
     if isinstance(property_id, str) and property_id.isdigit():
@@ -1071,11 +1006,13 @@ async def generate_explanation(
     anomaly_id: int,
     method: str = Query("auto", description="Explanation method: 'shap', 'lime', 'auto', or 'root_cause'"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Generate XAI explanation for an anomaly.
-    
+    Tenant-scoped: anomaly must belong to current org.
+
     Provides:
     - Root cause analysis
     - SHAP feature importance (if enabled)
@@ -1083,8 +1020,15 @@ async def generate_explanation(
     - Natural language explanation
     - Actionable recommendations
     """
+    from app.repositories.tenant_scoped import get_anomaly_for_org
+
+    if not get_anomaly_for_org(db, current_org.id, anomaly_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anomaly {anomaly_id} not found"
+        )
     xai_service = XAIExplanationService(db)
-    
+
     # Check if explanation already exists
     existing = xai_service.get_explanation(anomaly_id)
     if existing:
@@ -1142,9 +1086,17 @@ async def generate_explanation(
 async def get_explanation(
     anomaly_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Get existing XAI explanation for an anomaly."""
+    from app.repositories.tenant_scoped import get_anomaly_for_org
+
+    if not get_anomaly_for_org(db, current_org.id, anomaly_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anomaly {anomaly_id} not found"
+        )
     xai_service = XAIExplanationService(db)
     
     explanation = xai_service.get_explanation(anomaly_id)
@@ -1179,9 +1131,14 @@ async def get_property_explanations(
     property_id: int,
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Get all XAI explanations for anomalies in a property."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     xai_service = XAIExplanationService(db)
     
     explanations = xai_service.get_explanations_for_property(
@@ -1206,15 +1163,21 @@ async def get_property_explanations(
 async def trigger_anomaly_detection(
     request: AnomalyDetectionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Trigger anomaly detection for a property.
-    
+    Tenant-scoped: property must belong to current org.
+
     Methods:
     - statistical: Z-score, percentage change, missing data
     - ml: Isolation Forest and LOF
     """
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     anomaly_service = AnomalyDetectionService(db)
     
     if request.method == "statistical":
@@ -1249,9 +1212,14 @@ async def trigger_anomaly_detection(
 async def acknowledge_anomaly(
     anomaly_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Acknowledge an anomaly (mark as reviewed)."""
+    """Acknowledge an anomaly (mark as reviewed). Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_anomaly_for_org
+
+    if not get_anomaly_for_org(db, current_org.id, anomaly_id):
+        raise HTTPException(status_code=404, detail="Anomaly not found")
     # Would update anomaly_detections table
     return {
         "id": anomaly_id,
@@ -1273,7 +1241,8 @@ class FieldCoordinatesResponse(BaseModel):
 async def get_field_coordinates(
     anomaly_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get field coordinates and PDF URL for an anomaly.
@@ -1285,52 +1254,33 @@ async def get_field_coordinates(
     - explanation: Explanation message for user
     """
     from sqlalchemy import text, and_
-    from app.models.document_upload import DocumentUpload
-    from app.models.property import Property
-    from app.models.financial_period import FinancialPeriod
+    from app.repositories.tenant_scoped import get_anomaly_for_org, get_upload_for_org
     from app.models.balance_sheet_data import BalanceSheetData
     from app.models.income_statement_data import IncomeStatementData
     from app.models.cash_flow_data import CashFlowData
     from app.models.rent_roll_data import RentRollData
     from app.db.minio_client import get_file_url
     from app.core.config import settings
-    
-    # Get anomaly details
-    anomaly_query = text("""
-        SELECT 
-            ad.id,
-            ad.document_id,
-            ad.field_name,
-            du.file_name,
-            du.document_type,
-            du.file_path,
-            du.property_id,
-            du.period_id,
-            p.property_code,
-            fp.period_year,
-            fp.period_month
-        FROM anomaly_detections ad
-        JOIN document_uploads du ON ad.document_id = du.id
-        JOIN properties p ON du.property_id = p.id
-        JOIN financial_periods fp ON du.period_id = fp.id
-        WHERE ad.id = :anomaly_id
-    """)
-    
-    result = db.execute(anomaly_query, {"anomaly_id": anomaly_id}).first()
-    
-    if not result:
+
+    anomaly = get_anomaly_for_org(db, current_org.id, anomaly_id)
+    if not anomaly or not anomaly.document_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Anomaly {anomaly_id} not found"
         )
-    
-    document_id = result.document_id
-    field_name = result.field_name  # This is the account_code
-    document_type = result.document_type
-    file_path = result.file_path
-    property_code = result.property_code
-    period_year = result.period_year
-    period_month = result.period_month
+    doc = get_upload_for_org(db, current_org.id, anomaly.document_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anomaly {anomaly_id} not found"
+        )
+    document_id = anomaly.document_id
+    field_name = anomaly.field_name  # account_code
+    document_type = doc.document_type
+    file_path = doc.file_path
+    property_code = doc.property.property_code if doc.property else ""
+    period_year = doc.period.period_year if doc.period else None
+    period_month = doc.period.period_month if doc.period else None
     
     # Query financial data tables for coordinates
     coordinates = None
@@ -1445,15 +1395,21 @@ async def submit_feedback(
     feedback_type: str = Query(..., description="Feedback type: 'true_positive', 'false_positive', 'needs_review'"),
     feedback_notes: Optional[str] = Query(None, description="Optional feedback notes"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Submit feedback on an anomaly detection.
-    
+    Tenant-scoped: anomaly must belong to current org.
+
     Used for active learning to improve detection accuracy over time.
     """
+    from app.repositories.tenant_scoped import get_anomaly_for_org
+
+    if not get_anomaly_for_org(db, current_org.id, anomaly_id):
+        raise HTTPException(status_code=404, detail="Anomaly not found")
     active_learning = ActiveLearningService(db)
-    
+
     try:
         feedback = active_learning.record_feedback(
             anomaly_id=anomaly_id,
@@ -1483,9 +1439,14 @@ async def get_property_benchmark(
     account_code: str,
     metric_type: str = Query("balance_sheet", description="Metric type: 'balance_sheet' or 'income_statement'"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get property ranking compared to portfolio benchmarks."""
+    """Get property ranking compared to portfolio benchmarks. Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     cross_prop_service = CrossPropertyIntelligenceService(db)
     
     ranking = cross_prop_service.get_property_ranking(
@@ -1508,9 +1469,14 @@ async def get_feedback_statistics(
     property_id: int,
     days: int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get feedback statistics for a property."""
+    """Get feedback statistics for a property. Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     active_learning = ActiveLearningService(db)
     
     stats = active_learning.get_feedback_statistics(
@@ -1526,9 +1492,14 @@ async def get_learned_patterns(
     property_id: int,
     active_only: bool = Query(True, description="Only return active patterns"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get learned patterns for a property."""
+    """Get learned patterns for a property. Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     active_learning = ActiveLearningService(db)
     
     patterns = active_learning.get_learned_patterns(
@@ -1558,15 +1529,19 @@ async def submit_feedback(
     feedback_type: str = Query(..., description="Feedback type: 'true_positive', 'false_positive', 'needs_review'"),
     feedback_notes: Optional[str] = Query(None, description="Optional feedback notes"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Submit feedback on an anomaly detection.
-    
-    Used for active learning to improve detection accuracy over time.
+    Tenant-scoped: anomaly must belong to current org.
     """
+    from app.repositories.tenant_scoped import get_anomaly_for_org
+
+    if not get_anomaly_for_org(db, current_org.id, anomaly_id):
+        raise HTTPException(status_code=404, detail="Anomaly not found")
     active_learning = ActiveLearningService(db)
-    
+
     try:
         feedback = active_learning.record_feedback(
             anomaly_id=anomaly_id,
@@ -1574,7 +1549,7 @@ async def submit_feedback(
             feedback_type=feedback_type,
             feedback_notes=feedback_notes
         )
-        
+
         return {
             "success": True,
             "feedback_id": feedback.id,
@@ -1596,9 +1571,14 @@ async def get_property_benchmark(
     account_code: str,
     metric_type: str = Query("balance_sheet", description="Metric type: 'balance_sheet' or 'income_statement'"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get property ranking compared to portfolio benchmarks."""
+    """Get property ranking compared to portfolio benchmarks. Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     cross_prop_service = CrossPropertyIntelligenceService(db)
     
     ranking = cross_prop_service.get_property_ranking(
@@ -1621,9 +1601,14 @@ async def get_feedback_statistics(
     property_id: int,
     days: int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get feedback statistics for a property."""
+    """Get feedback statistics for a property. Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     active_learning = ActiveLearningService(db)
     
     stats = active_learning.get_feedback_statistics(
@@ -1639,9 +1624,14 @@ async def get_learned_patterns(
     property_id: int,
     active_only: bool = Query(True, description="Only return active patterns"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get learned patterns for a property."""
+    """Get learned patterns for a property. Tenant-scoped."""
+    from app.repositories.tenant_scoped import get_property_for_org
+
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     active_learning = ActiveLearningService(db)
     
     patterns = active_learning.get_learned_patterns(
@@ -1676,15 +1666,20 @@ async def export_anomalies_csv(
     include_feedback: bool = Query(True, description="Include feedback history"),
     include_cross_property: bool = Query(True, description="Include cross-property context"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Export anomalies to CSV format."""
+    """Export anomalies to CSV format. Tenant-scoped."""
     try:
         property_id_list = [int(p.strip()) for p in property_ids.split(',')] if property_ids else None
+        if property_id_list:
+            from app.repositories.tenant_scoped import get_property_for_org
+            property_id_list = [pid for pid in property_id_list if get_property_for_org(db, current_org.id, pid)]
         account_code_list = [c.strip() for c in account_codes.split(',')] if account_codes else None
         export_service = AnomalyExportService(db)
         csv_bytes = export_service.export_anomalies(
-            format='csv', property_ids=property_id_list, date_start=date_start, date_end=date_end,
+            format='csv', property_ids=property_id_list, organization_id=current_org.id,
+            date_start=date_start, date_end=date_end,
             severity=severity, anomaly_type=anomaly_type, account_codes=account_code_list,
             include_explanations=include_explanations, include_feedback=include_feedback,
             include_cross_property=include_cross_property
@@ -1709,15 +1704,20 @@ async def export_anomalies_excel(
     include_feedback: bool = Query(True, description="Include feedback history"),
     include_cross_property: bool = Query(True, description="Include cross-property context"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Export anomalies to Excel format (XLSX)."""
+    """Export anomalies to Excel format (XLSX). Tenant-scoped."""
     try:
         property_id_list = [int(p.strip()) for p in property_ids.split(',')] if property_ids else None
+        if property_id_list:
+            from app.repositories.tenant_scoped import get_property_for_org
+            property_id_list = [pid for pid in property_id_list if get_property_for_org(db, current_org.id, pid)]
         account_code_list = [c.strip() for c in account_codes.split(',')] if account_codes else None
         export_service = AnomalyExportService(db)
         excel_bytes = export_service.export_anomalies(
-            format='xlsx', property_ids=property_id_list, date_start=date_start, date_end=date_end,
+            format='xlsx', property_ids=property_id_list, organization_id=current_org.id,
+            date_start=date_start, date_end=date_end,
             severity=severity, anomaly_type=anomaly_type, account_codes=account_code_list,
             include_explanations=include_explanations, include_feedback=include_feedback,
             include_cross_property=include_cross_property
@@ -1745,15 +1745,20 @@ async def export_anomalies_json(
     include_feedback: bool = Query(True, description="Include feedback history"),
     include_cross_property: bool = Query(True, description="Include cross-property context"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Export anomalies to JSON format."""
+    """Export anomalies to JSON format. Tenant-scoped."""
     try:
         property_id_list = [int(p.strip()) for p in property_ids.split(',')] if property_ids else None
+        if property_id_list:
+            from app.repositories.tenant_scoped import get_property_for_org
+            property_id_list = [pid for pid in property_id_list if get_property_for_org(db, current_org.id, pid)]
         account_code_list = [c.strip() for c in account_codes.split(',')] if account_codes else None
         export_service = AnomalyExportService(db)
         json_bytes = export_service.export_anomalies(
-            format='json', property_ids=property_id_list, date_start=date_start, date_end=date_end,
+            format='json', property_ids=property_id_list, organization_id=current_org.id,
+            date_start=date_start, date_end=date_end,
             severity=severity, anomaly_type=anomaly_type, account_codes=account_code_list,
             include_explanations=include_explanations, include_feedback=include_feedback,
             include_cross_property=include_cross_property
@@ -1770,17 +1775,32 @@ async def export_anomalies_json(
 async def get_uncertain_anomalies(
     limit: int = Query(10, ge=1, le=100, description="Maximum number of anomalies to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get anomalies most needing user feedback (uncertain anomalies)."""
+    """Get anomalies most needing user feedback (uncertain anomalies). Tenant-scoped."""
     try:
         from sqlalchemy import and_, or_, func
         from datetime import timedelta
-        query = db.query(AnomalyDetection, func.count(AnomalyFeedback.id).label('feedback_count')
-        ).outerjoin(AnomalyFeedback, AnomalyFeedback.anomaly_detection_id == AnomalyDetection.id
-        ).filter(and_(or_(AnomalyDetection.confidence.is_(None), AnomalyDetection.confidence < 0.9),
-            AnomalyDetection.context_suppressed == False)).group_by(AnomalyDetection.id).having(
-            func.count(AnomalyFeedback.id) < 3)
+        from app.models.document_upload import DocumentUpload
+        from app.repositories.tenant_scoped import get_upload_for_org
+
+        query = (
+            db.query(AnomalyDetection, func.count(AnomalyFeedback.id).label('feedback_count'))
+            .join(DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .outerjoin(AnomalyFeedback, AnomalyFeedback.anomaly_detection_id == AnomalyDetection.id)
+            .filter(
+                or_(
+                    DocumentUpload.organization_id == current_org.id,
+                    (DocumentUpload.organization_id.is_(None)) & (Property.organization_id == current_org.id),
+                ),
+                or_(AnomalyDetection.confidence.is_(None), AnomalyDetection.confidence < 0.9),
+                AnomalyDetection.context_suppressed == False,
+            )
+            .group_by(AnomalyDetection.id)
+            .having(func.count(AnomalyFeedback.id) < 3)
+        )
         results = query.all()
         uncertain_anomalies = []
         current_date = datetime.now()
@@ -1788,16 +1808,27 @@ async def get_uncertain_anomalies(
             days_since = (current_date - anomaly.detected_at).days if anomaly.detected_at else 0
             confidence = float(anomaly.confidence) if anomaly.confidence else 0.5
             uncertainty_score = ((1 - confidence) * (1 + days_since / 30) * (1 - min(feedback_count, 10) / 10))
-            similar_count = db.query(AnomalyDetection).filter(and_(
-                AnomalyDetection.id != anomaly.id, AnomalyDetection.account_code == anomaly.account_code,
-                AnomalyDetection.property_id == anomaly.property_id,
-                AnomalyDetection.detected_at >= current_date - timedelta(days=365))).count()
+            doc = get_upload_for_org(db, current_org.id, anomaly.document_id) if anomaly.document_id else None
+            prop_id = doc.property_id if doc else None
+            similar_count = 0
+            if prop_id:
+                similar_count = db.query(AnomalyDetection).join(
+                    DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id
+                ).filter(
+                    AnomalyDetection.id != anomaly.id,
+                    AnomalyDetection.field_name == anomaly.field_name,
+                    DocumentUpload.property_id == prop_id,
+                    AnomalyDetection.detected_at >= current_date - timedelta(days=365),
+                ).count()
             uncertain_anomalies.append({'anomaly': anomaly, 'uncertainty_score': uncertainty_score,
                 'confidence': confidence, 'days_since_detection': days_since, 'feedback_count': feedback_count,
                 'similar_anomalies_count': similar_count})
         uncertain_anomalies.sort(key=lambda x: x['uncertainty_score'], reverse=True)
         uncertain_anomalies = uncertain_anomalies[:limit]
-        return [{"id": item['anomaly'].id, "property_id": item['anomaly'].property_id,
+        def _prop_id(a):
+            d = get_upload_for_org(db, current_org.id, a.document_id) if a.document_id else None
+            return d.property_id if d else None
+        return [{"id": item['anomaly'].id, "property_id": _prop_id(item['anomaly']),
             "account_code": item['anomaly'].account_code, "field_name": item['anomaly'].field_name,
             "anomaly_type": item['anomaly'].anomaly_type, "severity": item['anomaly'].severity,
             "actual_value": float(item['anomaly'].actual_value) if item['anomaly'].actual_value else None,

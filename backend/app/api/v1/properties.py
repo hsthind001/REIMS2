@@ -5,7 +5,7 @@ from app.db.database import get_db
 from app.models.property import Property
 # Import Organization model for type checking if needed, but dependency returns object
 from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyResponse
-from app.api.dependencies import get_current_user, get_current_organization
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role
 from app.core.redis_client import invalidate_portfolio_cache
 from app.core.config import settings
 from sqlalchemy import func
@@ -97,8 +97,8 @@ def _maybe_attach_demo_properties(db: Session, current_org) -> None:
 async def create_property(
     property_data: PropertyCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
-    current_org = Depends(get_current_organization)
+    current_user=Depends(require_org_role("admin")),
+    current_org=Depends(get_current_organization),
 ):
     """
     Create a new property with unique property_code within organization
@@ -119,6 +119,9 @@ async def create_property(
         organization_id=current_org.id
     )
     db.add(db_property)
+    db.flush()  # Get id before commit
+    from app.services.audit_service import log_action
+    log_action(db, "property.created", current_user.id, current_org.id, "property", str(db_property.id), f"Created {property_data.property_code}")
     db.commit()
     db.refresh(db_property)
     # Invalidate cache for new property
@@ -170,8 +173,8 @@ async def update_property(
     property_code: str,
     property_data: PropertyUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
-    current_org = Depends(get_current_organization)
+    current_user=Depends(require_org_role("admin")),
+    current_org=Depends(get_current_organization)
 ):
     """
     Update property information (scoped to organization)
@@ -184,7 +187,8 @@ async def update_property(
     
     for field, value in property_data.model_dump(exclude_unset=True).items():
         setattr(property, field, value)
-    
+    from app.services.audit_service import log_action
+    log_action(db, "property.updated", current_user.id, current_org.id, "property", property_code, f"Updated {property_code}")
     db.commit()
     db.refresh(property)
     # Invalidate cache for updated property
@@ -196,8 +200,8 @@ async def update_property(
 async def delete_property(
     property_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
-    current_org = Depends(get_current_organization)
+    current_user=Depends(require_org_role("admin")),
+    current_org=Depends(get_current_organization),
 ):
     """
     Delete property (scoped to organization)
@@ -207,7 +211,8 @@ async def delete_property(
         
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
-    
+    from app.services.audit_service import log_action
+    log_action(db, "property.deleted", current_user.id, current_org.id, "property", property_code, f"Deleted {property_code}")
     db.delete(property)
     db.commit()
     

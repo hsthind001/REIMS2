@@ -20,8 +20,16 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from app.api.dependencies import get_current_user, get_db
+from app.api.dependencies import get_current_user, get_current_organization, get_db
 from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import (
+    get_property_for_org,
+    get_period_for_org,
+    get_forensic_reconciliation_session_for_org,
+    get_forensic_match_for_org,
+    get_forensic_discrepancy_for_org,
+)
 from app.services.forensic_reconciliation_service import ForensicReconciliationService
 from app.services.materiality_service import MaterialityService
 from app.services.exception_tiering_service import ExceptionTieringService
@@ -34,6 +42,7 @@ from app.models.account_synonym import AccountSynonym
 from app.models.account_mapping import AccountMapping
 from app.models.calculated_rule import CalculatedRule
 from app.models.health_score_config import HealthScoreConfig
+from app.models.property import Property
 
 
 router = APIRouter(prefix="/forensic-reconciliation", tags=["forensic-reconciliation"])
@@ -82,14 +91,16 @@ class ResolveDiscrepancyRequest(BaseModel):
 async def create_session(
     request: ReconciliationSessionCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
     """
-    Create a new forensic reconciliation session
-    
-    Validates that all necessary documents exist for the property/period
-    and creates a new reconciliation session.
+    Create a new forensic reconciliation session. Tenant-scoped.
     """
+    if not get_property_for_org(db, current_org.id, request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, request.period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     service = ForensicReconciliationService(db)
     
     session = service.start_reconciliation_session(
@@ -121,16 +132,11 @@ async def create_session(
 async def get_session(
     session_id: int = Path(..., description="Session ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Get details of a specific reconciliation session
-    """
-    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
-    
-    session = db.query(ForensicReconciliationSession).filter(
-        ForensicReconciliationSession.id == session_id
-    ).first()
+    """Get details of a specific reconciliation session. Tenant-scoped."""
+    session = get_forensic_reconciliation_session_for_org(db, current_org.id, session_id)
     
     if not session:
         raise HTTPException(
@@ -157,24 +163,14 @@ async def run_reconciliation(
     session_id: int = Path(..., description="Session ID"),
     request: Optional[RunReconciliationRequest] = None,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Execute reconciliation for a session
-    
-    Runs all matching engines and finds matches across all document types.
-    Returns partial results even if some matches fail to store.
-    """
+    """Execute reconciliation for a session. Tenant-scoped."""
     import logging
-    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
-    
     logger = logging.getLogger(__name__)
     service = ForensicReconciliationService(db)
-    
-    # Get session to check property and period
-    session = db.query(ForensicReconciliationSession).filter(
-        ForensicReconciliationSession.id == session_id
-    ).first()
+    session = get_forensic_reconciliation_session_for_org(db, current_org.id, session_id)
     
     if not session:
         raise HTTPException(
@@ -299,15 +295,15 @@ async def get_session_matches(
     status_filter: Optional[str] = Query(None, description="Filter by status (pending, approved, rejected, modified)"),
     min_confidence: Optional[float] = Query(None, ge=0, le=100, description="Minimum confidence score"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    List all matches for a session
-    
-    Optionally filter by match type, status, or confidence score.
-    """
+    """List all matches for a session. Tenant-scoped."""
     from app.models.forensic_match import ForensicMatch
-    
+
+    session = get_forensic_reconciliation_session_for_org(db, current_org.id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     query = db.query(ForensicMatch).filter(
         ForensicMatch.session_id == session_id
     )
@@ -338,15 +334,15 @@ async def get_session_discrepancies(
     severity: Optional[str] = Query(None, description="Filter by severity (critical, high, medium, low)"),
     status_filter: Optional[str] = Query(None, description="Filter by status (open, investigating, resolved, accepted)"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    List all discrepancies for a session
-    
-    Optionally filter by severity or status.
-    """
+    """List all discrepancies for a session. Tenant-scoped."""
     from app.models.forensic_discrepancy import ForensicDiscrepancy
-    
+
+    session = get_forensic_reconciliation_session_for_org(db, current_org.id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     query = db.query(ForensicDiscrepancy).filter(
         ForensicDiscrepancy.session_id == session_id
     )
@@ -372,30 +368,20 @@ async def get_session_discrepancies(
 async def complete_session(
     session_id: int = Path(..., description="Session ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Mark a reconciliation session as complete
-    
-    Finalizes the session and marks it as approved.
-    """
+    """Mark a reconciliation session as complete. Tenant-scoped."""
+    session = get_forensic_reconciliation_session_for_org(db, current_org.id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     service = ForensicReconciliationService(db)
-    
     success = service.complete_session(
         session_id=session_id,
         auditor_id=current_user.id
     )
     
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session {session_id} not found"
-        )
-    
-    return {
-        "message": "Session completed successfully",
-        "session_id": session_id
-    }
+    return {"message": "Session completed successfully", "session_id": session_id}
 
 
 # ==================== MATCH ENDPOINTS ====================
@@ -405,13 +391,12 @@ async def approve_match(
     match_id: int = Path(..., description="Match ID"),
     request: Optional[ApproveMatchRequest] = None,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Approve a match
-    
-    Auditor review workflow - approves a match with optional notes.
-    """
+    """Approve a match. Tenant-scoped."""
+    if not get_forensic_match_for_org(db, current_org.id, match_id):
+        raise HTTPException(status_code=404, detail=f"Match {match_id} not found")
     service = ForensicReconciliationService(db)
     
     success = service.approve_match(
@@ -437,13 +422,12 @@ async def reject_match(
     match_id: int = Path(..., description="Match ID"),
     request: RejectMatchRequest = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Reject a match
-    
-    Auditor review workflow - rejects a match with a reason.
-    """
+    """Reject a match. Tenant-scoped."""
+    if not get_forensic_match_for_org(db, current_org.id, match_id):
+        raise HTTPException(status_code=404, detail=f"Match {match_id} not found")
     service = ForensicReconciliationService(db)
     
     success = service.reject_match(
@@ -471,13 +455,12 @@ async def resolve_discrepancy(
     discrepancy_id: int = Path(..., description="Discrepancy ID"),
     request: ResolveDiscrepancyRequest = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Resolve a discrepancy
-    
-    Allows auditor to resolve discrepancies with rationale and optional new value.
-    """
+    """Resolve a discrepancy. Tenant-scoped."""
+    if not get_forensic_discrepancy_for_org(db, current_org.id, discrepancy_id):
+        raise HTTPException(status_code=404, detail=f"Discrepancy {discrepancy_id} not found")
     service = ForensicReconciliationService(db)
     
     new_value = None
@@ -510,13 +493,14 @@ async def get_dashboard(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Get reconciliation dashboard data
-    
-    Returns summary statistics and match details for dashboard display.
-    """
+    """Get reconciliation dashboard data. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     service = ForensicReconciliationService(db)
     
     dashboard_data = service.get_reconciliation_dashboard(
@@ -536,13 +520,14 @@ async def check_data_availability(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Check what financial data is available for reconciliation
-    
-    Returns information about which document types have data and record counts.
-    """
+    """Check what financial data is available. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     service = ForensicReconciliationService(db)
     return service.check_data_availability(property_id, period_id)
 
@@ -552,16 +537,17 @@ async def get_health_score(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
     persona: str = Query("controller", description="Persona type (controller, analyst, investor, auditor)"),
+    current_org: Organization = Depends(get_current_organization),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Get reconciliation health score with persona-specific configuration
-    
-    Returns the health score (0-100) for a property/period reconciliation.
-    """
+    """Get reconciliation health score. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     from app.models.forensic_reconciliation_session import ForensicReconciliationSession
-    
+
     # Get most recent session
     session = db.query(ForensicReconciliationSession).filter(
         ForensicReconciliationSession.property_id == property_id,
@@ -599,9 +585,12 @@ async def get_health_score_trend(
     property_id: int = Path(..., description="Property ID"),
     periods: int = Query(6, description="Number of periods to include"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Get health score trend over multiple periods"""
+    """Get health score trend. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     health_service = HealthScoreService(db)
     trend = health_service.get_health_score_trend(property_id, periods=periods)
     
@@ -620,9 +609,14 @@ async def discover_accounts(
     period_id: int = Path(..., description="Period ID"),
     document_type: Optional[str] = Query(None, description="Filter by document type"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Discover account codes from financial data"""
+    """Discover account codes. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     from app.services.account_code_discovery_service import AccountCodeDiscoveryService
     
     service = AccountCodeDiscoveryService(db)
@@ -640,9 +634,14 @@ async def get_diagnostics(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Get comprehensive diagnostics for reconciliation"""
+    """Get comprehensive diagnostics. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     service = ForensicReconciliationService(db)
     return service.get_diagnostics(property_id, period_id)
 
@@ -652,13 +651,13 @@ async def learn_from_match(
     match_id: int = Body(..., description="Match ID to learn from"),
     feedback: str = Body(..., description="Feedback on the match"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Learn from a match with manual feedback"""
+    """Learn from a match. Tenant-scoped."""
     from app.services.match_learning_service import MatchLearningService
-    from app.models.forensic_match import ForensicMatch
-    
-    match = db.query(ForensicMatch).filter(ForensicMatch.id == match_id).first()
+
+    match = get_forensic_match_for_org(db, current_org.id, match_id)
     if not match:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -721,9 +720,14 @@ async def suggest_rules(
     property_id: Optional[int] = Body(None, description="Property ID"),
     period_id: Optional[int] = Body(None, description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """ML suggests new matching rules based on data"""
+    """ML suggests new matching rules. Tenant-scoped."""
+    if property_id and not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if period_id and not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     from app.services.relationship_discovery_service import RelationshipDiscoveryService
     
     discovery_service = RelationshipDiscoveryService(db)
@@ -744,13 +748,13 @@ async def suggest_rules(
 async def validate_session(
     session_id: int = Path(..., description="Session ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Validate matches and calculate health score
-    
-    Runs validation rules and identifies discrepancies.
-    """
+    """Validate matches and calculate health score. Tenant-scoped."""
+    session = get_forensic_reconciliation_session_for_org(db, current_org.id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     service = ForensicReconciliationService(db)
     
     result = service.validate_matches(session_id=session_id)
@@ -785,9 +789,12 @@ class MaterialityConfigCreate(BaseModel):
 async def create_materiality_config(
     request: MaterialityConfigCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Create a new materiality configuration"""
+    """Create a new materiality configuration. Tenant-scoped."""
+    if request.property_id and not get_property_for_org(db, current_org.id, request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     from datetime import date
     
     config = MaterialityConfig(
@@ -826,9 +833,12 @@ async def get_materiality_configs(
     property_id: int = Path(..., description="Property ID"),
     statement_type: Optional[str] = Query(None, description="Filter by statement type"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Get materiality configurations for a property"""
+    """Get materiality configurations for a property. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     from datetime import date
     
     query = db.query(MaterialityConfig).filter(
@@ -888,12 +898,11 @@ async def classify_match_tier(
     match_id: int = Path(..., description="Match ID"),
     auto_resolve: bool = Query(True, description="Auto-resolve tier 0 matches"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Classify a match into an exception tier"""
-    from app.models.forensic_match import ForensicMatch
-    
-    match = db.query(ForensicMatch).filter(ForensicMatch.id == match_id).first()
+    """Classify a match into an exception tier. Tenant-scoped."""
+    match = get_forensic_match_for_org(db, current_org.id, match_id)
     if not match:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -910,12 +919,11 @@ async def classify_match_tier(
 async def suggest_match_fix(
     match_id: int = Path(..., description="Match ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Get suggested fix for a tier 1 match"""
-    from app.models.forensic_match import ForensicMatch
-    
-    match = db.query(ForensicMatch).filter(ForensicMatch.id == match_id).first()
+    """Get suggested fix for a tier 1 match. Tenant-scoped."""
+    match = get_forensic_match_for_org(db, current_org.id, match_id)
     if not match:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -933,12 +941,23 @@ async def bulk_classify_tiers(
     match_ids: List[int] = Body(..., description="List of match IDs"),
     auto_resolve: bool = Body(True, description="Auto-resolve tier 0 matches"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Bulk classify matches into exception tiers"""
+    """Bulk classify matches into exception tiers. Tenant-scoped."""
     from app.models.forensic_match import ForensicMatch
-    
-    matches = db.query(ForensicMatch).filter(ForensicMatch.id.in_(match_ids)).all()
+    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+
+    matches = (
+        db.query(ForensicMatch)
+        .join(ForensicReconciliationSession, ForensicMatch.session_id == ForensicReconciliationSession.id)
+        .join(Property, ForensicReconciliationSession.property_id == Property.id)
+        .filter(
+            ForensicMatch.id.in_(match_ids),
+            Property.organization_id == current_org.id,
+        )
+        .all()
+    )
     
     tiering_service = ExceptionTieringService(db)
     results = []
@@ -982,14 +1001,17 @@ async def list_auto_resolution_rules(
     property_id: Optional[int] = Query(None, description="Filter by property ID"),
     pattern_type: Optional[str] = Query(None, description="Filter by pattern type"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """List auto-resolution rules"""
+    """List auto-resolution rules. Tenant-scoped."""
     query = db.query(AutoResolutionRule).filter(
         AutoResolutionRule.is_active == True
     )
     
     if property_id:
+        if not get_property_for_org(db, current_org.id, property_id):
+            return []
         query = query.filter(
             (AutoResolutionRule.property_id == property_id) |
             (AutoResolutionRule.property_id.is_(None))
@@ -1022,9 +1044,12 @@ async def list_auto_resolution_rules(
 async def create_auto_resolution_rule(
     request: AutoResolutionRuleCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Create a new auto-resolution rule"""
+    """Create a new auto-resolution rule. Tenant-scoped."""
+    if request.property_id and not get_property_for_org(db, current_org.id, request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     
     rule = AutoResolutionRule(
         rule_name=request.rule_name,
@@ -1198,12 +1223,15 @@ class CalculatedRuleEvaluation(BaseModel):
 async def list_calculated_rules(
     property_id: Optional[int] = Query(None, description="Filter by property ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """List all calculated rules"""
+    """List all calculated rules. Tenant-scoped."""
     engine = CalculatedRulesEngine(db)
     
     if property_id:
+        if not get_property_for_org(db, current_org.id, property_id):
+            return []
         rules = engine.get_active_rules(property_id)
     else:
         # Get all active rules
@@ -1248,18 +1276,15 @@ async def get_document_health(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """
-    Get document health scores by document type
-    
-    Returns health percentage for each document type based on:
-    - Calculated rule evaluations (PASS vs FAIL)
-    - Cross-document reconciliation matches
-    
-    Document types: balance_sheet, income_statement, cash_flow, rent_roll, mortgage_statement
-    """
-    
+    """Get document health scores. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
+
     # Map rule prefixes to document types
     rule_prefix_map = {
         'BS': 'balance_sheet',
@@ -1360,11 +1385,14 @@ async def evaluate_calculated_rules(
     period_id: int = Path(..., description="Period ID"),
     request: Optional[RunReconciliationRequest] = Body(None),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-
-
-    """Evaluate all calculated rules for a property and period"""
+    """Evaluate all calculated rules. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     # MODIFIED: Fetch results from the new ReconciliationRuleEngine storage
     # instead of calculating on-the-fly with Legacy engine
     
@@ -1487,9 +1515,14 @@ async def test_calculated_rule(
     property_id: int = Body(..., description="Property ID"),
     period_id: int = Body(..., description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Test a calculated rule against a property and period"""
+    """Test a calculated rule. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     engine = CalculatedRulesEngine(db)
     
     # Get latest version of rule
@@ -1523,9 +1556,14 @@ async def get_calculated_rule_detail(
     property_id: int = Path(..., description="Property ID"),
     period_id: int = Path(..., description="Period ID"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_org: Organization = Depends(get_current_organization),
+    db: Session = Depends(get_db),
 ):
-    """Get detailed execution result for a specific rule"""
+    """Get detailed execution result. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not get_period_for_org(db, current_org.id, period_id):
+        raise HTTPException(status_code=404, detail="Period not found")
     
     # 1. Try to find the execution result in cross_document_reconciliations
     query = text("""

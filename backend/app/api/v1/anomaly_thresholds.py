@@ -7,7 +7,8 @@ from typing import List
 from decimal import Decimal
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role
+from app.models.organization import Organization
 from app.schemas.anomaly_threshold import (
     AnomalyThresholdCreate,
     AnomalyThresholdUpdate,
@@ -24,9 +25,10 @@ router = APIRouter()
 @router.get("/", response_model=AnomalyThresholdListResponse)
 async def list_thresholds(
     include_inactive: bool = False,
-    document_type: str = None,  # Filter by document type: income_statement, balance_sheet, cash_flow
+    document_type: str = None,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     List all anomaly thresholds
@@ -67,9 +69,10 @@ async def list_thresholds(
 
 @router.get("/accounts", response_model=List[dict])
 async def get_all_accounts_with_thresholds(
-    document_type: str = None,  # Filter by document type
+    document_type: str = None,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all accounts from chart_of_accounts with their threshold information.
@@ -94,7 +97,8 @@ async def get_all_accounts_with_thresholds(
 async def get_threshold(
     account_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Get threshold for a specific account code"""
     service = AnomalyThresholdService(db)
@@ -113,7 +117,8 @@ async def get_threshold(
 async def create_threshold(
     threshold_data: AnomalyThresholdCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Create a new threshold"""
     service = AnomalyThresholdService(db)
@@ -140,7 +145,8 @@ async def update_threshold(
     account_code: str,
     threshold_data: AnomalyThresholdUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Update an existing threshold"""
     service = AnomalyThresholdService(db)
@@ -165,7 +171,8 @@ async def create_or_update_threshold(
     account_code: str,
     threshold_data: AnomalyThresholdCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Create or update a threshold (upsert operation).
@@ -199,7 +206,8 @@ async def create_or_update_threshold(
 async def delete_threshold(
     account_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Delete (deactivate) a threshold"""
     service = AnomalyThresholdService(db)
@@ -215,7 +223,8 @@ async def delete_threshold(
 @router.get("/default/threshold", response_model=DefaultThresholdResponse)
 async def get_default_threshold(
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Get the global default threshold value"""
     service = AnomalyThresholdService(db)
@@ -231,7 +240,8 @@ async def get_default_threshold(
 async def set_default_threshold(
     threshold_data: DefaultThresholdUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Set the global default threshold value"""
     service = AnomalyThresholdService(db)

@@ -11,10 +11,13 @@ import logging
 
 from app.db.database import get_db
 from app.models.alert_rule import AlertRule
+from app.models.property import Property
 from app.services.alert_rules_service import AlertRulesService
 from app.services.alert_rule_templates import AlertRuleTemplates
 from app.models.user import User
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 
 router = APIRouter(prefix="/alert-rules", tags=["alert_rules"])
 logger = logging.getLogger(__name__)
@@ -99,12 +102,22 @@ async def list_alert_rules(
     limit: int = Query(default=100, ge=1, le=500),
     skip: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """List all alert rules with optional filtering"""
-    query = db.query(AlertRule)
-    
+    """List all alert rules. Tenant-scoped: only global rules or rules for org's properties."""
+    from sqlalchemy import or_
+    query = db.query(AlertRule).outerjoin(
+        Property, AlertRule.property_id == Property.id
+    ).filter(
+        or_(
+            AlertRule.property_id.is_(None),
+            Property.organization_id == current_org.id,
+        )
+    )
     if property_id is not None:
+        if not get_property_for_org(db, current_org.id, property_id):
+            return []
         query = query.filter(
             (AlertRule.property_id == property_id) | (AlertRule.property_specific == False)
         )
@@ -127,13 +140,15 @@ async def list_alert_rules(
 async def get_alert_rule(
     rule_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Get a specific alert rule by ID"""
+    """Get a specific alert rule by ID. Tenant-scoped."""
     rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
     if not rule:
         raise HTTPException(status_code=404, detail="Alert rule not found")
-    
+    if rule.property_id and not get_property_for_org(db, current_org.id, rule.property_id):
+        raise HTTPException(status_code=404, detail="Alert rule not found")
     return AlertRuleResponse(**rule.to_dict())
 
 
@@ -141,7 +156,8 @@ async def get_alert_rule(
 async def create_alert_rule(
     rule_data: AlertRuleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Create a new alert rule"""
     # Validate rule_type (allow string values)
@@ -160,7 +176,8 @@ async def create_alert_rule(
             status_code=400,
             detail="property_id is required when property_specific is True"
         )
-    
+    if rule_data.property_id and not get_property_for_org(db, current_org.id, rule_data.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     # Create rule
     rule = AlertRule(
         rule_name=rule_data.rule_name,
@@ -190,21 +207,31 @@ async def create_alert_rule(
     return AlertRuleResponse(**rule.to_dict())
 
 
+def _require_alert_rule_for_org(db, org_id, rule_id):
+    rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    if rule.property_id and not get_property_for_org(db, org_id, rule.property_id):
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    return rule
+
+
 @router.put("/{rule_id}", response_model=AlertRuleResponse)
 async def update_alert_rule(
     rule_id: int,
     rule_data: AlertRuleUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Update an existing alert rule"""
-    rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
+    """Update an existing alert rule. Tenant-scoped."""
+    rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
     
-    # Update fields
+    # Validate property_id if being updated
     update_data = rule_data.model_dump(exclude_unset=True)
-    
+    if "property_id" in update_data and update_data["property_id"]:
+        if not get_property_for_org(db, current_org.id, update_data["property_id"]):
+            raise HTTPException(status_code=404, detail="Property not found")
     # Validate rule_type if provided
     if "rule_type" in update_data:
         valid_rule_types = ["threshold", "statistical", "trend", "composite"]
@@ -234,13 +261,11 @@ async def update_alert_rule(
 async def delete_alert_rule(
     rule_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Delete an alert rule"""
-    rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-    
+    """Delete an alert rule. Tenant-scoped."""
+    rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
     db.delete(rule)
     db.commit()
     
@@ -254,13 +279,13 @@ async def test_alert_rule(
     rule_id: int,
     test_request: RuleTestRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("editor")),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Test an alert rule against specific property/period data"""
-    rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-    
+    """Test an alert rule. Tenant-scoped."""
+    rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
+    if not get_property_for_org(db, current_org.id, test_request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     # Override rule config if provided
     if test_request.rule_config:
         # Temporarily update rule for testing
@@ -320,9 +345,12 @@ async def create_rule_from_template(
     property_id: Optional[int] = Query(None, description="Create property-specific rule"),
     threshold_override: Optional[float] = Query(None, description="Override default threshold"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Create an alert rule from a template"""
+    if property_id is not None and not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     try:
         config = AlertRuleTemplates.create_rule_from_template(
             template_id=template_id,
@@ -352,13 +380,11 @@ async def create_rule_from_template(
 async def activate_alert_rule(
     rule_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Activate an alert rule"""
-    rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-    
+    """Activate an alert rule. Tenant-scoped."""
+    rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
     rule.is_active = True
     rule.updated_at = datetime.utcnow()
     db.commit()
@@ -371,13 +397,11 @@ async def activate_alert_rule(
 async def deactivate_alert_rule(
     rule_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """Deactivate an alert rule"""
-    rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-    
+    """Deactivate an alert rule. Tenant-scoped."""
+    rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
     rule.is_active = False
     rule.updated_at = datetime.utcnow()
     db.commit()

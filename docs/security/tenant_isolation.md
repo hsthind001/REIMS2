@@ -31,12 +31,20 @@ Use `app.repositories.tenant_scoped` instead of direct `session.query()`:
 | `get_period_for_org(db, org_id, period_id)` | FinancialPeriod by ID |
 | `get_workflow_lock_for_org(db, org_id, lock_id)` | WorkflowLock by ID |
 | `get_reconciliation_session_for_org(db, org_id, session_id)` | ReconciliationSession by ID |
+| `get_forensic_reconciliation_session_for_org(db, org_id, session_id)` | ForensicReconciliationSession by ID |
+| `get_forensic_match_for_org(db, org_id, match_id)` | ForensicMatch by ID (via session) |
+| `get_forensic_discrepancy_for_org(db, org_id, discrepancy_id)` | ForensicDiscrepancy by ID (via session) |
+| `get_anomaly_for_org(db, org_id, anomaly_id)` | AnomalyDetection by ID (via document/property) |
 
 These helpers join through `Property.organization_id` and return `None` if the resource does not belong to the org.
 
-## RLS (Future)
+## RLS (Defense-in-Depth)
 
-Postgres Row Level Security will provide defense-in-depth. When enabled:
+Migration `20260130_0002_add_rls_policies` enables Row Level Security on:
+- `properties`
+- `financial_periods`
+- `document_uploads`
 
-- Policy: `organization_id = current_setting('app.current_organization_id')::int`
-- Set `app.current_organization_id` per request in middleware
+**Activation:** `get_current_organization` automatically sets `app.current_organization_id` via `set_config()` when the org is resolved. Any route that uses `Depends(get_current_organization)` will have RLS applied for that request's DB usage.
+
+When not set (e.g., routes without org context), policies allow all rows (backward compatibility).

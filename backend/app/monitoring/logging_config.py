@@ -22,9 +22,13 @@ from structlog.processors import (
     CallsiteParameter
 )
 
-# Log directory
+# Log directory (fallback to /tmp if /var/log unreachable)
 LOG_DIR = Path(os.getenv('LOG_DIR', '/var/log/reims2'))
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    LOG_DIR = Path(os.getenv('LOG_DIR', '/tmp/reims2'))
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Log file paths
 LOG_FILE = LOG_DIR / 'reims2.log'

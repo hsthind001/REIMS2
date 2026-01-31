@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional
 from app.db.database import get_db
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role
+from app.models.organization import Organization
 from app.models.chart_of_accounts import ChartOfAccounts
 from app.schemas.chart_of_accounts import (
     ChartOfAccountsResponse,
@@ -10,7 +12,6 @@ from app.schemas.chart_of_accounts import (
     ChartOfAccountsCreate,
     ChartOfAccountsUpdate
 )
-from app.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/chart-of-accounts", tags=["chart-of-accounts"])
 
@@ -27,10 +28,10 @@ async def list_chart_of_accounts(
     is_active: Optional[bool] = Query(True, description="Filter by active status"),
     search: Optional[str] = Query(None, description="Search by account code or name"),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
-    """
-    List all chart of accounts with optional filtering and search
+    """List chart of accounts. Requires org context (template is global)."""
     
     Filters:
     - account_type: Filter by type (asset, liability, equity, income, expense)
@@ -96,7 +97,8 @@ async def list_chart_of_accounts(
 @router.get("/summary")
 async def get_chart_of_accounts_summary(
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get summary statistics of chart of accounts
@@ -136,7 +138,8 @@ async def get_chart_of_accounts_summary(
 async def get_account_by_code(
     account_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get a specific account by account code
@@ -158,7 +161,8 @@ async def get_account_by_code(
 async def get_account_children(
     account_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all child accounts of a parent account
@@ -186,7 +190,8 @@ async def get_account_children(
 async def create_account(
     account_data: ChartOfAccountsCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Create a new chart of accounts entry
@@ -205,6 +210,8 @@ async def create_account(
     # Create account
     db_account = ChartOfAccounts(**account_data.model_dump())
     db.add(db_account)
+    from app.services.audit_service import log_action
+    log_action(db, "chart_of_accounts.created", current_user.id, current_org.id, "chart_of_accounts", account_data.account_code, f"Created account {account_data.account_code}")
     db.commit()
     db.refresh(db_account)
     
@@ -216,7 +223,8 @@ async def update_account(
     account_code: str,
     account_data: ChartOfAccountsUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Update an existing chart of accounts entry
@@ -234,7 +242,8 @@ async def update_account(
     # Update fields
     for field, value in account_data.model_dump(exclude_unset=True).items():
         setattr(account, field, value)
-    
+    from app.services.audit_service import log_action
+    log_action(db, "chart_of_accounts.updated", current_user.id, current_org.id, "chart_of_accounts", account_code, f"Updated account {account_code}")
     db.commit()
     db.refresh(account)
     
@@ -245,7 +254,8 @@ async def update_account(
 async def delete_account(
     account_code: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Delete a chart of accounts entry
@@ -259,7 +269,8 @@ async def delete_account(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Account with code {account_code} not found"
         )
-    
+    from app.services.audit_service import log_action
+    log_action(db, "chart_of_accounts.deleted", current_user.id, current_org.id, "chart_of_accounts", account_code, f"Deleted account {account_code}")
     db.delete(account)
     db.commit()
     

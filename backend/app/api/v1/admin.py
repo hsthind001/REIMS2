@@ -175,3 +175,100 @@ def get_platform_stats(
             "canceled": canceled_subs
         }
     }
+
+
+@router.get("/admin/audit-log")
+def get_audit_log(
+    organization_id: int = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superuser),
+):
+    """View audit log. Superusers can filter by org or see all."""
+    from app.models.audit_log import AuditLog
+    query = db.query(AuditLog)
+    if organization_id is not None:
+        query = query.filter(AuditLog.organization_id == organization_id)
+    rows = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit).all()
+    return [
+        {
+            "id": r.id,
+            "action": r.action,
+            "user_id": r.user_id,
+            "organization_id": r.organization_id,
+            "resource_type": r.resource_type,
+            "resource_id": r.resource_id,
+            "details": r.details,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+class OrgPlanUpdate(BaseModel):
+    plan_id: str | None = None
+    documents_limit: int | None = None
+    storage_limit_gb: float | None = None
+
+
+@router.patch("/admin/tenants/{org_id}/plan")
+def update_org_plan(
+    org_id: int,
+    body: OrgPlanUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superuser),
+):
+    """Set plan and quotas for an organization. Superuser only."""
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if body.plan_id is not None:
+        org.plan_id = body.plan_id
+    if body.documents_limit is not None:
+        org.documents_limit = body.documents_limit
+    if body.storage_limit_gb is not None:
+        org.storage_limit_gb = body.storage_limit_gb
+    from app.services.audit_service import log_action
+    log_action(db, "admin.plan_updated", current_user.id, org_id, "organization", str(org_id), f"Updated plan to {body.plan_id or org.plan_id}, limits={body.documents_limit},{body.storage_limit_gb}")
+    db.commit()
+    db.refresh(org)
+    return {
+        "id": org.id,
+        "plan_id": org.plan_id,
+        "documents_limit": org.documents_limit,
+        "storage_limit_gb": float(org.storage_limit_gb) if org.storage_limit_gb else None,
+    }
+
+
+@router.post("/admin/tenants/refresh-all-usage")
+def refresh_all_orgs_usage_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superuser),
+):
+    """Recalculate documents_used and storage_used_bytes for ALL orgs. Superuser only. Use after enabling quotas."""
+    from app.services.quota_service import refresh_all_orgs_usage
+    count = refresh_all_orgs_usage(db)
+    db.commit()
+    return {"message": f"Refreshed usage for {count} organizations", "orgs_updated": count}
+
+
+@router.post("/admin/tenants/{org_id}/refresh-usage")
+def refresh_org_usage(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superuser),
+):
+    """Recalculate documents_used and storage_used_bytes from actual data. Superuser only."""
+    from app.services.quota_service import refresh_org_usage as do_refresh
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    do_refresh(db, org_id)
+    db.commit()
+    db.refresh(org)
+    return {
+        "id": org.id,
+        "documents_used": org.documents_used,
+        "storage_used_bytes": org.storage_used_bytes,
+    }

@@ -127,6 +127,7 @@ from app.models.ai_insights_embedding import AIInsightsEmbedding
 
 # SaaS Models
 from app.models.organization import Organization, OrganizationMember
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -258,4 +259,5 @@ __all__ = [
     # SaaS
     "Organization",
     "OrganizationMember",
+    "AuditLog",
 ]

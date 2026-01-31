@@ -1,14 +1,8 @@
 """
-Forensic Reconciliation API Endpoints
+Forensic Reconciliation API Endpoints (v2)
 
-Provides RESTful API for forensic financial document reconciliation across
-Balance Sheet, Income Statement, Cash Flow, Rent Roll, and Mortgage Statement.
-
-Endpoints for:
-- Session management
-- Match finding and approval
-- Discrepancy resolution
-- Dashboard and health score
+DEPRECATED: This module is NOT mounted in main.py. Use forensic_reconciliation.py instead.
+This file is kept for reference only. Do not mount - it lacks org scoping applied in v1.
 """
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status, Body
 from sqlalchemy.orm import Session

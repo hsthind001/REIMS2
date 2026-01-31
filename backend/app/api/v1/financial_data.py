@@ -9,8 +9,11 @@ from typing import Optional, List, Dict, Any
 from decimal import Decimal
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_upload_for_org
 from app.models.document_upload import DocumentUpload
-from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
@@ -54,7 +57,9 @@ async def get_financial_data(
     filter_critical: Optional[bool] = Query(None, description="Filter to only critical items"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get extracted financial data for a specific document upload with quality indicators
@@ -69,21 +74,16 @@ async def get_financial_data(
     Supports filtering by review status and severity level.
     """
     try:
-        # Get upload record
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
-        ).first()
-        
+        upload = get_upload_for_org(db, current_org.id, upload_id)
         if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Upload {upload_id} not found"
             )
         
-        # Get property and period info
-        property_info = db.query(Property).filter(
-            Property.id == upload.property_id
-        ).first()
+        # Get property and period info (upload already validated for org)
+        from app.models.property import Property
+        property_info = db.query(Property).filter(Property.id == upload.property_id).first()
         
         period_info = db.query(FinancialPeriod).filter(
             FinancialPeriod.id == upload.period_id

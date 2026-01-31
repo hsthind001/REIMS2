@@ -10,7 +10,7 @@ from datetime import datetime
 
 from app.db.database import get_db
 from app.db.minio_client import get_file_url, delete_file
-from app.api.dependencies import get_current_user, get_current_organization
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role, require_superuser
 from app.models.user import User
 from app.models.organization import Organization
 from app.services.document_service import DocumentService
@@ -82,7 +82,8 @@ async def upload_document(
     file: UploadFile = File(..., description="PDF file to upload"),
     force_overwrite: bool = Form(False, description="Force overwrite if file exists"),
     db: Session = Depends(get_db),
-    current_org: Organization = Depends(get_current_organization)
+    current_user: User = Depends(require_org_role("editor")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Upload financial document and trigger extraction
@@ -170,6 +171,15 @@ async def upload_document(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid PDF file: file content does not match PDF format"
         )
+
+    # P2: Check quota before upload
+    from app.services.quota_service import check_document_quota, check_storage_quota
+    allowed, err = check_document_quota(db, current_org.id)
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=err)
+    allowed, err = check_storage_quota(db, current_org.id, file_size)
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=err)
     
     try:
         # Create document service
@@ -258,7 +268,7 @@ async def upload_document(
                 existing_file=result.get("existing_file")
             )
         
-        # Check if duplicate (by hash)
+        # Check if duplicate (by hash) - no quota increment
         if result.get("is_duplicate"):
             return DocumentUploadResponse(
                 upload_id=result["upload_id"],
@@ -280,6 +290,22 @@ async def upload_document(
             # Don't fail the upload - file is in MinIO, extraction will be recovered
             task_id = None
             extraction_status = "pending"  # Background task will pick it up
+
+        # P2: Increment quota counters and audit log
+        from app.services.quota_service import increment_document_count, increment_storage
+        from app.services.audit_service import log_action
+        increment_document_count(db, current_org.id)
+        increment_storage(db, current_org.id, file_size)
+        log_action(
+            db, "document.uploaded",
+            user_id=current_user.id,
+            organization_id=current_org.id,
+            resource_type="document_upload",
+            resource_id=str(result["upload_id"]),
+            details=f"Uploaded {file.filename} ({document_type.value})",
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
         
         return DocumentUploadResponse(
             upload_id=result["upload_id"],
@@ -372,8 +398,11 @@ async def bulk_upload_documents(
 
 
 @router.get("/documents/queue-status")
-async def get_queue_status(db: Session = Depends(get_db)):
-    """Get Celery queue status and pending extractions"""
+async def get_queue_status(
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """Get Celery queue status and pending extractions. Tenant-scoped."""
     from celery import current_app
     from app.models.document_upload import DocumentUpload
     
@@ -402,11 +431,16 @@ async def get_queue_status(db: Session = Depends(get_db)):
         stats = inspect.stats() or {}
         workers_available = len(stats)
         
-        # Count pending uploads
-        pending_uploads = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_status == 'pending'
-        ).count()
-        
+        # Count pending uploads (tenant-scoped)
+        pending_uploads = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_status == 'pending',
+                Property.organization_id == current_org.id,
+            )
+            .count()
+        )
         return {
             "queue_depth": extraction_tasks,
             "workers_available": workers_available,
@@ -418,9 +452,15 @@ async def get_queue_status(db: Session = Depends(get_db)):
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to get queue status: {e}")
         # Return safe defaults if Celery is unavailable
-        pending_uploads = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_status == 'pending'
-        ).count()
+        pending_uploads = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_status == 'pending',
+                Property.organization_id == current_org.id,
+            )
+            .count()
+        )
         return {
             "queue_depth": 0,
             "workers_available": 0,
@@ -431,7 +471,10 @@ async def get_queue_status(db: Session = Depends(get_db)):
 
 
 @router.get("/documents/monitoring-status")
-async def get_monitoring_status(db: Session = Depends(get_db)):
+async def get_monitoring_status(
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get comprehensive monitoring status for bulk uploads.
     Returns queue status, recent uploads, failed uploads, stuck uploads, and service status.
@@ -461,59 +504,76 @@ async def get_monitoring_status(db: Session = Depends(get_db)):
                         ])
         
         workers_available = len(stats)
-        pending_uploads = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_status == 'pending'
-        ).count()
-        
-        # Recent uploads (last 5 minutes)
+        pending_uploads = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_status == 'pending',
+                Property.organization_id == current_org.id,
+            )
+            .count()
+        )
+        # Recent uploads (last 5 minutes, tenant-scoped)
         recent_uploads = db.execute(
             text("""
-                SELECT id, file_name, document_type, extraction_status, 
-                       EXTRACT(EPOCH FROM (NOW() - upload_date))/60 as minutes_ago,
-                       extraction_task_id
-                FROM document_uploads 
-                WHERE upload_date > NOW() - INTERVAL '5 minutes'
-                ORDER BY upload_date DESC
+                SELECT du.id, du.file_name, du.document_type, du.extraction_status,
+                       EXTRACT(EPOCH FROM (NOW() - du.upload_date))/60 as minutes_ago,
+                       du.extraction_task_id
+                FROM document_uploads du
+                JOIN properties p ON du.property_id = p.id
+                WHERE du.upload_date > NOW() - INTERVAL '5 minutes'
+                  AND p.organization_id = :org_id
+                ORDER BY du.upload_date DESC
                 LIMIT 10
-            """)
+            """),
+            {"org_id": current_org.id}
         ).fetchall()
         
-        # Failed uploads (last hour)
+        # Failed uploads (last hour, tenant-scoped)
         failed_uploads = db.execute(
             text("""
-                SELECT id, file_name, extraction_status, 
-                       LEFT(notes, 200) as error_summary,
-                       EXTRACT(EPOCH FROM (NOW() - upload_date))/60 as minutes_ago
-                FROM document_uploads 
-                WHERE extraction_status = 'failed' 
-                  AND upload_date > NOW() - INTERVAL '1 hour'
-                ORDER BY upload_date DESC
+                SELECT du.id, du.file_name, du.extraction_status,
+                       LEFT(du.notes, 200) as error_summary,
+                       EXTRACT(EPOCH FROM (NOW() - du.upload_date))/60 as minutes_ago
+                FROM document_uploads du
+                JOIN properties p ON du.property_id = p.id
+                WHERE du.extraction_status = 'failed'
+                  AND du.upload_date > NOW() - INTERVAL '1 hour'
+                  AND p.organization_id = :org_id
+                ORDER BY du.upload_date DESC
                 LIMIT 5
-            """)
+            """),
+            {"org_id": current_org.id}
         ).fetchall()
         
-        # Stuck uploads (pending > 10 minutes)
+        # Stuck uploads (pending > 10 minutes, tenant-scoped)
         stuck_uploads = db.execute(
             text("""
-                SELECT id, file_name, extraction_status, 
-                       EXTRACT(EPOCH FROM (NOW() - upload_date))/60 as minutes_pending
-                FROM document_uploads 
-                WHERE extraction_status = 'pending' 
-                  AND upload_date < NOW() - INTERVAL '10 minutes'
-                ORDER BY upload_date ASC
+                SELECT du.id, du.file_name, du.extraction_status,
+                       EXTRACT(EPOCH FROM (NOW() - du.upload_date))/60 as minutes_pending
+                FROM document_uploads du
+                JOIN properties p ON du.property_id = p.id
+                WHERE du.extraction_status = 'pending'
+                  AND du.upload_date < NOW() - INTERVAL '10 minutes'
+                  AND p.organization_id = :org_id
+                ORDER BY du.upload_date ASC
                 LIMIT 5
-            """)
+            """),
+            {"org_id": current_org.id}
         ).fetchall()
         
-        # Upload summary by status (last hour)
+        # Upload summary by status (last hour, tenant-scoped)
         upload_summary = db.execute(
             text("""
-                SELECT extraction_status, COUNT(*) as count
-                FROM document_uploads
-                WHERE upload_date > NOW() - INTERVAL '1 hour'
-                GROUP BY extraction_status
+                SELECT du.extraction_status, COUNT(*) as count
+                FROM document_uploads du
+                JOIN properties p ON du.property_id = p.id
+                WHERE du.upload_date > NOW() - INTERVAL '1 hour'
+                  AND p.organization_id = :org_id
+                GROUP BY du.extraction_status
                 ORDER BY count DESC
-            """)
+            """),
+            {"org_id": current_org.id}
         ).fetchall()
         
         return {
@@ -567,9 +627,15 @@ async def get_monitoring_status(db: Session = Depends(get_db)):
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to get monitoring status: {e}")
         # Return safe defaults
-        pending_uploads = db.query(DocumentUpload).filter(
-            DocumentUpload.extraction_status == 'pending'
-        ).count()
+        pending_uploads = (
+            db.query(DocumentUpload)
+            .join(Property, DocumentUpload.property_id == Property.id)
+            .filter(
+                DocumentUpload.extraction_status == 'pending',
+                Property.organization_id == current_org.id,
+            )
+            .count()
+        )
         return {
             "queue_status": {
                 "queue_depth": 0,
@@ -1187,10 +1253,11 @@ async def reprocess_single_upload(
 
 
 @router.delete("/documents/uploads/delete-all-history", status_code=status.HTTP_200_OK)
-@limiter.limit("1/minute")  # Rate limit: 1 destructive operation per minute per IP
+@limiter.limit("1/minute")
 async def delete_all_upload_history(
-    request: Request,  # Required for rate limiter
-    db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superuser()),
 ):
     """
     Delete all document upload history from the database
@@ -1241,7 +1308,18 @@ async def delete_all_upload_history(
             logger.info(f"Processing batch {batch_number} with {len(batch)} records...")
 
             # Step 3: Delete files from MinIO and database records for this batch
+            from app.services.quota_service import decrement_document_count, decrement_storage
             for upload in batch:
+                # Decrement quota before delete (org from property or upload)
+                org_id = getattr(upload, "organization_id", None)
+                if org_id is None and upload.property_id:
+                    prop = db.query(Property).filter(Property.id == upload.property_id).first()
+                    org_id = prop.organization_id if prop else None
+                if org_id is not None:
+                    decrement_document_count(db, org_id)
+                    size = getattr(upload, "file_size_bytes", None) or 0
+                    if size:
+                        decrement_storage(db, org_id, int(size))
                 # Delete file from MinIO if file_path exists
                 if upload.file_path:
                     try:
@@ -1275,10 +1353,11 @@ async def delete_all_upload_history(
 
 
 @router.delete("/documents/anomalies-warnings-alerts/delete-all", status_code=status.HTTP_200_OK)
-@limiter.limit("1/minute")  # Rate limit: 1 destructive operation per minute per IP
+@limiter.limit("1/minute")
 async def delete_all_anomalies_warnings_alerts(
-    request: Request,  # Required for rate limiter
-    db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superuser()),
 ):
     """
     Delete all anomalies, warnings, and alerts data from the database
@@ -1407,7 +1486,9 @@ async def delete_filtered_anomalies_warnings_alerts(
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by period year (optional)"),
     document_type: Optional[DocumentTypeEnum] = Query(None, description="Filter by document type (optional)"),
     period_id: Optional[int] = Query(None, description="Filter by specific period ID (optional)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Delete anomalies, warnings, and alerts data with intelligent filtering
@@ -1445,7 +1526,11 @@ async def delete_filtered_anomalies_warnings_alerts(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="property_ids is required and must contain at least one property ID"
             )
-        
+        # Validate all property_ids belong to org
+        from app.repositories.tenant_scoped import get_property_for_org
+        for pid in property_ids:
+            if not get_property_for_org(db, current_org.id, pid):
+                raise HTTPException(status_code=404, detail=f"Property {pid} not found")
         # Build query to find matching document_uploads
         query = db.query(DocumentUpload.id).join(
             FinancialPeriod, DocumentUpload.period_id == FinancialPeriod.id
@@ -1822,6 +1907,9 @@ async def re_extract_failed_uploads(
     if document_type:
         query = query.filter(DocumentUpload.document_type == document_type)
     if property_id:
+        from app.repositories.tenant_scoped import get_property_for_org
+        if not get_property_for_org(db, current_org.id, property_id):
+            raise HTTPException(status_code=404, detail="Property not found")
         query = query.filter(DocumentUpload.property_id == property_id)
     if period_id:
         query = query.filter(DocumentUpload.period_id == period_id)
@@ -2274,6 +2362,7 @@ def list_escrow_document_links(
 def create_escrow_document_link(
     body: EscrowLinkCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_org_role("admin")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -2329,6 +2418,7 @@ def create_escrow_document_link(
 def delete_escrow_document_link(
     link_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_org_role("admin")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """Remove an escrow document link (FA-MORT-4). Only links for org properties can be deleted."""

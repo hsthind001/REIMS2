@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Numeric, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -20,6 +20,12 @@ class Organization(Base):
     # Billing fields (Phase 3)
     stripe_customer_id = Column(String, nullable=True)
     subscription_status = Column(String, default="active")
+    # P2: Plan & quotas
+    plan_id = Column(String(50), nullable=True)
+    documents_limit = Column(Integer, nullable=True)
+    storage_limit_gb = Column(Numeric(10, 2), nullable=True)
+    documents_used = Column(Integer, default=0, nullable=True)
+    storage_used_bytes = Column(BigInteger, default=0, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

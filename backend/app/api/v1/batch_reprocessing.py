@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role
 from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 from app.services.batch_reprocessing_service import BatchReprocessingService
 from app.schemas.batch_reprocessing import (
     BatchJobCreate,
@@ -29,7 +31,8 @@ router = APIRouter(prefix="/batch-reprocessing", tags=["batch-reprocessing"])
 async def create_batch_job(
     request: BatchJobCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_org_role("editor")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Create and start a batch reprocessing job.
@@ -48,19 +51,24 @@ async def create_batch_job(
     - task_id: Celery task ID
     - total_documents: Number of documents to process
     """
+    if request.property_ids:
+        for pid in request.property_ids:
+            if not get_property_for_org(db, current_org.id, pid):
+                raise HTTPException(status_code=404, detail=f"Property {pid} not found")
     try:
         service = BatchReprocessingService(db)
-        
-        # Create batch job
+        from app.services.audit_service import log_action
         job = service.create_batch_job(
             user_id=current_user.id,
             property_ids=request.property_ids,
+            organization_id=current_org.id,
             date_range_start=request.date_range_start,
             date_range_end=request.date_range_end,
             document_types=request.document_types,
             extraction_status_filter=request.extraction_status_filter,
             job_name=request.job_name
         )
+        log_action(db, "batch_job.created", current_user.id, current_org.id, "batch_reprocessing_job", str(job.id), f"Created job {job.job_name or job.id} ({job.total_documents} docs)")
         
         # Start the job immediately
         job_info = service.start_batch_job(job.id)
@@ -87,11 +95,23 @@ async def create_batch_job(
         )
 
 
+def _job_belongs_to_org(db, job_id: int, org_id: int) -> bool:
+    """Verify batch job's properties belong to org. Returns True if accessible."""
+    from app.models.batch_reprocessing_job import BatchReprocessingJob
+    job = db.query(BatchReprocessingJob).filter(BatchReprocessingJob.id == job_id).first()
+    if not job:
+        return False
+    if not job.property_ids:
+        return True  # Job has no property filter; legacy jobs - allow (initiated_by filters by user)
+    return all(get_property_for_org(db, org_id, pid) for pid in job.property_ids)
+
+
 @router.get("/jobs/{job_id}", response_model=BatchJobStatusResponse)
 async def get_job_status(
     job_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get current status of a batch reprocessing job.
@@ -102,6 +122,8 @@ async def get_job_status(
     - Estimated completion time
     - Results summary
     """
+    if not _job_belongs_to_org(db, job_id, current_org.id):
+        raise HTTPException(status_code=404, detail="Job not found")
     try:
         service = BatchReprocessingService(db)
         status_info = service.get_job_status(job_id)
@@ -125,7 +147,8 @@ async def get_job_status(
 async def cancel_job(
     job_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Cancel a running or queued batch job.
@@ -133,10 +156,13 @@ async def cancel_job(
     Only jobs in 'queued' or 'running' status can be cancelled.
     Cancelled jobs cannot be restarted.
     """
+    if not _job_belongs_to_org(db, job_id, current_org.id):
+        raise HTTPException(status_code=404, detail="Job not found")
     try:
         service = BatchReprocessingService(db)
         service.cancel_job(job_id)
-        
+        from app.services.audit_service import log_action
+        log_action(db, "batch_job.cancelled", current_user.id, current_org.id, "batch_reprocessing_job", str(job_id), f"Cancelled job {job_id}")
         return {"status": "cancelled", "job_id": job_id, "message": "Job cancelled successfully"}
     
     except ValueError as e:
@@ -159,7 +185,8 @@ async def list_jobs(
     job_type: Optional[str] = Query(None, description="Filter by job type (anomaly_reprocessing, alert_backfill)"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of jobs to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     List batch reprocessing jobs with optional filters.
@@ -180,9 +207,11 @@ async def list_jobs(
             limit=limit
         )
         
-        # Convert jobs to list items with all required fields
+        # Filter to jobs accessible by current org
         result = []
         for job in jobs:
+            if not _job_belongs_to_org(db, job.id, current_org.id):
+                continue
             # Calculate progress percentage
             progress_pct = 0
             if job.total_documents > 0:

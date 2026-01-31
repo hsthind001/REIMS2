@@ -44,6 +44,12 @@ pdfminer.six==20250506
 pdfplumber==0.11.7
 pillow==12.0.0
 prometheus_client==0.23.1
+# OpenTelemetry (P1 Observability)
+opentelemetry-api>=1.28.0
+opentelemetry-sdk>=1.28.0
+opentelemetry-instrumentation-fastapi>=0.49b0
+opentelemetry-instrumentation-sqlalchemy>=0.49b0
+opentelemetry-exporter-otlp-proto-http>=1.28.0
 prompt_toolkit==3.0.52
 psycopg2-binary==2.9.11
 pycparser==2.23

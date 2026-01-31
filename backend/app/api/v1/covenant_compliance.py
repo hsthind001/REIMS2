@@ -13,8 +13,10 @@ from decimal import Decimal
 from datetime import datetime, date
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization
 from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 from app.models.covenant_compliance_history import CovenantComplianceHistory
 from app.models.covenant_threshold import CovenantThreshold
 from app.models.property import Property
@@ -76,12 +78,14 @@ def list_covenant_compliance_history(
     property_id: int = Query(..., description="Property ID"),
     period_id: Optional[int] = Query(None, description="Period ID (omit for all periods)"),
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ):
     """
-    List covenant compliance history for a property (and optionally a single period).
-    Used by covenant dashboard and audit trail.
+    List covenant compliance history for a property. Tenant-scoped.
     """
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     q = db.query(CovenantComplianceHistory).filter(
         CovenantComplianceHistory.property_id == property_id
     )
@@ -112,12 +116,14 @@ def list_covenant_thresholds(
     property_id: int = Query(..., description="Property ID"),
     include_inactive: bool = Query(False, description="Include inactive thresholds for config UI"),
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ):
     """
-    List per-property covenant thresholds (DSCR, LTV, etc.).
-    Used by covenant configuration UI. Set include_inactive=true to see all.
+    List per-property covenant thresholds. Tenant-scoped.
     """
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     q = db.query(CovenantThreshold).filter(CovenantThreshold.property_id == property_id)
     if not include_inactive:
         q = q.filter(CovenantThreshold.is_active == True)
@@ -141,10 +147,11 @@ def list_covenant_thresholds(
 def create_covenant_threshold(
     body: CovenantThresholdCreate,
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ):
-    """Create a per-property covenant threshold (config UI)."""
-    if db.query(Property).filter(Property.id == body.property_id).first() is None:
+    """Create a per-property covenant threshold. Tenant-scoped."""
+    if not get_property_for_org(db, current_org.id, body.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
     row = CovenantThreshold(
         property_id=body.property_id,
@@ -175,11 +182,14 @@ def update_covenant_threshold(
     threshold_id: int = Path(..., description="Threshold ID"),
     body: CovenantThresholdUpdate = ...,
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ):
-    """Update a covenant threshold (config UI)."""
+    """Update a covenant threshold. Tenant-scoped."""
     row = db.query(CovenantThreshold).filter(CovenantThreshold.id == threshold_id).first()
     if not row:
+        raise HTTPException(status_code=404, detail="Covenant threshold not found")
+    if not get_property_for_org(db, current_org.id, row.property_id):
         raise HTTPException(status_code=404, detail="Covenant threshold not found")
     if body.threshold_value is not None:
         row.threshold_value = Decimal(str(body.threshold_value))
@@ -209,11 +219,14 @@ def update_covenant_threshold(
 def delete_covenant_threshold(
     threshold_id: int = Path(..., description="Threshold ID"),
     current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
     db: Session = Depends(get_db),
 ):
-    """Delete (or deactivate) a covenant threshold. Soft-delete by setting is_active=False if preferred."""
+    """Delete a covenant threshold. Tenant-scoped."""
     row = db.query(CovenantThreshold).filter(CovenantThreshold.id == threshold_id).first()
     if not row:
+        raise HTTPException(status_code=404, detail="Covenant threshold not found")
+    if not get_property_for_org(db, current_org.id, row.property_id):
         raise HTTPException(status_code=404, detail="Covenant threshold not found")
     db.delete(row)
     db.commit()

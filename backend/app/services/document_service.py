@@ -362,6 +362,18 @@ class DocumentService:
                 except Exception as e:
                     print(f"⚠️  Warning: Could not delete old file from MinIO: {e}")
             
+            # Decrement quota before delete (replace = net 0, we'll increment for new)
+            org_id = self.organization_id or getattr(existing_upload, "organization_id", None)
+            if org_id is None and existing_upload.property_id:
+                from app.models.property import Property
+                prop = self.db.query(Property).filter(Property.id == existing_upload.property_id).first()
+                org_id = prop.organization_id if prop else None
+            if org_id is not None:
+                from app.services.quota_service import decrement_document_count, decrement_storage
+                decrement_document_count(self.db, org_id)
+                size = getattr(existing_upload, "file_size_bytes", None) or 0
+                if size:
+                    decrement_storage(self.db, org_id, int(size))
             # Delete old database record (cascades to all related financial data)
             self.db.delete(existing_upload)
             self.db.commit()
@@ -1175,6 +1187,18 @@ class DocumentService:
                                     print(f"⚠️  Warning: Could not delete old MinIO file: {e}")
 
                             old_upload_id = existing_upload.id
+                            # Decrement quota before delete (replace = net 0)
+                            org_id = self.organization_id or getattr(existing_upload, "organization_id", None)
+                            if org_id is None and existing_upload.property_id:
+                                from app.models.property import Property
+                                prop = self.db.query(Property).filter(Property.id == existing_upload.property_id).first()
+                                org_id = prop.organization_id if prop else None
+                            if org_id is not None:
+                                from app.services.quota_service import decrement_document_count, decrement_storage
+                                decrement_document_count(self.db, org_id)
+                                size = getattr(existing_upload, "file_size_bytes", None) or 0
+                                if size:
+                                    decrement_storage(self.db, org_id, int(size))
                             # Delete associated data (cascades via relationships)
                             self.db.delete(existing_upload)
                             self.db.commit()

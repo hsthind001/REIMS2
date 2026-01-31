@@ -10,10 +10,9 @@ from typing import Optional
 import logging
 
 from app.db.database import get_db
-from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.api.dependencies import get_current_user_hybrid, get_current_organization, require_org_role
+from app.repositories.tenant_scoped import get_property_for_org, get_period_for_org
 from app.services.bulk_import_service import BulkImportService
-from app.models.property import Property
-from app.models.financial_period import FinancialPeriod
 from app.models.user import User
 from app.models.organization import Organization
 
@@ -38,11 +37,10 @@ async def import_budgets(
     budget_year: int = Form(...),
     created_by: int = Form(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
-    """
-    Import budget data from CSV/Excel file
+    """Import budget data from CSV/Excel file"""
 
     **File Format:** CSV or Excel (.xlsx, .xls)
 
@@ -71,18 +69,10 @@ async def import_budgets(
     - errors: List of errors with row numbers
     """
     # Verify property and period exist and belong to org
-    property = (
-        db.query(Property)
-        .filter(Property.id == property_id, Property.organization_id == current_org.id)
-        .first()
-    )
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == financial_period_id
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, financial_period_id)
+    if not period or period.property_id != property_id:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
     # Validate file format
@@ -129,7 +119,7 @@ async def import_forecasts(
     forecast_type: str = Form(...),
     created_by: int = Form(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -152,18 +142,10 @@ async def import_forecasts(
     - assumptions
     - notes
     """
-    property = (
-        db.query(Property)
-        .filter(Property.id == property_id, Property.organization_id == current_org.id)
-        .first()
-    )
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == financial_period_id
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, financial_period_id)
+    if not period or period.property_id != property_id:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
     # Validate forecast type
@@ -211,7 +193,7 @@ async def import_chart_of_accounts(
     file: UploadFile = File(...),
     property_id: int = Form(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -237,12 +219,7 @@ async def import_chart_of_accounts(
     5000,Operating Expenses,Expense,,Total operating expenses
     ```
     """
-    property = (
-        db.query(Property)
-        .filter(Property.id == property_id, Property.organization_id == current_org.id)
-        .first()
-    )
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
 
     file_format = _get_file_format(file.filename)
@@ -279,7 +256,7 @@ async def import_income_statement(
     financial_period_id: int = Form(...),
     upload_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -301,18 +278,10 @@ async def import_income_statement(
     - Import from external systems
     - Batch data entry
     """
-    property = (
-        db.query(Property)
-        .filter(Property.id == property_id, Property.organization_id == current_org.id)
-        .first()
-    )
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == financial_period_id
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, financial_period_id)
+    if not period or period.property_id != property_id:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
     file_format = _get_file_format(file.filename)
@@ -351,7 +320,7 @@ async def import_balance_sheet(
     financial_period_id: int = Form(...),
     upload_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -367,14 +336,10 @@ async def import_balance_sheet(
     - account_level, parent_account_code, is_debit, is_contra_account
     - extraction_confidence, report_title, period_ending, accounting_basis, notes
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == financial_period_id
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, financial_period_id)
+    if not period or period.property_id != property_id:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
     file_format = _get_file_format(file.filename)
@@ -413,7 +378,7 @@ async def import_cash_flow(
     financial_period_id: int = Form(...),
     upload_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -430,18 +395,10 @@ async def import_cash_flow(
     - is_subtotal, is_total, is_inflow, cash_flow_category
     - extraction_confidence, notes
     """
-    property = (
-        db.query(Property)
-        .filter(Property.id == property_id, Property.organization_id == current_org.id)
-        .first()
-    )
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == financial_period_id
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, financial_period_id)
+    if not period or period.property_id != property_id:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
     file_format = _get_file_format(file.filename)
@@ -477,7 +434,7 @@ async def import_cash_flow(
 def get_import_template(
     data_type: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -530,7 +487,7 @@ def get_import_template(
 def get_template_json(
     data_type: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """
@@ -558,7 +515,7 @@ def get_template_json(
 
 @router.get("/supported-formats")
 def get_supported_formats(
-    current_user: User = Depends(get_current_user_hybrid),
+    current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
     """

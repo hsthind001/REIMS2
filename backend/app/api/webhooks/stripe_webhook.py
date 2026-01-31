@@ -54,19 +54,52 @@ async def stripe_webhook(
          raise HTTPException(status_code=400, detail="Webhook Error")
 
     # Handle Events
-    if event['type'] in ['customer.subscription.updated', 'customer.subscription.deleted', 'customer.subscription.created']:
+    if event['type'] in [
+        'customer.subscription.updated',
+        'customer.subscription.deleted',
+        'customer.subscription.created',
+    ]:
         subscription = event['data']['object']
-        customer_id = subscription['customer']
-        status_ = subscription['status']
-        
-        # Find Org
-        org = db.query(Organization).filter(Organization.stripe_customer_id == customer_id).first()
-        
+        customer_id = subscription.get('customer', '')
+        status_ = subscription.get('status', '')
+        # Map Stripe status to our enum: trialing, active, past_due, canceled, unpaid
+        if status_ in ('trialing', 'active'):
+            mapped_status = status_
+        elif status_ in ('canceled', 'unpaid'):
+            mapped_status = status_
+        elif status_ == 'past_due':
+            mapped_status = 'past_due'
+        else:
+            mapped_status = status_ or 'active'
+        org = db.query(Organization).filter(
+            Organization.stripe_customer_id == str(customer_id)
+        ).first()
         if org:
-            logger.info(f"Updating subscription for Org {org.id} to {status_}")
-            org.subscription_status = status_
+            logger.info(f"Updating subscription for Org {org.id} to {mapped_status}")
+            org.subscription_status = mapped_status
             db.commit()
         else:
             logger.warning(f"Received webhook for unknown customer {customer_id}")
+
+    # P2: Invoice events - sync payment status
+    elif event['type'] in ['invoice.paid', 'invoice.payment_failed', 'invoice.payment_action_required']:
+        invoice = event['data']['object']
+        customer_id = invoice.get('customer')
+        if not customer_id:
+            return {"status": "success"}
+        org = db.query(Organization).filter(
+            Organization.stripe_customer_id == str(customer_id)
+        ).first()
+        if event['type'] == 'invoice.payment_failed' and org:
+            # Past due when payment fails
+            logger.info(f"Payment failed for Org {org.id}, marking past_due")
+            org.subscription_status = 'past_due'
+            db.commit()
+        elif event['type'] == 'invoice.paid' and org:
+            # Restore active when payment succeeds
+            if org.subscription_status == 'past_due':
+                logger.info(f"Payment received for Org {org.id}, restoring active")
+                org.subscription_status = 'active'
+                db.commit()
 
     return {"status": "success"}

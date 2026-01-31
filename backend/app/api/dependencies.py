@@ -337,6 +337,12 @@ def get_current_user_hybrid(
     return get_current_user(request, db)
 
 
+def _set_rls_org(db: Session, org_id: int) -> None:
+    """Set app.current_organization_id for RLS policies (E2-S3 defense-in-depth)."""
+    from sqlalchemy import text
+    db.execute(text("SELECT set_config('app.current_organization_id', :id, true)"), {"id": str(org_id)})
+
+
 def get_current_organization(
     request: Request,
     organization_id: Optional[str] = Header(None, alias="X-Organization-ID"),
@@ -384,13 +390,14 @@ def get_current_organization(
                  org = db.query(Organization).filter(Organization.id == org_id_int).first()
                  if not org:
                      raise HTTPException(status_code=404, detail="Organization not found")
+                 _set_rls_org(db, org.id)
                  return org
                  
              raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not a member of this organization"
             )
-            
+        _set_rls_org(db, membership.organization.id)
         return membership.organization
 
     # 2. No header provided - try to infer
@@ -411,8 +418,9 @@ def get_current_organization(
         )
         
     if len(memberships) == 1:
-        # Default to their only organization
-        return memberships[0].organization
+        org = memberships[0].organization
+        _set_rls_org(db, org.id)
+        return org
         
     # Multiple memberships - ambiguous
     raise HTTPException(
@@ -423,3 +431,44 @@ def get_current_organization(
 
 # Alias for explicit org-required endpoints
 require_organization = get_current_organization
+
+# Org role hierarchy (E1-S3): higher roles include permissions of lower roles
+_ORG_ROLE_ORDER = {"owner": 4, "admin": 3, "editor": 2, "viewer": 1}
+
+
+def require_org_role(min_role: str = "viewer"):
+    """
+    Dependency that requires user to have at least the specified role in current org.
+    Use for RBAC on org-scoped endpoints (E1-S3).
+    min_role: one of "owner", "admin", "editor", "viewer"
+    """
+    def _dep(
+        current_user: User = Depends(get_current_user_hybrid),
+        current_org: "Organization" = Depends(get_current_organization),
+        db: Session = Depends(get_db),
+    ) -> User:
+        from app.models.organization import OrganizationMember
+        if current_user.is_superuser:
+            return current_user
+        m = (
+            db.query(OrganizationMember)
+            .filter(
+                OrganizationMember.user_id == current_user.id,
+                OrganizationMember.organization_id == current_org.id,
+            )
+            .first()
+        )
+        if not m:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a member of this organization",
+            )
+        user_level = _ORG_ROLE_ORDER.get((m.role or "").lower(), 0)
+        required_level = _ORG_ROLE_ORDER.get(min_role.lower(), 0)
+        if user_level < required_level:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient role. Required: {min_role} or higher.",
+            )
+        return current_user
+    return _dep

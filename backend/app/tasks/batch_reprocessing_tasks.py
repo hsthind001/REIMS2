@@ -54,7 +54,7 @@ class DatabaseTask(Task):
 )
 def reprocess_documents_batch(self, job_id: int):
     """
-    Celery task: Batch reprocess documents for anomaly detection.
+    Celery task: Batch reprocess documents for anomaly detection (idempotent).
     
     Processes documents in chunks of 10, updating job progress after each chunk.
     Handles errors gracefully and continues processing remaining documents.
@@ -65,15 +65,21 @@ def reprocess_documents_batch(self, job_id: int):
     Returns:
         dict: Processing summary with counts
     """
+    from app.utils.task_idempotency import acquire_job_lock, release_job_lock
+    task_id = self.request.id
+
     db = SessionLocal()
     try:
-        # Get batch job
         job = db.query(BatchReprocessingJob).filter(BatchReprocessingJob.id == job_id).first()
-        
         if not job:
             logger.error(f"Batch job {job_id} not found")
             return {"status": "error", "message": f"Job {job_id} not found"}
-        
+        if job.status in ("completed", "cancelled"):
+            logger.info(f"Batch job {job_id} already {job.status}, skipping")
+            return {"status": "skipped", "message": f"Job already {job.status}"}
+        if not acquire_job_lock(job_id, task_id):
+            logger.info(f"Batch job {job_id} already running (duplicate), skipping")
+            return {"status": "skipped", "message": "Job already in progress"}
         if job.status != 'running':
             logger.warning(f"Batch job {job_id} is not in 'running' status (current: {job.status})")
             return {"status": "error", "message": f"Job {job_id} is not running"}
@@ -286,4 +292,5 @@ def reprocess_documents_batch(self, job_id: int):
         return {"status": "error", "message": str(e)}
     
     finally:
+        release_job_lock(job_id, task_id)
         db.close()

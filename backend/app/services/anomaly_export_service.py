@@ -27,6 +27,7 @@ except ImportError:
 from app.models.anomaly_detection import AnomalyDetection
 from app.models.anomaly_explanation import AnomalyExplanation
 from app.models.anomaly_feedback import AnomalyFeedback
+from app.models.document_upload import DocumentUpload
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 
@@ -50,6 +51,7 @@ class AnomalyExportService:
         self,
         format: str = 'csv',  # 'csv', 'xlsx', 'json'
         property_ids: Optional[List[int]] = None,
+        organization_id: Optional[int] = None,
         date_start: Optional[date] = None,
         date_end: Optional[date] = None,
         severity: Optional[str] = None,  # 'critical', 'high', 'medium', 'low'
@@ -77,12 +79,20 @@ class AnomalyExportService:
         Returns:
             File bytes ready for download
         """
-        # Build query
-        query = self.db.query(AnomalyDetection)
-        
-        # Apply filters
+        from sqlalchemy import or_
+
+        query = self.db.query(AnomalyDetection).join(
+            DocumentUpload, AnomalyDetection.document_id == DocumentUpload.id
+        ).join(Property, DocumentUpload.property_id == Property.id)
+        if organization_id is not None:
+            query = query.filter(
+                or_(
+                    DocumentUpload.organization_id == organization_id,
+                    (DocumentUpload.organization_id.is_(None)) & (Property.organization_id == organization_id),
+                )
+            )
         if property_ids:
-            query = query.filter(AnomalyDetection.property_id.in_(property_ids))
+            query = query.filter(DocumentUpload.property_id.in_(property_ids))
         
         if date_start:
             query = query.filter(AnomalyDetection.detected_at >= datetime.combine(date_start, datetime.min.time()))

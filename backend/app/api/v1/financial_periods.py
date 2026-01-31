@@ -9,9 +9,10 @@ from typing import List, Optional
 
 from app.db.database import get_db
 from app.models.financial_period import FinancialPeriod
-from app.models.property import Property
 from app.models.period_document_completeness import PeriodDocumentCompleteness
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_organization, require_org_role
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org, get_period_for_org
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/financial-periods", tags=["financial_periods"])
@@ -41,14 +42,20 @@ def list_financial_periods(
     period_year: Optional[int] = Query(None, description="Filter by year"),
     period_month: Optional[int] = Query(None, description="Filter by month"),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    List financial periods with optional filters
+    List financial periods with optional filters. Tenant-scoped.
     """
-    query = db.query(FinancialPeriod)
+    from app.models.property import Property
 
+    query = db.query(FinancialPeriod).join(Property, FinancialPeriod.property_id == Property.id).filter(
+        Property.organization_id == current_org.id
+    )
     if property_id:
+        if not get_property_for_org(db, current_org.id, property_id):
+            return []
         query = query.filter(FinancialPeriod.property_id == property_id)
 
     if period_year:
@@ -89,13 +96,13 @@ def list_financial_periods(
 def get_financial_period(
     period_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Get a specific financial period by ID
+    Get a specific financial period by ID. Tenant-scoped.
     """
-    period = db.query(FinancialPeriod).filter(FinancialPeriod.id == period_id).first()
-
+    period = get_period_for_org(db, current_org.id, period_id)
     if not period:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
@@ -109,7 +116,8 @@ def create_financial_period(
     period_year: Optional[int] = Query(None),
     period_month: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Create a new financial period (or return existing one)
@@ -125,8 +133,8 @@ def create_financial_period(
             detail="property_id, period_year, and period_month are required"
         )
 
-    # Check if property exists
-    property = db.query(Property).filter(Property.id == property_id).first()
+    # Check if property exists and belongs to org
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -160,6 +168,9 @@ def create_financial_period(
     )
 
     db.add(period)
+    db.flush()
+    from app.services.audit_service import log_action
+    log_action(db, "financial_period.created", current_user.id, current_org.id, "financial_period", str(period.id), f"Created period {period_year}/{period_month}")
     db.commit()
     db.refresh(period)
 

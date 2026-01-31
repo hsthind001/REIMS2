@@ -32,7 +32,8 @@ class BatchReprocessingService:
         date_range_end: Optional[date] = None,
         document_types: Optional[List[str]] = None,
         extraction_status_filter: str = 'all',
-        job_name: Optional[str] = None
+        job_name: Optional[str] = None,
+        organization_id: Optional[int] = None,
     ) -> BatchReprocessingJob:
         """
         Create a new batch reprocessing job.
@@ -49,16 +50,24 @@ class BatchReprocessingService:
         Returns:
             Created batch job instance
         """
-        # Validate property_ids exist
-        if property_ids:
-            valid_properties = self.db.query(Property.id).filter(Property.id.in_(property_ids)).all()
+        # Validate property_ids exist and belong to org when organization_id provided
+        if property_ids and organization_id:
+            valid_properties = (
+                self.db.query(Property.id)
+                .filter(Property.id.in_(property_ids), Property.organization_id == organization_id)
+                .all()
+            )
             valid_property_ids = [p.id for p in valid_properties]
             if len(valid_property_ids) != len(property_ids):
                 invalid_ids = set(property_ids) - set(valid_property_ids)
-                logger.warning(f"Invalid property IDs: {invalid_ids}")
+                logger.warning(f"Invalid or unauthorized property IDs: {invalid_ids}")
 
-        # Query documents matching filters
+        # Query documents matching filters (tenant-scoped when organization_id provided)
         query = self.db.query(DocumentUpload)
+        if organization_id:
+            query = query.join(Property, DocumentUpload.property_id == Property.id).filter(
+                Property.organization_id == organization_id
+            )
 
         # Apply filters
         filters = []

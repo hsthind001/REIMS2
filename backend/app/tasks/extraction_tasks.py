@@ -34,28 +34,53 @@ class DatabaseTask(Task):
     name="app.tasks.extraction_tasks.extract_document",
     bind=True,
     base=DatabaseTask,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540  # 9 minutes soft limit (allows graceful cleanup)
+    time_limit=600,
+    soft_time_limit=540,
+    autoretry_for=(ConnectionError, OSError),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+    max_retries=3,
 )
 def extract_document(self, upload_id: int):
     """
-    Celery task: Extract and parse financial document
-    
-    This task is triggered after document upload and runs asynchronously.
-    It downloads the PDF from MinIO, extracts the content, parses financial
-    data, and inserts into the appropriate tables.
-    
-    Timeout: 10 minutes (hard), 9 minutes (soft warning)
-    
-    Args:
-        upload_id: DocumentUpload ID
-    
-    Returns:
-        dict: Extraction result with status and details
+    Celery task: Extract and parse financial document (idempotent).
+
+    Idempotency (P1): Uses Redis lock to prevent duplicate execution. If already
+    completed, returns cached success. If lock held by another task, skips.
     """
-    logger.info(f"Starting extraction for upload_id={upload_id}, task_id={self.request.id}")
-    
-    # Update task state to processing
+    task_id = self.request.id
+    from app.utils.task_idempotency import acquire_extraction_lock, release_extraction_lock
+
+    # Idempotency: skip if already completed
+    db_check = SessionLocal()
+    try:
+        upload = db_check.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+        if upload and upload.extraction_status == "completed":
+            logger.info(f"Extraction idempotent skip for upload_id={upload_id} (already completed)")
+            return {
+                "success": True,
+                "upload_id": upload_id,
+                "records_inserted": 0,
+                "skipped": True,
+                "message": "Already completed",
+            }
+    finally:
+        db_check.close()
+
+    # Acquire lock to prevent duplicate concurrent execution
+    if not acquire_extraction_lock(upload_id, task_id):
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "skipped": True,
+            "message": "Duplicate task skipped",
+        }
+
+    try:
+        logger.info(f"Starting extraction for upload_id={upload_id}, task_id={task_id}")
+
+        # Update task state to processing
     self.update_state(
         state="PROCESSING",
         meta={
@@ -102,6 +127,7 @@ def extract_document(self, upload_id: int):
                     "needs_review": result.get("needs_review", False)
                 }
             )
+            release_extraction_lock(upload_id, task_id)
             return {
                 "success": True,
                 "upload_id": upload_id,
@@ -111,6 +137,7 @@ def extract_document(self, upload_id: int):
                 "message": "Extraction completed successfully"
             }
         else:
+            release_extraction_lock(upload_id, task_id)
             logger.error(f"Extraction failed for upload_id={upload_id}: {result.get('error')}")
             self.update_state(
                 state="FAILURE",
@@ -127,8 +154,8 @@ def extract_document(self, upload_id: int):
                 "error": result.get("error"),
                 "message": "Extraction failed"
             }
-    
     except SoftTimeLimitExceeded:
+        release_extraction_lock(upload_id, task_id)
         logger.error(f"⏱️  Soft timeout reached for upload_id={upload_id} - gracefully terminating")
         
         # Update database status to failed
@@ -181,6 +208,7 @@ def extract_document(self, upload_id: int):
         }
     
     except Exception as e:
+        release_extraction_lock(upload_id, task_id)
         logger.exception(f"Exception during extraction for upload_id={upload_id}")
         
         # Update database status to failed

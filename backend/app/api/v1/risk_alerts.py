@@ -25,6 +25,7 @@ from app.models.document_upload import DocumentUpload
 from app.models.financial_period import FinancialPeriod
 from app.models.financial_metrics import FinancialMetrics
 from app.api.dependencies import get_current_user, get_current_organization
+from app.repositories.tenant_scoped import get_property_for_org, get_period_for_org
 from app.models.organization import Organization
 from app.schemas.batch_reprocessing import (
     BatchJobCreate,
@@ -90,7 +91,8 @@ class BatchAlertSummaryRequest(BaseModel):
 def batch_calculate_dscr(
     request: BatchDSCRRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Calculate DSCR for multiple properties in a single batch request
@@ -102,6 +104,9 @@ def batch_calculate_dscr(
     # Since DSCR calculation is complex and might hit DB multiple times per property,
     # we'll keep it simple for now and loop in backend which is much faster than N http calls
     for property_id in request.property_ids:
+        if not get_property_for_org(db, current_org.id, property_id):
+            results[str(property_id)] = None
+            continue
         try:
             result = service.calculate_dscr(property_id, request.financial_period_id)
             if result.get("success") and result.get("dscr") is not None:
@@ -161,6 +166,9 @@ def batch_get_alert_summary(
     
     results = {}
     for pid in request.property_ids:
+        if not get_property_for_org(db, current_org.id, pid):
+            results[str(pid)] = {"active_alerts": 0, "total_alerts": 0}
+            continue
         results[str(pid)] = {
             "active_alerts": active_map.get(pid, 0),
             "total_alerts": total_map.get(pid, 0)
@@ -192,15 +200,15 @@ class AlertDismissRequest(BaseModel):
 def calculate_dscr(
     property_id: int,
     financial_period_id: Optional[int] = Query(None, description="Financial period ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Calculate DSCR for a property
-
-    Returns DSCR value, NOI, debt service, and status
+    Calculate DSCR for a property. Tenant-scoped.
+    Returns DSCR value, NOI, debt service, and status.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
 
     service = DSCRMonitoringService(db)
@@ -244,24 +252,24 @@ def calculate_dscr(
 def get_dscr_history(
     property_id: int,
     limit: int = Query(default=12, ge=1, le=50),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Get DSCR history for a property (last N periods)
+    Get DSCR history for a property (last N periods). Tenant-scoped.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    prop = get_property_for_org(db, current_org.id, property_id)
+    if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = DSCRMonitoringService(db)
 
     try:
         history = service.get_dscr_history(property_id, limit)
-
         return {
             "success": True,
             "property_id": property_id,
-            "property_name": property.property_name,
+            "property_name": prop.property_name,
             "history": history,
             "total_periods": len(history)
         }
@@ -274,13 +282,14 @@ def get_dscr_history(
 @router.get("/properties/{property_id}/covenant-status")
 def get_covenant_status(
     property_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Get covenant compliance status for a property
+    Get covenant compliance status for a property. Tenant-scoped.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
 
     service = DSCRMonitoringService(db)
@@ -438,21 +447,18 @@ def monitor_all_properties(
 def trigger_alerts_for_property(
     property_id: int,
     period_id: Optional[int] = Query(None, description="Financial period ID. If not provided, uses latest period"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Manually trigger alert evaluation for a property
-    
-    Evaluates all active alert rules against current financial metrics
-    and creates alerts when thresholds are breached.
+    Manually trigger alert evaluation for a property. Tenant-scoped.
+    Evaluates all active alert rules against current financial metrics.
     """
     from app.services.alert_trigger_service import AlertTriggerService
     from app.models.financial_metrics import FinancialMetrics
-    from app.models.property import Property
-    
-    # Verify property exists
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
     
     # Get period_id if not provided

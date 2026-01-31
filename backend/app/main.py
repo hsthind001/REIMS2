@@ -12,8 +12,16 @@ from app.core.config import settings, validate_production_config
 # Fail fast in prod/staging if required env vars missing
 validate_production_config()
 
+# P1 Observability: Configure structlog for JSON logging (optional, fallback to stdlib)
+try:
+    from app.monitoring.logging_config import configure_logging
+    configure_logging(log_to_file=False, sampling_rate=1.0)  # Console only, no sampling by default
+except Exception as e:
+    import logging
+    logging.warning(f"Structlog init skipped: {e}")
+
 import logging
-from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, covenant_compliance, self_learning, extraction_learning, market_intelligence, document_intelligence, billing, admin, gl
+from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, covenant_compliance, self_learning, extraction_learning, market_intelligence, document_intelligence, billing, admin, gl, prometheus_metrics, org_members
 from app.api.v1.endpoints import onboarding
 from app.api.v2 import router as v2_router, documents as documents_v2
 from app.db.database import engine, Base
@@ -61,6 +69,13 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# P1: OpenTelemetry tracing (optional, set ENABLE_OTEL_TRACING=true)
+try:
+    from app.monitoring.otel_tracing import setup_otel_tracing
+    setup_otel_tracing(app)
+except Exception as e:
+    logging.getLogger(__name__).debug(f"OTel tracing skipped: {e}")
 
 # Add rate limiter to app state and exception handler
 app.state.limiter = limiter
@@ -123,6 +138,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix=settings.API_V1_STR, tags=["health"])
+app.include_router(prometheus_metrics.router, prefix=settings.API_V1_STR, tags=["observability"])
 app.include_router(auth.router, prefix=settings.API_V1_STR, tags=["authentication"])
 app.include_router(users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(tasks.router, prefix=settings.API_V1_STR, tags=["tasks"])
@@ -209,6 +225,9 @@ app.include_router(billing.router, prefix=settings.API_V1_STR + "/billing", tags
 
 # Platform Admin (Superuser only)
 app.include_router(admin.router, prefix=settings.API_V1_STR, tags=["admin"])
+
+# Org-level member management & audit (P2)
+app.include_router(org_members.router, prefix=settings.API_V1_STR, tags=["org-members"])
 
 # Webhooks
 from app.api.webhooks import stripe_webhook

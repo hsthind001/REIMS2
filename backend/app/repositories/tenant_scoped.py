@@ -122,7 +122,6 @@ def get_reconciliation_session_for_org(
     Joins through Property. Returns None if not found or does not belong to org.
     """
     from app.models.reconciliation_session import ReconciliationSession
-    from sqlalchemy import or_
     return (
         db.query(ReconciliationSession)
         .join(Property, ReconciliationSession.property_id == Property.id)
@@ -132,6 +131,97 @@ def get_reconciliation_session_for_org(
         )
         .first()
     )
+
+
+def get_forensic_reconciliation_session_for_org(
+    db: Session, organization_id: int, session_id: int
+) -> Optional["ForensicReconciliationSession"]:
+    """
+    Get forensic reconciliation session by ID scoped to organization.
+    Joins through Property. Returns None if not found or does not belong to org.
+    """
+    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+    return (
+        db.query(ForensicReconciliationSession)
+        .join(Property, ForensicReconciliationSession.property_id == Property.id)
+        .filter(
+            ForensicReconciliationSession.id == session_id,
+            Property.organization_id == organization_id,
+        )
+        .first()
+    )
+
+
+def get_forensic_match_for_org(
+    db: Session, organization_id: int, match_id: int
+) -> Optional["ForensicMatch"]:
+    """Get forensic match by ID scoped to organization (via session -> property)."""
+    from app.models.forensic_match import ForensicMatch
+    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+    return (
+        db.query(ForensicMatch)
+        .join(
+            ForensicReconciliationSession,
+            ForensicMatch.session_id == ForensicReconciliationSession.id,
+        )
+        .join(Property, ForensicReconciliationSession.property_id == Property.id)
+        .filter(ForensicMatch.id == match_id, Property.organization_id == organization_id)
+        .first()
+    )
+
+
+def get_forensic_discrepancy_for_org(
+    db: Session, organization_id: int, discrepancy_id: int
+) -> Optional["ForensicDiscrepancy"]:
+    """Get forensic discrepancy by ID scoped to organization (via session -> property)."""
+    from app.models.forensic_discrepancy import ForensicDiscrepancy
+    from app.models.forensic_reconciliation_session import ForensicReconciliationSession
+    return (
+        db.query(ForensicDiscrepancy)
+        .join(
+            ForensicReconciliationSession,
+            ForensicDiscrepancy.session_id == ForensicReconciliationSession.id,
+        )
+        .join(Property, ForensicReconciliationSession.property_id == Property.id)
+        .filter(
+            ForensicDiscrepancy.id == discrepancy_id,
+            Property.organization_id == organization_id,
+        )
+        .first()
+    )
+
+
+def get_anomaly_for_org(
+    db: Session, organization_id: int, anomaly_id: int
+) -> Optional["AnomalyDetection"]:
+    """
+    Get anomaly by ID scoped to organization (via document -> property).
+    Returns None if not found or document does not belong to org.
+    """
+    from app.models.anomaly_detection import AnomalyDetection
+
+    anomaly = db.query(AnomalyDetection).filter(AnomalyDetection.id == anomaly_id).first()
+    if not anomaly:
+        return None
+    if anomaly.document_id:
+        upload = get_upload_for_org(db, organization_id, anomaly.document_id)
+        return anomaly if upload else None
+    # No document_id - check metadata property_id if present
+    meta = anomaly.metadata_json
+    if meta is None:
+        meta = {}
+    elif isinstance(meta, str):
+        import json
+        try:
+            meta = json.loads(meta) if meta else {}
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+    prop_id = meta.get("property_id")
+    if prop_id is not None:
+        pid = int(prop_id) if isinstance(prop_id, str) and str(prop_id).isdigit() else prop_id
+        if isinstance(pid, int) and get_property_for_org(db, organization_id, pid):
+            return anomaly
+    return None
 
 
 def get_period_for_org(

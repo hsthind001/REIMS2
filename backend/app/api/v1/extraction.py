@@ -8,8 +8,12 @@ import re
 from app.utils.extraction_engine import MultiEngineExtractor
 from app.services.model_scoring_service import ScoringFactors
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
 from app.models.extraction_log import ExtractionLog
 from app.models.document_upload import DocumentUpload
+from app.repositories.tenant_scoped import get_upload_for_org
 from app.db.minio_client import download_file
 from app.core.config import settings
 from app.tasks.extraction_tasks import analyze_pdf_async, get_extraction_status
@@ -113,7 +117,9 @@ async def analyze_pdf(
     ),
     lang: str = Query("eng", description="Language for OCR (ISO 639-3 format)"),
     store_results: bool = Query(True, description="Store extraction results in database"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Analyze and extract PDF with quality validation (ASYNC)
@@ -178,7 +184,11 @@ async def analyze_pdf(
 
 
 @router.get("/extract/status/{job_id}", response_model=AsyncStatusResponse)
-async def get_async_extraction_status(job_id: str):
+async def get_async_extraction_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get status of async extraction job
     """
@@ -211,7 +221,9 @@ async def get_async_extraction_status(job_id: str):
 async def compare_extractions(
     file: UploadFile = File(...),
     engines: List[str] = Query(["pymupdf", "pdfplumber"], description="Engines to compare"),
-    lang: str = Query("eng", description="Language for OCR")
+    lang: str = Query("eng", description="Language for OCR"),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Extract with multiple engines and compare results
@@ -254,7 +266,9 @@ async def compare_extractions(
 @router.post("/extract/validate")
 async def validate_extraction(
     file: UploadFile = File(...),
-    strategy: str = Query("auto", description="Extraction strategy")
+    strategy: str = Query("auto", description="Extraction strategy"),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Extract and return detailed validation report
@@ -308,7 +322,9 @@ async def get_extraction_logs(
     limit: int = 100,
     min_confidence: Optional[float] = Query(None, description="Minimum confidence score"),
     needs_review: Optional[bool] = Query(None, description="Filter by review status"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get extraction logs with quality metrics
@@ -351,7 +367,11 @@ async def get_extraction_logs(
 
 
 @router.get("/extract/stats")
-async def get_extraction_stats(db: Session = Depends(get_db)):
+async def get_extraction_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get aggregate extraction quality statistics
     
@@ -443,7 +463,9 @@ class ScoringFactorsRequest(BaseModel):
 async def extract_all_models_scored(
     file: UploadFile = File(...),
     lang: str = Query("eng", description="Language for OCR"),
-    scoring_factors: Optional[ScoringFactorsRequest] = Body(None, description="Custom scoring factors (optional)")
+    scoring_factors: Optional[ScoringFactorsRequest] = Body(None, description="Custom scoring factors (optional)"),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Extract using ALL available models and return scores (1-10) for each.
@@ -566,7 +588,9 @@ async def rescore_existing_extraction(
     upload_id: int,
     lang: str = Query("eng", description="Language for OCR"),
     scoring_factors: Optional[ScoringFactorsRequest] = Body(None, description="Custom scoring factors (optional)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Re-score an EXISTING extraction using all models (1-10 scale).
@@ -592,11 +616,7 @@ async def rescore_existing_extraction(
     **Note:** This retrieves the PDF from MinIO storage, so the file must exist.
     """
     try:
-        # Get upload record
-        upload = db.query(DocumentUpload).filter(
-            DocumentUpload.id == upload_id
-        ).first()
-        
+        upload = get_upload_for_org(db, current_org.id, upload_id)
         if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

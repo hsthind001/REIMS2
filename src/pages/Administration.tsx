@@ -18,7 +18,7 @@ import { PlanManagement } from '../components/billing/PlanManagement';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1';
 
-type AdminTab = 'users' | 'roles' | 'audit' | 'settings' | 'billing';
+type AdminTab = 'users' | 'roles' | 'organization' | 'audit' | 'settings' | 'billing';
 
 interface User {
   id: number;
@@ -57,23 +57,38 @@ interface AuditLog {
 
 export default function AdminHub() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
-  const [billingTab, setBillingTab] = useState<'overview' | 'history' | 'plans'>('overview');
+  const [billingTab, setBillingTab] = useState<'overview' | 'history' | 'plans' | 'tenant-plans'>('overview');
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [rolePermissions, setRolePermissions] = useState<Permission[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [orgMembers, setOrgMembers] = useState<any[]>([]);
+  const [orgAudit, setOrgAudit] = useState<any[]>([]);
+  const [tenants, setTenants] = useState<any[]>([]);
 
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
-    if (selectedRole) {
-      loadRoleDetails(selectedRole.id);
-    }
+    if (selectedRole) loadRoleDetails(selectedRole.id);
   }, [selectedRole]);
+  useEffect(() => {
+    if (activeTab === 'organization') {
+      fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : []).then(setOrgMembers).catch(() => setOrgMembers([]));
+      fetch(`${API_BASE_URL}/organization/members/audit?limit=50`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : []).then(setOrgAudit).catch(() => setOrgAudit([]));
+    }
+  }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === 'billing' && billingTab === 'tenant-plans') {
+      fetch(`${API_BASE_URL}/admin/tenants`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : []).then(setTenants).catch(() => setTenants([]));
+    }
+  }, [activeTab, billingTab]);
 
   const loadData = async () => {
     try {
@@ -115,13 +130,17 @@ export default function AdminHub() {
         setRoles(rolesData.roles || rolesData || []);
       }
 
-      // Load audit logs
-      const auditRes = await fetch(`${API_BASE_URL}/rbac/audit`, {
-        credentials: 'include'
-      });
+      // Load audit logs: try admin/audit-log (superuser) then org members/audit
+      let auditRes = await fetch(`${API_BASE_URL}/admin/audit-log?limit=100`, { credentials: 'include' });
       if (auditRes.ok) {
         const auditData = await auditRes.json();
-        setAuditLogs(auditData.logs || auditData || []);
+        setAuditLogs((auditData || []).map((a: any) => ({ id: a.id, timestamp: a.created_at, user_name: a.user_id ? `User ${a.user_id}` : '-', action: a.action, details: a.details, ip_address: a.ip_address })));
+      } else {
+        auditRes = await fetch(`${API_BASE_URL}/organization/members/audit?limit=100`, { credentials: 'include' });
+        if (auditRes.ok) {
+          const auditData = await auditRes.json();
+          setAuditLogs((auditData || []).map((a: any) => ({ id: a.id, timestamp: a.created_at, user_name: a.user_id ? `User ${a.user_id}` : '-', action: a.action, details: a.details })));
+        }
       }
     } catch (err) {
       console.error('Failed to load admin data:', err);
@@ -162,7 +181,7 @@ export default function AdminHub() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border mb-6">
-          {(['users', 'roles', 'audit', 'billing', 'settings'] as AdminTab[]).map((tab) => (
+          {(['users', 'roles', 'organization', 'audit', 'billing', 'settings'] as AdminTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -256,6 +275,38 @@ export default function AdminHub() {
                   </tbody>
                 </table>
               </div>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'organization' && (
+          <OrganizationTab
+            orgMembers={orgMembers}
+            setOrgMembers={setOrgMembers}
+            orgAudit={orgAudit}
+            loadOrgData={() => {
+              fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' })
+                .then(r => r.ok ? r.json() : []).then(setOrgMembers).catch(() => setOrgMembers([]));
+              fetch(`${API_BASE_URL}/organization/members/audit?limit=50`, { credentials: 'include' })
+                .then(r => r.ok ? r.json() : []).then(setOrgAudit).catch(() => setOrgAudit([]));
+            }}
+          />
+            <Card className="p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5" /> Organization Audit Log
+              </h2>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {orgAudit.map((a: any) => (
+                  <div key={a.id} className="flex gap-2 py-2 border-b border-border text-sm">
+                    <span className="font-mono text-info">{a.action}</span>
+                    <span className="text-text-secondary">{a.details || '-'}</span>
+                    <span className="text-text-muted ml-auto">{new Date(a.created_at).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              {orgAudit.length === 0 && (
+                <p className="py-6 text-center text-text-secondary">No audit entries or admin access required.</p>
+              )}
             </Card>
           </div>
         )}
@@ -496,12 +547,77 @@ export default function AdminHub() {
               >
                 Plans
               </button>
+              <button
+                onClick={() => setBillingTab('tenant-plans')}
+                className={`px-4 py-2 font-medium text-sm transition-colors ${
+                  billingTab === 'tenant-plans'
+                    ? 'text-info border-b-2 border-info'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Tenant Plans
+              </button>
             </div>
 
             {/* Billing Content */}
             {billingTab === 'overview' && <SubscriptionOverview />}
             {billingTab === 'history' && <BillingHistory />}
             {billingTab === 'plans' && <PlanManagement />}
+            {billingTab === 'tenant-plans' && (
+              <Card className="p-6">
+                <h2 className="text-xl font-bold mb-4">Tenant Plans & Quotas</h2>
+                <p className="text-text-secondary mb-4">Set plan and limits per organization (superuser only).</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4">Organization</th>
+                        <th className="text-left py-3 px-4">Plan</th>
+                        <th className="text-left py-3 px-4">Docs Limit</th>
+                        <th className="text-left py-3 px-4">Storage (GB)</th>
+                        <th className="text-left py-3 px-4">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tenants.map((t: any) => (
+                        <tr key={t.id} className="border-b border-border">
+                          <td className="py-3 px-4 font-medium">{t.name}</td>
+                          <td className="py-3 px-4 text-text-secondary">{t.plan_id || '-'}</td>
+                          <td className="py-3 px-4">{t.documents_limit ?? '-'}</td>
+                          <td className="py-3 px-4">{t.storage_limit_gb ?? '-'}</td>
+                          <td className="py-3 px-4">
+                            <Button size="sm" variant="outline" onClick={() => {
+                              const plan = prompt('Plan ID (or leave blank):');
+                              const docs = prompt('Documents limit (number or blank):');
+                              const storage = prompt('Storage limit GB (number or blank):');
+                              if (plan === null && docs === null && storage === null) return;
+                              fetch(`${API_BASE_URL}/admin/tenants/${t.id}/plan`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                  plan_id: plan || undefined,
+                                  documents_limit: docs ? parseInt(docs, 10) : undefined,
+                                  storage_limit_gb: storage ? parseFloat(storage) : undefined,
+                                }),
+                              }).then(r => {
+                                if (r.ok && (plan !== null || docs !== null || storage !== null)) {
+                                  fetch(`${API_BASE_URL}/admin/tenants`, { credentials: 'include' })
+                                    .then(res => res.ok ? res.json() : []).then(setTenants);
+                                }
+                              });
+                            }}>Set Plan</Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {tenants.length === 0 && (
+                  <p className="py-6 text-center text-text-secondary">No tenants or superuser access required.</p>
+                )}
+              </Card>
+            )}
           </div>
         )}
       </div>
