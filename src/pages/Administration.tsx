@@ -66,6 +66,9 @@ export default function AdminHub() {
   const [searchTerm, setSearchTerm] = useState('');
   const [orgMembers, setOrgMembers] = useState<any[]>([]);
   const [orgAudit, setOrgAudit] = useState<any[]>([]);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [addMemberUserId, setAddMemberUserId] = useState('');
+  const [addMemberRole, setAddMemberRole] = useState('viewer');
   const [tenants, setTenants] = useState<any[]>([]);
 
   useEffect(() => {
@@ -280,17 +283,97 @@ export default function AdminHub() {
         )}
 
         {activeTab === 'organization' && (
-          <OrganizationTab
-            orgMembers={orgMembers}
-            setOrgMembers={setOrgMembers}
-            orgAudit={orgAudit}
-            loadOrgData={() => {
-              fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' })
-                .then(r => r.ok ? r.json() : []).then(setOrgMembers).catch(() => setOrgMembers([]));
-              fetch(`${API_BASE_URL}/organization/members/audit?limit=50`, { credentials: 'include' })
-                .then(r => r.ok ? r.json() : []).then(setOrgAudit).catch(() => setOrgAudit([]));
-            }}
-          />
+          <div className="space-y-6">
+            <Card className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <Shield className="w-5 h-5" /> Organization Members
+                  </h2>
+                  <p className="text-text-secondary mt-1">Manage team members (requires org admin role).</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowAddMember(!showAddMember)} icon={<Plus className="w-4 h-4" />}>
+                    Add Member
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(setOrgMembers);
+                    fetch(`${API_BASE_URL}/organization/members/audit?limit=50`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(setOrgAudit);
+                  }}>Refresh</Button>
+                </div>
+              </div>
+              {showAddMember && (
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!addMemberUserId.trim()) return;
+                  try {
+                    const res = await fetch(`${API_BASE_URL}/organization/members/`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ user_id: parseInt(addMemberUserId, 10), role: addMemberRole }),
+                    });
+                    if (!res.ok) { const err = await res.json(); alert(err.detail || 'Failed'); return; }
+                    setShowAddMember(false); setAddMemberUserId(''); setAddMemberRole('viewer');
+                    fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(setOrgMembers);
+                  } catch (e) { alert('Failed to add member'); }
+                }} className="mb-4 p-4 bg-muted rounded-lg flex flex-wrap gap-3 items-end">
+                  <div>
+                    <label className="block text-sm mb-1">User ID</label>
+                    <input type="number" value={addMemberUserId} onChange={(e) => setAddMemberUserId(e.target.value)} placeholder="User ID" className="border rounded px-3 py-2 w-32" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Role</label>
+                    <select value={addMemberRole} onChange={(e) => setAddMemberRole(e.target.value)} className="border rounded px-3 py-2">
+                      <option value="viewer">Viewer</option>
+                      <option value="editor">Editor</option>
+                      <option value="admin">Admin</option>
+                      <option value="owner">Owner</option>
+                    </select>
+                  </div>
+                  <Button type="submit" variant="primary">Add</Button>
+                  <Button type="button" variant="outline" onClick={() => setShowAddMember(false)}>Cancel</Button>
+                </form>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-4 font-semibold">User</th>
+                      <th className="text-left py-3 px-4 font-semibold">Role</th>
+                      <th className="text-right py-3 px-4 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orgMembers.map((m: any) => (
+                      <tr key={m.id} className="border-b border-border">
+                        <td className="py-3 px-4">
+                          <div className="font-medium">{m.username}</div>
+                          <div className="text-sm text-text-secondary">{m.email}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-1 bg-info-light text-info rounded text-sm">{m.role}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {m.role !== 'owner' && (
+                            <Button size="sm" variant="ghost" icon={<Trash2 className="w-4 h-4 text-destructive" />}
+                              onClick={async () => {
+                                if (!confirm(`Remove ${m.username}?`)) return;
+                                const res = await fetch(`${API_BASE_URL}/organization/members/${m.id}`, { method: 'DELETE', credentials: 'include' });
+                                if (res.ok) fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(setOrgMembers);
+                                else { const err = await res.json(); alert(err.detail || 'Failed'); }
+                              }} />
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {orgMembers.length === 0 && (
+                <p className="py-6 text-center text-text-secondary">No members or admin access required.</p>
+              )}
+            </Card>
             <Card className="p-6">
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <FileText className="w-5 h-5" /> Organization Audit Log
