@@ -81,6 +81,7 @@ def reprocess_documents_batch(self, job_id: int):
             logger.info(f"Batch job {job_id} already running (duplicate), skipping")
             return {"status": "skipped", "message": "Job already in progress"}
         if job.status != 'running':
+            release_job_lock(job_id, task_id)
             logger.warning(f"Batch job {job_id} is not in 'running' status (current: {job.status})")
             return {"status": "error", "message": f"Job {job_id} is not running"}
         

@@ -4,7 +4,9 @@ Celery tasks for periodic alert monitoring and escalation
 """
 from celery import shared_task
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from typing import Dict, List
+from datetime import date, datetime, timedelta
 import logging
 
 from app.db.database import SessionLocal
@@ -18,8 +20,8 @@ from app.models.committee_alert import CommitteeAlert, AlertStatus
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name="evaluate_alerts_for_property")
-def evaluate_alerts_for_property(property_id: int, period_id: int = None):
+@shared_task(name="evaluate_alerts_for_property", bind=True)
+def evaluate_alerts_for_property(self, property_id: int, period_id: int = None):
     """
     Evaluate alerts for a specific property/period
     
@@ -30,6 +32,13 @@ def evaluate_alerts_for_property(property_id: int, period_id: int = None):
     Returns:
         Summary of evaluation results
     """
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    lock_key = f"alert_eval:{property_id}:{period_id or 'all'}"
+    if not acquire_generic_lock(lock_key, task_id, ttl_seconds=300):
+        logger.info(f"Alert evaluation for property={property_id} period={period_id} already running, skipping")
+        return {"success": True, "skipped": True, "message": "Already in progress"}
+
     db = SessionLocal()
     try:
         trigger_service = AlertTriggerService(db)
@@ -64,8 +73,8 @@ def evaluate_alerts_for_property(property_id: int, period_id: int = None):
         db.close()
 
 
-@shared_task(name="escalate_overdue_alerts")
-def escalate_overdue_alerts():
+@shared_task(name="escalate_overdue_alerts", bind=True)
+def escalate_overdue_alerts(self):
     """
     Check and escalate overdue alerts
     
@@ -75,6 +84,13 @@ def escalate_overdue_alerts():
     Returns:
         Summary of escalation actions
     """
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    today = date.today().isoformat()
+    if not acquire_generic_lock(f"alert_escalate:{today}", task_id, ttl_seconds=3600):
+        logger.info("Escalate overdue alerts already run today, skipping")
+        return {"success": True, "skipped": True, "message": f"Already run for {today}"}
+
     db = SessionLocal()
     try:
         escalation_service = AlertEscalationService(db)
@@ -99,8 +115,8 @@ def escalate_overdue_alerts():
         db.close()
 
 
-@shared_task(name="update_alert_priorities")
-def update_alert_priorities():
+@shared_task(name="update_alert_priorities", bind=True)
+def update_alert_priorities(self):
     """
     Update priority scores for all active alerts
     
@@ -110,6 +126,13 @@ def update_alert_priorities():
     Returns:
         Summary of updates
     """
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    today = date.today().isoformat()
+    if not acquire_generic_lock(f"alert_priorities:{today}", task_id, ttl_seconds=3600):
+        logger.info("Update alert priorities already run today, skipping")
+        return {"success": True, "skipped": True, "message": f"Already run for {today}"}
+
     db = SessionLocal()
     try:
         prioritization_service = AlertPrioritizationService(db)
@@ -209,8 +232,8 @@ def generate_alert_digest(property_id: int = None):
         db.close()
 
 
-@shared_task(name="cleanup_resolved_alerts")
-def cleanup_resolved_alerts(days_old: int = 90):
+@shared_task(name="cleanup_resolved_alerts", bind=True)
+def cleanup_resolved_alerts(self, days_old: int = 90):
     """
     Cleanup old resolved alerts
     
@@ -222,10 +245,14 @@ def cleanup_resolved_alerts(days_old: int = 90):
     Returns:
         Summary of cleanup actions
     """
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    if not acquire_generic_lock(f"alert_cleanup:{days_old}", task_id, ttl_seconds=1800):
+        logger.info(f"Cleanup resolved alerts (days={days_old}) already running, skipping")
+        return {"success": True, "skipped": True, "message": "Already in progress"}
+
     db = SessionLocal()
     try:
-        from datetime import datetime, timedelta
-        
         cutoff_date = datetime.utcnow() - timedelta(days=days_old)
         
         old_resolved = db.query(CommitteeAlert).filter(
@@ -253,8 +280,8 @@ def cleanup_resolved_alerts(days_old: int = 90):
         db.close()
 
 
-@shared_task(name="monitor_all_properties")
-def monitor_all_properties():
+@shared_task(name="monitor_all_properties", bind=True)
+def monitor_all_properties(self):
     """
     Monitor all properties for alert evaluation
     
@@ -264,6 +291,13 @@ def monitor_all_properties():
     Returns:
         Summary of monitoring results
     """
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    today = date.today().isoformat()
+    if not acquire_generic_lock(f"alert_monitor:{today}", task_id, ttl_seconds=7200):
+        logger.info("Monitor all properties already run today, skipping")
+        return {"success": True, "skipped": True, "message": f"Already run for {today}"}
+
     db = SessionLocal()
     try:
         # Get all properties

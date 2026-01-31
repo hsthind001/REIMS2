@@ -2,8 +2,9 @@
 Org-level member management (P2 Admin Control Plane).
 Org admins/owners can list, add, remove members and update roles.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 from pydantic import BaseModel
 
@@ -28,12 +29,46 @@ class MemberResponse(BaseModel):
 
 
 class MemberAddRequest(BaseModel):
-    user_id: int
+    user_id: int | None = None  # Optional if email provided
+    email: str | None = None  # Look up user by email; takes precedence over user_id
     role: str = "viewer"  # owner, admin, editor, viewer
 
 
 class MemberUpdateRequest(BaseModel):
     role: str
+
+
+@router.get("/search", response_model=List[dict])
+async def search_users_by_email(
+    email: str = Query(..., min_length=2, description="Email or username to search"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_org_role("admin")),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """Search users by email or username (for adding to org). Excludes existing members."""
+    q = email.strip()
+    if len(q) < 2:
+        return []
+    existing_member_ids = [
+        r[0] for r in
+        db.query(OrganizationMember.user_id).filter(
+            OrganizationMember.organization_id == current_org.id
+        ).all()
+    ]
+    query = db.query(User).filter(
+        or_(
+            User.email.ilike(f"%{q}%"),
+            User.username.ilike(f"%{q}%"),
+        )
+    )
+    if existing_member_ids:
+        query = query.filter(User.id.notin_(existing_member_ids))
+    users = query.limit(limit).all()
+    return [
+        {"id": u.id, "username": u.username, "email": u.email or ""}
+        for u in users
+    ]
 
 
 @router.get("/", response_model=List[MemberResponse])
@@ -68,17 +103,25 @@ async def add_member(
     current_user: User = Depends(require_org_role("admin")),
     current_org: Organization = Depends(get_current_organization),
 ):
-    """Add a user to the organization. Requires org admin or owner."""
+    """Add a user to the organization. Requires org admin or owner. Provide user_id or email (email takes precedence)."""
     if body.role not in ("owner", "admin", "editor", "viewer"):
         raise HTTPException(status_code=400, detail="Invalid role")
-    user = db.query(User).filter(User.id == body.user_id).first()
+    if not body.email and body.user_id is None:
+        raise HTTPException(status_code=400, detail="Provide user_id or email")
+    user = None
+    if body.email:
+        user = db.query(User).filter(User.email == body.email.strip()).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"No user found with email: {body.email}")
+    else:
+        user = db.query(User).filter(User.id == body.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     existing = (
         db.query(OrganizationMember)
         .filter(
             OrganizationMember.organization_id == current_org.id,
-            OrganizationMember.user_id == body.user_id,
+            OrganizationMember.user_id == user.id,
         )
         .first()
     )
@@ -86,7 +129,7 @@ async def add_member(
         raise HTTPException(status_code=400, detail="User already a member")
     m = OrganizationMember(
         organization_id=current_org.id,
-        user_id=body.user_id,
+        user_id=user.id,
         role=body.role,
     )
     db.add(m)
@@ -161,6 +204,8 @@ async def get_org_audit_log(
 ):
     """View audit log for the current organization."""
     from app.models.audit_log import AuditLog
+    log_action(db, "org.audit_log_viewed", current_user.id, current_org.id, "audit_log", None, "Viewed org audit log")
+    db.commit()
     rows = (
         db.query(AuditLog)
         .filter(AuditLog.organization_id == current_org.id)

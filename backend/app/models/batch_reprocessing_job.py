@@ -23,9 +23,10 @@ class BatchReprocessingJob(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     
-    # Job Configuration
+    # Job Configuration (E2-S3: org-scoped for WebSocket/tenant isolation)
     job_name = Column(String(255), nullable=True)
     initiated_by = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='CASCADE'), nullable=True, index=True)
     
     # Filters
     property_ids = Column(JSONB, nullable=True)  # Array of property IDs to reprocess

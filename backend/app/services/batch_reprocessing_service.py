@@ -97,10 +97,11 @@ class BatchReprocessingService:
             property_names = "all properties" if not property_ids else f"{len(property_ids)} properties"
             job_name = f"Reprocess {total_documents} documents for {property_names}"
 
-        # Create batch job record
+        # Create batch job record (E2-S3: persist org for tenant scoping)
         batch_job = BatchReprocessingJob(
             job_name=job_name,
             initiated_by=user_id,
+            organization_id=organization_id,
             property_ids=property_ids,
             date_range_start=date_range_start,
             date_range_end=date_range_end,

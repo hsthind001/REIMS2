@@ -5,19 +5,24 @@ import {
   AlertCircle,
   HelpCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { Card, Button } from '../design-system';
 import type { ForensicDiscrepancy } from '../../lib/forensic_reconciliation';
 
 interface RuleFailureDetailProps {
-  discrepancy: ForensicDiscrepancy;
+  discrepancy: ForensicDiscrepancy & { rule_code?: string; source_document?: string; target_document?: string };
+  onViewSource?: (docType?: string) => void;
 }
 
-export default function RuleFailureDetail({ discrepancy }: RuleFailureDetailProps) {
-  // Parse description to extract Rule Name/ID if possible, or just use description
-  // Format usually: "Rule RULE_ID failed: message" or "Rule Description (RULE_ID)"
+export default function RuleFailureDetail({ discrepancy, onViewSource }: RuleFailureDetailProps) {
+  // E8-S1: Show rule, evidence, numbers, source link
+  const ruleCode = (discrepancy as any).rule_code || discrepancy.description?.match(/Rule\s+([A-Z0-9_-]+)/i)?.[1];
   const title = discrepancy.description || 'Rule Validation Failure';
+  const sourceDoc = (discrepancy as any).source_document;
+  const targetDoc = (discrepancy as any).target_document;
   
   const formatValue = (val?: number | string | null) => {
     if (val === null || val === undefined) return 'N/A';
@@ -59,7 +64,7 @@ export default function RuleFailureDetail({ discrepancy }: RuleFailureDetailProp
             Validation Results
           </span>
           <span className="text-xs text-gray-500">
-            Rule Source: Calculated Engine
+            {ruleCode ? `Rule: ${ruleCode}` : 'Rule Source: Calculated Engine'}
           </span>
         </div>
         
@@ -134,6 +139,38 @@ export default function RuleFailureDetail({ discrepancy }: RuleFailureDetailProp
         </div>
       </Card>
       
+      {/* E8-S1: Source document links */}
+      {(sourceDoc || targetDoc || onViewSource) && (
+        <Card className="p-4">
+          <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Source Documents
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {sourceDoc && (
+              <span className="text-sm text-gray-600 px-2 py-1 bg-gray-100 rounded">
+                Source: {sourceDoc}
+              </span>
+            )}
+            {targetDoc && (
+              <span className="text-sm text-gray-600 px-2 py-1 bg-gray-100 rounded">
+                Target: {targetDoc}
+              </span>
+            )}
+            {onViewSource && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<ExternalLink className="w-4 h-4" />}
+                onClick={() => onViewSource()}
+              >
+                View Source PDF
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Action Buttons Placeholder - could be expanded */}
       <div className="grid grid-cols-2 gap-3">
          <Button variant="secondary" className="w-full justify-center">

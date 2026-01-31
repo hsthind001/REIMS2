@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react'
 import { alertBackfillService } from '../../lib/alertBackfill'
 import { batchReprocessingService, type BatchReprocessingJob, type BatchJobCreateRequest } from '../../lib/batchReprocessing'
+import { buildWsUrl } from '../../utils/wsAuth'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
 
@@ -72,10 +73,8 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
   }
 
   const setupWebSocket = (jobId: number) => {
-    const protocol = API_BASE_URL.startsWith('https:') ? 'wss:' : 'ws:'
-    const wsHost = API_BASE_URL.replace(/^https?:\/\//, '')
-    const wsUrl = `${protocol}//${wsHost}/api/v1/ws/batch-job/${jobId}`
-    
+    const wsUrl = buildWsUrl(`/api/v1/ws/batch-job/${jobId}`)
+    if (!wsUrl) return
     try {
       const ws = new WebSocket(wsUrl)
       

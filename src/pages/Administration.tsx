@@ -67,7 +67,9 @@ export default function AdminHub() {
   const [orgMembers, setOrgMembers] = useState<any[]>([]);
   const [orgAudit, setOrgAudit] = useState<any[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
-  const [addMemberUserId, setAddMemberUserId] = useState('');
+  const [addMemberEmail, setAddMemberEmail] = useState('');
+  const [addMemberSearchResults, setAddMemberSearchResults] = useState<any[]>([]);
+  const [addMemberSelected, setAddMemberSelected] = useState<{ id: number; username: string; email: string } | null>(null);
   const [addMemberRole, setAddMemberRole] = useState('viewer');
   const [tenants, setTenants] = useState<any[]>([]);
 
@@ -305,22 +307,50 @@ export default function AdminHub() {
               {showAddMember && (
                 <form onSubmit={async (e) => {
                   e.preventDefault();
-                  if (!addMemberUserId.trim()) return;
+                  const toSend = addMemberSelected
+                    ? { user_id: addMemberSelected.id, role: addMemberRole }
+                    : addMemberEmail.includes('@')
+                      ? { email: addMemberEmail.trim(), role: addMemberRole }
+                      : null;
+                  if (!toSend || (!addMemberSelected && !addMemberEmail.trim())) return;
                   try {
                     const res = await fetch(`${API_BASE_URL}/organization/members/`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       credentials: 'include',
-                      body: JSON.stringify({ user_id: parseInt(addMemberUserId, 10), role: addMemberRole }),
+                      body: JSON.stringify(toSend),
                     });
                     if (!res.ok) { const err = await res.json(); alert(err.detail || 'Failed'); return; }
-                    setShowAddMember(false); setAddMemberUserId(''); setAddMemberRole('viewer');
+                    setShowAddMember(false); setAddMemberEmail(''); setAddMemberSelected(null); setAddMemberSearchResults([]); setAddMemberRole('viewer');
                     fetch(`${API_BASE_URL}/organization/members/`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(setOrgMembers);
                   } catch (e) { alert('Failed to add member'); }
                 }} className="mb-4 p-4 bg-muted rounded-lg flex flex-wrap gap-3 items-end">
-                  <div>
-                    <label className="block text-sm mb-1">User ID</label>
-                    <input type="number" value={addMemberUserId} onChange={(e) => setAddMemberUserId(e.target.value)} placeholder="User ID" className="border rounded px-3 py-2 w-32" required />
+                  <div className="relative">
+                    <label className="block text-sm mb-1">Email or search by username</label>
+                    <input
+                      type="text"
+                      value={addMemberSelected ? `${addMemberSelected.username} (${addMemberSelected.email})` : addMemberEmail}
+                      onChange={(e) => {
+                        setAddMemberSelected(null);
+                        setAddMemberEmail(e.target.value);
+                        if (e.target.value.length >= 2) {
+                          fetch(`${API_BASE_URL}/organization/members/search?email=${encodeURIComponent(e.target.value)}&limit=5`, { credentials: 'include' })
+                            .then(r => r.ok ? r.json() : []).then(setAddMemberSearchResults);
+                        } else setAddMemberSearchResults([]);
+                      }}
+                      onFocus={() => !addMemberSelected && addMemberEmail.length >= 2 && fetch(`${API_BASE_URL}/organization/members/search?email=${encodeURIComponent(addMemberEmail)}&limit=5`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(setAddMemberSearchResults)}
+                      placeholder="Type email or username to search"
+                      className="border rounded px-3 py-2 w-64"
+                      required
+                    />
+                    {addMemberSelected && <button type="button" className="ml-2 text-sm text-info" onClick={() => setAddMemberSelected(null)}>Clear</button>}
+                    {addMemberSearchResults.length > 0 && !addMemberSelected && (
+                      <ul className="absolute left-0 mt-1 z-10 bg-background border rounded shadow-lg max-h-40 overflow-y-auto w-64">
+                        {addMemberSearchResults.map((u: any) => (
+                          <li key={u.id} className="px-3 py-2 hover:bg-muted cursor-pointer border-b last:border-0" onClick={() => { setAddMemberSelected(u); setAddMemberSearchResults([]); setAddMemberEmail(''); }}>{u.username} ({u.email || '-'})</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm mb-1">Role</label>
@@ -656,7 +686,7 @@ export default function AdminHub() {
                       <tr className="border-b border-border">
                         <th className="text-left py-3 px-4">Organization</th>
                         <th className="text-left py-3 px-4">Plan</th>
-                        <th className="text-left py-3 px-4">Docs Limit</th>
+                        <th className="text-left py-3 px-4">Docs (used/limit)</th>
                         <th className="text-left py-3 px-4">Storage (GB)</th>
                         <th className="text-left py-3 px-4">Actions</th>
                       </tr>
@@ -666,8 +696,8 @@ export default function AdminHub() {
                         <tr key={t.id} className="border-b border-border">
                           <td className="py-3 px-4 font-medium">{t.name}</td>
                           <td className="py-3 px-4 text-text-secondary">{t.plan_id || '-'}</td>
-                          <td className="py-3 px-4">{t.documents_limit ?? '-'}</td>
-                          <td className="py-3 px-4">{t.storage_limit_gb ?? '-'}</td>
+                          <td className="py-3 px-4">{t.documents_limit != null ? `${t.documents_used ?? 0}/${t.documents_limit}` : '-'}</td>
+                          <td className="py-3 px-4">{t.storage_limit_gb != null ? `${((t.storage_used_bytes || 0) / 1e9).toFixed(2)} / ${t.storage_limit_gb}` : '-'}</td>
                           <td className="py-3 px-4">
                             <Button size="sm" variant="outline" onClick={() => {
                               const plan = prompt('Plan ID (or leave blank):');

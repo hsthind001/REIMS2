@@ -128,6 +128,18 @@ def run_complete_forensic_audit_task(
 
     property_ref = normalize_id(property_id)
     period_ref = normalize_id(period_id)
+    task_id = self.request.id
+
+    from app.utils.task_idempotency import acquire_forensic_audit_lock, release_forensic_audit_lock
+    if not acquire_forensic_audit_lock(int(property_ref), int(period_ref), task_id):
+        logger.info(f"Forensic audit already running for property={property_ref} period={period_ref}, skipping")
+        return {
+            "success": False,
+            "skipped": True,
+            "message": "Audit already in progress for this property/period",
+            "property_id": property_ref,
+            "period_id": period_ref
+        }
 
     # Create database session
     sync_db = SessionLocal()
@@ -529,6 +541,7 @@ def run_complete_forensic_audit_task(
         raise e
 
     finally:
+        release_forensic_audit_lock(int(property_ref), int(period_ref), task_id)
         sync_db.close()
 
 
@@ -618,8 +631,8 @@ def get_audit_task_status(task_id: str) -> Dict[str, Any]:
     return response
 
 
-@celery_app.task(name="forensic_audit.schedule_recurring_audits")
-def schedule_recurring_audits():
+@celery_app.task(name="forensic_audit.schedule_recurring_audits", bind=True)
+def schedule_recurring_audits(self):
     """
     Scheduled task to run audits for all properties on period close.
 
@@ -633,6 +646,14 @@ def schedule_recurring_audits():
     """
     from app.models.property import Property
     from app.models.financial_period import FinancialPeriod
+
+    from datetime import date
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    today = date.today().isoformat()
+    if not acquire_generic_lock(f"forensic_schedule:{today}", task_id, ttl_seconds=3600):
+        logger.info("Schedule recurring audits already run today, skipping")
+        return {"status": "skipped", "message": f"Already run for {today}", "audits_scheduled": 0}
 
     db = SessionLocal()
 
@@ -685,8 +706,8 @@ def schedule_recurring_audits():
         db.close()
 
 
-@celery_app.task(name="forensic_audit.cleanup_old_results")
-def cleanup_old_audit_results(days_to_keep: int = 90):
+@celery_app.task(name="forensic_audit.cleanup_old_results", bind=True)
+def cleanup_old_audit_results(self, days_to_keep: int = 90):
     """
     Clean up old audit results to save database space.
 
@@ -700,6 +721,11 @@ def cleanup_old_audit_results(days_to_keep: int = 90):
         Summary of cleanup operation
     """
     from datetime import timedelta
+    from app.utils.task_idempotency import acquire_generic_lock
+    task_id = self.request.id
+    if not acquire_generic_lock(f"forensic_cleanup:{days_to_keep}", task_id, ttl_seconds=1800):
+        logger.info("Forensic cleanup already running, skipping")
+        return {"status": "skipped", "message": "Already in progress", "records_deleted": 0}
 
     db = SessionLocal()
 

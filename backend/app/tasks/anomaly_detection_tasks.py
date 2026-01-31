@@ -49,7 +49,7 @@ def _get_metrics_to_check() -> list:
 @celery_app.task(name="app.tasks.anomaly_detection_tasks.run_nightly_anomaly_detection", bind=True)
 def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict:
     """
-    Nightly batch job to detect anomalies across all properties and metrics
+    Nightly batch job to detect anomalies across all properties and metrics (idempotent).
     
     BR-008: Runs z-score (≥2.0) and CUSUM trend shift detection
     Configurable sensitivity per property class
@@ -62,6 +62,14 @@ def run_nightly_anomaly_detection(self: Task, use_parallel: bool = True) -> dict
     Returns:
         dict: Summary of anomalies detected
     """
+    from datetime import date
+    from app.utils.task_idempotency import acquire_anomaly_nightly_lock
+    task_id = self.request.id
+    today = date.today().isoformat()
+    if not acquire_anomaly_nightly_lock(today, task_id):
+        logger.info(f"Nightly anomaly detection already running for {today}, skipping duplicate")
+        return {"success": True, "skipped": True, "message": f"Already running for {today}"}
+
     db = SessionLocal()
     try:
         # Get all active properties

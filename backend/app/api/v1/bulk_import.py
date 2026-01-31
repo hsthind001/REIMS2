@@ -16,18 +16,18 @@ from app.services.bulk_import_service import BulkImportService
 from app.models.user import User
 from app.models.organization import Organization
 
-# Import rate limiter
+# Import rate limiter (E6-S3: org/user-scoped when available)
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.utils.rate_limit_key import get_rate_limit_key
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_rate_limit_key)
 
 router = APIRouter(prefix="/bulk-import", tags=["bulk_import"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("/budgets")
-@limiter.limit("5/minute")  # Rate limit: 5 bulk imports per minute per IP
+@limiter.limit("5/minute")  # E6-S3: per org/user when X-Organization-ID or Bearer present
 async def import_budgets(
     request: Request,  # Required for rate limiter
     file: UploadFile = File(...),
@@ -102,6 +102,9 @@ async def import_budgets(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
+        from app.services.audit_service import log_action
+        log_action(db, "bulk_import.budgets", current_user.id, current_org.id, "bulk_import", str(property_id), f"Imported {result.get('imported', 0)} budget records for period {financial_period_id}")
+        db.commit()
         return result
 
     except Exception as e:
@@ -181,6 +184,9 @@ async def import_forecasts(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
+        from app.services.audit_service import log_action
+        log_action(db, "bulk_import.forecasts", current_user.id, current_org.id, "bulk_import", str(property_id), f"Imported {result.get('imported', 0)} forecast records for period {financial_period_id}")
+        db.commit()
         return result
 
     except Exception as e:
@@ -242,6 +248,9 @@ async def import_chart_of_accounts(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
+        from app.services.audit_service import log_action
+        log_action(db, "bulk_import.chart_of_accounts", current_user.id, current_org.id, "bulk_import", str(property_id), f"Imported {result.get('imported', result.get('created', 0))} chart of accounts records")
+        db.commit()
         return result
 
     except Exception as e:
@@ -306,6 +315,9 @@ async def import_income_statement(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
+        from app.services.audit_service import log_action
+        log_action(db, "bulk_import.income_statement", current_user.id, current_org.id, "bulk_import", str(property_id), f"Imported {result.get('imported', 0)} income statement records for period {financial_period_id}")
+        db.commit()
         return result
 
     except Exception as e:
@@ -364,6 +376,9 @@ async def import_balance_sheet(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
+        from app.services.audit_service import log_action
+        log_action(db, "bulk_import.balance_sheet", current_user.id, current_org.id, "bulk_import", str(property_id), f"Imported {result.get('imported', 0)} balance sheet records for period {financial_period_id}")
+        db.commit()
         return result
 
     except Exception as e:
@@ -423,6 +438,9 @@ async def import_cash_flow(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error"))
 
+        from app.services.audit_service import log_action
+        log_action(db, "bulk_import.cash_flow", current_user.id, current_org.id, "bulk_import", str(property_id), f"Imported {result.get('imported', 0)} cash flow records for period {financial_period_id}")
+        db.commit()
         return result
 
     except Exception as e:

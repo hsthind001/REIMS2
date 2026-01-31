@@ -224,6 +224,43 @@ def get_anomaly_for_org(
     return None
 
 
+def get_batch_job_for_org(
+    db: Session, organization_id: int, job_id: int
+) -> Optional["BatchReprocessingJob"]:
+    """
+    Get batch reprocessing job by ID scoped to organization.
+    Returns None if not found or does not belong to org.
+    """
+    from app.models.batch_reprocessing_job import BatchReprocessingJob
+
+    job = db.query(BatchReprocessingJob).filter(BatchReprocessingJob.id == job_id).first()
+    if not job:
+        return None
+    # E2-S3: Prefer organization_id when set
+    if job.organization_id is not None:
+        return job if job.organization_id == organization_id else None
+    # Legacy jobs: verify via property_ids
+    if job.property_ids:
+        for pid in job.property_ids:
+            if isinstance(pid, int) and get_property_for_org(db, organization_id, pid):
+                return job
+        return None
+    # No property filter: verify via initiated_by user's org membership
+    if job.initiated_by:
+        from app.models.organization import OrganizationMember
+        m = (
+            db.query(OrganizationMember)
+            .filter(
+                OrganizationMember.user_id == job.initiated_by,
+                OrganizationMember.organization_id == organization_id,
+            )
+            .first()
+        )
+        if m:
+            return job
+    return None
+
+
 def get_period_for_org(
     db: Session, organization_id: int, period_id: int
 ) -> Optional[FinancialPeriod]:

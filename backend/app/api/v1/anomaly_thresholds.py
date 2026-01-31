@@ -136,7 +136,9 @@ async def create_threshold(
         account_name=threshold_data.account_name,
         threshold_value=threshold_data.threshold_value
     )
-    
+    from app.services.audit_service import log_action
+    log_action(db, "anomaly_threshold.created", current_user.id, current_org.id, "anomaly_threshold", threshold_data.account_code, f"Created threshold for {threshold_data.account_code}")
+    db.commit()
     return AnomalyThresholdResponse.model_validate(threshold)
 
 
@@ -158,6 +160,9 @@ async def update_threshold(
             threshold_value=threshold_data.threshold_value,
             is_active=threshold_data.is_active
         )
+        from app.services.audit_service import log_action
+        log_action(db, "anomaly_threshold.updated", current_user.id, current_org.id, "anomaly_threshold", account_code, f"Updated threshold for {account_code}")
+        db.commit()
         return AnomalyThresholdResponse.model_validate(threshold)
     except ValueError as e:
         raise HTTPException(
@@ -189,6 +194,8 @@ async def create_or_update_threshold(
             threshold_value=threshold_data.threshold_value,
             is_active=threshold_data.is_active
         )
+        from app.services.audit_service import log_action
+        log_action(db, "anomaly_threshold.upserted", current_user.id, current_org.id, "anomaly_threshold", account_code, f"Upserted threshold for {account_code}")
     else:
         # Create new
         threshold = service.get_or_create_threshold(
@@ -196,7 +203,9 @@ async def create_or_update_threshold(
             account_name=threshold_data.account_name,
             threshold_value=threshold_data.threshold_value
         )
-    
+        from app.services.audit_service import log_action
+        log_action(db, "anomaly_threshold.upserted", current_user.id, current_org.id, "anomaly_threshold", account_code, f"Upserted threshold for {account_code}")
+    db.commit()
     return AnomalyThresholdResponse.model_validate(threshold)
 
 
@@ -212,6 +221,11 @@ async def delete_threshold(
     """Delete (deactivate) a threshold"""
     service = AnomalyThresholdService(db)
     success = service.delete_threshold(account_code)
+    
+    if success:
+        from app.services.audit_service import log_action
+        log_action(db, "anomaly_threshold.deleted", current_user.id, current_org.id, "anomaly_threshold", account_code, f"Deleted threshold for {account_code}")
+        db.commit()
     
     if not success:
         raise HTTPException(
@@ -246,6 +260,9 @@ async def set_default_threshold(
     """Set the global default threshold value"""
     service = AnomalyThresholdService(db)
     config = service.set_default_threshold(threshold_data.default_threshold)
+    from app.services.audit_service import log_action
+    log_action(db, "anomaly_threshold.default_set", current_user.id, current_org.id, "anomaly_threshold", "default", f"Set default threshold to {threshold_data.default_threshold}")
+    db.commit()
     
     return DefaultThresholdResponse(
         default_threshold=Decimal(config.config_value),

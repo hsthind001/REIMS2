@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.tasks.anomaly_detection_tasks",  # BR-008: Nightly anomaly detection
         "app.tasks.batch_reprocessing_tasks",  # Phase 1: Batch reprocessing for anomaly detection
         "app.tasks.alert_backfill_tasks",  # Alert backfill batch jobs
+        "app.tasks.alert_monitoring_tasks",  # Alert evaluation, escalation, monitoring
         "app.tasks.learning_tasks",  # Self-learning system tasks
         "app.tasks.forensic_audit_tasks",  # Forensic audit pipeline
         "app.tasks.market_intelligence_tasks"  # Market intelligence ingestion/refresh
@@ -113,3 +114,16 @@ celery_app.conf.beat_schedule = {
 celery_app.conf.task_routes = {
     "forensic_audit.run_complete_audit": {"queue": "forensic_audit"},
 }
+
+# OpenTelemetry: instrument Celery workers after process init (required for BatchSpanProcessor)
+from celery.signals import worker_process_init
+
+
+@worker_process_init.connect(weak=False)
+def _init_celery_otel(*args, **kwargs):
+    try:
+        from app.monitoring.otel_tracing import setup_otel_celery
+        setup_otel_celery()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"OTel Celery init skipped: {e}")

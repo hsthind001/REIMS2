@@ -1,15 +1,22 @@
 """
 WebSocket endpoints for real-time extraction status updates
+
+E1-S2: Auth handshake - token and org_id required in query params before accept.
 """
-from typing import Dict, List
+from typing import Dict, List, Tuple, Optional
+from urllib.parse import parse_qs
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.models.document_upload import DocumentUpload
+from app.models.user import User
+from app.models.organization import Organization
+from app.models.organization import OrganizationMember
 from app.models.balance_sheet_data import BalanceSheetData
 from app.models.income_statement_data import IncomeStatementData
 from app.models.cash_flow_data import CashFlowData
 from app.models.batch_reprocessing_job import BatchReprocessingJob
+from app.models.property import Property
 from datetime import datetime, timedelta
 import asyncio
 import logging
@@ -17,6 +24,73 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# WebSocket close codes (1008 = policy violation for auth failures)
+WS_CLOSE_UNAUTHORIZED = 1008
+
+
+async def _validate_websocket_auth(websocket: WebSocket) -> Tuple[User, int]:
+    """
+    Validate JWT token and org membership from query params before accepting.
+    Connect with ?token=<jwt>&org_id=<id>. Closes with 1008 if invalid.
+    Returns (user, org_id) or raises after closing connection.
+    """
+    from app.core.jwt_auth import get_jwt_service
+
+    query_string = websocket.scope.get("query_string", b"").decode()
+    params = parse_qs(query_string)
+    token = (params.get("token") or [None])[0]
+    org_id_str = (params.get("org_id") or params.get("x_organization_id") or [None])[0]
+
+    async def _reject(reason: str) -> None:
+        await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason=reason)
+
+    if not token:
+        await _reject("Missing token")
+        raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+    try:
+        jwt_service = get_jwt_service()
+        user_info = jwt_service.get_user_from_token(token)
+        user_id = user_info["user_id"]
+    except Exception:
+        await _reject("Invalid or expired token")
+        raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+    if not org_id_str:
+        await _reject("Missing org_id")
+        raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+    try:
+        org_id = int(org_id_str)
+    except ValueError:
+        await _reject("Invalid org_id")
+        raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            await _reject("User not found")
+            raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+        membership = db.query(OrganizationMember).filter(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.organization_id == org_id
+        ).first()
+        if not membership and not user.is_superuser:
+            await _reject("Not a member of this organization")
+            raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+        if user.is_superuser and not membership:
+            org = db.query(Organization).filter(Organization.id == org_id).first()
+            if not org:
+                await _reject("Organization not found")
+                raise WebSocketDisconnect(code=WS_CLOSE_UNAUTHORIZED)
+
+        return user, org_id
+    finally:
+        db.close()
 
 # Store active WebSocket connections for batch jobs (for broadcasting)
 active_batch_job_connections: Dict[int, List[WebSocket]] = {}
@@ -63,20 +137,21 @@ def get_records_count(upload: DocumentUpload, db: Session) -> int:
 @router.websocket("/ws/extraction-status/{upload_id}")
 async def websocket_extraction_status(websocket: WebSocket, upload_id: int):
     """
-    WebSocket endpoint for real-time extraction status updates
-    
-    Sends updates every 2 seconds until extraction completes or fails
+    WebSocket endpoint for real-time extraction status updates.
+
+    E1-S2: Requires ?token=<jwt>&org_id=<id> in query string before connect.
+    Sends updates every 2 seconds until extraction completes or fails.
     """
+    user, org_id = await _validate_websocket_auth(websocket)
     await websocket.accept()
     db = SessionLocal()
     last_status = None
-    
+
     try:
         while True:
-            # Query current upload status
-            upload = db.query(DocumentUpload).filter(
-                DocumentUpload.id == upload_id
-            ).first()
+            # Query current upload status (org-scoped)
+            from app.repositories.tenant_scoped import get_upload_for_org
+            upload = get_upload_for_org(db, org_id, upload_id)
             
             if not upload:
                 await websocket.send_json({
@@ -134,7 +209,8 @@ async def websocket_extraction_status(websocket: WebSocket, upload_id: int):
 async def websocket_batch_job_status(websocket: WebSocket, job_id: int):
     """
     WebSocket endpoint for real-time batch job progress updates.
-    
+
+    E1-S2: Requires ?token=<jwt>&org_id=<id> in query string before connect.
     Sends updates every 2 seconds with:
     - Status (pending, running, completed, failed, cancelled)
     - Progress percentage (0-100)
@@ -145,28 +221,28 @@ async def websocket_batch_job_status(websocket: WebSocket, job_id: int):
     
     Supports multiple clients per job (broadcasts to all).
     """
+    user, org_id = await _validate_websocket_auth(websocket)
     await websocket.accept()
     db = SessionLocal()
-    
+
     # Register this connection for broadcasting
     if job_id not in active_batch_job_connections:
         active_batch_job_connections[job_id] = []
     active_batch_job_connections[job_id].append(websocket)
-    
+
     logger.info(f"WebSocket connected for batch job {job_id} (total clients: {len(active_batch_job_connections[job_id])})")
-    
+
     last_status = None
     last_progress = None
     start_time = None
     last_processed = 0
     last_update_time = None
-    
+
     try:
         while True:
-            # Query current job status
-            job = db.query(BatchReprocessingJob).filter(
-                BatchReprocessingJob.id == job_id
-            ).first()
+            # Query current job status (org-scoped)
+            from app.repositories.tenant_scoped import get_batch_job_for_org
+            job = get_batch_job_for_org(db, org_id, job_id)
             
             if not job:
                 await websocket.send_json({

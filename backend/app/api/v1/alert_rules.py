@@ -199,6 +199,9 @@ async def create_alert_rule(
     )
     
     db.add(rule)
+    db.flush()
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.created", current_user.id, current_org.id, "alert_rule", str(rule.id), f"Created rule {rule.rule_name}")
     db.commit()
     db.refresh(rule)
     
@@ -248,7 +251,8 @@ async def update_alert_rule(
         setattr(rule, key, value)
     
     rule.updated_at = datetime.utcnow()
-    
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.updated", current_user.id, current_org.id, "alert_rule", str(rule_id), f"Updated rule {rule.rule_name}")
     db.commit()
     db.refresh(rule)
     
@@ -266,6 +270,9 @@ async def delete_alert_rule(
 ):
     """Delete an alert rule. Tenant-scoped."""
     rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
+    rule_name = rule.rule_name
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.deleted", current_user.id, current_org.id, "alert_rule", str(rule_id), f"Deleted rule {rule_name}")
     db.delete(rule)
     db.commit()
     
@@ -301,6 +308,8 @@ async def test_alert_rule(
         period_id=test_request.period_id
     )
     
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.tested", current_user.id, current_org.id, "alert_rule", str(rule_id), f"Tested rule on property {test_request.property_id}")
     return {
         "success": True,
         "rule_id": rule_id,
@@ -368,6 +377,9 @@ async def create_rule_from_template(
     
     # Update template_id reference
     rule.rule_template_id = rule.id  # Self-reference for template-based rules
+    db.flush()
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.created_from_template", current_user.id, current_org.id, "alert_rule", str(rule.id), f"Created from template {template_id}: {rule.rule_name}")
     db.commit()
     db.refresh(rule)
     
@@ -387,6 +399,8 @@ async def activate_alert_rule(
     rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
     rule.is_active = True
     rule.updated_at = datetime.utcnow()
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.activated", current_user.id, current_org.id, "alert_rule", str(rule_id), f"Activated rule {rule.rule_name}")
     db.commit()
     db.refresh(rule)
     
@@ -404,6 +418,8 @@ async def deactivate_alert_rule(
     rule = _require_alert_rule_for_org(db, current_org.id, rule_id)
     rule.is_active = False
     rule.updated_at = datetime.utcnow()
+    from app.services.audit_service import log_action
+    log_action(db, "alert_rule.deactivated", current_user.id, current_org.id, "alert_rule", str(rule_id), f"Deactivated rule {rule.rule_name}")
     db.commit()
     db.refresh(rule)
     

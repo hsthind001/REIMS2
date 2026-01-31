@@ -25,7 +25,12 @@ class TenantDetail(BaseModel):
     owner_username: str | None
     owner_email: str | None
     created_at: datetime | None
-    
+    plan_id: str | None = None
+    documents_limit: int | None = None
+    documents_used: int | None = None
+    storage_limit_gb: float | None = None
+    storage_used_bytes: int | None = None
+
     class Config:
         from_attributes = True
 
@@ -96,7 +101,12 @@ def list_all_tenants(
             member_count=member_count,
             owner_username=owner.username if owner else None,
             owner_email=owner.email if owner else None,
-            created_at=org.created_at
+            created_at=org.created_at,
+            plan_id=org.plan_id,
+            documents_limit=org.documents_limit,
+            documents_used=org.documents_used,
+            storage_limit_gb=float(org.storage_limit_gb) if org.storage_limit_gb else None,
+            storage_used_bytes=org.storage_used_bytes,
         ))
     
     return tenant_list
@@ -187,6 +197,9 @@ def get_audit_log(
 ):
     """View audit log. Superusers can filter by org or see all."""
     from app.models.audit_log import AuditLog
+    from app.services.audit_service import log_action
+    log_action(db, "admin.audit_log_viewed", current_user.id, organization_id, "audit_log", None, f"Viewed audit log" + (f" for org {organization_id}" if organization_id else " (all)"))
+    db.commit()
     query = db.query(AuditLog)
     if organization_id is not None:
         query = query.filter(AuditLog.organization_id == organization_id)

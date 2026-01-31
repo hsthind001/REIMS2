@@ -56,6 +56,9 @@ class DatabaseTask(Task):
     soft_time_limit=3300
 )
 def backfill_alerts_batch(self, job_id: int):
+    from app.utils.task_idempotency import acquire_alert_backfill_lock, release_alert_backfill_lock
+    task_id = self.request.id
+
     db = SessionLocal()
     try:
         job = db.query(BatchReprocessingJob).filter(BatchReprocessingJob.id == job_id).first()
@@ -64,7 +67,16 @@ def backfill_alerts_batch(self, job_id: int):
             logger.error(f"Alert backfill job {job_id} not found")
             return {"status": "error", "message": f"Job {job_id} not found"}
 
+        if job.status in ("completed", "cancelled"):
+            logger.info(f"Alert backfill job {job_id} already {job.status}, skipping")
+            return {"status": "skipped", "message": f"Job already {job.status}"}
+
+        if not acquire_alert_backfill_lock(job_id, task_id):
+            logger.info(f"Alert backfill job {job_id} already running, skipping duplicate")
+            return {"status": "skipped", "message": "Job already in progress"}
+
         if job.status != 'running':
+            release_alert_backfill_lock(job_id, task_id)
             logger.warning(f"Alert backfill job {job_id} is not running (current: {job.status})")
             return {"status": "error", "message": f"Job {job_id} is not running"}
 
@@ -233,4 +245,5 @@ def backfill_alerts_batch(self, job_id: int):
         return {"status": "error", "message": str(e)}
 
     finally:
+        release_alert_backfill_lock(job_id, task_id)
         db.close()

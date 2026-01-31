@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { buildWsUrl } from '../utils/wsAuth';
 
 interface ExtractionStatus {
   status: string | null;
@@ -63,11 +64,10 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
       pollingIntervalRef.current = setInterval(fetchStatus, 5000);
     };
 
-    // Try WebSocket first
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = API_BASE_URL.replace(/^https?:\/\//, '').replace(/^http:\/\//, '');
-    const wsUrl = `${wsProtocol}//${wsHost}/api/v1/ws/extraction-status/${uploadId}`;
+    // Try WebSocket first (E1-S2: requires token + org_id in query)
+    const wsUrl = buildWsUrl(`/api/v1/ws/extraction-status/${uploadId}`);
 
+    if (wsUrl) {
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -112,6 +112,10 @@ export function useExtractionStatus(uploadId: number | null): ExtractionStatus {
       };
     } catch (err) {
       console.warn('Failed to create WebSocket, using polling:', err);
+      usePollingRef.current = true;
+      startPolling();
+    }
+    } else {
       usePollingRef.current = true;
       startPolling();
     }

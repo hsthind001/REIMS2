@@ -1,14 +1,15 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from app.db.database import Base
 
 
 class ExtractionLog(Base):
-    """Track PDF extraction quality and results"""
+    """Track PDF extraction quality and results (E2-S3: org-scoped)"""
     
     __tablename__ = "extraction_logs"
     
     id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     
     # File information
     filename = Column(String, nullable=False)

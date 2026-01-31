@@ -169,6 +169,9 @@ async def analyze_pdf(
             bucket_name=bucket_name,
             strategies=[strategy]  # Pass strategy
         )
+        from app.services.audit_service import log_action
+        log_action(db, "extraction.analyze_requested", current_user.id, current_org.id, "extraction", task.id, f"Analyze PDF {file.filename} (strategy={strategy})")
+        db.commit()
         
         return {
             "job_id": task.id,
@@ -222,6 +225,7 @@ async def compare_extractions(
     file: UploadFile = File(...),
     engines: List[str] = Query(["pymupdf", "pdfplumber"], description="Engines to compare"),
     lang: str = Query("eng", description="Language for OCR"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid),
     current_org: Organization = Depends(get_current_organization),
 ):
@@ -251,7 +255,9 @@ async def compare_extractions(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "Comparison failed")
             )
-        
+        from app.services.audit_service import log_action
+        log_action(db, "extraction.compare", current_user.id, current_org.id, "extraction", None, f"Compared engines {engines} on {file.filename}")
+        db.commit()
         return result
     
     except HTTPException:
@@ -267,6 +273,7 @@ async def compare_extractions(
 async def validate_extraction(
     file: UploadFile = File(...),
     strategy: str = Query("auto", description="Extraction strategy"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid),
     current_org: Organization = Depends(get_current_organization),
 ):
@@ -294,7 +301,9 @@ async def validate_extraction(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "Validation failed")
             )
-        
+        from app.services.audit_service import log_action
+        log_action(db, "extraction.validate", current_user.id, current_org.id, "extraction", None, f"Validated extraction of {file.filename}")
+        db.commit()
         return {
             "validation": result["validation"],
             "classification": result["classification"],
@@ -464,6 +473,7 @@ async def extract_all_models_scored(
     file: UploadFile = File(...),
     lang: str = Query("eng", description="Language for OCR"),
     scoring_factors: Optional[ScoringFactorsRequest] = Body(None, description="Custom scoring factors (optional)"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid),
     current_org: Organization = Depends(get_current_organization),
 ):
@@ -564,6 +574,9 @@ async def extract_all_models_scored(
         
         # Get scoring factors used
         scoring_factors_used = extractor.scoring_service.factors.__dict__
+        from app.services.audit_service import log_action
+        log_action(db, "extraction.all_models_scored", current_user.id, current_org.id, "extraction", None, f"Scored all models on {file.filename} (best={results['best_model']})")
+        db.commit()
         
         return AllModelsScoredResponse(
             success=True,
@@ -680,6 +693,9 @@ async def rescore_existing_extraction(
         
         # Get scoring factors used
         scoring_factors_used = extractor.scoring_service.factors.__dict__
+        from app.services.audit_service import log_action
+        log_action(db, "extraction.rescored", current_user.id, current_org.id, "extraction", str(upload_id), f"Rescored upload {upload_id} (best={results['best_model']})")
+        db.commit()
         
         return AllModelsScoredResponse(
             success=True,

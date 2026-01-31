@@ -10,7 +10,7 @@ from datetime import datetime
 
 from app.db.database import get_db
 from app.db.minio_client import get_file_url, delete_file
-from app.api.dependencies import get_current_user, get_current_organization, require_org_role, require_superuser
+from app.api.dependencies import get_current_user, get_current_user_hybrid, get_current_organization, require_org_role, require_superuser
 from app.models.user import User
 from app.models.organization import Organization
 from app.services.document_service import DocumentService
@@ -49,12 +49,11 @@ from app.schemas.document import (
     EscrowLinkListResponse,
 )
 
-# Import rate limiter from main app
+# Import rate limiter (E6-S3: org/user-scoped when available)
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.utils.rate_limit_key import get_rate_limit_key
 
-# Create limiter instance for this router
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_rate_limit_key)
 
 router = APIRouter()
 
@@ -72,7 +71,7 @@ def _get_upload_for_org(db: Session, upload_id: int, organization_id: int) -> Op
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("10/minute")  # Rate limit: 10 uploads per minute per IP
+@limiter.limit("10/minute")  # E6-S3: per org/user when X-Organization-ID or Bearer present
 async def upload_document(
     request: Request,  # Required for rate limiter
     property_code: str = Form(..., description="Property code (e.g., WEND001)"),
@@ -171,6 +170,27 @@ async def upload_document(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid PDF file: file content does not match PDF format"
         )
+
+    # E3-S4: Validate page count (max 500 pages to prevent DoS)
+    MAX_PAGE_COUNT = 500
+    try:
+        from pypdf import PdfReader
+        import io
+        content = file.file.read()
+        file.file.seek(0)
+        reader = PdfReader(io.BytesIO(content))
+        page_count = len(reader.pages)
+        if page_count > MAX_PAGE_COUNT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"PDF exceeds maximum page count ({MAX_PAGE_COUNT} pages). This file has {page_count} pages."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # If we cannot read page count, log but allow upload (e.g. corrupted PDF might still be processable)
+        import logging
+        logging.getLogger(__name__).warning(f"Could not validate PDF page count: {e}")
 
     # P2: Check quota before upload
     from app.services.quota_service import check_document_quota, check_storage_quota
@@ -1047,6 +1067,7 @@ async def get_download_url(
     upload_id: int,
     expires_in_seconds: int = Query(3600, ge=60, le=86400, description="URL expiry time in seconds (1 hour default, max 24 hours)"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
     current_org: Organization = Depends(get_current_organization)
 ):
     """
@@ -1079,7 +1100,9 @@ async def get_download_url(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to generate download URL"
             )
-        
+        from app.services.audit_service import log_action
+        log_action(db, "document.downloaded", current_user.id, current_org.id, "document_upload", str(upload_id), f"Downloaded {upload.file_name}")
+        db.commit()
         return DocumentDownloadResponse(
             upload_id=upload.id,
             file_name=upload.file_name,
