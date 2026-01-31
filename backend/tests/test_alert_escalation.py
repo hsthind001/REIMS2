@@ -3,6 +3,7 @@ Unit tests for Alert Escalation Service
 """
 import pytest
 from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
 
 from app.models.committee_alert import CommitteeAlert, AlertSeverity, AlertStatus, AlertType, CommitteeType
 from app.services.alert_escalation_service import AlertEscalationService

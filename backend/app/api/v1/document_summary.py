@@ -10,8 +10,11 @@ from typing import Optional
 import logging
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 from app.services.document_summarization_service import DocumentSummarizationService
-from app.models.property import Property
 
 router = APIRouter(prefix="/document-summary", tags=["document_summary"])
 logger = logging.getLogger(__name__)
@@ -36,7 +39,9 @@ class OMSummaryRequest(BaseModel):
 @router.post("/lease")
 def summarize_lease(
     request: LeaseSummaryRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Summarize a lease document
@@ -73,7 +78,7 @@ def summarize_lease(
     }
     ```
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
+    property = get_property_for_org(db, current_org.id, request.property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -101,7 +106,9 @@ def summarize_lease(
 @router.post("/om")
 def summarize_om(
     request: OMSummaryRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Summarize an Offering Memorandum (OM)
@@ -129,7 +136,7 @@ def summarize_om(
     - Deal comparison
     - Investment committee presentations
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
+    property = get_property_for_org(db, current_org.id, request.property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -159,7 +166,9 @@ async def upload_and_summarize_lease(
     property_id: int = Form(...),
     file: UploadFile = File(...),
     created_by: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Upload and summarize a lease document
@@ -174,7 +183,7 @@ async def upload_and_summarize_lease(
     **Returns:**
     Complete lease summary with extracted data
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -220,14 +229,16 @@ async def upload_and_summarize_om(
     property_id: int = Form(...),
     file: UploadFile = File(...),
     created_by: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Upload and summarize an OM document
 
     Accepts file upload and processes it automatically.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -270,7 +281,9 @@ async def upload_and_summarize_om(
 @router.get("/{summary_id}")
 def get_summary(
     summary_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get document summary by ID
@@ -299,7 +312,9 @@ def get_summary(
 def get_property_summaries(
     property_id: int,
     document_type: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all document summaries for a property
@@ -318,7 +333,7 @@ def get_property_summaries(
     GET /document-summary/properties/1?document_type=LEASE
     ```
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -340,14 +355,16 @@ def get_property_summaries(
 @router.get("/properties/{property_id}/leases")
 def get_lease_summaries(
     property_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all lease summaries for a property
 
     Convenience endpoint to retrieve only lease document summaries.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -369,14 +386,16 @@ def get_lease_summaries(
 @router.get("/properties/{property_id}/oms")
 def get_om_summaries(
     property_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all Offering Memorandum summaries for a property
 
     Convenience endpoint to retrieve only OM summaries.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 

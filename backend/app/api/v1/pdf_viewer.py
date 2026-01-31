@@ -10,7 +10,10 @@ import io
 
 from app.db.database import get_db
 from app.db.minio_client import get_file_url, download_file
-from app.models.document_upload import DocumentUpload
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_upload_for_org
 
 
 router = APIRouter()
@@ -34,7 +37,9 @@ async def stream_pdf(
     y0: Optional[float] = Query(None, description="Y0 coordinate for highlight"),
     x1: Optional[float] = Query(None, description="X1 coordinate for highlight"),
     y1: Optional[float] = Query(None, description="Y1 coordinate for highlight"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Stream PDF file directly through backend to avoid CORS issues
@@ -47,14 +52,13 @@ async def stream_pdf(
     - x0, y0, x1, y1: Bounding box coordinates for highlighting
     """
     try:
-        # Get document upload
-        upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+        upload = get_upload_for_org(db, current_org.id, upload_id)
         if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Document upload {upload_id} not found"
             )
-        
+
         # Download PDF from MinIO
         try:
             pdf_data = download_file(upload.file_path)
@@ -147,7 +151,9 @@ async def get_pdf_viewer_data(
     highlight_y0: Optional[float] = Query(None, description="Top coordinate for highlight"),
     highlight_x1: Optional[float] = Query(None, description="Right coordinate for highlight"),
     highlight_y1: Optional[float] = Query(None, description="Bottom coordinate for highlight"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get PDF viewer data with optional highlight coordinates
@@ -165,14 +171,13 @@ async def get_pdf_viewer_data(
     - has_highlight: Whether highlight coordinates are available
     """
     try:
-        # Get document upload
-        upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+        upload = get_upload_for_org(db, current_org.id, upload_id)
         if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Document upload {upload_id} not found"
             )
-        
+
         # Use backend-proxied URL instead of presigned URL to avoid CORS issues
         from app.core.config import settings
         import os

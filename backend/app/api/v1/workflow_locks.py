@@ -11,9 +11,12 @@ from datetime import datetime
 import logging
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org, get_workflow_lock_for_org
 from app.services.workflow_lock_service import WorkflowLockService
 from app.models.workflow_lock import WorkflowLock, LockReason, LockScope, LockStatus
-from app.models.property import Property
 
 router = APIRouter(prefix="/workflow-locks", tags=["workflow_locks"])
 logger = logging.getLogger(__name__)
@@ -54,7 +57,9 @@ class CheckOperationRequest(BaseModel):
 @router.post("/create")
 def create_lock(
     request: CreateLockRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Create a new workflow lock
@@ -66,6 +71,8 @@ def create_lock(
     Lock Scopes: PROPERTY_ALL, FINANCIAL_UPDATES, REPORTING_ONLY,
                  TRANSACTION_APPROVAL, DATA_ENTRY
     """
+    if not get_property_for_org(db, current_org.id, request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = WorkflowLockService(db)
 
     try:
@@ -97,11 +104,15 @@ def create_lock(
 def release_lock(
     lock_id: int,
     request: ReleaseLockRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Release/unlock a workflow lock
     """
+    if not get_workflow_lock_for_org(db, current_org.id, lock_id):
+        raise HTTPException(status_code=404, detail="Workflow lock not found")
     service = WorkflowLockService(db)
 
     try:
@@ -125,11 +136,15 @@ def release_lock(
 def approve_lock(
     lock_id: int,
     request: ApproveLockRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Approve a workflow lock (committee approval)
     """
+    if not get_workflow_lock_for_org(db, current_org.id, lock_id):
+        raise HTTPException(status_code=404, detail="Workflow lock not found")
     service = WorkflowLockService(db)
 
     try:
@@ -153,11 +168,15 @@ def approve_lock(
 def reject_lock(
     lock_id: int,
     request: RejectLockRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Reject a workflow lock (committee rejection)
     """
+    if not get_workflow_lock_for_org(db, current_org.id, lock_id):
+        raise HTTPException(status_code=404, detail="Workflow lock not found")
     service = WorkflowLockService(db)
 
     try:
@@ -180,7 +199,9 @@ def reject_lock(
 @router.post("/check-operation")
 def check_operation_allowed(
     request: CheckOperationRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Check if an operation is allowed on a property
@@ -193,6 +214,8 @@ def check_operation_allowed(
 
     Returns whether operation is allowed and any blocking locks
     """
+    if not get_property_for_org(db, current_org.id, request.property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = WorkflowLockService(db)
 
     try:
@@ -217,12 +240,14 @@ def check_operation_allowed(
 def get_property_locks(
     property_id: int,
     status: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all workflow locks for a property
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -268,7 +293,9 @@ def get_property_locks(
 @router.get("/pending-approvals")
 def get_pending_approvals(
     committee: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get all locks pending committee approval
@@ -282,8 +309,7 @@ def get_pending_approvals(
     service = WorkflowLockService(db)
 
     try:
-        locks = service.get_pending_approvals(committee)
-
+        locks = service.get_pending_approvals(committee, organization_id=current_org.id)
         return {
             "success": True,
             "committee": committee or "All",
@@ -299,17 +325,18 @@ def get_pending_approvals(
 @router.get("/{lock_id}")
 def get_lock(
     lock_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get a specific workflow lock by ID
     """
-    lock = db.query(WorkflowLock).filter(WorkflowLock.id == lock_id).first()
+    lock = get_workflow_lock_for_org(db, current_org.id, lock_id)
     if not lock:
         raise HTTPException(status_code=404, detail="Workflow lock not found")
 
-    # Get property details
-    property = db.query(Property).filter(Property.id == lock.property_id).first()
+    property = get_property_for_org(db, current_org.id, lock.property_id)
 
     result = lock.to_dict()
     if property:
@@ -324,19 +351,19 @@ def get_lock(
 
 
 @router.get("/statistics/summary")
-def get_lock_statistics(db: Session = Depends(get_db)):
+def get_lock_statistics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get statistics about workflow locks across all properties
     """
     service = WorkflowLockService(db)
 
     try:
-        stats = service.get_lock_statistics()
-
-        return {
-            "success": True,
-            "statistics": stats
-        }
+        stats = service.get_lock_statistics(organization_id=current_org.id)
+        return {"success": True, "statistics": stats}
 
     except Exception as e:
         logger.error(f"Failed to get lock statistics: {str(e)}")
@@ -348,12 +375,14 @@ def pause_property_operations(
     property_id: int,
     reason: str,
     locked_by: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Convenience endpoint to pause all operations on a property
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -381,12 +410,14 @@ def resume_property_operations(
     property_id: int,
     unlocked_by: int,
     resolution_notes: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Convenience endpoint to resume all operations on a property
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 

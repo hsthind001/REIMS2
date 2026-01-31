@@ -151,6 +151,7 @@ def create_financial_period(
 
     period = FinancialPeriod(
         property_id=property_id,
+        organization_id=getattr(property, "organization_id", None),
         period_year=period_year,
         period_month=period_month,
         period_start_date=period_start_date,

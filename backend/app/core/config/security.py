@@ -31,12 +31,11 @@ class SecuritySettings(BaseSettings):
         # Prioritize the value passed by Pydantic (from .env or env var)
         if isinstance(v, str) and v:
             if len(v) < 32:
-                 if len(v) < 32:
-                    raise ValueError(
-                        "SECRET_KEY must be at least 32 characters long for security"
-                    )
+                raise ValueError(
+                    "SECRET_KEY must be at least 32 characters long for security"
+                )
             return v
-            
+
         # Fallback to os.environ if v is empty
         env_key = os.environ.get('SECRET_KEY')
         if env_key:

@@ -367,9 +367,10 @@ class DocumentService:
             self.db.commit()
             print(f"✅ Old upload deleted. Proceeding with new upload...")
         
-        # Step 5: Generate file path and check if exists
+        # Step 5: Generate file path and check if exists (server-side only, never from client)
         file_path = await self.generate_file_path(
             property_obj,
+            period,
             period_year,
             document_type,
             file.filename,
@@ -408,6 +409,7 @@ class DocumentService:
         upload = DocumentUpload(
             property_id=property_obj.id,
             period_id=period.id,
+            organization_id=getattr(property_obj, 'organization_id', None),
             document_type=document_type,
             file_name=file.filename,
             file_path=file_path,
@@ -514,9 +516,14 @@ class DocumentService:
         
         # Calculate fiscal quarter
         fiscal_quarter = ((period_month - 1) // 3) + 1
-        
+
+        # Get organization_id from property
+        property_obj = self.db.query(Property).filter(Property.id == property_id).first()
+        org_id = getattr(property_obj, "organization_id", None) if property_obj else None
+
         period = FinancialPeriod(
             property_id=property_id,
+            organization_id=org_id,
             period_year=period_year,
             period_month=period_month,
             period_start_date=period_start_date,
@@ -559,77 +566,43 @@ class DocumentService:
     async def generate_file_path(
         self,
         property_obj: Property,
+        period: "FinancialPeriod",
         period_year: int,
         document_type: str,
         original_filename: str,
         period_month: Optional[int] = None
     ) -> str:
         """
-        Generate MinIO file path using new organized structure
-        
-        Path format: {property_code}-{property_name}/{year}/{doc_type}/{filename}
-        Example: ESP001-Eastern-Shore-Plaza/2025/balance-sheet/ESP_2025_12_Balance_Sheet.pdf
-        Example (no month): ESP001-Eastern-Shore-Plaza/2025/balance-sheet/ESP_2025_Balance_Sheet.pdf
-        
-        Args:
-            property_obj: Property object (includes code and name)
-            period_year: Year
-            document_type: Document type
-            original_filename: Original filename (preserves extension)
-            period_month: Month (optional, defaults to 1 if not provided)
-        
-        Returns:
-            str: Standardized file path for MinIO
+        Generate MinIO file path using secure org-scoped structure.
+        Server-side only; never accept path from client.
+
+        Path format: org/{org_id}/property/{property_id}/period/{period_id}/{doc_type}/{uuid}.pdf
+        Non-guessable filename prevents enumeration.
         """
-        # Default month to 1 if not provided
+        import uuid
+        import os
         if period_month is None:
             period_month = 1
-        
-        # Get property folder name
-        property_code = property_obj.property_code
-        prop_folder = PROPERTY_NAME_MAPPING.get(property_code, property_obj.property_name.replace(' ', '-'))
-        
-        # Map document types to folder names (with hyphens)
+
+        org_id = getattr(property_obj, "organization_id", None) or 0
+        period_id = getattr(period, "id", 0) or 0
+
         doc_type_folders = {
-            'balance_sheet': 'balance-sheet',
-            'income_statement': 'income-statement',
-            'cash_flow': 'cash-flow',
-            'rent_roll': 'rent-roll',
-            'mortgage_statement': 'mortgage-statement'
+            "balance_sheet": "balance-sheet",
+            "income_statement": "income-statement",
+            "cash_flow": "cash-flow",
+            "rent_roll": "rent-roll",
+            "mortgage_statement": "mortgage-statement",
         }
         doc_folder = doc_type_folders.get(document_type, document_type)
-        
-        # Get file extension from original filename
-        import os
+
         _, ext = os.path.splitext(original_filename)
         if not ext:
-            ext = '.pdf'  # Default to PDF if no extension
-        
-        # Generate standardized filename
-        prop_abbr = property_code[:property_code.find('0')] if '0' in property_code else property_code[:4]
+            ext = ".pdf"
+        unique_id = uuid.uuid4().hex[:16]
+        filename = f"{unique_id}{ext}"
 
-        # Get month name for all document types to ensure unique filenames
-        month_name = datetime(period_year, period_month, 1).strftime('%B')
-
-        # Format filename with month to prevent overwrites
-        if document_type == 'rent_roll':
-            filename = f"{prop_abbr}_{period_year}_Rent_Roll_{month_name}{ext}"
-        else:
-            doc_type_map = {
-                'balance_sheet': 'Balance_Sheet',
-                'income_statement': 'Income_Statement',
-                'cash_flow': 'Cash_Flow_Statement',
-                'mortgage_statement': 'Mortgage_Statement'
-            }
-            type_name = doc_type_map.get(document_type, document_type)
-            # Include month in filename to avoid overwrites (month number format: 01-12)
-            month_num = f"{period_month:02d}"
-            filename = f"{prop_abbr}_{period_year}_{month_num}_{type_name}{ext}"
-        
-        # Build structured path
-        file_path = f"{property_code}-{prop_folder}/{period_year}/{doc_folder}/{filename}"
-        
-        return file_path
+        return f"org/{org_id}/property/{property_obj.id}/period/{period_id}/{doc_folder}/{filename}"
     
     def check_file_exists(self, file_path: str) -> Optional[Dict]:
         """
@@ -1223,9 +1196,10 @@ class DocumentService:
                         failed_count += 1
                         continue
                 
-                # Step 8: Generate file path
+                # Step 8: Generate file path (server-side only)
                 file_path = await self.generate_file_path(
                     property_obj,
+                    period,
                     detected_year,
                     detected_type,
                     file.filename or "document",
@@ -1259,6 +1233,7 @@ class DocumentService:
                 upload_record = DocumentUpload(
                     property_id=property_obj.id,
                     period_id=period.id,
+                    organization_id=getattr(property_obj, 'organization_id', None),
                     document_type=detected_type,
                     file_name=file.filename or "unknown",
                     file_path=file_path,

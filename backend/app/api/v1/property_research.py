@@ -8,8 +8,11 @@ import logging
 import random
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 from app.services.property_research_service import PropertyResearchService
-from app.models.property import Property
 from app.models.rent_roll_data import RentRollData
 from app.models.financial_period import FinancialPeriod
 from app.models.financial_metrics import FinancialMetrics
@@ -25,7 +28,9 @@ async def trigger_property_research(
     property_id: int,
     force_refresh: bool = False,
     background_tasks: BackgroundTasks = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Trigger comprehensive property research
@@ -37,7 +42,7 @@ async def trigger_property_research(
 
     Results are cached for 30 days unless force_refresh=True
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -52,9 +57,14 @@ async def trigger_property_research(
 
 
 @router.get("/{property_id}/research/latest")
-def get_latest_research(property_id: int, db: Session = Depends(get_db)):
+def get_latest_research(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """Get most recent research data for property"""
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -68,8 +78,15 @@ def get_latest_research(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{property_id}/demographics")
-def get_demographics(property_id: int, db: Session = Depends(get_db)):
+def get_demographics(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """Get demographics data only"""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     demographics = service.get_demographics(property_id)
 
@@ -80,8 +97,15 @@ def get_demographics(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{property_id}/employment")
-def get_employment_data(property_id: int, db: Session = Depends(get_db)):
+def get_employment_data(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """Get employment data only"""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     employment = service.get_employment_data(property_id)
 
@@ -92,8 +116,15 @@ def get_employment_data(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{property_id}/developments")
-def get_nearby_developments(property_id: int, db: Session = Depends(get_db)):
+def get_nearby_developments(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """Get nearby development projects"""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     developments = service.get_nearby_developments(property_id)
 
@@ -105,8 +136,15 @@ def get_nearby_developments(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{property_id}/market-analysis")
-def get_market_analysis(property_id: int, db: Session = Depends(get_db)):
+def get_market_analysis(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """Get market analysis data"""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     market = service.get_market_analysis(property_id)
 
@@ -117,12 +155,19 @@ def get_market_analysis(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{property_id}/market-health")
-def get_market_health_score(property_id: int, db: Session = Depends(get_db)):
+def get_market_health_score(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get overall market health score (0-100)
 
     Combines demographics, employment, and market data
     """
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     result = service.generate_market_health_score(property_id)
 
@@ -136,9 +181,13 @@ def get_market_health_score(property_id: int, db: Session = Depends(get_db)):
 def get_demographic_trends(
     property_id: int,
     years: int = 5,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Get demographic trends over time"""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     result = service.get_demographic_trends(property_id, years)
 
@@ -152,9 +201,13 @@ def get_demographic_trends(
 def get_employment_trends(
     property_id: int,
     years: int = 5,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Get employment trends over time"""
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     result = service.get_employment_trends(property_id, years)
 
@@ -165,12 +218,19 @@ def get_employment_trends(
 
 
 @router.get("/{property_id}/development-impact")
-def assess_development_impact(property_id: int, db: Session = Depends(get_db)):
+def assess_development_impact(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Assess impact of nearby developments
 
     Returns impact score and analysis
     """
+    if not get_property_for_org(db, current_org.id, property_id):
+        raise HTTPException(status_code=404, detail="Property not found")
     service = PropertyResearchService(db)
     result = service.assess_development_impact(property_id)
 

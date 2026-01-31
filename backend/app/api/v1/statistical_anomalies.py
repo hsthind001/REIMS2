@@ -10,8 +10,11 @@ from typing import Optional, List
 import logging
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org
 from app.services.statistical_anomaly_service import StatisticalAnomalyService
-from app.models.property import Property
 
 router = APIRouter(prefix="/statistical-anomalies", tags=["statistical_anomalies"])
 logger = logging.getLogger(__name__)
@@ -40,7 +43,9 @@ class ComprehensiveScanRequest(BaseModel):
 @router.post("/zscore/detect")
 def detect_zscore_anomalies(
     request: ZScoreDetectionRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Detect anomalies using Z-score method
@@ -59,8 +64,7 @@ def detect_zscore_anomalies(
     - operating_expenses
     - net_income
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
 
     service = StatisticalAnomalyService(db)
@@ -86,7 +90,9 @@ def detect_zscore_anomalies(
 @router.post("/cusum/detect")
 def detect_cusum_anomalies(
     request: CUSUMDetectionRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Detect anomalies using CUSUM (Cumulative Sum) method
@@ -104,8 +110,7 @@ def detect_cusum_anomalies(
     - Lower drift = more sensitive to small changes
     - Higher drift = only detects larger shifts
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
 
     service = StatisticalAnomalyService(db)
@@ -135,17 +140,17 @@ def get_zscore_anomalies(
     metric_name: str = Query(..., description="Metric to analyze"),
     lookback_periods: int = Query(default=12, ge=3, le=50),
     threshold: float = Query(default=2.0, ge=1.0, le=5.0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get Z-score anomalies for a property and metric
 
     Convenience GET endpoint for Z-score detection
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = StatisticalAnomalyService(db)
 
     try:
@@ -173,17 +178,17 @@ def get_cusum_anomalies(
     lookback_periods: int = Query(default=12, ge=5, le=50),
     threshold: float = Query(default=3.0, ge=1.0, le=10.0),
     drift: float = Query(default=0.5, ge=0.1, le=2.0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get CUSUM anomalies for a property and metric
 
     Convenience GET endpoint for CUSUM detection
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = StatisticalAnomalyService(db)
 
     try:
@@ -211,7 +216,9 @@ def detect_volatility_spikes(
     metric_name: str = Query(..., description="Metric to analyze"),
     lookback_periods: int = Query(default=12, ge=6, le=50),
     window_size: int = Query(default=3, ge=2, le=6),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Detect volatility spikes using rolling standard deviation
@@ -226,10 +233,8 @@ def detect_volatility_spikes(
     - Volatility > 2x average = Warning
     - Volatility > 3x average = Critical
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = StatisticalAnomalyService(db)
 
     try:
@@ -253,7 +258,9 @@ def detect_volatility_spikes(
 @router.post("/comprehensive-scan")
 def comprehensive_anomaly_scan(
     request: ComprehensiveScanRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Comprehensive anomaly scan across multiple metrics
@@ -272,10 +279,9 @@ def comprehensive_anomaly_scan(
     - Alerts created for critical anomalies
     - Detailed results by metric
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
+    property = get_property_for_org(db, current_org.id, request.property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = StatisticalAnomalyService(db)
 
     try:
@@ -283,7 +289,6 @@ def comprehensive_anomaly_scan(
             property_id=request.property_id,
             metrics=request.metrics
         )
-
         return {
             "success": True,
             "property_id": request.property_id,
@@ -300,7 +305,9 @@ def comprehensive_anomaly_scan(
 def get_comprehensive_scan(
     property_id: int,
     metrics: Optional[str] = Query(None, description="Comma-separated list of metrics"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Comprehensive anomaly scan (GET endpoint)
@@ -312,7 +319,7 @@ def get_comprehensive_scan(
     GET /statistical-anomalies/properties/1/comprehensive-scan?metrics=total_revenue,noi,occupancy_rate
     ```
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = get_property_for_org(db, current_org.id, property_id)
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -342,7 +349,9 @@ def get_comprehensive_scan(
 
 
 @router.get("/metrics/available")
-def get_available_metrics():
+def get_available_metrics(
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Get list of available metrics for anomaly detection
 

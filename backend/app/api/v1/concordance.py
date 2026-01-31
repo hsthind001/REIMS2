@@ -11,8 +11,11 @@ from typing import Optional
 import logging
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_upload_for_org
 from app.services.concordance_service import ConcordanceService
-from app.models.document_upload import DocumentUpload
 
 router = APIRouter(prefix="/concordance", tags=["concordance"])
 logger = logging.getLogger(__name__)
@@ -21,7 +24,9 @@ logger = logging.getLogger(__name__)
 @router.get("/{upload_id}")
 async def get_concordance_table(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get concordance table for a document upload
@@ -66,11 +71,10 @@ async def get_concordance_table(
     }
     ```
     """
-    # Verify upload exists
-    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+    upload = get_upload_for_org(db, current_org.id, upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
-    
+
     service = ConcordanceService(db)
     result = service.get_concordance_table(upload_id)
     
@@ -83,18 +87,19 @@ async def get_concordance_table(
 @router.get("/{upload_id}/export/csv")
 async def export_concordance_table_csv(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Export concordance table as CSV
     
     Returns CSV file with field-by-field comparison across all models.
     """
-    # Verify upload exists
-    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+    upload = get_upload_for_org(db, current_org.id, upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
-    
+
     service = ConcordanceService(db)
     csv_content = service.export_concordance_table_csv(upload_id)
     
@@ -110,7 +115,9 @@ async def export_concordance_table_csv(
 @router.get("/{upload_id}/export/excel")
 async def export_concordance_table_excel(
     upload_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Export concordance table as Excel
@@ -125,12 +132,11 @@ async def export_concordance_table_excel(
             status_code=500,
             detail="pandas and openpyxl are required for Excel export. Install with: pip install pandas openpyxl"
         )
-    
-    # Verify upload exists
-    upload = db.query(DocumentUpload).filter(DocumentUpload.id == upload_id).first()
+
+    upload = get_upload_for_org(db, current_org.id, upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
-    
+
     service = ConcordanceService(db)
     result = service.get_concordance_table(upload_id)
     

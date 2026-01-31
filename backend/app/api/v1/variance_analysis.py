@@ -12,6 +12,10 @@ import logging
 from datetime import datetime
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
+from app.models.user import User
+from app.models.organization import Organization
+from app.repositories.tenant_scoped import get_property_for_org, get_period_for_org
 from app.services.variance_analysis_service import VarianceAnalysisService
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
@@ -38,7 +42,9 @@ class DataStatusResponse(BaseModel):
 def get_variance_analysis(
     property_id: int,
     period_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get variance analysis summary.
@@ -47,6 +53,8 @@ def get_variance_analysis(
     If not, attempts to find the latest closed period.
     """
     try:
+        if not get_property_for_org(db, current_org.id, property_id):
+            raise HTTPException(status_code=404, detail="Property not found")
         # If no period specified, find the latest closed period for this property
         if not period_id:
             period = db.query(FinancialPeriod).filter(
@@ -106,7 +114,9 @@ class VarianceReportRequest(BaseModel):
 @router.post("/budget")
 def analyze_budget_variance(
     request: BudgetVarianceRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Analyze variance between actual results and budget
@@ -133,13 +143,9 @@ def analyze_budget_variance(
     - Summary totals
     - Alerts created for critical variances
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == request.financial_period_id
-    ).first()
+    period = get_period_for_org(db, current_org.id, request.financial_period_id)
     if not period:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
@@ -165,7 +171,9 @@ def analyze_budget_variance(
 @router.post("/forecast")
 def analyze_forecast_variance(
     request: ForecastVarianceRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Analyze variance between actual results and forecast
@@ -182,13 +190,9 @@ def analyze_forecast_variance(
     - Rolling forecast validation
     - Mid-year performance tracking
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == request.financial_period_id
-    ).first()
+    period = get_period_for_org(db, current_org.id, request.financial_period_id)
     if not period:
         raise HTTPException(status_code=404, detail="Financial period not found")
 
@@ -216,17 +220,17 @@ def get_budget_variance(
     property_id: int,
     period_id: int,
     budget_id: Optional[int] = Query(None, description="Specific budget ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get budget variance analysis (GET endpoint)
 
     Convenience GET endpoint for budget variance analysis.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = VarianceAnalysisService(db)
 
     try:
@@ -251,15 +255,16 @@ def get_forecast_variance(
     property_id: int,
     period_id: int,
     forecast_id: Optional[int] = Query(None, description="Specific forecast ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get forecast variance analysis (GET endpoint)
 
     Convenience GET endpoint for forecast variance analysis.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
 
     service = VarianceAnalysisService(db)
@@ -285,7 +290,9 @@ def get_forecast_variance(
 def approve_budget(
     budget_id: int,
     approved_by: Optional[int] = Query(None, description="User ID approving (optional)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Approve a budget so AUDIT-51 and TREND-3 use it in reconciliation.
@@ -295,6 +302,8 @@ def approve_budget(
     """
     budget = db.query(Budget).filter(Budget.id == budget_id).first()
     if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    if not get_property_for_org(db, current_org.id, budget.property_id):
         raise HTTPException(status_code=404, detail="Budget not found")
     if budget.status not in (BudgetStatus.DRAFT, BudgetStatus.REVISED):
         raise HTTPException(
@@ -317,7 +326,9 @@ def approve_budget(
 @router.put("/forecasts/{forecast_id}/approve")
 def approve_forecast(
     forecast_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Approve a forecast so AUDIT-52 uses it in reconciliation.
@@ -326,6 +337,8 @@ def approve_forecast(
     """
     forecast = db.query(Forecast).filter(Forecast.id == forecast_id).first()
     if not forecast:
+        raise HTTPException(status_code=404, detail="Forecast not found")
+    if not get_property_for_org(db, current_org.id, forecast.property_id):
         raise HTTPException(status_code=404, detail="Forecast not found")
     if forecast.status not in (BudgetStatus.DRAFT, BudgetStatus.REVISED):
         raise HTTPException(
@@ -352,7 +365,9 @@ class ApproveByPeriodRequest(BaseModel):
 @router.post("/budgets/approve-by-period")
 def approve_budgets_by_period(
     request: ApproveByPeriodRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Approve all DRAFT/REVISED budgets for a property and period.
@@ -360,14 +375,10 @@ def approve_budgets_by_period(
     Convenience endpoint after bulk import: approve every budget row for the given
     property_id and financial_period_id so AUDIT-51 and TREND-3 use them.
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == request.financial_period_id,
-        FinancialPeriod.property_id == request.property_id,
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, request.financial_period_id)
+    if not period or period.property_id != request.property_id:
         raise HTTPException(status_code=404, detail="Financial period not found for this property")
     budgets = db.query(Budget).filter(
         Budget.property_id == request.property_id,
@@ -392,7 +403,9 @@ def approve_budgets_by_period(
 @router.post("/forecasts/approve-by-period")
 def approve_forecasts_by_period(
     request: ApproveByPeriodRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Approve all DRAFT/REVISED forecasts for a property and period.
@@ -400,14 +413,10 @@ def approve_forecasts_by_period(
     Convenience endpoint after bulk import: approve every forecast row for the given
     property_id and financial_period_id so AUDIT-52 uses them.
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == request.financial_period_id,
-        FinancialPeriod.property_id == request.property_id,
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, request.financial_period_id)
+    if not period or period.property_id != request.property_id:
         raise HTTPException(status_code=404, detail="Financial period not found for this property")
     forecasts = db.query(Forecast).filter(
         Forecast.property_id == request.property_id,
@@ -429,7 +438,9 @@ def approve_forecasts_by_period(
 @router.post("/comprehensive-report")
 def get_comprehensive_variance_report(
     request: VarianceReportRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get comprehensive variance report
@@ -441,10 +452,8 @@ def get_comprehensive_variance_report(
     - Board presentations
     - Comprehensive performance review
     """
-    property = db.query(Property).filter(Property.id == request.property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, request.property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = VarianceAnalysisService(db)
 
     try:
@@ -468,17 +477,17 @@ def get_comprehensive_report(
     period_id: int,
     include_budget: bool = Query(default=True),
     include_forecast: bool = Query(default=True),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get comprehensive variance report (GET endpoint)
 
     Returns both budget and forecast variance in single call.
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = VarianceAnalysisService(db)
 
     try:
@@ -501,7 +510,9 @@ def get_variance_trend(
     property_id: int,
     variance_type: str = Query(default="budget", regex="^(budget|forecast)$"),
     lookback_periods: int = Query(default=6, ge=2, le=24),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get variance trend over time
@@ -522,10 +533,8 @@ def get_variance_trend(
     - Budget/forecast accuracy tracking
     - Early warning of systemic issues
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = VarianceAnalysisService(db)
 
     try:
@@ -549,7 +558,9 @@ def get_variance_trend(
 def get_period_over_period_variance(
     property_id: int,
     period_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get period-over-period variance analysis
@@ -571,10 +582,8 @@ def get_period_over_period_variance(
     - Previous and current period details
     - Summary totals and severity breakdown
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
-    if not property:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-
     service = VarianceAnalysisService(db)
 
     try:
@@ -598,20 +607,18 @@ def get_data_status(
     property_id: int,
     period_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Get reconciliation data status for a property/period.
 
     Used by the UI to show checklist: metrics calculated, approved budget, approved forecast.
     """
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
-    period = db.query(FinancialPeriod).filter(
-        FinancialPeriod.id == period_id,
-        FinancialPeriod.property_id == property_id,
-    ).first()
-    if not period:
+    period = get_period_for_org(db, current_org.id, period_id)
+    if not period or period.property_id != property_id:
         raise HTTPException(status_code=404, detail="Period not found")
 
     has_metrics = (
@@ -693,10 +700,11 @@ def list_budgets_for_period(
     property_id: int,
     period_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """List budget line items for a property/period (for display and inline edit)."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
     rows = (
         db.query(Budget)
@@ -724,10 +732,11 @@ def list_forecasts_for_period(
     property_id: int,
     period_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """List forecast line items for a property/period (for display and inline edit)."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
+    if not get_property_for_org(db, current_org.id, property_id):
         raise HTTPException(status_code=404, detail="Property not found")
     rows = (
         db.query(Forecast)
@@ -755,10 +764,14 @@ def update_budget_line(
     budget_id: int,
     body: BudgetLineUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Update a single budget line (e.g. budgeted_amount). Only DRAFT/REVISED can be edited."""
     budget = db.query(Budget).filter(Budget.id == budget_id).first()
     if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    if not get_property_for_org(db, current_org.id, budget.property_id):
         raise HTTPException(status_code=404, detail="Budget not found")
     if budget.status not in (BudgetStatus.DRAFT, BudgetStatus.REVISED):
         raise HTTPException(
@@ -783,10 +796,14 @@ def update_forecast_line(
     forecast_id: int,
     body: ForecastLineUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """Update a single forecast line (e.g. forecasted_amount). Only DRAFT/REVISED can be edited."""
     forecast = db.query(Forecast).filter(Forecast.id == forecast_id).first()
     if not forecast:
+        raise HTTPException(status_code=404, detail="Forecast not found")
+    if not get_property_for_org(db, current_org.id, forecast.property_id):
         raise HTTPException(status_code=404, detail="Forecast not found")
     if forecast.status not in (BudgetStatus.DRAFT, BudgetStatus.REVISED):
         raise HTTPException(
@@ -807,7 +824,9 @@ def update_forecast_line(
 
 
 @router.get("/thresholds")
-def get_variance_thresholds():
+def get_variance_thresholds(
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Get variance analysis thresholds and tolerances
 
@@ -878,13 +897,20 @@ def list_variance_alerts(
     status: Optional[str] = Query(None, description="Filter by status: ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED"),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     List variance breach alerts (AUDIT-48 / CommitteeAlert VARIANCE_BREACH).
     Used by variance alerts dashboard and Financial Integrity Hub.
     """
-    query = db.query(CommitteeAlert).filter(
-        CommitteeAlert.alert_type == AlertType.VARIANCE_BREACH
+    query = (
+        db.query(CommitteeAlert)
+        .join(Property, CommitteeAlert.property_id == Property.id)
+        .filter(
+            CommitteeAlert.alert_type == AlertType.VARIANCE_BREACH,
+            Property.organization_id == current_org.id,
+        )
     )
     if property_id is not None:
         query = query.filter(CommitteeAlert.property_id == property_id)

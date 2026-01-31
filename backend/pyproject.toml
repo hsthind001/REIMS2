@@ -1,0 +1,24 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+# Start with critical issues only; expand over time
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = [
+    "E501",  # line too long
+    "E402",  # module import not at top
+    "E722",  # bare except
+    "E712",  # true-false comparison
+    "E711",  # none comparison
+    "E701",  # multiple statements on one line
+    "E721",  # type comparison
+    "E741",  # ambiguous variable name
+    "E713",  # not in test
+    "F401",  # unused import
+    "F841",  # unused variable
+    "F541",  # f-string missing placeholders
+    "F811",  # redefined while unused
+    "F402",  # import shadowed by loop var
+    "F821",  # undefined name (pre-existing; fix in follow-up)
+]

@@ -534,7 +534,8 @@ async def get_anomaly_detailed(
     metadata = _parse_metadata(anomaly.metadata_json)
     document = None
     if anomaly.document_id:
-        document = db.query(DocumentUpload).filter(DocumentUpload.id == anomaly.document_id).first()
+        from app.repositories.tenant_scoped import get_upload_for_org
+        document = get_upload_for_org(db, current_org.id, anomaly.document_id)
 
     property_id = metadata.get("property_id")
     if isinstance(property_id, str) and property_id.isdigit():
@@ -861,7 +862,8 @@ async def get_contribution_waterfall(
     metadata = _parse_metadata(anomaly.metadata_json)
     document = None
     if anomaly.document_id:
-        document = db.query(DocumentUpload).filter(DocumentUpload.id == anomaly.document_id).first()
+        from app.repositories.tenant_scoped import get_upload_for_org
+        document = get_upload_for_org(db, current_org.id, anomaly.document_id)
 
     property_id = metadata.get("property_id")
     if isinstance(property_id, str) and property_id.isdigit():

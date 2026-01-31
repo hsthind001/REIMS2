@@ -10,9 +10,12 @@ from typing import Optional
 import logging
 
 from app.db.database import get_db
+from app.api.dependencies import get_current_user_hybrid, get_current_organization
 from app.services.bulk_import_service import BulkImportService
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
+from app.models.user import User
+from app.models.organization import Organization
 
 # Import rate limiter
 from slowapi import Limiter
@@ -34,7 +37,9 @@ async def import_budgets(
     budget_name: str = Form(...),
     budget_year: int = Form(...),
     created_by: int = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Import budget data from CSV/Excel file
@@ -65,8 +70,12 @@ async def import_budgets(
     - failed: Number of records that failed
     - errors: List of errors with row numbers
     """
-    # Verify property and period exist
-    property = db.query(Property).filter(Property.id == property_id).first()
+    # Verify property and period exist and belong to org
+    property = (
+        db.query(Property)
+        .filter(Property.id == property_id, Property.organization_id == current_org.id)
+        .first()
+    )
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -119,7 +128,9 @@ async def import_forecasts(
     forecast_year: int = Form(...),
     forecast_type: str = Form(...),
     created_by: int = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Import forecast data from CSV/Excel file
@@ -141,7 +152,11 @@ async def import_forecasts(
     - assumptions
     - notes
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = (
+        db.query(Property)
+        .filter(Property.id == property_id, Property.organization_id == current_org.id)
+        .first()
+    )
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -195,7 +210,9 @@ async def import_forecasts(
 async def import_chart_of_accounts(
     file: UploadFile = File(...),
     property_id: int = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Import chart of accounts from CSV/Excel file
@@ -220,7 +237,11 @@ async def import_chart_of_accounts(
     5000,Operating Expenses,Expense,,Total operating expenses
     ```
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = (
+        db.query(Property)
+        .filter(Property.id == property_id, Property.organization_id == current_org.id)
+        .first()
+    )
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -257,7 +278,9 @@ async def import_income_statement(
     property_id: int = Form(...),
     financial_period_id: int = Form(...),
     upload_id: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Import income statement data from CSV/Excel file (Template v1.0 compliant)
@@ -278,7 +301,11 @@ async def import_income_statement(
     - Import from external systems
     - Batch data entry
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = (
+        db.query(Property)
+        .filter(Property.id == property_id, Property.organization_id == current_org.id)
+        .first()
+    )
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -323,7 +350,9 @@ async def import_balance_sheet(
     property_id: int = Form(...),
     financial_period_id: int = Form(...),
     upload_id: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Import balance sheet data from CSV/Excel file (Template v1.0 compliant)
@@ -383,7 +412,9 @@ async def import_cash_flow(
     property_id: int = Form(...),
     financial_period_id: int = Form(...),
     upload_id: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Import cash flow data from CSV/Excel file (Template v1.0 compliant)
@@ -399,7 +430,11 @@ async def import_cash_flow(
     - is_subtotal, is_total, is_inflow, cash_flow_category
     - extraction_confidence, notes
     """
-    property = db.query(Property).filter(Property.id == property_id).first()
+    property = (
+        db.query(Property)
+        .filter(Property.id == property_id, Property.organization_id == current_org.id)
+        .first()
+    )
     if not property:
         raise HTTPException(status_code=404, detail="Property not found")
 
@@ -439,7 +474,12 @@ async def import_cash_flow(
 
 
 @router.get("/templates/{data_type}")
-def get_import_template(data_type: str, db: Session = Depends(get_db)):
+def get_import_template(
+    data_type: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get CSV template for a specific data type
 
@@ -487,7 +527,12 @@ def get_import_template(data_type: str, db: Session = Depends(get_db)):
 
 
 @router.get("/templates/{data_type}/json")
-def get_template_json(data_type: str, db: Session = Depends(get_db)):
+def get_template_json(
+    data_type: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get template structure as JSON
 
@@ -512,7 +557,10 @@ def get_template_json(data_type: str, db: Session = Depends(get_db)):
 
 
 @router.get("/supported-formats")
-def get_supported_formats():
+def get_supported_formats(
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
     """
     Get list of supported file formats
 

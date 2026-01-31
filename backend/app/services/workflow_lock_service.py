@@ -302,21 +302,23 @@ class WorkflowLockService:
 
     def get_pending_approvals(
         self,
-        committee: Optional[str] = None
+        committee: Optional[str] = None,
+        organization_id: Optional[int] = None,
     ) -> List[Dict]:
         """
-        Get all locks pending committee approval
+        Get all locks pending committee approval.
+        If organization_id is provided, only return locks for that org's properties.
         """
         query = self.db.query(WorkflowLock).filter(
             WorkflowLock.status == LockStatus.ACTIVE,
             WorkflowLock.requires_committee_approval == True
         )
-
+        if organization_id is not None:
+            query = query.join(Property).filter(Property.organization_id == organization_id)
         if committee:
             query = query.filter(WorkflowLock.approval_committee == committee)
 
         locks = query.order_by(WorkflowLock.locked_at).all()
-
         return [lock.to_dict() for lock in locks]
 
     def check_auto_release_conditions(self, lock_id: int) -> Dict:
@@ -431,29 +433,33 @@ class WorkflowLockService:
             logger.error(f"Failed to check auto-release conditions: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    def get_lock_statistics(self) -> Dict:
+    def get_lock_statistics(self, organization_id: Optional[int] = None) -> Dict:
         """
-        Get statistics about workflow locks across all properties
+        Get statistics about workflow locks.
+        If organization_id is provided, only count locks for that org's properties.
         """
         try:
-            # Use func.count with specific columns to avoid loading all model columns
             from sqlalchemy import func
-            total_locks = self.db.query(func.count(WorkflowLock.id)).scalar() or 0
-            active_locks = self.db.query(func.count(WorkflowLock.id)).filter(
-                WorkflowLock.status == LockStatus.ACTIVE
-            ).scalar() or 0
-            pending_approvals = self.db.query(func.count(WorkflowLock.id)).filter(
-                WorkflowLock.status == LockStatus.ACTIVE,
+            base = self.db.query(WorkflowLock)
+            if organization_id is not None:
+                base = base.join(Property).filter(Property.organization_id == organization_id)
+            total_locks = base.count()
+            active_q = base.filter(WorkflowLock.status == LockStatus.ACTIVE)
+            active_locks = active_q.count()
+            pending_approvals = active_q.filter(
                 WorkflowLock.requires_committee_approval == True
-            ).scalar() or 0
+            ).count()
 
             # Get locks by reason
             locks_by_reason = {}
             for reason in LockReason:
-                count = self.db.query(func.count(WorkflowLock.id)).filter(
+                q = self.db.query(WorkflowLock).filter(
                     WorkflowLock.lock_reason == reason,
                     WorkflowLock.status == LockStatus.ACTIVE
-                ).scalar() or 0
+                )
+                if organization_id is not None:
+                    q = q.join(Property).filter(Property.organization_id == organization_id)
+                count = q.count()
                 if count > 0:
                     locks_by_reason[reason.value] = count
 

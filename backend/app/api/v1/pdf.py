@@ -1,8 +1,10 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import io
+from app.api.dependencies import get_current_user_hybrid
+from app.models.user import User
 from app.utils.pdf import (
     extract_text_from_pdf,
     get_pdf_metadata,
@@ -72,7 +74,10 @@ class PDFWatermarkRequest(BaseModel):
 
 
 @router.post("/pdf/extract-text", response_model=PDFTextResponse)
-async def extract_pdf_text(file: UploadFile = File(...)):
+async def extract_pdf_text(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Extract all text from a PDF file
     """
@@ -104,7 +109,10 @@ async def extract_pdf_text(file: UploadFile = File(...)):
 
 
 @router.post("/pdf/metadata", response_model=PDFMetadataResponse)
-async def get_metadata(file: UploadFile = File(...)):
+async def get_metadata(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Extract metadata from a PDF file
     """
@@ -136,7 +144,10 @@ async def get_metadata(file: UploadFile = File(...)):
 
 
 @router.post("/pdf/info", response_model=PDFInfoResponse)
-async def get_info(file: UploadFile = File(...)):
+async def get_info(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Get comprehensive PDF information
     """
@@ -171,7 +182,8 @@ async def get_info(file: UploadFile = File(...)):
 async def convert_to_images(
     file: UploadFile = File(...),
     dpi: int = Query(150, description="Image resolution (72-300)", ge=72, le=300),
-    format: str = Query("png", description="Output format (png or jpg)")
+    format: str = Query("png", description="Output format (png or jpg)"),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Convert PDF pages to images
@@ -221,7 +233,10 @@ async def convert_to_images(
 
 
 @router.post("/pdf/extract-images")
-async def extract_images(file: UploadFile = File(...)):
+async def extract_images(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Extract all embedded images from a PDF
     
@@ -274,7 +289,8 @@ async def extract_images(file: UploadFile = File(...)):
 async def split_pdf_endpoint(
     file: UploadFile = File(...),
     start_page: int = Query(..., description="Starting page number (1-indexed)"),
-    end_page: int = Query(..., description="Ending page number (1-indexed)")
+    end_page: int = Query(..., description="Ending page number (1-indexed)"),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Extract specific pages from a PDF
@@ -315,7 +331,10 @@ async def split_pdf_endpoint(
 
 
 @router.post("/pdf/merge")
-async def merge_pdf_files(files: List[UploadFile] = File(...)):
+async def merge_pdf_files(
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user_hybrid),
+):
     """
     Merge multiple PDF files into one
     
@@ -366,7 +385,8 @@ async def merge_pdf_files(files: List[UploadFile] = File(...)):
 @router.post("/pdf/compress")
 async def compress_pdf_endpoint(
     file: UploadFile = File(...),
-    quality: int = Query(75, description="Image quality (1-100)", ge=1, le=100)
+    quality: int = Query(75, description="Image quality (1-100)", ge=1, le=100),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Compress a PDF by reducing image quality
@@ -413,7 +433,8 @@ async def compress_pdf_endpoint(
 async def add_watermark_endpoint(
     file: UploadFile = File(...),
     text: str = Query(..., description="Watermark text"),
-    opacity: float = Query(0.3, description="Watermark opacity (0-1)", ge=0, le=1)
+    opacity: float = Query(0.3, description="Watermark opacity (0-1)", ge=0, le=1),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Add a text watermark to all pages of a PDF
@@ -454,7 +475,7 @@ async def add_watermark_endpoint(
 
 
 @router.get("/pdf/health")
-async def pdf_health():
+async def pdf_health(current_user: User = Depends(get_current_user_hybrid)):
     """
     Check PDF processing service health
     """

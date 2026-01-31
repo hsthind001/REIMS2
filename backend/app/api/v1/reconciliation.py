@@ -19,6 +19,7 @@ from app.api.dependencies import get_current_user, get_current_organization, get
 from app.models.user import User
 from app.models.organization import Organization
 from app.models.property import Property
+from app.repositories.tenant_scoped import get_reconciliation_session_for_org
 from app.services.reconciliation_service import ReconciliationService
 
 
@@ -285,20 +286,20 @@ async def get_session_details(
 async def complete_reconciliation_session(
     session_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Mark reconciliation session as complete
-    
-    Finalizes the session and locks the reconciliation.
+    Mark reconciliation session as complete.
+    Tenant-scoped: session must belong to current org.
     """
-    service = ReconciliationService(db)
-    
+    session = get_reconciliation_session_for_org(db, current_org.id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    service = ReconciliationService(db, organization_id=current_org.id)
     success = service.complete_session(session_id)
-    
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
-    
     return {"success": True, "message": "Session completed successfully"}
 
 
@@ -307,22 +308,15 @@ async def generate_reconciliation_report(
     session_id: int,
     format: str = Query("excel", description="Report format: excel or pdf"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
-    Generate reconciliation report
-    
-    Creates Excel or PDF report with summary and detailed differences.
-    
-    Note: This is a placeholder. Full implementation requires openpyxl/reportlab.
+    Generate reconciliation report. Tenant-scoped: session must belong to current org.
     """
-    from app.models.reconciliation_session import ReconciliationSession
     from app.models.reconciliation_difference import ReconciliationDifference
-    
-    session = db.query(ReconciliationSession).filter(
-        ReconciliationSession.id == session_id
-    ).first()
-    
+
+    session = get_reconciliation_session_for_org(db, current_org.id, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     

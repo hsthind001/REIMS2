@@ -7,7 +7,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from app.core.config import settings
+from app.core.config import settings, validate_production_config
+
+# Fail fast in prod/staging if required env vars missing
+validate_production_config()
+
 import logging
 from app.api.v1 import health, users, tasks, storage, ocr, pdf, extraction, properties, chart_of_accounts, documents, validations, metrics, review, reports, auth, exports, reconciliation, anomalies, alerts, rbac, public_api, property_research, tenant_recommendations, nlq, risk_alerts, workflow_locks, statistical_anomalies, variance_analysis, bulk_import, document_summary, pdf_viewer, concordance, anomaly_thresholds, websocket, quality, financial_data, mortgage, alert_rules, financial_periods, batch_reprocessing, pdf_coordinates, model_optimization, portfolio_analytics, notifications, risk_workbench, forensic_reconciliation, forensic_audit, covenant_compliance, self_learning, extraction_learning, market_intelligence, document_intelligence, billing, admin, gl
 from app.api.v1.endpoints import onboarding
@@ -19,8 +23,8 @@ import app.models  # noqa: F401
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Schema is managed by Alembic migrations only. Run `alembic upgrade head` before starting.
+# Do NOT use Base.metadata.create_all() at runtime (E4-S1).
 
 # Initialize self-learning system on startup
 try:

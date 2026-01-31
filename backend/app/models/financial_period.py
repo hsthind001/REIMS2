@@ -11,6 +11,7 @@ class FinancialPeriod(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id'), nullable=True, index=True)
     
     # Period definition
     period_year = Column(Integer, nullable=False, index=True)  # 2024, 2025
@@ -37,6 +38,7 @@ class FinancialPeriod(Base):
     
     # Relationships
     property = relationship("Property", back_populates="financial_periods")
+    organization = relationship("Organization")
     document_uploads = relationship("DocumentUpload", back_populates="period", cascade="all, delete-orphan")
     balance_sheet_data = relationship("BalanceSheetData", back_populates="period", cascade="all, delete-orphan")
     income_statement_data = relationship("IncomeStatementData", back_populates="period", cascade="all, delete-orphan")

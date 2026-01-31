@@ -12,6 +12,7 @@ class DocumentUpload(Base):
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
     period_id = Column(Integer, ForeignKey('financial_periods.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id'), nullable=True, index=True)
     
     # Document type
     document_type = Column(String(50), nullable=False, index=True)  # balance_sheet, income_statement, cash_flow, rent_roll
@@ -48,6 +49,7 @@ class DocumentUpload(Base):
     # Relationships
     property = relationship("Property", back_populates="document_uploads")
     period = relationship("FinancialPeriod", back_populates="document_uploads")
+    organization = relationship("Organization")
     extraction_log = relationship("ExtractionLog", foreign_keys=[extraction_id])
     field_metadata = relationship("ExtractionFieldMetadata", back_populates="document", cascade="all, delete-orphan")
     balance_sheet_data = relationship("BalanceSheetData", back_populates="upload", cascade="all, delete-orphan")

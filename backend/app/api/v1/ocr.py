@@ -1,6 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from app.api.dependencies import get_current_user_hybrid
+from app.models.user import User
 from app.utils.ocr import (
     extract_text_from_image,
     extract_text_with_boxes,
@@ -55,7 +57,8 @@ class VersionResponse(BaseModel):
 async def ocr_image(
     file: UploadFile = File(...),
     lang: str = Query("eng", description="Language code (eng, fra, deu, etc.)"),
-    config: str = Query("", description="Tesseract config options")
+    config: str = Query("", description="Tesseract config options"),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Extract text from an image file
@@ -96,7 +99,8 @@ async def ocr_image(
 @router.post("/ocr/image/boxes", response_model=OCRBoxesResponse)
 async def ocr_image_with_boxes(
     file: UploadFile = File(...),
-    lang: str = Query("eng", description="Language code")
+    lang: str = Query("eng", description="Language code"),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Extract text from image with bounding box coordinates
@@ -134,7 +138,8 @@ async def ocr_image_with_boxes(
 async def ocr_pdf(
     file: UploadFile = File(...),
     lang: str = Query("eng", description="Language code"),
-    dpi: int = Query(300, description="DPI for PDF conversion", ge=72, le=600)
+    dpi: int = Query(300, description="DPI for PDF conversion", ge=72, le=600),
+    current_user: User = Depends(get_current_user_hybrid),
 ):
     """
     Extract text from a PDF file
@@ -169,7 +174,7 @@ async def ocr_pdf(
 
 
 @router.get("/ocr/languages", response_model=LanguagesResponse)
-async def list_languages():
+async def list_languages(current_user: User = Depends(get_current_user_hybrid)):
     """
     Get list of supported OCR languages
     """
@@ -187,7 +192,7 @@ async def list_languages():
 
 
 @router.get("/ocr/version", response_model=VersionResponse)
-async def get_version():
+async def get_version(current_user: User = Depends(get_current_user_hybrid)):
     """
     Get Tesseract OCR version information
     """
@@ -205,7 +210,7 @@ async def get_version():
 
 
 @router.get("/ocr/health")
-async def ocr_health():
+async def ocr_health(current_user: User = Depends(get_current_user_hybrid)):
     """
     Check OCR service health
     """

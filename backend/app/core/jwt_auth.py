@@ -7,6 +7,7 @@ Supports both authentication methods for backward compatibility.
 BR-006: Security & Compliance requirement
 """
 import jwt
+from jwt.exceptions import ExpiredSignatureError, PyJWTError
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from fastapi import HTTPException, status
@@ -117,13 +118,13 @@ class JWTAuthService:
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             return payload
-        except jwt.ExpiredSignatureError:
+        except ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.JWTError as e:
+        except PyJWTError as e:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Could not validate credentials: {str(e)}",
@@ -139,11 +140,21 @@ class JWTAuthService:
             
         Returns:
             Dict with user_id, username, email, roles
+            
+        Raises:
+            HTTPException 401 if 'sub' claim is missing
         """
         payload = self.verify_token(token)
-        
+
+        if not payload.get("sub"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token missing required 'sub' claim",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         return {
-            "user_id": int(payload.get("sub")),
+            "user_id": int(payload["sub"]),
             "username": payload.get("username"),
             "email": payload.get("email"),
             "roles": payload.get("roles", [])
