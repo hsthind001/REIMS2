@@ -52,6 +52,7 @@ from app.schemas.document import (
 # Import rate limiter (E6-S3: org/user-scoped when available)
 from slowapi import Limiter
 from app.utils.rate_limit_key import get_rate_limit_key
+from app.core.redis_client import invalidate_portfolio_cache
 
 limiter = Limiter(key_func=get_rate_limit_key)
 
@@ -1283,22 +1284,21 @@ async def delete_all_upload_history(
     current_user: User = Depends(require_superuser()),
 ):
     """
-    Delete all document upload history from the database
+    Delete all document upload history and derived data from the database
     
     **Warning:** This operation:
     - Deletes ALL alerts, committee alerts, anomaly data (so Risk dashboard shows zero)
-    - Deletes ALL document upload records from the database
-    - Deletes associated extracted financial data (via cascade)
-    - Deletes files from MinIO storage
+    - Deletes ALL document upload records and files from MinIO
+    - Deletes ALL extracted financial data (balance sheet, income statement, cash flow, rent roll)
+    - Deletes ALL aggregated financial_metrics (so property Value, NOI, Occupancy, DSCR disappear from dashboards)
     - This action CANNOT be undone
     
     **Use Cases:**
-    - Clean up old upload history and related alerts
-    - Reset system for testing
-    - Remove all document records and alert counts
+    - Full reset: no documents, no alerts, no property metrics
+    - Clean up before re-uploading or testing
     
     **Returns:**
-    - Count of deleted records (documents + alerts/anomalies)
+    - Counts for documents, alerts/anomalies, and financial data deleted
     """
     import logging
     from sqlalchemy import text
@@ -1338,7 +1338,7 @@ async def delete_all_upload_history(
         if orphaned_count > 0:
             logger.info(f"Deleted {orphaned_count} orphaned anomaly_detections records")
 
-        # Step 2: Delete document uploads in batches to prevent memory exhaustion
+        # Phase 2: Delete document uploads in batches to prevent memory exhaustion
         # PERFORMANCE FIX: Process in batches instead of loading all records at once
         BATCH_SIZE = 100
         deleted_count = 0
@@ -1383,12 +1383,54 @@ async def delete_all_upload_history(
             deleted_count += len(batch)
             logger.info(f"Batch {batch_number} committed. Total deleted so far: {deleted_count}")
 
+        # Phase 3: Delete extracted financial data and aggregated metrics (so dashboard shows no property metrics)
+        # Order respects FKs: statement/roll data -> headers; rent_roll children first (self-ref)
+        financial_deletion_counts = {}
+        logger.info("Deleting extracted financial data and metrics (phase 3)...")
+        try:
+            financial_deletion_counts['income_statement_data'] = db.execute(text("DELETE FROM income_statement_data")).rowcount
+            financial_deletion_counts['income_statement_headers'] = db.execute(text("DELETE FROM income_statement_headers")).rowcount
+            financial_deletion_counts['cash_flow_data'] = db.execute(text("DELETE FROM cash_flow_data")).rowcount
+            for tbl in ('cash_flow_adjustments', 'cash_account_reconciliations'):
+                try:
+                    financial_deletion_counts[tbl] = db.execute(text(f"DELETE FROM {tbl}")).rowcount
+                except Exception as tbl_err:
+                    logger.debug(f"Phase 3 skip or fail for {tbl}: {tbl_err}")
+                    financial_deletion_counts[tbl] = 0
+            financial_deletion_counts['cash_flow_headers'] = db.execute(text("DELETE FROM cash_flow_headers")).rowcount
+            financial_deletion_counts['balance_sheet_data'] = db.execute(text("DELETE FROM balance_sheet_data")).rowcount
+            # Rent roll: delete children (parent_row_id NOT NULL) first, then all
+            financial_deletion_counts['rent_roll_data'] = db.execute(
+                text("DELETE FROM rent_roll_data WHERE parent_row_id IS NOT NULL")
+            ).rowcount
+            financial_deletion_counts['rent_roll_data'] += db.execute(text("DELETE FROM rent_roll_data")).rowcount
+            financial_deletion_counts['financial_metrics'] = db.execute(text("DELETE FROM financial_metrics")).rowcount
+            try:
+                financial_deletion_counts['period_document_completeness'] = db.execute(
+                    text("DELETE FROM period_document_completeness")
+                ).rowcount
+            except Exception:
+                financial_deletion_counts['period_document_completeness'] = 0
+            db.commit()
+            logger.info("Phase 3 complete: extracted data and metrics deleted.")
+            # Clear metrics/portfolio Redis cache so frontend gets empty data on next request
+            try:
+                invalidate_portfolio_cache()
+                logger.info("Portfolio/metrics cache invalidated.")
+            except Exception as cache_err:
+                logger.warning(f"Cache invalidation failed (non-fatal): {cache_err}")
+        except Exception as e:
+            logger.exception("Phase 3 failed (metrics may still be visible): %s", e)
+            db.rollback()
+            # Continue; response will still include upload and alert counts
+
         return {
-            "message": f"Successfully deleted {deleted_count} document upload records and all alerts/anomalies",
+            "message": f"Successfully deleted {deleted_count} document upload records, all alerts/anomalies, and extracted financial data",
             "deleted_count": deleted_count,
             "orphaned_anomalies_deleted": orphaned_count,
             "batches_processed": batch_number - 1,
             "alerts_anomalies_deleted": alert_deletion_counts,
+            "financial_data_deleted": financial_deletion_counts,
         }
     
     except Exception as e:
