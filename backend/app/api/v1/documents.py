@@ -1286,18 +1286,19 @@ async def delete_all_upload_history(
     Delete all document upload history from the database
     
     **Warning:** This operation:
+    - Deletes ALL alerts, committee alerts, anomaly data (so Risk dashboard shows zero)
     - Deletes ALL document upload records from the database
     - Deletes associated extracted financial data (via cascade)
     - Deletes files from MinIO storage
     - This action CANNOT be undone
     
     **Use Cases:**
-    - Clean up old upload history
+    - Clean up old upload history and related alerts
     - Reset system for testing
-    - Remove all document records
+    - Remove all document records and alert counts
     
     **Returns:**
-    - Count of deleted records
+    - Count of deleted records (documents + alerts/anomalies)
     """
     import logging
     from sqlalchemy import text
@@ -1305,7 +1306,30 @@ async def delete_all_upload_history(
     logger = logging.getLogger(__name__)
     
     try:
-        # Step 1: Delete orphaned anomaly_detections records (where document_id is null)
+        # Phase 1: Delete all alerts/anomalies first (so Risk dashboard shows 0 after delete)
+        # Order respects FKs: alert_history, workflow_locks -> alert_snoozes/suppressions -> committee_alerts -> alerts -> anomaly_detections
+        alert_deletion_counts = {}
+        logger.info("Deleting all alerts and anomaly data (phase 1)...")
+        alert_deletion_counts['alert_history'] = db.execute(text("DELETE FROM alert_history")).rowcount
+        try:
+            alert_deletion_counts['workflow_locks'] = db.execute(text("DELETE FROM workflow_locks")).rowcount
+        except Exception:
+            alert_deletion_counts['workflow_locks'] = 0
+        alert_deletion_counts['alert_snoozes'] = db.execute(text("DELETE FROM alert_snoozes")).rowcount
+        alert_deletion_counts['alert_suppressions'] = db.execute(text("DELETE FROM alert_suppressions")).rowcount
+        alert_deletion_counts['alert_suppression_rules'] = db.execute(text("DELETE FROM alert_suppression_rules")).rowcount
+        alert_deletion_counts['committee_alerts'] = db.execute(text("DELETE FROM committee_alerts")).rowcount
+        alert_deletion_counts['alerts'] = db.execute(text("DELETE FROM alerts")).rowcount
+        alert_deletion_counts['anomaly_detections'] = db.execute(text("DELETE FROM anomaly_detections")).rowcount
+        for tbl in ('anomaly_feedback', 'anomaly_explanations'):
+            try:
+                alert_deletion_counts[tbl] = db.execute(text(f"DELETE FROM {tbl}")).rowcount
+            except Exception:
+                alert_deletion_counts[tbl] = 0
+        db.commit()
+        logger.info("Phase 1 complete: alerts/anomalies deleted.")
+
+        # Step 2: Delete orphaned anomaly_detections records (where document_id is null) - may exist after phase 1
         # These orphaned records violate the NOT NULL constraint and prevent cascade deletion
         logger.info("Cleaning up orphaned anomaly_detections records...")
         orphaned_count = db.execute(
@@ -1360,10 +1384,11 @@ async def delete_all_upload_history(
             logger.info(f"Batch {batch_number} committed. Total deleted so far: {deleted_count}")
 
         return {
-            "message": f"Successfully deleted {deleted_count} document upload records",
+            "message": f"Successfully deleted {deleted_count} document upload records and all alerts/anomalies",
             "deleted_count": deleted_count,
             "orphaned_anomalies_deleted": orphaned_count,
-            "batches_processed": batch_number - 1
+            "batches_processed": batch_number - 1,
+            "alerts_anomalies_deleted": alert_deletion_counts,
         }
     
     except Exception as e:
@@ -1438,6 +1463,17 @@ async def delete_all_anomalies_warnings_alerts(
             text("DELETE FROM alert_suppression_rules")
         ).rowcount
         logger.info(f"Deleted {deletion_counts['alert_suppression_rules']} alert_suppression_rules records")
+        
+        # Step 4b: Delete workflow_locks (FK to committee_alerts; must be before committee_alerts)
+        try:
+            logger.info("Deleting workflow_locks records...")
+            deletion_counts['workflow_locks'] = db.execute(
+                text("DELETE FROM workflow_locks")
+            ).rowcount
+            logger.info(f"Deleted {deletion_counts['workflow_locks']} workflow_locks records")
+        except Exception as e:
+            logger.warning(f"workflow_locks delete skipped or failed: {e}")
+            deletion_counts['workflow_locks'] = 0
         
         # Step 5: Delete committee_alerts
         logger.info("Deleting committee_alerts records...")
@@ -1649,6 +1685,20 @@ async def delete_filtered_anomalies_warnings_alerts(
         else:
             deletion_counts['alert_suppressions'] = 0
         logger.info(f"Deleted {deletion_counts['alert_suppressions']} alert_suppressions records")
+        
+        # Step 3b: Delete workflow_locks for matching committee_alerts (FK to committee_alerts)
+        try:
+            from app.models.workflow_lock import WorkflowLock
+            if committee_alert_ids_list:
+                deletion_counts['workflow_locks'] = db.query(WorkflowLock).filter(
+                    WorkflowLock.alert_id.in_(committee_alert_ids_list)
+                ).delete(synchronize_session=False)
+            else:
+                deletion_counts['workflow_locks'] = 0
+            logger.info(f"Deleted {deletion_counts['workflow_locks']} workflow_locks records")
+        except Exception as e:
+            logger.warning(f"workflow_locks delete skipped or failed: {e}")
+            deletion_counts['workflow_locks'] = 0
         
         # Step 4: Delete committee_alerts
         logger.info("Deleting committee_alerts records...")
