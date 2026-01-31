@@ -52,7 +52,13 @@ class DocumentUpload(Base):
     period = relationship("FinancialPeriod", back_populates="document_uploads")
     organization = relationship("Organization")
     extraction_log = relationship("ExtractionLog", foreign_keys=[extraction_id])
-    extraction_run = relationship("ExtractionRun", back_populates="document_upload", foreign_keys=[extraction_run_id])
+    # Read-only reverse of ExtractionRun.document_upload (viewonly avoids bidirectional MANYTOONE error).
+    extraction_run = relationship(
+        "ExtractionRun",
+        foreign_keys=[extraction_run_id],
+        uselist=False,
+        viewonly=True,
+    )
     field_metadata = relationship("ExtractionFieldMetadata", back_populates="document", cascade="all, delete-orphan")
     balance_sheet_data = relationship("BalanceSheetData", back_populates="upload", cascade="all, delete-orphan")
     income_statement_data = relationship("IncomeStatementData", back_populates="upload", cascade="all, delete-orphan")

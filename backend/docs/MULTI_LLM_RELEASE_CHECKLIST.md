@@ -1,5 +1,13 @@
 # Multi-LLM Extraction (AbeAI-style) – Release Checklist
 
+## Configuration & enablement
+
+- **Enable:** Set `MULTI_LLM_EXTRACTION_ENABLED=true` in `.env` (or environment).
+- **Provider keys:** At least one of the following must be set when multi-LLM is enabled:  
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, `MISTRAL_API_KEY`, `GOOGLE_API_KEY`.
+- **Tuning:** `MULTI_LLM_MAX_PROVIDERS` (default 3) caps parallel LLM calls; `MULTI_LLM_TIMEOUT_SEC` (default 120) applies per-call timeout.
+- **Disable:** Set `MULTI_LLM_EXTRACTION_ENABLED=false` to use existing template/LLM flow only; no extra API calls.
+
 ## Security
 - [ ] API keys (ANTHROPIC, OPENAI, PERPLEXITY, MISTRAL, GOOGLE) stored in `.env` or secrets manager only; never committed.
 - [ ] Validate production env has required keys when `MULTI_LLM_EXTRACTION_ENABLED=true`.
