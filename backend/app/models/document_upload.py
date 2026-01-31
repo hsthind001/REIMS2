@@ -32,6 +32,7 @@ class DocumentUpload(Base):
     extraction_started_at = Column(DateTime(timezone=True))
     extraction_completed_at = Column(DateTime(timezone=True))
     extraction_id = Column(Integer, ForeignKey('extraction_logs.id'))  # Link to extraction quality tracking
+    extraction_run_id = Column(Integer, ForeignKey('extraction_runs.id', ondelete='SET NULL'), nullable=True, index=True)  # Multi-LLM Master JSON run
     extraction_task_id = Column(String(255), nullable=True, index=True)  # Celery task ID for tracking
     
     # Versioning
@@ -51,6 +52,7 @@ class DocumentUpload(Base):
     period = relationship("FinancialPeriod", back_populates="document_uploads")
     organization = relationship("Organization")
     extraction_log = relationship("ExtractionLog", foreign_keys=[extraction_id])
+    extraction_run = relationship("ExtractionRun", back_populates="document_upload", foreign_keys=[extraction_run_id])
     field_metadata = relationship("ExtractionFieldMetadata", back_populates="document", cascade="all, delete-orphan")
     balance_sheet_data = relationship("BalanceSheetData", back_populates="upload", cascade="all, delete-orphan")
     income_statement_data = relationship("IncomeStatementData", back_populates="upload", cascade="all, delete-orphan")

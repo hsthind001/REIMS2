@@ -5,6 +5,9 @@ class AISettings(BaseSettings):
     # LLM API Settings
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
+    PERPLEXITY_API_KEY: Optional[str] = None
+    MISTRAL_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY: Optional[str] = None  # Gemini
     GROQ_API_KEY: Optional[str] = None  # Groq Cloud API (free tier, 800 tokens/sec)
     LLM_PROVIDER: str = "ollama"  # "ollama", "groq", "openai", or "anthropic"
     LLM_MODEL: str = "deepseek-r1:14b"  # Ollama model name (installed)
@@ -81,3 +84,8 @@ class AISettings(BaseSettings):
     # ---------- Anomaly Threshold Overrides ----------
     ANOMALY_Z_SCORE_THRESHOLD: float = 2.0
     ANOMALY_PERCENTAGE_CHANGE_THRESHOLD: float = 0.15
+
+    # ---------- Multi-LLM Extraction (AbeAI-style) ----------
+    MULTI_LLM_EXTRACTION_ENABLED: bool = False  # Enable 2–3 LLM candidates per run
+    MULTI_LLM_MAX_PROVIDERS: int = 3  # Max providers to call in parallel
+    MULTI_LLM_TIMEOUT_SEC: float = 120.0  # Timeout per LLM call (hardening)

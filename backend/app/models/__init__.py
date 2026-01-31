@@ -1,6 +1,7 @@
 # Models package
 from app.models.user import User
 from app.models.extraction_log import ExtractionLog
+from app.models.extraction_run import ExtractionRun
 from app.models.extraction_field_metadata import ExtractionFieldMetadata
 from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
@@ -133,6 +134,7 @@ from app.models.audit_log import AuditLog
 __all__ = [
     "User",
     "ExtractionLog",
+    "ExtractionRun",
     "ExtractionFieldMetadata",
     "Property",
     "FinancialPeriod",

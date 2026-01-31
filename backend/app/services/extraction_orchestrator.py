@@ -65,6 +65,7 @@ from app.core.config import settings
 from app.core.feature_flags import FeatureFlags
 from app.services.deduplication_service import get_deduplication_service
 from app.services.alert_trigger_service import AlertTriggerService
+from app.services.master_json_service import MasterJSONService
 import json
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,8 @@ class ExtractionOrchestrator:
         self.anomaly_active_learning = AnomalyActiveLearning(db) if ACTIVE_LEARNING_AVAILABLE else None
         self.cross_property_intel = CrossPropertyIntelligenceService(db) if CROSS_PROP_AVAILABLE else None
         self.pyod_detector = PyODAnomalyDetector(db) if PYOD_AVAILABLE and FeatureFlags.is_pyod_enabled() else None
-    
+        self.master_json_service = MasterJSONService(db)
+
     def extract_and_parse_document(self, upload_id: int) -> Dict:
         """
         Complete extraction workflow for a document upload with transaction management
@@ -129,7 +131,10 @@ class ExtractionOrchestrator:
                     "success": False,
                     "error": f"Upload {upload_id} not found"
                 }
-            
+
+            # Pre-Flight: Create run_id and Master JSON for multi-LLM audit trail
+            run_id, run_row, _master_json = self.master_json_service.create_run(upload)
+
             # Update status to extracting
             upload.extraction_status = "extracting"
             upload.extraction_started_at = datetime.now()
@@ -179,11 +184,45 @@ class ExtractionOrchestrator:
                 upload=upload,
                 extraction_result=extraction_result
             )
-            
+
+            # Update Master JSON: extraction section and link extraction_log
+            self.master_json_service.update_extraction_section(
+                run_row,
+                text_preview=extraction_result["extraction"].get("text", "")[:500],
+                total_pages=extraction_result.get("validation", {}).get("total_pages"),
+                engines_used=extraction_result["extraction"].get("engines_used", [extraction_result["extraction"].get("engine")]),
+                primary_engine=extraction_result["extraction"].get("engine"),
+                confidence_score=extraction_result["validation"].get("confidence_score"),
+                quality_level=extraction_result["validation"].get("overall_quality"),
+                processing_time_seconds=extraction_result.get("processing_time_seconds"),
+            )
+            self.master_json_service.link_extraction_log(run_row, extraction_log.id)
+
             # Link extraction log to upload
             upload.extraction_id = extraction_log.id
             self.db.commit()
-            
+
+            # Multi-LLM candidate extraction (when enabled): 2–3 providers in parallel
+            if getattr(settings, "MULTI_LLM_EXTRACTION_ENABLED", False):
+                try:
+                    from app.services.multi_llm_provider import (
+                        generate_candidates,
+                        default_system_prompt_for_document_type,
+                    )
+                    doc_type = upload.document_type or "balance_sheet"
+                    text_for_llm = extracted_text[:8000] if len(extracted_text) > 8000 else extracted_text
+                    system_prompt = default_system_prompt_for_document_type(doc_type)
+                    max_providers = getattr(settings, "MULTI_LLM_MAX_PROVIDERS", 3)
+                    candidate_results = generate_candidates(
+                        prompt=f"Document text:\n{text_for_llm}",
+                        system_prompt=system_prompt,
+                        document_type=doc_type,
+                        max_providers=max_providers,
+                    )
+                    self.master_json_service.append_candidates_and_telemetry(run_row, candidate_results)
+                except Exception as multi_llm_err:
+                    logger.warning("Multi-LLM candidate extraction failed: %s", multi_llm_err)
+
             # ==================== DATA INSERTION & QUALITY ASSURANCE ====================
             # Production-ready extraction with comprehensive quality checks
             
@@ -241,7 +280,52 @@ class ExtractionOrchestrator:
                 }
             
             print(f"✅ Inserted {parse_result.get('records_inserted', 0)} records")
-            
+
+            # Evidence anchoring: attach page + snippet per field for audit trail
+            try:
+                from app.services.evidence_anchoring_service import (
+                    anchor_evidence,
+                    fields_from_candidate_parsed_json,
+                )
+                parsed_data = parse_result.get("parsed_data")
+                if parsed_data and run_row:
+                    fields = fields_from_candidate_parsed_json(parsed_data)
+                    if fields:
+                        evidence_entries, coverage_pct = anchor_evidence(extracted_text, fields, pages=None)
+                        self.master_json_service.update_evidence_section(run_row, evidence_entries, coverage_pct)
+            except Exception as ev_err:
+                logger.warning("Evidence anchoring failed: %s", ev_err)
+
+            # Deterministic scoring and gate routing (AbeAI-style)
+            try:
+                from app.services.multi_llm_scoring import score_and_route, ESCALATE_LLM
+                if run_row:
+                    master = self.master_json_service.load_master_json(run_row)
+                    _confidence, overall_gate, decision = score_and_route(master, rule_pass_rate=None)
+                    self.master_json_service.update_decision_section(
+                        run_row,
+                        decision.overall_gate,
+                        decision.field_decisions,
+                        decision.synthesis_rationale,
+                    )
+                    # Adversarial challenge for low-confidence fields when gate is ESCALATE_LLM
+                    if overall_gate == ESCALATE_LLM and decision.field_decisions:
+                        try:
+                            from app.services.adversarial_challenge_service import run_challenge
+                            low_conf = [
+                                {"field_name": fd.field_name, "chosen_value": fd.chosen_value, "confidence": fd.confidence}
+                                for fd in decision.field_decisions[:20]
+                            ]
+                            candidates_summary = str([e.source for e in master.candidates.entries])
+                            evidence_summary = str([e.field_name for e in master.evidence.entries[:30]])
+                            suggestions = run_challenge(low_conf, candidates_summary, evidence_summary)
+                            if suggestions:
+                                self.master_json_service.append_challenge_suggestions(run_row, suggestions)
+                        except Exception as challenge_err:
+                            logger.warning("Adversarial challenge failed: %s", challenge_err)
+            except Exception as score_err:
+                logger.warning("Deterministic scoring failed: %s", score_err)
+
             # Step 5: Calculate and store comprehensive financial metrics
             print(f"📊 Calculating financial metrics...")
             try:
@@ -642,7 +726,8 @@ class ExtractionOrchestrator:
             return {
                 "success": True,
                 "records_inserted": records_inserted,
-                "extraction_method": parsed_data.get("extraction_method", "unknown")
+                "extraction_method": parsed_data.get("extraction_method", "unknown"),
+                "parsed_data": parsed_data,
             }
         
         except Exception as e:

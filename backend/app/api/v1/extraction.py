@@ -12,6 +12,7 @@ from app.api.dependencies import get_current_user_hybrid, get_current_organizati
 from app.models.user import User
 from app.models.organization import Organization
 from app.models.extraction_log import ExtractionLog
+from app.models.extraction_run import ExtractionRun
 from app.models.document_upload import DocumentUpload
 from app.repositories.tenant_scoped import get_upload_for_org
 from app.db.minio_client import download_file
@@ -426,6 +427,111 @@ async def get_extraction_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting stats: {str(e)}"
+        )
+
+
+class ExtractionRunSummaryResponse(BaseModel):
+    """Observability summary for a multi-LLM extraction run."""
+    run_id: str
+    document_upload_id: int
+    extraction_log_id: Optional[int] = None
+    overall_gate: Optional[str] = None
+    evidence_coverage_pct: Optional[float] = None
+    total_latency_ms: Optional[float] = None
+    telemetry_by_provider: List[Dict[str, Any]] = []
+    candidate_sources: List[str] = []
+    created_at: Optional[str] = None
+
+
+@router.get("/extract/runs/{run_id}", response_model=ExtractionRunSummaryResponse)
+async def get_extraction_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """
+    Get observability summary for a multi-LLM extraction run (Master JSON chain-of-custody).
+    Returns run_id, gate, telemetry (latency, per-provider call count), evidence coverage.
+    """
+    try:
+        run = db.query(ExtractionRun).filter(ExtractionRun.run_id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run {run_id} not found")
+        master = run.master_json or {}
+        decision = master.get("decision") or {}
+        telemetry = master.get("telemetry") or {}
+        evidence = master.get("evidence") or {}
+        candidates = master.get("candidates") or {}
+        telemetry_entries = telemetry.get("entries") or []
+        created = run.created_at.isoformat() if run.created_at else None
+        return ExtractionRunSummaryResponse(
+            run_id=run.run_id,
+            document_upload_id=run.document_upload_id,
+            extraction_log_id=run.extraction_log_id,
+            overall_gate=decision.get("overall_gate"),
+            evidence_coverage_pct=evidence.get("coverage_pct"),
+            total_latency_ms=telemetry.get("total_latency_ms"),
+            telemetry_by_provider=[
+                {"provider": e.get("provider"), "call_count": e.get("call_count"), "latency_ms": e.get("latency_ms"), "tokens_estimate": e.get("tokens_estimate")}
+                for e in telemetry_entries
+            ],
+            candidate_sources=[e.get("source") for e in (candidates.get("entries") or []) if e.get("source")],
+            created_at=created,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving run: {str(e)}"
+        )
+
+
+@router.get("/extract/runs", response_model=List[ExtractionRunSummaryResponse])
+async def list_extraction_runs(
+    document_upload_id: Optional[int] = Query(None, description="Filter by document upload ID"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_hybrid),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """List extraction runs (observability). Optionally filter by document_upload_id."""
+    try:
+        q = db.query(ExtractionRun).order_by(ExtractionRun.created_at.desc())
+        if document_upload_id is not None:
+            q = q.filter(ExtractionRun.document_upload_id == document_upload_id)
+        runs = q.limit(limit).all()
+        out = []
+        for run in runs:
+            master = run.master_json or {}
+            decision = master.get("decision") or {}
+            telemetry = master.get("telemetry") or {}
+            evidence = master.get("evidence") or {}
+            candidates = master.get("candidates") or {}
+            telemetry_entries = telemetry.get("entries") or []
+            created = run.created_at.isoformat() if run.created_at else None
+            out.append(
+                ExtractionRunSummaryResponse(
+                    run_id=run.run_id,
+                    document_upload_id=run.document_upload_id,
+                    extraction_log_id=run.extraction_log_id,
+                    overall_gate=decision.get("overall_gate"),
+                    evidence_coverage_pct=evidence.get("coverage_pct"),
+                    total_latency_ms=telemetry.get("total_latency_ms"),
+                    telemetry_by_provider=[
+                        {"provider": e.get("provider"), "call_count": e.get("call_count"), "latency_ms": e.get("latency_ms")}
+                        for e in telemetry_entries
+                    ],
+                    candidate_sources=[e.get("source") for e in (candidates.get("entries") or []) if e.get("source")],
+                    created_at=created,
+                )
+            )
+        return out
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing runs: {str(e)}"
         )
 
 
