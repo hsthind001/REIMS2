@@ -141,7 +141,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379" # Redis server
+      - "6380:6379" # Redis server (6380 to avoid conflict with other Redis on 6379)
       - "8001:8001" # RedisInsight GUI
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

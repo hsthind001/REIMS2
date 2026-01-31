@@ -9,7 +9,7 @@ from celery.result import AsyncResult
 from celery.schedules import crontab
 from app.core.celery_config import celery_app
 from app.db.database import get_db
-from app.api.dependencies import get_current_user, get_current_organization
+from app.api.dependencies import get_current_user, get_current_user_hybrid, get_current_organization
 from app.models.user import User
 from app.models.organization import Organization
 from app.repositories.tenant_scoped import get_upload_for_org
@@ -95,11 +95,21 @@ class TaskResponse(BaseModel):
     message: str
 
 
+def _require_dev_or_auth() -> None:
+    """E1-S2: Demo tasks restricted to dev; disabled in production."""
+    from app.core.config import settings
+    env = (settings.ENVIRONMENT or "development").lower()
+    if env == "production":
+        raise HTTPException(status_code=404, detail="Demo task endpoints disabled in production")
+
+
 @router.post("/tasks/send-email", response_model=TaskResponse)
-async def create_send_email_task(task: EmailTask):
-    """
-    Create an async task to send an email
-    """
+async def create_send_email_task(
+    task: EmailTask,
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """Create an async task to send an email. E1-S2: Auth required; disabled in production."""
+    _require_dev_or_auth()
     result = send_email.delay(task.email, task.subject, task.body)
     
     return {
@@ -110,10 +120,12 @@ async def create_send_email_task(task: EmailTask):
 
 
 @router.post("/tasks/process-data", response_model=TaskResponse)
-async def create_process_data_task(task: DataProcessTask):
-    """
-    Create an async task to process data
-    """
+async def create_process_data_task(
+    task: DataProcessTask,
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """Create an async task to process data. E1-S2: Auth required; disabled in production."""
+    _require_dev_or_auth()
     result = process_data.delay(task.data)
     
     return {
@@ -124,10 +136,12 @@ async def create_process_data_task(task: DataProcessTask):
 
 
 @router.post("/tasks/add-numbers", response_model=TaskResponse)
-async def create_add_numbers_task(task: AddNumbersTask):
-    """
-    Create an async task to add two numbers
-    """
+async def create_add_numbers_task(
+    task: AddNumbersTask,
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """Create an async task to add two numbers. E1-S2: Auth required; disabled in production."""
+    _require_dev_or_auth()
     result = add_numbers.delay(task.x, task.y)
     
     return {
@@ -138,10 +152,12 @@ async def create_add_numbers_task(task: AddNumbersTask):
 
 
 @router.post("/tasks/long-running", response_model=TaskResponse)
-async def create_long_running_task(task: LongRunningTaskRequest):
-    """
-    Create a long-running task with progress tracking
-    """
+async def create_long_running_task(
+    task: LongRunningTaskRequest,
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """Create a long-running task with progress tracking. E1-S2: Auth required; disabled in production."""
+    _require_dev_or_auth()
     result = long_running_task.delay(task.duration)
     
     return {
@@ -152,10 +168,10 @@ async def create_long_running_task(task: LongRunningTaskRequest):
 
 
 @router.get("/tasks")
-async def list_active_tasks():
-    """
-    List all active tasks (requires Celery events enabled)
-    """
+async def list_active_tasks(
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """List all active tasks (requires Celery events enabled). E1-S2: Auth required."""
     # Get active tasks from all workers
     inspect = celery_app.control.inspect()
     active_tasks = inspect.active()
@@ -470,10 +486,11 @@ async def get_task_dashboard(
 
 
 @router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str):
-    """
-    Get the status of a task by ID
-    """
+async def get_task_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """Get the status of a task by ID. E1-S2: Auth required."""
     task_result = AsyncResult(task_id, app=celery_app)
     
     response = {
@@ -495,10 +512,11 @@ async def get_task_status(task_id: str):
 
 
 @router.delete("/tasks/{task_id}")
-async def cancel_task(task_id: str):
-    """
-    Cancel a running task
-    """
+async def cancel_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user_hybrid),
+):
+    """Cancel a running task. E1-S2: Auth required."""
     task_result = AsyncResult(task_id, app=celery_app)
     
     if not task_result.ready():

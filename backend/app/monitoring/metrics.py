@@ -25,7 +25,7 @@ nlq_queries_total = Counter(
 nlq_llm_tokens_total = Counter(
     'nlq_llm_tokens_total',
     'Total LLM tokens used',
-    ['model', 'operation', 'type'],  # type: 'input' or 'output'
+    ['model', 'operation', 'type'],  # type is 'input' or 'output'
     registry=registry
 )
 

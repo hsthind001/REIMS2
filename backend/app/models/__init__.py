@@ -22,6 +22,7 @@ from app.models.mortgage_payment_history import MortgagePaymentHistory
 from app.models.escrow_document_link import EscrowDocumentLink
 from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
+from app.models.validation_run import ValidationRun
 from app.models.audit_trail import AuditTrail
 from app.models.extraction_template import ExtractionTemplate
 from app.models.reconciliation_session import ReconciliationSession

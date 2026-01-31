@@ -3267,6 +3267,7 @@ class ExtractionOrchestrator:
         # These will be inserted via raw SQL below
         anomaly = AnomalyDetection(
             document_id=upload.id,
+            organization_id=upload.organization_id,
             field_name=field_name,
             field_value=field_value[:500] if field_value else None,
             expected_value=expected_value[:500] if expected_value else None,

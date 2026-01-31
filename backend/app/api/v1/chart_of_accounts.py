@@ -31,8 +31,8 @@ async def list_chart_of_accounts(
     current_user=Depends(get_current_user),
     current_org: Organization = Depends(get_current_organization),
 ):
-    """List chart of accounts. Requires org context (template is global)."""
-    
+    """List chart of accounts. Requires org context (template is global).
+
     Filters:
     - account_type: Filter by type (asset, liability, equity, income, expense)
     - category: Filter by category

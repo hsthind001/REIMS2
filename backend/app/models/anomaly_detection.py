@@ -66,6 +66,7 @@ class AnomalyDetection(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey('document_uploads.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
     
     # Anomaly details
     field_name = Column(String(100), nullable=False)  # Account code or field name

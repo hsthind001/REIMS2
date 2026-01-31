@@ -13,7 +13,7 @@ def ensure_admin():
             user = User(
                 username="admin",
                 email="admin@example.com",
-                hashed_password=get_password_hash("admin"),
+                hashed_password=get_password_hash("Admin123!"),
                 is_active=True,
                 is_superuser=True
             )
@@ -22,11 +22,12 @@ def ensure_admin():
             db.refresh(user)
             print("Admin user created.")
         else:
-            print("Admin user exists. Resetting password...")
-            user.hashed_password = get_password_hash("admin")
+            print("Admin user exists. Ensuring superuser and password...")
+            user.hashed_password = get_password_hash("Admin123!")
             user.is_active = True
+            user.is_superuser = True  # Required for /api/v1/admin/* (Administration page)
             db.commit()
-            print("Password reset to 'admin'.")
+            print("Password set to 'Admin123!', is_superuser=True.")
 
         # Ensure Organization
         org = db.query(Organization).first()

@@ -6,6 +6,27 @@
 - **Prometheus metrics**: `GET /api/v1/metrics` exposes Prometheus scrape endpoint.
 - **Structlog**: Configured on startup (console, optional file); JSON output with correlation IDs.
 
+## Plan Gaps Implemented (Session 3)
+
+- **E0-S2 mypy**: Fixed syntax errors in bulk_import.py, chart_of_accounts.py, portfolio_analytics.py, vector_store_manager.py, extraction_tasks.py, metrics.py. Mypy runs without parse errors. CI keeps `|| true` until 3000+ type errors are cleaned.
+- **E2-S3 anomaly/reconciliation**: Migration 20260130_0009 adds `organization_id` to anomaly_detections, reconciliation_sessions, reconciliation_differences, reconciliation_resolutions (backfilled from document_uploads/properties).
+- **E5-S2 Separate queues**: Celery task_routes: extraction (extract_document, recover_stuck), analytics (anomaly, learning, batch, alerts, market_intel), forensic_audit. Workers need `-Q extraction,analytics,forensic_audit,celery`.
+- **E5-S1 Unique constraint**: Migration 20260130_0010 adds partial unique index `uq_document_uploads_org_prop_period_doctype_filehash` on (organization_id, property_id, period_id, document_type, file_hash) WHERE file_hash IS NOT NULL.
+
+---
+
+## Plan Gaps Implemented (Latest Session 2)
+
+- **Tasks router auth (E1-S2)**: Demo endpoints (send-email, process-data, add-numbers, long-running) and GET /tasks, GET /tasks/{id}, DELETE /tasks/{id} now require `get_current_user_hybrid`. Demo tasks return 404 in production.
+- **E2-S3 tenant tables**: Migration 20260130_0007 adds `organization_id` to validation_results, balance_sheet_data, income_statement_data, cash_flow_data, rent_roll_data (backfilled from document_uploads/properties).
+- **E4-S2 CI DB init**: New `db-init-smoke` job in backend-ci.yml — postgres service, alembic upgrade head, DB smoke test.
+- **E5-S2 DLQ**: `task_failure` signal records failed task metadata to Redis list `celery:dlq` (last 1000 entries).
+- **E5-S3 RuleRun**: `validation_runs` table and `validation_run_id` on validation_results; ValidationService creates run records with rules_version_hash, timestamps.
+- **Docs**: `docs/agile/REIMS_SaaS_Hardening_Plan.md` created.
+- **CI mypy**: Kept soft fail (`|| true`) — remove after type cleanup to enforce.
+
+---
+
 ## Plan Gaps Implemented (Latest)
 
 - **WebSocket auth (E1-S2)**: Token + org_id required in query params (`?token=&org_id=`). Both `/ws/extraction-status/{upload_id}` and `/ws/batch-job/{job_id}` validate JWT and org membership before accept. Frontend `wsAuth.ts` and hooks pass auth params.

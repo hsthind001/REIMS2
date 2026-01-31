@@ -15,8 +15,8 @@ import json
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
-    Filter, FieldCondition, Range, Match
-SearchParams, MatchValue
+    Filter, FieldCondition, Range, Match,
+    SearchParams, MatchValue
 )
 from sentence_transformers import SentenceTransformer
 from rank_bm25 import BM25Okapi

@@ -40,7 +40,7 @@ async def import_budgets(
     current_user: User = Depends(require_org_role("editor")),
     current_org: Organization = Depends(get_current_organization),
 ):
-    """Import budget data from CSV/Excel file"""
+    """Import budget data from CSV/Excel file
 
     **File Format:** CSV or Excel (.xlsx, .xls)
 

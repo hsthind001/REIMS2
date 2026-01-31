@@ -255,12 +255,12 @@ async def get_portfolio_analytics(
 
 @router.get("/property/{property_id}/comparison", response_model=PropertyComparisonResponse)
 async def get_property_comparison(
-async def get_property_comparison(
     property_id: int,
     account_code: str = Query(..., description="Account code to compare"),
     metric_type: str = Query("balance_sheet", description="Metric type: balance_sheet, income_statement"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    current_org: Organization = Depends(get_current_organization),
 ):
     """
     Compare a property's value to portfolio benchmarks.

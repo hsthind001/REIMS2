@@ -21,7 +21,7 @@ from app.models.property import Property
 from app.models.financial_period import FinancialPeriod
 from app.models.budget import Budget, BudgetStatus, Forecast
 from app.models.financial_metrics import FinancialMetrics
-from app.models.committee_alert import CommitteeAlert, AlertType
+from app.models.committee_alert import CommitteeAlert, AlertType, AlertStatus
 
 router = APIRouter(prefix="/variance-analysis", tags=["variance_analysis"])
 logger = logging.getLogger(__name__)
@@ -904,43 +904,58 @@ def list_variance_alerts(
     List variance breach alerts (AUDIT-48 / CommitteeAlert VARIANCE_BREACH).
     Used by variance alerts dashboard and Financial Integrity Hub.
     """
-    query = (
-        db.query(CommitteeAlert)
-        .join(Property, CommitteeAlert.property_id == Property.id)
-        .filter(
-            CommitteeAlert.alert_type == AlertType.VARIANCE_BREACH,
-            Property.organization_id == current_org.id,
+    try:
+        query = (
+            db.query(CommitteeAlert)
+            .join(Property, CommitteeAlert.property_id == Property.id)
+            .filter(
+                CommitteeAlert.alert_type == AlertType.VARIANCE_BREACH,
+                Property.organization_id == current_org.id,
+            )
         )
-    )
-    if property_id is not None:
-        query = query.filter(CommitteeAlert.property_id == property_id)
-    if period_id is not None:
-        query = query.filter(CommitteeAlert.financial_period_id == period_id)
-    if status:
-        query = query.filter(CommitteeAlert.status == status)
-    query = query.order_by(CommitteeAlert.triggered_at.desc()).limit(limit)
-    alerts = query.all()
-    result = []
-    for a in alerts:
-        period_year = period_month = None
-        if a.financial_period_id:
-            period = db.query(FinancialPeriod).filter(FinancialPeriod.id == a.financial_period_id).first()
-            if period:
-                period_year = period.period_year
-                period_month = period.period_month
-        prop = db.query(Property).filter(Property.id == a.property_id).first()
-        result.append(VarianceAlertItem(
-            id=a.id,
-            property_id=a.property_id,
-            financial_period_id=a.financial_period_id,
-            alert_type=a.alert_type.value if hasattr(a.alert_type, "value") else str(a.alert_type),
-            severity=a.severity.value if hasattr(a.severity, "value") else str(a.severity),
-            status=a.status.value if hasattr(a.status, "value") else str(a.status),
-            message=a.message,
-            related_metric=a.related_metric,
-            triggered_at=a.triggered_at,
-            property_code=prop.property_code if prop else None,
-            period_year=period_year,
-            period_month=period_month,
-        ))
-    return result
+        if property_id is not None:
+            query = query.filter(CommitteeAlert.property_id == property_id)
+        if period_id is not None:
+            query = query.filter(CommitteeAlert.financial_period_id == period_id)
+        if status:
+            # Map string to enum so SQL comparison works (CommitteeAlert.status is AlertStatus enum)
+            try:
+                status_enum = AlertStatus(status) if isinstance(status, str) else status
+                query = query.filter(CommitteeAlert.status == status_enum)
+            except ValueError:
+                pass  # Invalid status string: ignore filter
+        query = query.order_by(CommitteeAlert.triggered_at.desc()).limit(limit)
+        alerts = query.all()
+        result = []
+        for a in alerts:
+            try:
+                period_year = period_month = None
+                if a.financial_period_id:
+                    period = db.query(FinancialPeriod).filter(FinancialPeriod.id == a.financial_period_id).first()
+                    if period:
+                        period_year = period.period_year
+                        period_month = period.period_month
+                prop = db.query(Property).filter(Property.id == a.property_id).first()
+                # CommitteeAlert has title/description, not message; expose as message for API
+                message = getattr(a, "message", None) or (a.title if a.title else None) or (a.description if a.description else None)
+                result.append(VarianceAlertItem(
+                    id=a.id,
+                    property_id=a.property_id,
+                    financial_period_id=a.financial_period_id,
+                    alert_type=a.alert_type.value if hasattr(a.alert_type, "value") else str(a.alert_type),
+                    severity=a.severity.value if hasattr(a.severity, "value") else str(a.severity),
+                    status=a.status.value if hasattr(a.status, "value") else str(a.status),
+                    message=message,
+                    related_metric=a.related_metric,
+                    triggered_at=a.triggered_at,
+                    property_code=prop.property_code if prop else None,
+                    period_year=period_year,
+                    period_month=period_month,
+                ))
+            except Exception as e:
+                logger.warning("Skipping alert id=%s: %s", getattr(a, "id", "?"), e)
+                continue
+        return result
+    except Exception as e:
+        logger.exception("list_variance_alerts failed: %s", e)
+        return []

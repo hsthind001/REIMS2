@@ -11,6 +11,7 @@ class ReconciliationSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
     period_id = Column(Integer, ForeignKey('financial_periods.id', ondelete='CASCADE'), nullable=False, index=True)
     document_type = Column(String(50), nullable=False, index=True)  # balance_sheet, income_statement, cash_flow, rent_roll
     

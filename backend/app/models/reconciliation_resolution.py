@@ -11,6 +11,7 @@ class ReconciliationResolution(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     difference_id = Column(Integer, ForeignKey('reconciliation_differences.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
     
     # Action taken
     action_taken = Column(String(50), nullable=False)  # accept_pdf, accept_db, manual_entry, ignore

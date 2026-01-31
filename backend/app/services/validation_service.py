@@ -20,6 +20,7 @@ from app.models.mortgage_statement_data import MortgageStatementData
 from app.models.financial_metrics import FinancialMetrics
 from app.models.validation_rule import ValidationRule
 from app.models.validation_result import ValidationResult
+from app.models.validation_run import ValidationRun
 
 
 class ValidationService:
@@ -69,38 +70,68 @@ class ValidationService:
                 "success": False,
                 "error": f"Upload {upload_id} not found"
             }
-        
-        # Run validations based on document type
-        validation_results = []
-        
-        if upload.document_type == "balance_sheet":
-            validation_results.extend(self._validate_balance_sheet(upload))
-        elif upload.document_type == "income_statement":
-            validation_results.extend(self._validate_income_statement(upload))
-        elif upload.document_type == "cash_flow":
-            validation_results.extend(self._validate_cash_flow(upload))
-        elif upload.document_type == "rent_roll":
-            validation_results.extend(self._validate_rent_roll(upload))
-        elif upload.document_type == "mortgage_statement":
-            validation_results.extend(self._validate_mortgage_statement(upload))
-        
-        # Count results
-        total_checks = len(validation_results)
-        passed_checks = sum(1 for r in validation_results if r["passed"])
-        failed_checks = total_checks - passed_checks
-        warnings = sum(1 for r in validation_results if r["severity"] == "warning")
-        errors = sum(1 for r in validation_results if r["severity"] == "error")
-        
-        return {
-            "success": True,
-            "total_checks": total_checks,
-            "passed_checks": passed_checks,
-            "failed_checks": failed_checks,
-            "warnings": warnings,
-            "errors": errors,
-            "validation_results": validation_results,
-            "overall_passed": failed_checks == 0
-        }
+
+        # E5-S3: Create validation run record for deterministic, versioned execution
+        import hashlib
+        rules = self.db.query(ValidationRule).filter(
+            ValidationRule.document_type == upload.document_type,
+            ValidationRule.is_active == True
+        ).all()
+        rules_sig = ",".join(str((r.id, getattr(r, 'updated_at', r.id))) for r in rules)
+        rules_hash = hashlib.sha256(rules_sig.encode()).hexdigest()[:64]
+        run_record = ValidationRun(
+            upload_id=upload_id,
+            rules_version_hash=rules_hash[:64],
+            rules_snapshot=str([r.id for r in rules])[:2000],
+            total_rules=len(rules),
+        )
+        self.db.add(run_record)
+        self.db.commit()
+        self.db.refresh(run_record)
+        self._current_validation_run_id = run_record.id
+
+        try:
+            # Run validations based on document type
+            validation_results = []
+
+            if upload.document_type == "balance_sheet":
+                validation_results.extend(self._validate_balance_sheet(upload))
+            elif upload.document_type == "income_statement":
+                validation_results.extend(self._validate_income_statement(upload))
+            elif upload.document_type == "cash_flow":
+                validation_results.extend(self._validate_cash_flow(upload))
+            elif upload.document_type == "rent_roll":
+                validation_results.extend(self._validate_rent_roll(upload))
+            elif upload.document_type == "mortgage_statement":
+                validation_results.extend(self._validate_mortgage_statement(upload))
+
+            # Count results
+            total_checks = len(validation_results)
+            passed_checks = sum(1 for r in validation_results if r["passed"])
+            failed_checks = total_checks - passed_checks
+            warnings = sum(1 for r in validation_results if r["severity"] == "warning")
+            errors = sum(1 for r in validation_results if r["severity"] == "error")
+
+            # E5-S3: Update validation run with completion
+            from datetime import datetime, timezone
+            run_record.completed_at = datetime.now(timezone.utc)
+            run_record.passed_count = passed_checks
+            run_record.failed_count = failed_checks
+            self.db.commit()
+
+            return {
+                "success": True,
+                "total_checks": total_checks,
+                "passed_checks": passed_checks,
+                "failed_checks": failed_checks,
+                "warnings": warnings,
+                "errors": errors,
+                "validation_results": validation_results,
+                "overall_passed": failed_checks == 0,
+                "validation_run_id": run_record.id,
+            }
+        finally:
+            self._current_validation_run_id = None
     
     # ==================== BALANCE SHEET VALIDATIONS ====================
     
@@ -3524,9 +3555,11 @@ class ValidationService:
         
         Returns dict representation for immediate use
         """
+        run_id = getattr(self, "_current_validation_run_id", None)
         result = ValidationResult(
             upload_id=upload_id,
             rule_id=rule_id,
+            validation_run_id=run_id,
             passed=passed,
             expected_value=expected_value,
             actual_value=actual_value,

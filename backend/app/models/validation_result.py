@@ -11,8 +11,10 @@ class ValidationResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     upload_id = Column(Integer, ForeignKey('document_uploads.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
     rule_id = Column(Integer, ForeignKey('validation_rules.id'), nullable=False)
-    
+    validation_run_id = Column(Integer, ForeignKey('validation_runs.id', ondelete='SET NULL'), nullable=True, index=True)
+
     # Result
     passed = Column(Boolean, nullable=False, index=True)
     

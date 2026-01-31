@@ -11,6 +11,7 @@ class ReconciliationDifference(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey('reconciliation_sessions.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
     
     # Account information
     account_code = Column(String(50), nullable=False, index=True)

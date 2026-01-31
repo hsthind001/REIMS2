@@ -81,22 +81,21 @@ def extract_document(self, upload_id: int):
         logger.info(f"Starting extraction for upload_id={upload_id}, task_id={task_id}")
 
         # Update task state to processing
-    self.update_state(
-        state="PROCESSING",
-        meta={
-            "upload_id": upload_id,
-            "status": "Processing document",
-            "progress": 10
-        }
-    )
-    
-    try:
+        self.update_state(
+            state="PROCESSING",
+            meta={
+                "upload_id": upload_id,
+                "status": "Processing document",
+                "progress": 10
+            }
+        )
+
         # Get database session
         db = SessionLocal()
-        
+
         # Create orchestrator
         orchestrator = ExtractionOrchestrator(db)
-        
+
         # Update progress - downloading
         self.update_state(
             state="PROCESSING",
@@ -106,13 +105,13 @@ def extract_document(self, upload_id: int):
                 "progress": 20
             }
         )
-        
+
         # Execute extraction workflow
         result = orchestrator.extract_and_parse_document(upload_id)
-        
+
         # Close database session
         db.close()
-        
+
         # Update progress based on result
         if result.get("success"):
             logger.info(f"Extraction successful for upload_id={upload_id}")
@@ -157,7 +156,7 @@ def extract_document(self, upload_id: int):
     except SoftTimeLimitExceeded:
         release_extraction_lock(upload_id, task_id)
         logger.error(f"⏱️  Soft timeout reached for upload_id={upload_id} - gracefully terminating")
-        
+
         # Update database status to failed
         try:
             db = SessionLocal()
@@ -166,7 +165,7 @@ def extract_document(self, upload_id: int):
                 upload.extraction_status = 'failed'
                 upload.notes = "Extraction timeout: Task exceeded 9-minute processing limit"
                 db.commit()
-                
+
                 # Capture timeout issue for learning
                 try:
                     from app.services.issue_capture_service import IssueCaptureService
@@ -186,11 +185,11 @@ def extract_document(self, upload_id: int):
                     )
                 except Exception as capture_error:
                     logger.warning(f"Failed to capture timeout issue: {capture_error}")
-            
+
             db.close()
         except Exception as db_error:
             logger.error(f"Failed to update database after timeout: {db_error}")
-        
+
         self.update_state(
             state="FAILURE",
             meta={
@@ -206,11 +205,11 @@ def extract_document(self, upload_id: int):
             "error": "Task timeout - exceeded processing time limit",
             "message": "Extraction task timed out"
         }
-    
+
     except Exception as e:
         release_extraction_lock(upload_id, task_id)
         logger.exception(f"Exception during extraction for upload_id={upload_id}")
-        
+
         # Update database status to failed
         try:
             db = SessionLocal()
@@ -219,7 +218,7 @@ def extract_document(self, upload_id: int):
                 upload.extraction_status = 'failed'
                 upload.notes = f"Extraction error: {str(e)}"
                 db.commit()
-                
+
                 # Capture issue for learning
                 try:
                     from app.services.issue_capture_service import IssueCaptureService
@@ -239,11 +238,11 @@ def extract_document(self, upload_id: int):
                     )
                 except Exception as capture_error:
                     logger.warning(f"Failed to capture extraction issue: {capture_error}")
-            
+
             db.close()
         except Exception as db_error:
             logger.error(f"Failed to update database after exception: {db_error}")
-        
+
         self.update_state(
             state="FAILURE",
             meta={

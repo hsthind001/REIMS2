@@ -109,11 +109,63 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-# Task routing (optional - for multiple queues)
-# Route forensic audit jobs to a dedicated queue to avoid backlog from other tasks.
+# Task routing (optional - for multiple queues) - E5-S2
+# Workers should consume: celery -A app.core.celery_config worker -Q extraction,analytics,forensic_audit,celery
+# Extraction: high throughput; Analytics: learning, anomaly, batch; Forensic: heavy compute
 celery_app.conf.task_routes = {
+    "app.tasks.extraction_tasks.extract_document": {"queue": "extraction"},
+    "app.tasks.extraction_tasks.batch_extract_documents": {"queue": "extraction"},
+    "app.tasks.extraction_tasks.recover_stuck_extractions": {"queue": "extraction"},
+    "app.tasks.anomaly_detection_tasks.run_nightly_anomaly_detection": {"queue": "analytics"},
+    "app.tasks.batch_reprocessing_tasks.*": {"queue": "analytics"},
+    "app.tasks.learning_tasks.*": {"queue": "analytics"},
+    "app.tasks.alert_backfill_tasks.*": {"queue": "analytics"},
+    "app.tasks.alert_monitoring_tasks.*": {"queue": "analytics"},
+    "app.tasks.market_intelligence_tasks.*": {"queue": "analytics"},
     "forensic_audit.run_complete_audit": {"queue": "forensic_audit"},
 }
+
+# E5-S2: Dead-letter queue for failed tasks (after max retries)
+# Failed task metadata is appended to Redis list "celery:dlq" for inspection/recovery.
+celery_app.conf.task_reject_on_worker_lost = True  # Requeue if worker dies
+celery_app.conf.task_acks_late = True  # Ack only after task completes (already set above)
+
+
+def _dlq_record_failure(task_id: str, task_name: str, args: tuple, kwargs: dict, einfo: str) -> None:
+    """Append failed task metadata to Redis DLQ list for later inspection."""
+    try:
+        from app.db.redis_client import get_redis
+        from datetime import datetime
+        import json
+        redis_client = get_redis()
+        record = {
+            "task_id": task_id,
+            "task_name": task_name,
+            "args": str(args)[:500],
+            "kwargs": str(kwargs)[:500],
+            "error": str(einfo)[:1000],
+            "failed_at": datetime.utcnow().isoformat(),
+        }
+        redis_client.lpush("celery:dlq", json.dumps(record))
+        redis_client.ltrim("celery:dlq", 0, 999)  # Keep last 1000 entries
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"DLQ record failed: {e}")
+
+
+from celery.signals import task_failure
+
+@task_failure.connect
+def _on_task_failure(sender=None, task_id=None, exception=None, args=None, kwargs=None, traceback=None, einfo=None, **kw):
+    """E5-S2: Record failed tasks to DLQ for inspection."""
+    if sender and task_id:
+        _dlq_record_failure(
+            task_id=task_id,
+            task_name=sender.name if hasattr(sender, 'name') else str(sender),
+            args=args or (),
+            kwargs=kwargs or {},
+            einfo=str(einfo) if einfo else str(exception) if exception else "unknown",
+        )
 
 # OpenTelemetry: instrument Celery workers after process init (required for BatchSpanProcessor)
 from celery.signals import worker_process_init

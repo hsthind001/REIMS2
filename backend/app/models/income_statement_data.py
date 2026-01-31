@@ -12,6 +12,7 @@ class IncomeStatementData(Base):
     id = Column(Integer, primary_key=True, index=True)
     header_id = Column(Integer, ForeignKey('income_statement_headers.id', ondelete='CASCADE'), nullable=True, index=True)
     property_id = Column(Integer, ForeignKey('properties.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey('organizations.id', ondelete='SET NULL'), nullable=True, index=True)
     period_id = Column(Integer, ForeignKey('financial_periods.id', ondelete='CASCADE'), nullable=False, index=True)
     upload_id = Column(Integer, ForeignKey('document_uploads.id', ondelete='SET NULL'))
     account_id = Column(Integer, ForeignKey('chart_of_accounts.id'), nullable=True)  # Nullable for unmatched accounts

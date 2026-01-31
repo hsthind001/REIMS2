@@ -110,6 +110,7 @@ class ReconciliationService:
         # Create new session
         session = ReconciliationSession(
             property_id=property_obj.id,
+            organization_id=property_obj.organization_id,
             period_id=period.id,
             document_type=document_type,
             status='in_progress',
