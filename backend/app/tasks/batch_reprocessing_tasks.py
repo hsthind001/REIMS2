@@ -12,10 +12,13 @@ from app.models.batch_reprocessing_job import BatchReprocessingJob
 from app.models.document_upload import DocumentUpload
 from app.services.extraction_orchestrator import ExtractionOrchestrator
 from sqlalchemy import and_
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Minutes after which a running job with 0 progress is considered stuck (re-queued by recovery task)
+STUCK_BATCH_JOB_MINUTES = 2
 
 
 class DatabaseTask(Task):
@@ -294,4 +297,43 @@ def reprocess_documents_batch(self, job_id: int):
     
     finally:
         release_job_lock(job_id, task_id)
+        db.close()
+
+
+@celery_app.task(name="app.tasks.batch_reprocessing_tasks.recover_stuck_batch_jobs")
+def recover_stuck_batch_jobs():
+    """
+    Periodic task: find batch jobs stuck in 'running' with 0 progress and re-queue them.
+    Runs every minute via Celery Beat. Use when the worker was not consuming the analytics
+    queue or the Celery task was lost from Redis.
+    """
+    from app.services.batch_reprocessing_service import BatchReprocessingService
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(minutes=STUCK_BATCH_JOB_MINUTES)
+        stuck = (
+            db.query(BatchReprocessingJob)
+            .filter(
+                BatchReprocessingJob.status == "running",
+                BatchReprocessingJob.processed_documents == 0,
+                BatchReprocessingJob.started_at <= cutoff,
+            )
+            .all()
+        )
+        if not stuck:
+            return {"requeued": 0, "message": "No stuck batch jobs"}
+
+        service = BatchReprocessingService(db)
+        requeued = 0
+        for job in stuck:
+            try:
+                service.requeue_stuck_job(job.id, min_stuck_minutes=STUCK_BATCH_JOB_MINUTES)
+                requeued += 1
+                logger.info(f"Re-queued stuck batch job {job.id}")
+            except ValueError as e:
+                logger.debug(f"Skip re-queue job {job.id}: {e}")
+
+        return {"requeued": requeued, "total_stuck": len(stuck), "message": f"Re-queued {requeued} stuck batch job(s)"}
+    finally:
         db.close()

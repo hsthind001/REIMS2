@@ -27,9 +27,11 @@ import {
   Minus,
   ArrowUp,
   ArrowDown,
-  ArrowUpDown
+  ArrowUpDown,
+  Bell
 } from 'lucide-react'
 import { anomaliesService } from '../lib/anomalies';
+import { alertBackfillService } from '../lib/alertBackfill';
 import { Card, Button, ProgressBar } from '../components/ui';
 import { DocumentUpload } from '../components/DocumentUpload';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -179,6 +181,7 @@ export default function QualityControl() {
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [reprocessingAll, setReprocessingAll] = useState(false);
+  const [rerunAlertsLoading, setRerunAlertsLoading] = useState(false);
   const [rerunningAnomalies, setRerunningAnomalies] = useState<number | null>(null);
   const [rerunningExtraction, setRerunningExtraction] = useState<number | null>(null);
   
@@ -753,6 +756,30 @@ export default function QualityControl() {
       alert('Failed to trigger bulk detection. Please try again.');
     } finally {
       setReprocessingAll(false);
+    }
+  };
+
+  const handleRerunAllAlerts = async () => {
+    if (!confirm('Re-run alert evaluation for all periods in this organization? This will create a background job and may take some time.')) {
+      return;
+    }
+    try {
+      setRerunAlertsLoading(true);
+      const endDate = new Date();
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      const date_range_end = endDate.toISOString().slice(0, 10);
+      await alertBackfillService.createJob({
+        job_name: 'Re-run All Alerts',
+        date_range_start: '2000-01-01',
+        date_range_end
+      });
+      alert('Alert backfill job started. It will run in the background. Check Batch Jobs (Alert Backfill) for progress.');
+      loadData();
+    } catch (error: any) {
+      console.error('Failed to start alert backfill:', error);
+      alert(error?.message || 'Failed to start Re-run All Alerts. Please try again.');
+    } finally {
+      setRerunAlertsLoading(false);
     }
   };
 
@@ -2395,6 +2422,14 @@ export default function QualityControl() {
                       disabled={reprocessingAll || deleting}
                     >
                       {reprocessingAll ? 'Queueing...' : 'Re-run All Anomalies'}
+                    </Button>
+                    <Button 
+                      className="bg-sky-50 border-sky-200 text-sky-700" 
+                      icon={<Bell className={`w-4 h-4 ${rerunAlertsLoading ? 'animate-pulse' : ''}`} />} 
+                      onClick={handleRerunAllAlerts}
+                      disabled={rerunAlertsLoading || deleting}
+                    >
+                      {rerunAlertsLoading ? 'Starting...' : 'Re-run All Alerts'}
                     </Button>
                     {statusCounts.failed > 0 && (
                       <Button 

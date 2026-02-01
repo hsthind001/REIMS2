@@ -56,6 +56,13 @@ celery_app.conf.beat_schedule = {
             'expires': 60,  # Task expires after 1 minute if not picked up
         }
     },
+    'recover-stuck-batch-jobs': {
+        'task': 'app.tasks.batch_reprocessing_tasks.recover_stuck_batch_jobs',
+        'schedule': crontab(minute='*'),  # Every minute
+        'options': {
+            'expires': 60,
+        }
+    },
     # Self-Learning System Tasks
     '🔥-discover-extraction-patterns': {
         'task': 'app.tasks.learning_tasks.discover_extraction_patterns',
@@ -110,14 +117,15 @@ celery_app.conf.beat_schedule = {
 }
 
 # Task routing (optional - for multiple queues) - E5-S2
-# Workers should consume: celery -A app.core.celery_config worker -Q extraction,analytics,forensic_audit,celery
-# Extraction: high throughput; Analytics: learning, anomaly, batch; Forensic: heavy compute
+# Main worker MUST consume "extraction" (document extraction) and "analytics" (batch jobs, anomaly).
+# See backend/docs/CELERY_QUEUES_AND_EXTRACTION.md. docker-compose: -Q celery,extraction,analytics
 celery_app.conf.task_routes = {
     "app.tasks.extraction_tasks.extract_document": {"queue": "extraction"},
     "app.tasks.extraction_tasks.batch_extract_documents": {"queue": "extraction"},
     "app.tasks.extraction_tasks.recover_stuck_extractions": {"queue": "extraction"},
     "app.tasks.anomaly_detection_tasks.run_nightly_anomaly_detection": {"queue": "analytics"},
     "app.tasks.batch_reprocessing_tasks.*": {"queue": "analytics"},
+    "app.tasks.batch_reprocessing_tasks.recover_stuck_batch_jobs": {"queue": "analytics"},
     "app.tasks.learning_tasks.*": {"queue": "analytics"},
     "app.tasks.alert_backfill_tasks.*": {"queue": "analytics"},
     "app.tasks.alert_monitoring_tasks.*": {"queue": "analytics"},

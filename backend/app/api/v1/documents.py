@@ -1284,7 +1284,10 @@ async def delete_all_upload_history(
     current_user: User = Depends(require_superuser()),
 ):
     """
-    Delete all document upload history and derived data from the database
+    Delete all document upload history and derived data from the database.
+
+    Persistence: Code and data behavior across restarts is documented in
+    backend/DATA_MANAGEMENT.md (Delete All History and Restart Persistence).
     
     **Warning:** This operation:
     - Deletes ALL alerts, committee alerts, anomaly data (so Risk dashboard shows zero)

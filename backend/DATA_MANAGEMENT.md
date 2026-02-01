@@ -10,6 +10,8 @@ Complete guide for managing sample data, backups, and data quality verification.
 4. [Data Quality Verification](#data-quality-verification)
 5. [Backup and Restore](#backup-and-restore)
 6. [Troubleshooting](#troubleshooting)
+7. [Delete All History and Restart Persistence](#delete-all-history-and-restart-persistence)
+8. [Document Extraction and Celery Queues](#document-extraction-and-celery-queues)
 
 ---
 
@@ -475,6 +477,40 @@ docker compose ps
 
 5. **Keep backups for at least 7 days**
    (Automatic with backup script)
+
+---
+
+## Delete All History and Restart Persistence
+
+**Delete all document history** (Quality Control → Delete all document history) clears uploads, alerts, committee alerts, workflow locks, and extracted financial data (including `financial_metrics`). The following ensures changes and fixes **persist across REIMS restarts**:
+
+### Code persistence
+
+- Fixes live in **application code** (`backend/app/api/v1/documents.py`) and are persisted in the repo.
+- **Default docker-compose** mounts `./backend/app:/app/app`, so every backend **restart uses the latest code** from the host. No rebuild is required for code changes to apply after a restart.
+- **Production / pre-built image**: If you deploy with a backend **image** and no volume mount, rebuild the backend image after pulling these changes so the container runs the updated code.
+
+### Data persistence
+
+- **Database** (Postgres) and **Redis** use Docker **volumes**. Data is not lost on container restart.
+- After a successful **Delete all document history**, alerts, committee alerts, and financial metrics stay deleted; **no startup script re-creates** them. db-init only seeds **rules/templates** (e.g. `alert_rules`, `validation_rules`), not alert instances or metrics.
+- **Metrics cache**: Delete-all-history invalidates the portfolio/metrics Redis cache so the next request sees the updated (empty) data.
+
+### If issues reappear after restart
+
+1. Confirm the backend container is using the mounted app code: `docker compose exec backend ls -la /app/app/api/v1/documents.py` and check the file date.
+2. Run **Delete all document history** again after the backend has restarted (to clear any data that existed before the fix).
+3. Hard-refresh the frontend (Ctrl+Shift+R / Cmd+Shift+R) so the UI does not use a cached metrics response.
+
+---
+
+## Document Extraction and Celery Queues
+
+**If uploaded documents stay in "pending" forever**, the main Celery worker is likely not consuming the **extraction** queue. Document extraction tasks are routed to that queue; the worker must be started with `-Q celery,extraction`.
+
+- **Permanent fix:** The default `docker-compose.yml` is already configured correctly. Do not remove `extraction` from the worker's `-Q` list.
+- **After any REIMS restart:** A recovery task runs every minute and re-queues pending documents older than 2 minutes, so extraction resumes within a couple of minutes even if the Redis queue was cleared.
+- **Full details:** [CELERY_QUEUES_AND_EXTRACTION.md](docs/CELERY_QUEUES_AND_EXTRACTION.md)
 
 ---
 

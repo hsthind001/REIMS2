@@ -244,6 +244,39 @@ class BatchReprocessingService:
 
         return True
 
+    def requeue_stuck_job(self, job_id: int, min_stuck_minutes: int = 2) -> Dict[str, Any]:
+        """
+        Re-queue a job that is stuck in 'running' with no progress (e.g. Celery task was lost).
+        Use when the worker was not consuming the analytics queue and the task was never run.
+
+        Args:
+            job_id: Batch job ID
+            min_stuck_minutes: Consider job stuck if running this many minutes with 0 progress (default 2)
+
+        Returns:
+            dict with task_id, message
+        """
+        from app.tasks.batch_reprocessing_tasks import reprocess_documents_batch
+
+        job = self.db.query(BatchReprocessingJob).filter(BatchReprocessingJob.id == job_id).first()
+        if not job:
+            raise ValueError(f"Batch job {job_id} not found")
+        if job.status != 'running':
+            raise ValueError(f"Job {job_id} is not running (status: {job.status}). Only running jobs can be re-queued.")
+        cutoff = datetime.now() - timedelta(minutes=min_stuck_minutes)
+        if job.started_at and job.started_at > cutoff and job.processed_documents == 0:
+            raise ValueError(
+                f"Job {job_id} has been running less than {min_stuck_minutes} min with 0 progress. "
+                "Wait a bit or cancel and create a new job."
+            )
+        # Re-queue the task (previous task may be lost from Redis)
+        task = reprocess_documents_batch.delay(job_id)
+        job.celery_task_id = task.id
+        job.started_at = datetime.now()
+        self.db.commit()
+        logger.info(f"Re-queued batch job {job_id}, new task_id={task.id}")
+        return {"task_id": task.id, "message": "Job re-queued. Worker will process it shortly."}
+
     def list_jobs(
         self,
         user_id: Optional[int] = None,

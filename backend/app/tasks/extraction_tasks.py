@@ -291,6 +291,11 @@ def recover_stuck_extractions():
     This task runs every minute via Celery Beat to recover files that:
     - Were uploaded to MinIO but extraction wasn't queued (Celery was down)
     - Are stuck in pending status without a task_id
+    - Are pending for 2+ minutes (stale: task may have been lost e.g. Redis/worker restart)
+    
+    The 2-minute stale threshold ensures that after any REIMS restart, pending documents
+    are re-queued within ~2 min so extraction resumes. Do not increase this above ~5 min
+    or restarts will leave documents stuck pending longer. See CELERY_QUEUES_AND_EXTRACTION.md.
     
     Returns:
         dict: Recovery statistics
@@ -302,14 +307,32 @@ def recover_stuck_extractions():
     db = SessionLocal()
     recovered_count = 0
     error_count = 0
+    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+    # Re-queue pending that are 2+ min old (task may be lost e.g. after Redis/worker restart)
+    cutoff_stale = datetime.utcnow() - timedelta(minutes=2)
     
     try:
-        # Find files stuck in uploaded_to_minio or pending without task_id
-        stuck_uploads = db.query(DocumentUpload).filter(
+        # 1) Never queued: uploaded_to_minio or pending without task_id
+        stuck_never_queued = db.query(DocumentUpload).filter(
             DocumentUpload.extraction_status.in_(['uploaded_to_minio', 'pending']),
-            DocumentUpload.extraction_task_id.is_(None),  # No task ID means never queued
-            DocumentUpload.upload_date > datetime.utcnow() - timedelta(hours=24)  # Only recent files
+            DocumentUpload.extraction_task_id.is_(None),
+            DocumentUpload.upload_date > cutoff_24h,
         ).limit(50).all()
+        # 2) Stale pending: pending with task_id but 2+ min old (task may be lost)
+        stuck_stale = db.query(DocumentUpload).filter(
+            DocumentUpload.extraction_status == 'pending',
+            DocumentUpload.extraction_task_id.isnot(None),
+            DocumentUpload.upload_date < cutoff_stale,
+            DocumentUpload.upload_date > cutoff_24h,
+        ).limit(50).all()
+        # Clear stale task_id so we re-queue
+        for u in stuck_stale:
+            u.extraction_task_id = None
+            u.extraction_started_at = None
+        if stuck_stale:
+            db.commit()
+        stuck_uploads = list(stuck_never_queued) + list(stuck_stale)
+        stuck_uploads = stuck_uploads[:50]
         
         logger.info(f"Recovery task: Found {len(stuck_uploads)} stuck upload(s)")
         

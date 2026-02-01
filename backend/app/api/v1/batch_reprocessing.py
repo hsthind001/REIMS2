@@ -178,6 +178,36 @@ async def cancel_job(
         )
 
 
+@router.post("/jobs/{job_id}/requeue", status_code=status.HTTP_200_OK)
+async def requeue_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_org_role("editor")),
+    current_org: Organization = Depends(get_current_organization),
+):
+    """
+    Re-queue a batch job stuck in 'running' with no progress.
+    
+    Use when the job shows RUNNING but Total/Processed stay 0 (e.g. worker was not
+    consuming the analytics queue and the Celery task was never run or was lost).
+    Re-queues the task so the worker processes it. Worker must consume the analytics queue.
+    """
+    if not _job_belongs_to_org(db, job_id, current_org.id):
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        service = BatchReprocessingService(db)
+        result = service.requeue_stuck_job(job_id)
+        return {"status": "requeued", "job_id": job_id, "task_id": result["task_id"], "message": result["message"]}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error re-queuing job: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to re-queue job: {str(e)}"
+        )
+
+
 @router.get("/jobs", response_model=List[BatchJobListItem])
 async def list_jobs(
     user_id: Optional[int] = Query(None, description="Filter by user ID"),

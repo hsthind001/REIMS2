@@ -63,12 +63,12 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
 
   return (
     <div className="space-y-6">
-       {/* Summary Statistics */}
-       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+       {/* Summary Statistics - Single row */}
+       <div className="flex flex-row flex-nowrap gap-3 overflow-x-auto pb-1">
            {/* Total Rules */}
            <div 
                onClick={() => handleFilterClick('all')}
-               className={`bg-gradient-to-br from-blue-50 to-blue-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+               className={`flex-1 min-w-[100px] bg-gradient-to-br from-blue-50 to-blue-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
                    statusFilter === 'all' 
                        ? 'border-blue-500 border-2 shadow-lg ring-2 ring-blue-200' 
                        : 'border-blue-200 hover:border-blue-300'
@@ -91,7 +91,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            {/* Passed Rules */}
            <div 
                onClick={() => handleFilterClick('passed')}
-               className={`bg-gradient-to-br from-green-50 to-green-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+               className={`flex-1 min-w-[100px] bg-gradient-to-br from-green-50 to-green-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
                    statusFilter === 'passed' 
                        ? 'border-green-500 border-2 shadow-lg ring-2 ring-green-200' 
                        : 'border-green-200 hover:border-green-300'
@@ -114,7 +114,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            {/* Variance Rules */}
            <div 
                onClick={() => handleFilterClick('variance')}
-               className={`bg-gradient-to-br from-amber-50 to-amber-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+               className={`flex-1 min-w-[100px] bg-gradient-to-br from-amber-50 to-amber-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
                    statusFilter === 'variance' 
                        ? 'border-amber-500 border-2 shadow-lg ring-2 ring-amber-200' 
                        : 'border-amber-200 hover:border-amber-300'
@@ -137,7 +137,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            {/* Skipped Rules */}
            <div 
                onClick={() => handleFilterClick('skipped')}
-               className={`bg-gradient-to-br from-gray-50 to-gray-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
+               className={`flex-1 min-w-[100px] bg-gradient-to-br from-gray-50 to-gray-100 border rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg ${
                    statusFilter === 'skipped' 
                        ? 'border-gray-500 border-2 shadow-lg ring-2 ring-gray-200' 
                        : 'border-gray-200 hover:border-gray-300'
@@ -158,7 +158,7 @@ export default function ByRuleTab({ rules = [], onRuleClick }: ByRuleTabProps) {
            </div>
 
            {/* Pass Rate */}
-           <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-4">
+           <div className="flex-1 min-w-[100px] bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-4">
                <div className="flex items-center justify-between">
                    <div>
                        <p className="text-sm font-medium text-purple-700 mb-1">Pass Rate</p>

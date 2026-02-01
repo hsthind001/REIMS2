@@ -496,7 +496,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: celery -A celery_worker.celery_app worker --loglevel=${LOG_LEVEL:-info} -Q celery
+    # REQUIRED: -Q must include "extraction" (document extraction) and "analytics" (batch reprocessing, anomaly jobs).
+    # See backend/docs/CELERY_QUEUES_AND_EXTRACTION.md. Do not remove extraction or analytics.
+    command: celery -A celery_worker.celery_app worker --loglevel=${LOG_LEVEL:-info} -Q celery,extraction,analytics
 
   # Celery Worker - Dedicated forensic audit queue
   celery-audit-worker:

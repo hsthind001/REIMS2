@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
-import { Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react'
+import { Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Loader, RotateCcw } from 'lucide-react'
 import { alertBackfillService } from '../../lib/alertBackfill'
 import { batchReprocessingService, type BatchReprocessingJob, type BatchJobCreateRequest } from '../../lib/batchReprocessing'
 import { buildWsUrl } from '../../utils/wsAuth'
@@ -144,6 +144,15 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
       await loadJobs()
     } catch (err: any) {
       setError(err.message || 'Failed to cancel job')
+    }
+  }
+
+  const handleRequeueJob = async (jobId: number) => {
+    try {
+      await batchReprocessingService.requeueJob(jobId)
+      await loadJobs()
+    } catch (err: any) {
+      setError(err.message || 'Failed to requeue job')
     }
   }
 
@@ -371,15 +380,27 @@ export function BatchReprocessingForm({ className = '' }: BatchReprocessingFormP
                     </div>
                   </div>
                 </div>
-                {(job.status === 'running' || job.status === 'queued') && (
-                  <button
-                    onClick={() => handleCancelJob(job.id)}
-                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-all flex items-center gap-1"
-                  >
-                    <X size={14} />
-                    Cancel
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {jobType === 'anomaly_reprocessing' && job.status === 'running' && job.progress_pct === 0 && (
+                    <button
+                      onClick={() => handleRequeueJob(job.id)}
+                      className="px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded hover:bg-amber-200 transition-all flex items-center gap-1"
+                      title="Re-queue if job is stuck (worker may not have been consuming analytics queue)"
+                    >
+                      <RotateCcw size={14} />
+                      Requeue
+                    </button>
+                  )}
+                  {(job.status === 'running' || job.status === 'queued') && (
+                    <button
+                      onClick={() => handleCancelJob(job.id)}
+                      className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-all flex items-center gap-1"
+                    >
+                      <X size={14} />
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Progress Bar */}

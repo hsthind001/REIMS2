@@ -112,6 +112,21 @@ export const batchReprocessingService = {
   },
 
   /**
+   * Re-queue a batch job stuck in 'running' with no progress (e.g. worker was not consuming analytics queue).
+   */
+  async requeueJob(jobId: number): Promise<{ task_id: string; message: string }> {
+    try {
+      const res = await api.post<{ status: string; job_id: number; task_id: string; message: string }>(
+        `/batch-reprocessing/jobs/${jobId}/requeue`
+      )
+      return { task_id: res.task_id, message: res.message }
+    } catch (error: any) {
+      console.error('Failed to requeue batch job:', error)
+      throw new Error(error.message || 'Failed to requeue batch job')
+    }
+  },
+
+  /**
    * List all batch reprocessing jobs
    */
   async listJobs(jobType?: string): Promise<BatchReprocessingJob[]> {
